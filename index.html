@@ -283,7 +283,7 @@
     <div class="ashoka">🇮🇳</div>
     <div class="masthead-text">
       <h1>INDIA ELECTION RESULTS 2026</h1>
-      <p>ASSEMBLY ELECTIONS · MAY 4, 2026 · SOURCE: ECI</p>
+      <p>ASSEMBLY ELECTIONS · MAY 4, 2026 · 4 STATES · SOURCE: ECI</p>
     </div>
     <div class="live-badge">
       <span class="pulse-dot">LIVE</span>
@@ -294,7 +294,7 @@
 
 <div class="ticker-wrap">
   <span class="ticker-inner" id="ticker-text">
-    📊 Assam · Kerala · Puducherry · Tamil Nadu · West Bengal &nbsp;·&nbsp;
+    📊 Assam · Kerala · Tamil Nadu · West Bengal &nbsp;·&nbsp;
     Counting started 8:00 AM · Data: Election Commission of India · results.eci.gov.in &nbsp;·&nbsp;
     Auto-refreshes every 5 min &nbsp;·&nbsp;
   </span>
@@ -353,7 +353,7 @@
 const JSON_URL = "./results.json";
 const REFRESH_MS = 5 * 60 * 1000;
 
-const STATE_ORDER = ["Assam","Kerala","Puducherry","Tamil Nadu","West Bengal"];
+const STATE_ORDER = ["Assam","Kerala","Tamil Nadu","West Bengal"];
 let currentTab = "summary";
 let latestData = null;
 
@@ -371,7 +371,7 @@ function buildTabs(data) {
   const sumBtn = makeTabBtn("summary", "📊 Summary", "party scoreboard");
   bar.appendChild(sumBtn);
 
-  const allBtn = makeTabBtn("all", "All States", "5 states");
+  const allBtn = makeTabBtn("all", "All States", "4 states");
   bar.appendChild(allBtn);
 
   STATE_ORDER.forEach(name => {
@@ -437,9 +437,9 @@ function renderSummaryTab(data) {
 
   const rows = sorted.map(([party, d], i) => {
     const stateCount  = d.leading_states.length;
-    const stateLabel  = stateCount === 0 ? "0 out of 5"
-                      : stateCount === 5 ? "5 out of 5 🏆"
-                      : `${stateCount} out of 5`;
+    const stateLabel  = stateCount === 0 ? "0 out of 4"
+                      : stateCount === 4 ? "4 out of 4 🏆"
+                      : `${stateCount} out of 4`;
     const stateNames  = d.leading_states.join(", ") || "—";
     const barW        = Math.round(d.total_seats / maxSeats * 100);
 
@@ -466,7 +466,7 @@ function renderSummaryTab(data) {
       ${rows || '<div class="no-data">Data loading…</div>'}
     </div>
     <div style="font-family:var(--mono);font-size:0.62rem;color:#999;margin-bottom:14px;">
-      * "X out of 5" = states where party has highest Won+Leading count &nbsp;·&nbsp; Total seats = sum across all 5 states
+      * "X out of 4" = states where party has highest Won+Leading count &nbsp;·&nbsp; Total seats = sum across all 4 states
     </div>
     ${overviewSection}`;
 }
