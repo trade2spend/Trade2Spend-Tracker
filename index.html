@@ -252,21 +252,19 @@
     font-family: var(--head); font-size: 1rem; font-weight: 700; letter-spacing: 0.05em;
   }
   .score-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 16px; border-bottom: 1px solid #eee8d8;
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px; border-bottom: 1px solid #eee8d8;
+    flex-wrap: nowrap; overflow: hidden;
   }
   .score-row:last-child { border-bottom: none; }
-  .score-rank { font-family: var(--mono); font-size: 0.65rem; color: #bbb; width: 18px; flex-shrink: 0; }
-  font-size: 0.65rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .score-states {
-    font-family: var(--mono); font-size: 0.68rem; color: #777; flex-shrink: 0;
-    white-space: nowrap;
-  }
-  .score-states strong { color: var(--blue); font-size: 0.85rem; }
-  .score-bar-wrap { width: 120px; flex-shrink: 0; }
-  .score-bar { height: 8px; background: #e0d8c8; border-radius: 4px; overflow: hidden; }
+  .score-rank { font-family: var(--mono); font-size: 0.6rem; color: #bbb; width: 20px; flex-shrink: 0; }
+  .score-party { font-family: var(--mono); font-size: 0.68rem; font-weight: 600; width: 80px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score-states { font-family: var(--mono); font-size: 0.62rem; color: #777; flex-shrink: 0; white-space: nowrap; width: 65px; }
+  .score-states strong { color: var(--blue); font-size: 0.72rem; }
+  .score-bar-wrap { flex: 1; min-width: 40px; }
+  .score-bar { height: 7px; background: #e0d8c8; border-radius: 4px; overflow: hidden; }
   .score-bar-fill { height: 100%; background: var(--saffron); border-radius: 4px; transition: width 0.5s ease; }
-  font-size: 0.62rem; color: #555; flex-shrink: 0; white-space: nowrap; }
+  .score-seats { font-family: var(--mono); font-size: 0.6rem; color: #555; flex-shrink: 0; white-space: nowrap; }
 
   @media (max-width: 520px) {
     .tab-btn { padding: 8px 12px; font-size: 0.8rem; }
@@ -404,29 +402,47 @@ function switchTab(id) {
 // ── PARTY NAME NORMALIZER (merge duplicates) ─────────────────────────────────
 const PARTY_ALIASES = {
   "bharatiya janata party": "BJP",
+  "bharatiya janata partyiparty": "BJP",
   "bjp": "BJP",
   "indian national congress": "INC",
+  "indian national congressiparty": "INC",
   "inc": "INC",
   "congress": "INC",
   "communist party of india (marxist)": "CPI(M)",
+  "communist party of india (marxist)iparty": "CPI(M)",
   "cpi(m)": "CPI(M)",
   "cpim": "CPI(M)",
-  "all india trinamool congress": "AITC (TMC)",
-  "trinamool congress": "AITC (TMC)",
-  "aitc": "AITC (TMC)",
-  "tmc": "AITC (TMC)",
+  "all india trinamool congress": "TMC",
+  "all india trinamool congressiparty": "TMC",
+  "trinamool congress": "TMC",
+  "aitc": "TMC",
+  "tmc": "TMC",
   "dravida munnetra kazhagam": "DMK",
+  "dravida munnetra kazhagamiparty": "DMK",
   "dmk": "DMK",
+  "tamilaga vettri kazhagam": "TVK",
+  "tamilaga vettri kazhagamiparty": "TVK",
   "all india anna dravida munnetra kazhagam": "AIADMK",
   "aiadmk": "AIADMK",
   "asom gana parishad": "AGP",
+  "asom gana parishidiparty": "AGP",
   "agp": "AGP",
+  "united people's party liberal": "UPPL",
+  "united people's party liberaliparty": "UPPL",
+  "kerala congress": "KC",
+  "kerala congressiparty": "KC",
+  "communist party of india": "CPI",
+  "revolutionary socialist party": "RSP",
+  "indian union muslim league": "IUML",
+  "nationalist congress party": "NCP",
 };
 
 function normalizeParty(name) {
   if (!name) return name;
-  const key = name.toLowerCase().trim();
-  return PARTY_ALIASES[key] || name;
+  // Remove trailing "iParty" corruption if present
+  const cleaned = name.replace(/iParty.*$/i, "").trim();
+  const key = cleaned.toLowerCase().trim();
+  return PARTY_ALIASES[key] || cleaned;
 }
 
 // ── RENDER SUMMARY TAB (party scoreboard across all states) ─────────────────
@@ -553,7 +569,7 @@ function renderStatePanel(name, s) {
         const majMark = p.total >= maj ? `<span class="majority-marker" title="Majority mark reached">★</span>` : "";
         return `
           <tr>
-            <td><span class="party-rank">#${i+1}</span><span class="party-name">${escHtml(p.party)}</span>${majMark}</td>
+            <td><span class="party-rank">#${i+1}</span><span class="party-name">${escHtml(normalizeParty(p.party))}</span>${majMark}</td>
             <td><span class="badge-won">${p.won}</span></td>
             <td><span class="badge-lead">${p.leading}</span></td>
             <td><span class="badge-total">${p.total}</span></td>
