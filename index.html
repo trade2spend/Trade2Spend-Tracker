@@ -257,7 +257,7 @@
   }
   .score-row:last-child { border-bottom: none; }
   .score-rank { font-family: var(--mono); font-size: 0.65rem; color: #bbb; width: 18px; flex-shrink: 0; }
-  .score-party { font-family: var(--mono); font-size: 0.78rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .score-party { font-family: var(--mono); font-size: 0.78rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .score-states {
     font-family: var(--mono); font-size: 0.68rem; color: #777; flex-shrink: 0;
     white-space: nowrap;
@@ -401,6 +401,34 @@ function switchTab(id) {
   });
 }
 
+// ── PARTY NAME NORMALIZER (merge duplicates) ─────────────────────────────────
+const PARTY_ALIASES = {
+  "bharatiya janata party": "BJP",
+  "bjp": "BJP",
+  "indian national congress": "INC",
+  "inc": "INC",
+  "congress": "INC",
+  "communist party of india (marxist)": "CPI(M)",
+  "cpi(m)": "CPI(M)",
+  "cpim": "CPI(M)",
+  "all india trinamool congress": "AITC (TMC)",
+  "trinamool congress": "AITC (TMC)",
+  "aitc": "AITC (TMC)",
+  "tmc": "AITC (TMC)",
+  "dravida munnetra kazhagam": "DMK",
+  "dmk": "DMK",
+  "all india anna dravida munnetra kazhagam": "AIADMK",
+  "aiadmk": "AIADMK",
+  "asom gana parishad": "AGP",
+  "agp": "AGP",
+};
+
+function normalizeParty(name) {
+  if (!name) return name;
+  const key = name.toLowerCase().trim();
+  return PARTY_ALIASES[key] || name;
+}
+
 // ── RENDER SUMMARY TAB (party scoreboard across all states) ─────────────────
 function renderSummaryTab(data) {
   // Build cross-state party tally: { partyName: { states_leading: [], total_seats: N } }
@@ -416,15 +444,17 @@ function renderSummaryTab(data) {
     // Determine leading party in this state (highest total)
     if (parties.length > 0) {
       const leader = parties[0];
-      if (!partyMap[leader.party]) partyMap[leader.party] = { leading_states: [], total_seats: 0, won_states: 0 };
-      partyMap[leader.party].leading_states.push(stateName);
-      if (leader.total >= stateMaj) partyMap[leader.party].won_states++;
+      const lname  = normalizeParty(leader.party);
+      if (!partyMap[lname]) partyMap[lname] = { leading_states: [], total_seats: 0, won_states: 0 };
+      partyMap[lname].leading_states.push(stateName);
+      if (leader.total >= stateMaj) partyMap[lname].won_states++;
     }
 
     // Accumulate total seats per party across all states
     parties.forEach(p => {
-      if (!partyMap[p.party]) partyMap[p.party] = { leading_states: [], total_seats: 0, won_states: 0 };
-      partyMap[p.party].total_seats += p.total;
+      const pname = normalizeParty(p.party);
+      if (!partyMap[pname]) partyMap[pname] = { leading_states: [], total_seats: 0, won_states: 0 };
+      partyMap[pname].total_seats += p.total;
     });
   });
 
@@ -462,7 +492,7 @@ function renderSummaryTab(data) {
 
   return `
     <div class="scoreboard">
-      <div class="scoreboard-title">🏆 Party Performance — Across 5 States</div>
+      <div class="scoreboard-title">🏆 Party Performance — Across 4 States</div>
       ${rows || '<div class="no-data">Data loading…</div>'}
     </div>
     <div style="font-family:var(--mono);font-size:0.62rem;color:#999;margin-bottom:14px;">
