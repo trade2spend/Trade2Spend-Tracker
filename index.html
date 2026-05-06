@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade2Spend | Live Tracker</title>
+    <style>
+        :root {
+            --bg-color: #f4f6f8;
+            --card-bg: #ffffff;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --green: #10b981;
+            --red: #ef4444;
+            --blue: #3b82f6;
+            --gold: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; }
+        .app-container { width: 100%; max-width: 520px; background: var(--card-bg); min-height: 100vh; box-shadow: 0 0 20px rgba(0,0,0,0.05); position: relative; padding-bottom: 80px;}
+        
+        /* Header & Tabs */
+        header { background: #1e293b; color: white; padding: 15px 20px; text-align: center; position: sticky; top: 0; z-index: 10;}
+        .live-indicator { font-size: 0.8rem; color: #cbd5e1; display: inline-flex; align-items: center; gap: 5px; margin-top: 5px;}
+        .tabs { display: flex; background: #334155; }
+        .tab { flex: 1; padding: 12px 0; text-align: center; color: #94a3b8; font-size: 0.9rem; font-weight: bold; cursor: pointer; border-bottom: 3px solid transparent;}
+        .tab.active { color: white; border-bottom-color: var(--blue); }
+        
+        /* Content Areas */
+        .content-section { padding: 20px; display: none; }
+        .content-section.active { display: block; }
+        
+        /* Market Cards */
+        .market-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 20px;}
+        .market-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; text-align: center; position: relative;}
+        .market-title { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; font-weight: bold; margin-bottom: 8px;}
+        .market-price { font-size: 1.8rem; font-weight: bold; margin-bottom: 5px;}
+        .change.up { color: var(--green); font-weight: bold;}
+        .change.down { color: var(--red); font-weight: bold;}
+        
+        /* Blinking / Static Status Dots */
+        .status-dot { position: absolute; top: 15px; right: 15px; width: 10px; height: 10px; border-radius: 50%; }
+        .status-dot.open { background-color: var(--green); animation: pulse 1.5s infinite; }
+        .status-dot.closed { background-color: var(--red); }
+        
+        .update-time { font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 20px; font-weight: bold;}
+
+        /* Trade Cards */
+        .trade-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; overflow: hidden;}
+        .trade-header { background: #f8fafc; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0;}
+        .trade-title { font-weight: bold; font-size: 1.1rem;}
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white;}
+        .badge.ce { background: var(--green); }
+        .badge.pe { background: var(--red); }
+        .badge.watching { background: var(--gold); }
+        .badge.profit { background: var(--green); }
+        .badge.loss { background: var(--red); }
+        
+        .trade-body { padding: 15px; }
+        .trade-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.95rem;}
+        .premium-lock { color: var(--gold); font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;}
+        .pnl-row { background: #f8fafc; padding: 10px; border-radius: 6px; margin-top: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 1.1rem;}
+        .rationale-btn { display: block; width: 100%; text-align: center; padding: 12px; background: #fffbeb; color: #b45309; border: 1px dashed #fcd34d; border-radius: 6px; margin-top: 15px; font-weight: bold; cursor: pointer;}
+        
+        /* Performance Tab */
+        .perf-summary { background: #1e293b; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;}
+        .perf-row { display: flex; justify-content: space-between; margin-bottom: 10px;}
+        
+        /* Disclaimers */
+        .disclaimer { font-size: 0.75rem; color: var(--text-muted); text-align: justify; padding: 15px; background: #f1f5f9; border-radius: 6px; margin-top: 20px; border-left: 3px solid var(--red);}
+        
+        /* Premium Popup */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 100; justify-content: center; align-items: center;}
+        .popup { background: white; width: 90%; max-width: 400px; padding: 25px; border-radius: 12px; text-align: center; position: relative;}
+        .close-btn { position: absolute; top: 15px; right: 15px; cursor: pointer; font-size: 1.2rem; font-weight: bold; color: var(--text-muted);}
+        .popup-icon { font-size: 3rem; margin-bottom: 15px; }
+        .popup-title { font-size: 1.3rem; margin-bottom: 10px;}
+        .popup-text { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5;}
+        .btn-primary { display: block; width: 100%; padding: 14px; background: var(--blue); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-bottom: 10px;}
+        .btn-secondary { display: block; width: 100%; padding: 14px; background: #f1f5f9; color: var(--text-main); text-decoration: none; border-radius: 8px; font-weight: bold;}
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <h2>TRADE2SPEND</h2>
+        <div class="live-indicator">LIVE TRACKER</div>
+    </header>
+    
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('markets')">Markets</div>
+        <div class="tab" onclick="switchTab('trades')">My Trades</div>
+        <div class="tab" onclick="switchTab('performance')">Performance</div>
+        <div class="tab" onclick="switchTab('about')">About</div>
+    </div>
+
+    <!-- MARKETS TAB -->
+    <div id="markets" class="content-section active">
+        <div class="market-grid">
+            <div class="market-card" id="card-NIFTY">
+                <div class="status-dot closed"></div>
+                <div class="market-title">NIFTY 50</div>
+                <div class="market-price">--</div>
+                <div class="change">--</div>
+            </div>
+            <div class="market-card" id="card-BANKNIFTY">
+                <div class="status-dot closed"></div>
+                <div class="market-title">BANK NIFTY</div>
+                <div class="market-price">--</div>
+                <div class="change">--</div>
+            </div>
+            <div class="market-card" id="card-SENSEX">
+                <div class="status-dot closed"></div>
+                <div class="market-title">SENSEX</div>
+                <div class="market-price">--</div>
+                <div class="change">--</div>
+            </div>
+        </div>
+        
+        <div class="update-time" id="market-update-time">Data loading...<br><span style="font-weight:normal; font-size:0.7rem;">Auto-refreshes every 60 seconds</span></div>
+        
+        <div class="disclaimer">
+            <strong>DISCLAIMER:</strong> All trades and data shown on this platform are Tushar's personal trades shared strictly for educational and informational purposes only. This is NOT investment advice. Please consult a SEBI-registered financial advisor before making any decisions.
+        </div>
+    </div>
+
+    <!-- MY TRADES TAB -->
+    <div id="trades" class="content-section">
+        <div id="trades-container">
+            <div style="text-align:center; padding: 40px; color: #666;">Loading active trades...</div>
+        </div>
+        
+        <div class="disclaimer">
+            <strong>DISCLAIMER:</strong> Past performance does not guarantee future results. Any profit or loss from following these setups is solely the responsibility of the individual trader. Trade at your own risk.
+        </div>
+    </div>
+
+    <!-- PERFORMANCE TAB -->
+    <div id="performance" class="content-section">
+        <div class="perf-summary">
+            <h3 style="margin-bottom: 15px; border-bottom: 1px solid #475569; padding-bottom: 10px;">CURRENT MONTH</h3>
+            <div class="perf-row"><span>Win Rate:</span> <strong id="perf-winrate">--%</strong></div>
+            <div class="perf-row"><span>Total Trades:</span> <strong id="perf-total">--</strong></div>
+            <div class="perf-row"><span>Max Profit (1 lot):</span> <strong id="perf-max" style="color:var(--green)">--</strong></div>
+            <div class="perf-row"><span>Total P&L (1 lot):</span> <strong id="perf-pnl">--</strong></div>
+        </div>
+        <div id="history-container">
+            <!-- Historical months injected here -->
+        </div>
+    </div>
+
+    <!-- ABOUT TAB -->
+    <div id="about" class="content-section">
+        <h3 style="margin-bottom: 15px;">About Trade2Spend</h3>
+        <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">Tushar is an independent trader sharing his personal trade setups for educational purposes.</p>
+        
+        <a href="https://t.me/tusharview" class="btn-primary" style="text-align: center;">Message @tusharview (Premium)</a>
+        <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align: center;">Join Free Channel @trade2spend</a>
+        
+        <div class="disclaimer" style="margin-top: 30px;">
+            <strong>SEBI COMPLIANCE NOTICE:</strong> Tushar is NOT a SEBI-registered Research Analyst. All content is educational, not advisory. We do not promise or guarantee any returns.
+        </div>
+    </div>
+</div>
+
+<!-- PREMIUM POPUP -->
+<div class="overlay" id="premiumPopup">
+    <div class="popup">
+        <div class="close-btn" onclick="closePopup()">✕</div>
+        <div class="popup-icon">🔒</div>
+        <h3 class="popup-title">Premium Members Only</h3>
+        <p class="popup-text">Get real-time trade entries, exact stop loss levels, targets, and detailed analysis — exclusively for premium members.</p>
+        <a href="https://t.me/tusharview" class="btn-primary">Join Premium → Message @tusharview</a>
+        <a href="https://t.me/trade2spend" class="btn-secondary">Join Free Channel</a>
+        <p style="font-size: 0.7rem; color: #94a3b8; margin-top: 15px;">Educational purposes only. Not investment advice.</p>
+    </div>
+</div>
+
+<script>
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+        if(tabId === 'trades') fetchTrades();
+    }
+
+    function showPopup() { document.getElementById('premiumPopup').style.display = 'flex'; }
+    function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
+
+    // Replace YOUR_GITHUB_USERNAME with trade2spend
+    const GITHUB_USER = 'trade2spend';
+    const GITHUB_REPO = 'Trade2Spend-Tracker';
+    
+    const DB_URLS = {
+        market: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/market.json`, 
+        trades: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/trades.json`,
+        history: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/history.json`
+    };
+
+    async function fetchMarketData() {
+        try {
+            const res = await fetch(DB_URLS.market + '?t=' + new Date().getTime());
+            if(!res.ok) throw new Error('Network response not ok');
+            const data = await res.json();
+            
+            const isOpen = data.marketOpen;
+            const dotClass = isOpen ? 'status-dot open' : 'status-dot closed';
+
+            if(data.indices) {
+                ['NIFTY', 'BANKNIFTY', 'SENSEX'].forEach(idx => {
+                    if(data.indices[idx]) {
+                        const card = document.getElementById(`card-${idx}`);
+                        if(card) {
+                            card.querySelector('.market-price').innerText = `₹${data.indices[idx].price.toLocaleString()}`;
+                            const changeEl = card.querySelector('.change');
+                            const isUp = data.indices[idx].change >= 0;
+                            changeEl.innerText = `${isUp ? '▲ +' : '▼ '}${data.indices[idx].change} (${data.indices[idx].changePct}%)`;
+                            changeEl.className = `change ${isUp ? 'up' : 'down'}`;
+                            
+                            // Update the open/close dot
+                            const dot = card.querySelector('.status-dot');
+                            if(dot) dot.className = dotClass;
+                        }
+                    }
+                });
+            }
+            
+            const dateStr = new Date(data.lastFetched).toLocaleTimeString();
+            const statusStr = isOpen ? '● Market Open' : 'Market Closed';
+            document.getElementById('market-update-time').innerHTML = `Last updated: ${dateStr} | ${statusStr}<br><span style="font-weight:normal; font-size:0.7rem;">Auto-refreshes every 60 seconds</span>`;
+            
+        } catch(e) {
+            console.error("Failed to fetch market data", e);
+        }
+    }
+
+    async function fetchTrades() {
+        try {
+            const res = await fetch(DB_URLS.trades + '?t=' + new Date().getTime());
+            const data = await res.json();
+            const container = document.getElementById('trades-container');
+            container.innerHTML = '';
+            
+            if(!data.trades || data.trades.filter(t => !t.isDeleted).length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding: 40px; color: #666;">No active trades right now.</div>';
+                return;
+            }
+
+            data.trades.forEach(trade => {
+                if(trade.isDeleted) return;
+                
+                let isPreBuy = !trade.isTriggered;
+                let badgeClass = isPreBuy ? 'watching' : (trade.status === 'ACTIVE' ? 'ce' : 'profit');
+                let badgeText = isPreBuy ? 'WATCHING' : trade.status;
+                let entryHtml = isPreBuy 
+                    ? `<span class="premium-lock" onclick="showPopup()">🔒 Premium Members Only</span>` 
+                    : `₹${trade.entryPrice}`;
+                
+                let pnlHtml = '';
+                if(!isPreBuy && trade.currentPrice) {
+                    let diff = trade.type === 'CE' ? (trade.currentPrice - trade.entryPrice) : (trade.entryPrice - trade.currentPrice);
+                    let lotSize = trade.instrument.includes('BANK') ? 15 : (trade.instrument.includes('SENSEX') ? 10 : 25);
+                    let pnl = diff * lotSize; 
+                    let pnlClass = pnl >= 0 ? 'up' : 'down';
+                    pnlHtml = `<div class="pnl-row ${pnlClass}">
+                            <span>P&L (1 lot):</span>
+                            <span>${pnl >= 0 ? '+₹' : '-₹'}${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}</span>
+                        </div>`;
+                }
+
+                const card = `
+                    <div class="trade-card">
+                        <div class="trade-header">
+                            <span class="trade-title">[${trade.type}] ${trade.instrument}</span>
+                            <span class="badge ${badgeClass}">${badgeText}</span>
+                        </div>
+                        <div class="trade-body">
+                            <div class="trade-row"><span>Entry Price:</span> <span>${entryHtml}</span></div>
+                            ${!isPreBuy ? `<div class="trade-row"><span>Current Price:</span> <strong>₹${trade.currentPrice || '--'}</strong></div>` : ''}
+                            ${pnlHtml}
+                            <div class="rationale-btn" onclick="showPopup()">🔒 Why did Tushar buy this?</div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += card;
+            });
+        } catch(e) {
+            console.error("Failed to fetch trades", e);
+        }
+    }
+
+    // Init and 60-second loop
+    fetchMarketData();
+    setInterval(fetchMarketData, 60000); 
+</script>
+</body>
+</html>
