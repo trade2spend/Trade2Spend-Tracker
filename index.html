@@ -6,174 +6,255 @@
     <title>Trade2Spend | Live Tracker</title>
     <style>
         :root {
-            --bg-color: #f4f6f8;
+            --bg-color: #fdfbf7;
             --card-bg: #ffffff;
-            --text-main: #333333;
-            --text-muted: #666666;
-            --green: #10b981;
+            --text-main: #2d2a32;
+            --text-muted: #888380;
+            --primary: #4c1d95; /* Deep Purple */
+            --primary-light: #ede9fe;
+            --green: #22c55e;
+            --green-light: #dcfce7;
             --red: #ef4444;
-            --blue: #3b82f6;
-            --gold: #f59e0b;
+            --red-light: #fee2e2;
+            --border: #e5e5e5;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; }
-        .app-container { width: 100%; max-width: 520px; background: var(--card-bg); min-height: 100vh; box-shadow: 0 0 20px rgba(0,0,0,0.05); position: relative; padding-bottom: 80px;}
+        .app-container { width: 100%; max-width: 600px; min-height: 100vh; position: relative; padding-bottom: 80px; }
         
-        /* Header & Tabs */
-        header { background: #1e293b; color: white; padding: 15px 20px; text-align: center; position: sticky; top: 0; z-index: 10;}
-        .header-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 5px;}
-        .live-indicator { font-size: 0.8rem; color: #cbd5e1; display: inline-flex; align-items: center; gap: 5px;}
-        .tabs { display: flex; background: #334155; }
-        .tab { flex: 1; padding: 12px 0; text-align: center; color: #94a3b8; font-size: 0.9rem; font-weight: bold; cursor: pointer; border-bottom: 3px solid transparent;}
-        .tab.active { color: white; border-bottom-color: var(--blue); }
+        /* --- STICKY HEADER & ANIMATION --- */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            background: var(--bg-color);
+            z-index: 100;
+            padding: 20px 20px 0;
+            transition: all 0.3s ease;
+        }
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            transition: all 0.3s ease;
+        }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s ease;
+            transform-origin: top left;
+        }
+        .logo-img { height: 45px; width: 45px; object-fit: contain; transition: all 0.3s ease; }
+        .header-titles h1 { font-size: 1.3rem; color: var(--text-main); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; transition: all 0.3s ease;}
+        .header-titles p { font-size: 0.8rem; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; transition: all 0.3s ease;}
         
-        /* Content Areas */
-        .content-section { padding: 20px; display: none; }
+        .header-right { text-align: right; display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--text-muted); transition: all 0.3s ease;}
+        .live-badge { background: var(--red-light); color: var(--red); padding: 4px 8px; border-radius: 12px; font-weight: bold; font-size: 0.75rem; display: flex; align-items: center; gap: 5px; letter-spacing: 1px;}
+        .live-dot { width: 6px; height: 6px; background: var(--red); border-radius: 50%; animation: pulse 1.5s infinite; }
+        
+        .market-status { font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; margin-top: 15px; transition: all 0.3s ease; }
+        .market-badge { background: #ffffff; border: 1px solid var(--border); padding: 4px 10px; border-radius: 12px; display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text-main); box-shadow: 0 1px 2px rgba(0,0,0,0.02);}
+        .status-indicator { width: 8px; height: 8px; border-radius: 50%; }
+        .status-indicator.open { background: var(--green); }
+        .status-indicator.closed { background: var(--red); }
+        
+        /* Scrolled State */
+        .sticky-header.scrolled { padding-top: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.04); }
+        .sticky-header.scrolled .header-brand { transform: scale(0.85); }
+        .sticky-header.scrolled .header-titles p { display: none; }
+        .sticky-header.scrolled .market-status { display: none; }
+        .sticky-header.scrolled .header-right { transform: scale(0.85); transform-origin: center right;}
+
+        /* --- TABS --- */
+        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-top: 15px; }
+        .tab { padding: 12px 15px; color: var(--text-muted); font-size: 0.95rem; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; transition: all 0.2s ease;}
+        .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+        
+        /* --- CONTENT AREAS --- */
+        .content-section { padding: 20px; display: none; animation: fadeIn 0.3s ease; }
         .content-section.active { display: block; }
         
-        /* Market Cards */
-        .market-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 20px;}
-        .market-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; text-align: center; position: relative;}
-        .market-title { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; font-weight: bold; margin-bottom: 8px;}
-        .market-price { font-size: 1.8rem; font-weight: bold; margin-bottom: 5px;}
-        .change.up { color: var(--green); font-weight: bold;}
-        .change.down { color: var(--red); font-weight: bold;}
-        
-        /* Blinking / Static Status Dots */
-        .status-dot { position: absolute; top: 15px; right: 15px; width: 10px; height: 10px; border-radius: 50%; }
-        .status-dot.open { background-color: var(--green); animation: pulse 1.5s infinite; }
-        .status-dot.closed { background-color: var(--red); }
-        
-        .update-time { font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 20px; font-weight: bold;}
+        /* --- MARKET CARDS --- */
+        .market-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
+        @media (min-width: 480px) { .market-grid { grid-template-columns: 1fr 1fr; } }
+        .market-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; box-shadow: 0 2px 5px rgba(0,0,0,0.02);}
+        .market-title { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px;}
+        .market-price { font-size: 1.8rem; font-weight: 700; margin-bottom: 12px; color: var(--text-main);}
+        .trend-icon { position: absolute; top: 18px; right: 18px; font-size: 0.9rem; }
+        .trend-icon.up { color: var(--green); }
+        .trend-icon.down { color: var(--red); }
+        .change-pill { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; gap: 6px;}
+        .change-pill.up { background: var(--green-light); color: #15803d; }
+        .change-pill.down { background: var(--red-light); color: #b91c1c; }
 
-        /* Trade Cards */
-        .trade-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; overflow: hidden;}
-        .trade-header { background: #f8fafc; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0;}
-        .trade-title { font-weight: bold; font-size: 1.1rem;}
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white;}
-        .badge.ce { background: var(--green); }
-        .badge.pe { background: var(--red); }
-        .badge.watching { background: var(--gold); }
+        /* --- TRADE CARDS --- */
+        .trade-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.02);}
+        .trade-header { padding: 16px 20px; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed var(--border);}
+        .trade-title-box { display: flex; gap: 10px; align-items: center; }
+        .type-box { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 700; font-size: 0.9rem; }
+        .type-box.ce { background: var(--green-light); color: var(--green); }
+        .type-box.pe { background: var(--red-light); color: var(--red); }
+        .trade-name { font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-bottom: 2px;}
+        .trade-expiry { font-size: 0.8rem; color: var(--text-muted); }
+        .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;}
+        .badge.watching { background: var(--primary-light); color: var(--primary); }
+        .badge.profit { background: var(--green-light); color: var(--green); }
+        .badge.loss { background: var(--red-light); color: var(--red); }
         
-        .trade-body { padding: 15px; }
-        .trade-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.95rem;}
-        .premium-lock { color: var(--gold); font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;}
-        .pnl-row { background: #f8fafc; padding: 10px; border-radius: 6px; margin-top: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 1.1rem;}
-        .pnl-row.up { color: var(--green); }
-        .pnl-row.down { color: var(--red); }
-        .rationale-btn { display: block; width: 100%; text-align: center; padding: 12px; background: #fffbeb; color: #b45309; border: 1px dashed #fcd34d; border-radius: 6px; margin-top: 15px; font-weight: bold; cursor: pointer;}
+        .trade-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 20px; }
+        .metric-col { display: flex; flex-direction: column; gap: 5px; }
+        .metric-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;}
+        .metric-value { font-size: 1.05rem; font-weight: 700; }
+        .metric-sub { font-size: 0.75rem; color: var(--text-muted); }
+        .val-up { color: var(--green); }
+        .val-down { color: var(--red); }
         
-        /* Performance Tab */
-        .perf-summary { background: #1e293b; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;}
-        .perf-row { display: flex; justify-content: space-between; margin-bottom: 10px;}
-        .history-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
+        .premium-pill { background: var(--primary); color: white; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;}
         
-        /* Disclaimers */
-        .disclaimer { font-size: 0.75rem; color: var(--text-muted); text-align: justify; padding: 15px; background: #f1f5f9; border-radius: 6px; margin-top: 20px; border-left: 3px solid var(--red);}
+        .rationale-box { margin: 0 20px 20px; padding: 15px; background: #fafaf9; border: 1px solid var(--border); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;}
+        .rationale-text { font-size: 0.9rem; color: var(--text-muted); }
+        .rationale-lock { color: var(--primary); font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;}
         
-        /* Premium Popup */
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 100; justify-content: center; align-items: center;}
-        .popup { background: white; width: 90%; max-width: 400px; padding: 25px; border-radius: 12px; text-align: center; position: relative;}
-        .close-btn { position: absolute; top: 15px; right: 15px; cursor: pointer; font-size: 1.2rem; font-weight: bold; color: var(--text-muted);}
-        .popup-icon { font-size: 3rem; margin-bottom: 15px; }
-        .popup-title { font-size: 1.3rem; margin-bottom: 10px;}
-        .popup-text { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5;}
-        .btn-primary { display: block; width: 100%; padding: 14px; background: var(--blue); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-bottom: 10px;}
+        .trade-footer { padding: 12px 20px; background: #fdfdfc; border-top: 1px solid var(--border); font-size: 0.75rem; color: #a8a29e; font-style: italic;}
+
+        /* --- PERFORMANCE TAB --- */
+        .perf-summary { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);}
+        .perf-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .perf-month { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 1px; margin-bottom: 4px;}
+        .perf-title { font-size: 1.4rem; font-weight: 700; color: var(--text-main); }
+        .win-rate-badge { background: var(--green-light); color: var(--green); padding: 10px 15px; border-radius: 8px; text-align: center;}
+        .win-rate-badge .pct { font-size: 1.5rem; font-weight: 800; line-height: 1;}
+        .win-rate-badge .lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;}
+        
+        .perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .history-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; padding: 20px; display: flex; justify-content: space-between; align-items: center;}
+        
+        /* --- PREMIUM POPUP --- */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);}
+        .popup { background: white; width: 90%; max-width: 380px; padding: 30px 25px; border-radius: 16px; text-align: center; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.1);}
+        .close-btn { position: absolute; top: 15px; right: 20px; cursor: pointer; font-size: 1.5rem; color: var(--text-muted); }
+        .popup-icon { font-size: 2.5rem; margin-bottom: 15px; }
+        .popup-title { font-size: 1.3rem; margin-bottom: 10px; font-weight: 700; color: var(--text-main);}
+        .popup-text { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 25px; line-height: 1.5;}
+        .btn-primary { display: block; width: 100%; padding: 14px; background: var(--primary); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-bottom: 12px;}
         .btn-secondary { display: block; width: 100%; padding: 14px; background: #f1f5f9; color: var(--text-main); text-decoration: none; border-radius: 8px; font-weight: bold;}
         
+        /* Misc */
+        .footer-disclaimer { text-align: center; font-size: 0.7rem; color: #a8a29e; padding: 30px 20px; line-height: 1.5; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Mobile adjustments for 4 columns */
+        @media (max-width: 480px) {
+            .trade-metrics { grid-template-columns: 1fr 1fr; gap: 15px; }
+            .header-right { flex-direction: column; align-items: flex-end; gap: 4px;}
+        }
     </style>
 </head>
 <body>
 
 <div class="app-container">
-    <header>
-        <div class="header-brand">
-            <img src="logo.png" alt="Trade2Spend Logo" style="height: 40px; width: 40px; border-radius: 6px; object-fit: contain;">
-            <h2 style="margin: 0; font-size: 1.4rem;">TRADE2SPEND</h2>
+    <!-- STICKY HEADER -->
+    <div id="header-wrapper" class="sticky-header">
+        <div class="header-top">
+            <div class="header-brand">
+                <img src="logo.png" alt="Trade2Spend Logo" class="logo-img">
+                <div class="header-titles">
+                    <h1>TRADE2SPEND</h1>
+                    <p>LIVE TRACKER</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <span id="current-time">--:-- --</span>
+                <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+            </div>
         </div>
-        <div class="live-indicator">LIVE TRACKER</div>
-    </header>
-    
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('markets')">Markets</div>
-        <div class="tab" onclick="switchTab('trades')">My Trades</div>
-        <div class="tab" onclick="switchTab('performance')">Performance</div>
-        <div class="tab" onclick="switchTab('about')">About</div>
+        
+        <div class="market-status" id="market-status-bar">
+            <div class="market-badge">
+                <span class="status-indicator closed" id="global-market-dot"></span>
+                <span id="global-market-text">Market Closed</span>
+            </div>
+            <span>9:15 AM – 3:30 PM IST · Auto-refreshes every 60 sec</span>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('markets')">Markets</div>
+            <div class="tab" onclick="switchTab('trades')">My Trades</div>
+            <div class="tab" onclick="switchTab('performance')">Performance</div>
+            <div class="tab" onclick="switchTab('about')">About</div>
+        </div>
     </div>
 
     <!-- MARKETS TAB -->
     <div id="markets" class="content-section active">
-        <div class="market-grid">
-            <div class="market-card" id="card-NIFTY">
-                <div class="status-dot closed"></div>
-                <div class="market-title">NIFTY 50</div>
-                <div class="market-price">--</div>
-                <div class="change">--</div>
-            </div>
-            <div class="market-card" id="card-BANKNIFTY">
-                <div class="status-dot closed"></div>
-                <div class="market-title">BANK NIFTY</div>
-                <div class="market-price">--</div>
-                <div class="change">--</div>
-            </div>
-            <div class="market-card" id="card-SENSEX">
-                <div class="status-dot closed"></div>
-                <div class="market-title">SENSEX</div>
-                <div class="market-price">--</div>
-                <div class="change">--</div>
-            </div>
-        </div>
-        
-        <div class="update-time" id="market-update-time">Data loading...<br><span style="font-weight:normal; font-size:0.7rem;">Auto-refreshes every 60 seconds</span></div>
-        
-        <div class="disclaimer">
-            <strong>DISCLAIMER:</strong> All trades and data shown on this platform are Tushar's personal trades shared strictly for educational and informational purposes only. This is NOT investment advice. Please consult a SEBI-registered financial advisor before making any decisions.
+        <div class="market-grid" id="market-grid-container">
+            <div style="text-align:center; padding: 40px; color: #888;">Fetching live market data...</div>
         </div>
     </div>
 
     <!-- MY TRADES TAB -->
     <div id="trades" class="content-section">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Active Trades</p>
         <div id="trades-container">
-            <div style="text-align:center; padding: 40px; color: #666;">Loading active trades...</div>
-        </div>
-        
-        <div class="disclaimer">
-            <strong>DISCLAIMER:</strong> Past performance does not guarantee future results. Any profit or loss from following these setups is solely the responsibility of the individual trader. Trade at your own risk.
+            <div style="text-align:center; padding: 40px; color: #888;">Loading active trades...</div>
         </div>
     </div>
 
     <!-- PERFORMANCE TAB -->
     <div id="performance" class="content-section">
         <div class="perf-summary">
-            <h3 style="margin-bottom: 15px; border-bottom: 1px solid #475569; padding-bottom: 10px;">CURRENT MONTH</h3>
-            <div class="perf-row"><span>Win Rate:</span> <strong id="perf-winrate">62%</strong></div>
-            <div class="perf-row"><span>Total Trades:</span> <strong id="perf-total">21</strong></div>
-            <div class="perf-row"><span>Max Profit (1 lot):</span> <strong id="perf-max" style="color:var(--green)">₹24,500</strong></div>
-            <div class="perf-row"><span>Total P&L (1 lot):</span> <strong id="perf-pnl">₹18,200</strong></div>
+            <div class="perf-header">
+                <div>
+                    <div class="perf-month" id="curr-month-name">CURRENT MONTH</div>
+                    <div class="perf-title">Summary</div>
+                </div>
+                <div class="win-rate-badge">
+                    <div class="pct" id="perf-winrate">--%</div>
+                    <div class="lbl">Win Rate</div>
+                </div>
+            </div>
+            <div class="perf-grid">
+                <div class="metric-col">
+                    <span class="metric-label">TRADES</span>
+                    <span class="metric-value" id="perf-total">--</span>
+                </div>
+                <div class="metric-col">
+                    <span class="metric-label">TOTAL P&L</span>
+                    <span class="metric-value val-up" id="perf-pnl">--</span>
+                </div>
+                <div class="metric-col">
+                    <span class="metric-label">MAX PROFIT</span>
+                    <span class="metric-value">₹<span id="perf-max">--</span></span>
+                </div>
+            </div>
         </div>
-        <h4 style="margin-bottom: 15px; color: var(--text-muted); text-transform: uppercase;">Historical Records</h4>
-        <div id="history-container">
-            <!-- Historical months injected here -->
-        </div>
+        
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Past Months</p>
+        <div id="history-container"></div>
     </div>
 
     <!-- ABOUT TAB -->
     <div id="about" class="content-section">
-        <h3 style="margin-bottom: 15px;">About Trade2Spend</h3>
-        <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">Tushar is an independent trader sharing his personal trade setups for educational purposes.</p>
-        
-        <a href="https://t.me/tusharview" class="btn-primary" style="text-align: center;">Message @tusharview (Premium)</a>
-        <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align: center;">Join Free Channel @trade2spend</a>
-        
-        <div class="disclaimer" style="margin-top: 30px;">
-            <strong>SEBI COMPLIANCE NOTICE:</strong> Tushar is NOT a SEBI-registered Research Analyst. All content is educational, not advisory. We do not promise or guarantee any returns.
+        <div style="background: var(--card-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border);">
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
+                <img src="logo.png" style="width: 50px; height: 50px;" alt="Logo">
+                <h3 style="color: var(--text-main);">Trade2Spend</h3>
+            </div>
+            <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 25px;">Trade2Spend is an independent educational platform where we share our personal trade setups. Every entry, exit, and P&L on this tracker is real and verified against live market data.</p>
+            
+            <a href="https://t.me/tusharview" class="btn-primary" style="text-align: center;">Premium Channel → Message @tusharview</a>
+            <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align: center;">Join Free Telegram Channel</a>
         </div>
+    </div>
+
+    <div class="footer-disclaimer">
+        Educational content only · Not investment advice · Trade2Spend is not a SEBI-registered Research Analyst. <br>Trade at your own risk.
     </div>
 </div>
 
 <!-- PREMIUM POPUP -->
-<div class="overlay" id="premiumPopup">
+<div class="overlay" id="premiumPopup" onclick="closePopupBg(event)">
     <div class="popup">
         <div class="close-btn" onclick="closePopup()">✕</div>
         <div class="popup-icon">🔒</div>
@@ -181,69 +262,91 @@
         <p class="popup-text">Get real-time trade entries, exact stop loss levels, targets, and detailed analysis — exclusively for premium members.</p>
         <a href="https://t.me/tusharview" class="btn-primary">Join Premium → Message @tusharview</a>
         <a href="https://t.me/trade2spend" class="btn-secondary">Join Free Channel</a>
-        <p style="font-size: 0.7rem; color: #94a3b8; margin-top: 15px;">Educational purposes only. Not investment advice.</p>
+        <p style="font-size: 0.7rem; color: #a8a29e; margin-top: 15px;">Educational purposes only. Not investment advice.</p>
     </div>
 </div>
 
 <script>
+    // --- UI LOGIC ---
     function switchTab(tabId) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
         event.target.classList.add('active');
         document.getElementById(tabId).classList.add('active');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         if(tabId === 'trades') fetchTrades();
         if(tabId === 'performance') fetchPerformance();
     }
 
     function showPopup() { document.getElementById('premiumPopup').style.display = 'flex'; }
     function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
+    function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
-    // GitHub Repo Links
+    // --- SCROLL ANIMATION ---
+    window.addEventListener('scroll', () => {
+        const header = document.getElementById('header-wrapper');
+        if (window.scrollY > 30) {
+            header.classList.add('scrolled');
+        } else {
+            header.classList.remove('scrolled');
+        }
+    });
+
+    // --- CLOCK ---
+    setInterval(() => {
+        const now = new Date();
+        document.getElementById('current-time').innerText = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) + " IST";
+    }, 1000);
+
+    // --- GITHUB REPO URLs ---
     const GITHUB_USER = 'trade2spend';
     const GITHUB_REPO = 'Trade2Spend-Tracker';
-    
     const DB_URLS = {
         market: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/market.json`, 
         trades: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/trades.json`,
         history: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/history.json`
     };
 
+    // --- FETCH MARKET DATA ---
     async function fetchMarketData() {
         try {
             const res = await fetch(DB_URLS.market + '?t=' + new Date().getTime());
-            if(!res.ok) throw new Error('Network response not ok');
+            if(!res.ok) throw new Error('Network error');
             const data = await res.json();
             
             const isOpen = data.marketOpen;
-            const dotClass = isOpen ? 'status-dot open' : 'status-dot closed';
+            document.getElementById('global-market-dot').className = isOpen ? 'status-indicator open' : 'status-indicator closed';
+            document.getElementById('global-market-text').innerText = isOpen ? 'Market Open' : 'Market Closed';
+
+            const container = document.getElementById('market-grid-container');
+            container.innerHTML = '';
 
             if(data.indices) {
-                ['NIFTY', 'BANKNIFTY', 'SENSEX'].forEach(idx => {
+                ['NIFTY', 'SENSEX', 'BANKNIFTY'].forEach(idx => {
                     if(data.indices[idx]) {
-                        const card = document.getElementById(`card-${idx}`);
-                        if(card) {
-                            card.querySelector('.market-price').innerText = `₹${data.indices[idx].price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                            const changeEl = card.querySelector('.change');
-                            const isUp = data.indices[idx].change >= 0;
-                            changeEl.innerText = `${isUp ? '▲ +' : '▼ '}${data.indices[idx].change} (${data.indices[idx].changePct}%)`;
-                            changeEl.className = `change ${isUp ? 'up' : 'down'}`;
-                            
-                            const dot = card.querySelector('.status-dot');
-                            if(dot) dot.className = dotClass;
-                        }
+                        const info = data.indices[idx];
+                        const isUp = info.change >= 0;
+                        const icon = isUp ? '▲' : '▼';
+                        const pillClass = isUp ? 'up' : 'down';
+                        const sign = isUp ? '+' : '';
+                        
+                        container.innerHTML += `
+                            <div class="market-card">
+                                <div class="market-title">${idx === 'BANKNIFTY' ? 'BANK NIFTY' : idx}</div>
+                                <div class="trend-icon ${pillClass}">${icon}</div>
+                                <div class="market-price">${info.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                                <div class="change-pill ${pillClass}">
+                                    ${sign}${info.changePct}% &nbsp; ${sign}${info.change}
+                                </div>
+                            </div>
+                        `;
                     }
                 });
             }
-            
-            const dateStr = new Date(data.lastFetched).toLocaleTimeString();
-            const statusStr = isOpen ? '● Market Open' : 'Market Closed';
-            document.getElementById('market-update-time').innerHTML = `Last updated: ${dateStr} | ${statusStr}<br><span style="font-weight:normal; font-size:0.7rem;">Auto-refreshes every 60 seconds</span>`;
-            
-        } catch(e) {
-            console.error("Failed to fetch market data", e);
-        }
+        } catch(e) { console.error("Market fetch failed", e); }
     }
 
+    // --- FETCH TRADES ---
     async function fetchTrades() {
         try {
             const res = await fetch(DB_URLS.trades + '?t=' + new Date().getTime());
@@ -252,7 +355,7 @@
             container.innerHTML = '';
             
             if(!data.trades || data.trades.filter(t => !t.isDeleted).length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding: 40px; color: #666;">No active trades right now.</div>';
+                container.innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">No active trades right now.</div>';
                 return;
             }
 
@@ -260,45 +363,77 @@
                 if(trade.isDeleted) return;
                 
                 let isPreBuy = !trade.isTriggered;
-                let badgeClass = isPreBuy ? 'watching' : (trade.type === 'CE' ? 'ce' : 'pe');
-                let badgeText = isPreBuy ? 'WATCHING' : trade.status;
-                let entryHtml = isPreBuy 
-                    ? `<span class="premium-lock" onclick="showPopup()">🔒 Premium Members Only</span>` 
-                    : `₹${trade.entryPrice.toFixed(2)}`;
+                let badgeClass = isPreBuy ? 'watching' : (trade.status === 'ACTIVE' ? 'profit' : 'loss');
+                let badgeText = isPreBuy ? 'WATCHING' : (trade.status === 'ACTIVE' ? 'IN PROFIT' : trade.status);
+                let typeClass = trade.type.toLowerCase();
                 
-                let pnlHtml = '';
+                let entryHtml = isPreBuy 
+                    ? `<span class="premium-pill" onclick="showPopup()">🔒 Premium</span>` 
+                    : `₹ ${trade.entryPrice.toFixed(2)}`;
+                
+                let pnlValue = '—';
+                let pnlPct = '';
+                let pnlClass = '';
+                
                 if(!isPreBuy && trade.currentPrice) {
                     let diff = trade.type === 'CE' ? (trade.currentPrice - trade.entryPrice) : (trade.entryPrice - trade.currentPrice);
                     let lotSize = trade.instrument.includes('BANK') ? 15 : (trade.instrument.includes('SENSEX') ? 10 : 25);
                     let pnl = diff * lotSize; 
-                    let pnlClass = pnl >= 0 ? 'up' : 'down';
-                    pnlHtml = `<div class="pnl-row ${pnlClass}">
-                            <span>P&L (1 lot):</span>
-                            <span>${pnl >= 0 ? '+₹' : '-₹'}${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}</span>
-                        </div>`;
+                    let pct = ((diff / trade.entryPrice) * 100).toFixed(1);
+                    
+                    pnlClass = pnl >= 0 ? 'val-up' : 'val-down';
+                    pnlValue = `${pnl >= 0 ? '+' : '-'} ₹ ${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+                    pnlPct = `<br><span class="metric-sub ${pnlClass}">${pnl >= 0 ? '+' : ''}${pct}%</span>`;
+                    
+                    // Override badge if active but in loss
+                    if(trade.status === 'ACTIVE' && pnl < 0) { badgeClass = 'loss'; badgeText = 'IN LOSS'; }
                 }
 
                 const card = `
                     <div class="trade-card">
                         <div class="trade-header">
-                            <span class="trade-title">[${trade.type}] ${trade.instrument}</span>
+                            <div class="trade-title-box">
+                                <div class="type-box ${typeClass}">${trade.type}</div>
+                                <div>
+                                    <div class="trade-name">${trade.instrument}</div>
+                                    <div class="trade-expiry">Expiry ${trade.expiry || 'Current Week'}</div>
+                                </div>
+                            </div>
                             <span class="badge ${badgeClass}">${badgeText}</span>
                         </div>
-                        <div class="trade-body">
-                            <div class="trade-row"><span>Entry Price:</span> <span>${entryHtml}</span></div>
-                            ${!isPreBuy ? `<div class="trade-row"><span>Current Price:</span> <strong>₹${trade.currentPrice.toFixed(2)}</strong></div>` : ''}
-                            ${pnlHtml}
-                            <div class="rationale-btn" onclick="showPopup()">🔒 Why did Tushar buy this?</div>
+                        
+                        <div class="trade-metrics">
+                            <div class="metric-col">
+                                <span class="metric-label">Entry Price</span>
+                                <span class="metric-value" style="font-size: ${isPreBuy ? '0.9rem' : '1.05rem'}">${entryHtml}</span>
+                            </div>
+                            <div class="metric-col">
+                                <span class="metric-label">Current Price</span>
+                                <span class="metric-value">${isPreBuy ? '—' : '₹ ' + trade.currentPrice.toFixed(2)}</span>
+                            </div>
+                            <div class="metric-col">
+                                <span class="metric-label">P&L (1 Lot)</span>
+                                <span class="metric-value ${pnlClass}">${pnlValue}${pnlPct}</span>
+                            </div>
+                            <div class="metric-col">
+                                <span class="metric-label">Time Active</span>
+                                <span class="metric-value" style="font-size:0.9rem">${isPreBuy ? 'Waiting...' : 'Active'}</span>
+                            </div>
                         </div>
+                        
+                        <div class="rationale-box" onclick="showPopup()">
+                            <span class="rationale-text">Why did we buy this?</span>
+                            <span class="rationale-lock">🔒 Premium Members Only →</span>
+                        </div>
+                        <div class="trade-footer">Trade2Spend's personal trade · educational use only</div>
                     </div>
                 `;
                 container.innerHTML += card;
             });
-        } catch(e) {
-            console.error("Failed to fetch trades", e);
-        }
+        } catch(e) { console.error("Trades fetch failed", e); }
     }
 
+    // --- FETCH PERFORMANCE ---
     async function fetchPerformance() {
         try {
             const res = await fetch(DB_URLS.history + '?t=' + new Date().getTime());
@@ -307,30 +442,39 @@
             container.innerHTML = '';
             
             if(data.months && data.months.length > 0) {
-                data.months.forEach(m => {
+                // Populate Current Month (Top section) using the latest month in JSON
+                const current = data.months.summary;
+                document.getElementById('curr-month-name').innerText = data.months.month;
+                document.getElementById('perf-winrate').innerText = current.winRate + '%';
+                document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins} W · ${current.losses} L)`;
+                document.getElementById('perf-max').innerText = current.maxProfit.toLocaleString();
+                document.getElementById('perf-pnl').innerText = (current.totalPnL >= 0 ? '+₹' : '-₹') + Math.abs(current.totalPnL).toLocaleString();
+                document.getElementById('perf-pnl').className = 'metric-value ' + (current.totalPnL >= 0 ? 'val-up' : 'val-down');
+
+                // Populate Past Months
+                data.months.slice(1).forEach(m => {
                     const isProfit = m.summary.totalPnL >= 0;
                     const card = `
                         <div class="history-card">
-                            <h4 style="margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">${m.month}</h4>
-                            <div style="font-size: 0.9rem; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                <div><strong>Trades:</strong> ${m.summary.totalTrades}</div>
-                                <div><strong>Win Rate:</strong> ${m.summary.winRate}%</div>
-                                <div><strong>Max Profit:</strong> ₹${m.summary.maxProfit.toLocaleString()}</div>
-                                <div><strong>Total P&L:</strong> <strong style="color: ${isProfit ? 'var(--green)' : 'var(--red)'}">${isProfit ? '+' : '-'}₹${Math.abs(m.summary.totalPnL).toLocaleString()}</strong></div>
+                            <div>
+                                <div style="font-weight: 700; color: var(--text-main); font-size: 1.1rem; margin-bottom: 5px;">${m.month}</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">${m.summary.totalTrades} trades · ${m.summary.wins}W / ${m.summary.losses}L</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: 700; color: ${isProfit ? 'var(--green)' : 'var(--red)'}; font-size: 1.1rem; margin-bottom: 5px;">
+                                    ${isProfit ? '+' : '-'}₹${Math.abs(m.summary.totalPnL).toLocaleString()}
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">Win Rate: ${m.summary.winRate}%</div>
                             </div>
                         </div>
                     `;
                     container.innerHTML += card;
                 });
-            } else {
-                container.innerHTML = '<div style="text-align:center; padding: 20px; color: #666;">No historical data available.</div>';
             }
-        } catch(e) {
-            console.error("Failed to fetch performance", e);
-        }
+        } catch(e) { console.error("Performance fetch failed", e); }
     }
 
-    // Init and 60-second loop
+    // Init
     fetchMarketData();
     setInterval(fetchMarketData, 60000); 
 </script>
