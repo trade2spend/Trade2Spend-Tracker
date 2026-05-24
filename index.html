@@ -66,8 +66,9 @@
         .sticky-header.scrolled .header-right { transform: scale(0.85); transform-origin: center right;}
 
         /* --- TABS --- */
-        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-top: 15px; }
-        .tab { padding: 12px 15px; color: var(--text-muted); font-size: 0.95rem; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; transition: all 0.2s ease;}
+        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-top: 15px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none; flex-wrap: nowrap; }
+        .tabs::-webkit-scrollbar { display: none; }
+        .tab { padding: 12px 15px; color: var(--text-muted); font-size: 0.95rem; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; transition: all 0.2s ease; white-space: nowrap; flex-shrink: 0; }
         .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
         
         /* --- CONTENT AREAS --- */
