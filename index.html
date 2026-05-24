@@ -139,8 +139,33 @@
         .btn-primary { display: block; width: 100%; padding: 14px; background: var(--primary); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-bottom: 12px;}
         .btn-secondary { display: block; width: 100%; padding: 14px; background: #f1f5f9; color: var(--text-main); text-decoration: none; border-radius: 8px; font-weight: bold;}
         
-        /* Misc */
-        .footer-disclaimer { text-align: center; font-size: 0.7rem; color: #a8a29e; padding: 30px 20px; line-height: 1.5; }
+        /* --- UPDATES TAB --- */
+        .update-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.02); transition: all .15s; }
+        .update-card.unread { border-left: 3px solid var(--primary); }
+        .update-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 6px; }
+        .update-badge { font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.04em; }
+        .badge-trade-alert { background: var(--primary); color: #fff; }
+        .badge-follow-up { background: #dbeafe; color: #1d4ed8; }
+        .badge-market-update { background: #fef3c7; color: #92400e; }
+        .badge-general { background: #f3f4f6; color: #374151; }
+        .badge-premium-locked { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+        .update-time { font-size: 0.75rem; color: var(--text-muted); }
+        .update-body { padding: 4px 16px 10px; }
+        .update-content { font-size: 0.9rem; color: var(--text-main); line-height: 1.6; }
+        .update-footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--border); background: #fdfdfc; }
+        .update-disclaimer { font-size: 0.72rem; color: #a8a29e; font-style: italic; }
+        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; font-size: 1rem; padding: 4px; }
+        .update-share:hover { color: var(--primary); }
+        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+        .locked-blur-row { display: flex; gap: 8px; align-items: center; padding: 8px 16px; }
+        .blur-pill { height: 10px; border-radius: 5px; background: #e8e0f5; }
+        .locked-center { text-align: center; padding: 8px 16px 16px; }
+        .date-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); padding: 10px 0 4px; display: flex; justify-content: space-between; align-items: center; }
+        .new-count { background: var(--red); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+        .notif-banner { background: var(--primary-light); border: 1px solid #c4b5fd; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .notif-banner-text { font-size: 0.85rem; color: var(--primary); font-weight: 500; }
+        .notif-enable-btn { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit; }
+
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
@@ -182,6 +207,7 @@
             <div class="tab active" onclick="switchTab('markets')">Markets</div>
             <div class="tab" onclick="switchTab('trades')">My Trades</div>
             <div class="tab" onclick="switchTab('performance')">Performance</div>
+            <div class="tab" onclick="switchTab('updates')">Updates</div>
             <div class="tab" onclick="switchTab('about')">About</div>
         </div>
     </div>
@@ -234,6 +260,17 @@
         <div id="history-container"></div>
     </div>
 
+    <!-- UPDATES TAB -->
+    <div id="updates" class="content-section">
+        <div id="notif-banner" class="notif-banner" style="display:none;">
+            <span class="notif-banner-text">🔔 Enable notifications for instant trade alerts</span>
+            <button class="notif-enable-btn" onclick="enableNotifications()">Enable</button>
+        </div>
+        <div id="updates-container">
+            <div style="text-align:center; padding: 40px; color: #888;">Loading updates...</div>
+        </div>
+    </div>
+
     <!-- ABOUT TAB -->
     <div id="about" class="content-section">
         <div style="background: var(--card-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border);">
@@ -276,6 +313,7 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
         if(tabId === 'trades') fetchTrades();
         if(tabId === 'performance') fetchPerformance();
+        if(tabId === 'updates') fetchUpdates();
     }
 
     function showPopup() { document.getElementById('premiumPopup').style.display = 'flex'; }
@@ -472,6 +510,199 @@
                 });
             }
         } catch(e) { console.error("Performance fetch failed", e); }
+    }
+
+    // --- SUPABASE CONFIG ---
+    const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
+
+    async function sbFetch(path, opts={}) {
+        const { headers: extraHeaders, ...restOpts } = opts;
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+            ...restOpts,
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation',
+                ...(extraHeaders || {})
+            }
+        });
+        const text = await res.text();
+        return text ? JSON.parse(text) : [];
+    }
+
+    function formatPostTime(ts) {
+        return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    function formatPostDate(ts) {
+        const d = new Date(ts), now = new Date();
+        const diff = Math.floor((now - d) / 86400000);
+        if(diff === 0) return 'TODAY';
+        if(diff === 1) return 'YESTERDAY';
+        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+    }
+
+    function postBadgeHtml(type) {
+        const map = {
+            'trade_alert':    ['TRADE ALERT',    'badge-trade-alert'],
+            'follow_up':      ['FOLLOW-UP',       'badge-follow-up'],
+            'market_update':  ['MARKET UPDATE',   'badge-market-update'],
+            'general':        ['GENERAL',         'badge-general'],
+        };
+        const [label, cls] = map[type] || ['UPDATE', 'badge-general'];
+        return `<span class="update-badge ${cls}">${label}</span>`;
+    }
+
+    async function sharePost(postId, content) {
+        const url  = `${location.origin}${location.pathname.replace('index.html','preview.html')}?post=${postId}`;
+        const text = `${content.substring(0, 120)}...\n\nSee full update: ${url}`;
+        if(navigator.share) {
+            try { await navigator.share({ title: 'Trade2Spend Update', text, url }); } catch(e) {}
+        } else {
+            await navigator.clipboard.writeText(text).catch(() => {});
+            alert('Link copied!');
+        }
+    }
+
+    async function markPostRead(postId) {
+        const memberId = localStorage.getItem('t2s_member_id');
+        if(!memberId) return;
+        try {
+            const existing = await sbFetch(`read_receipts?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'GET' });
+            if(existing && existing.length > 0) return;
+            await sbFetch('read_receipts', {
+                method: 'POST',
+                body: JSON.stringify({
+                    post_id: postId, member_id: memberId,
+                    delivered_at: new Date().toISOString(),
+                    opened_at: new Date().toISOString(),
+                    device_id: localStorage.getItem('t2s_device_id') || 'web'
+                })
+            });
+        } catch(e) {}
+    }
+
+    async function fetchUpdates() {
+        const container = document.getElementById('updates-container');
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
+
+        // Show notification banner if not granted
+        if('Notification' in window && Notification.permission === 'default') {
+            document.getElementById('notif-banner').style.display = 'flex';
+        }
+
+        try {
+            const memberId = localStorage.getItem('t2s_member_id');
+            let memberTier = 'free';
+
+            if(memberId) {
+                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status`, { method: 'GET' });
+                if(members && members.length > 0) {
+                    if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
+                    memberTier = members[0].tier;
+                }
+            }
+
+            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=50', { method: 'GET' });
+
+            let readMap = {};
+            if(memberId) {
+                const receipts = await sbFetch(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
+                receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
+            }
+
+            if(!posts || posts.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align:center;padding:60px 20px;color:#888;">
+                        <div style="font-size:2.5rem;margin-bottom:12px;">📭</div>
+                        No updates yet. Check back soon!
+                    </div>`;
+                return;
+            }
+
+            let html = '';
+            let lastDate = '';
+            let newCount = 0;
+
+            posts.forEach(post => {
+                const dateLabel  = formatPostDate(post.sent_at || post.created_at);
+                const isNew      = !readMap[post.id];
+                const isPaidOnly = post.audience === 'paid_only';
+                const canSee     = !isPaidOnly || memberTier === 'paid';
+
+                if(isNew && canSee) newCount++;
+
+                if(dateLabel !== lastDate) {
+                    html += `<div class="date-label">
+                        <span>${dateLabel}</span>
+                        ${dateLabel === 'TODAY' && newCount > 0 ? `<span class="new-count">${newCount} new</span>` : ''}
+                    </div>`;
+                    lastDate = dateLabel;
+                }
+
+                if(canSee) {
+                    html += `
+                        <div class="update-card ${isNew ? 'unread' : ''}" id="ucard-${post.id}">
+                            <div class="update-header">
+                                ${postBadgeHtml(post.post_type)}
+                                <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
+                            </div>
+                            <div class="update-body">
+                                <div class="update-content">${post.content.replace(/\n/g, '<br>')}</div>
+                            </div>
+                            <div class="update-footer">
+                                <span class="update-disclaimer">Educational purposes only</span>
+                                ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}',\`${post.content.replace(/`/g,"'").replace(/\n/g,' ')}\`)">⬆</button>` : ''}
+                            </div>
+                        </div>`;
+                } else {
+                    html += `
+                        <div class="locked-card">
+                            <div class="update-header">
+                                <span class="update-badge badge-premium-locked">⭐ PREMIUM</span>
+                                <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
+                            </div>
+                            <div class="locked-blur-row">
+                                <div class="blur-pill" style="width:55%"></div>
+                                <div class="blur-pill" style="width:25%"></div>
+                            </div>
+                            <div class="locked-center">
+                                <div style="font-size:1.3rem;margin-bottom:6px;">🔒</div>
+                                <div style="font-weight:700;color:var(--primary);font-size:0.9rem;margin-bottom:4px;">Premium Members Only</div>
+                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Join premium to see this update</div>
+                                <span class="premium-pill" onclick="showPopup()">Join Premium →</span>
+                            </div>
+                        </div>`;
+                }
+            });
+
+            container.innerHTML = html;
+
+            // Auto mark as read after 2s
+            setTimeout(() => {
+                posts.forEach(p => {
+                    if(!readMap[p.id]) {
+                        const card = document.getElementById(`ucard-${p.id}`);
+                        if(card) { card.classList.remove('unread'); markPostRead(p.id); }
+                    }
+                });
+            }, 2000);
+
+        } catch(e) {
+            console.error('Updates fetch failed', e);
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
+        }
+    }
+
+    async function enableNotifications() {
+        if(!('Notification' in window)) return;
+        const perm = await Notification.requestPermission();
+        if(perm === 'granted') {
+            document.getElementById('notif-banner').style.display = 'none';
+            alert('✅ Notifications enabled!');
+        }
     }
 
     // Init
