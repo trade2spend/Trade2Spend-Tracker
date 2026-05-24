@@ -29,7 +29,8 @@
             background: var(--bg-color);
             z-index: 100;
             padding: 20px 20px 0;
-            transition: all 0.3s ease;
+            transition: padding 0.4s ease, box-shadow 0.4s ease;
+            will-change: transform;
         }
         .header-top {
             display: flex;
@@ -324,13 +325,13 @@
     // --- SCROLL ANIMATION ---
     window.addEventListener('scroll', () => {
         const header = document.getElementById('header-wrapper');
-        if (window.scrollY > 30) {
+        const scrolled = window.scrollY > 30;
+        if (scrolled && !header.classList.contains('scrolled')) {
             header.classList.add('scrolled');
-        } else {
+        } else if (!scrolled && header.classList.contains('scrolled')) {
             header.classList.remove('scrolled');
         }
-    });
-
+    }, { passive: true });
     // --- CLOCK ---
     setInterval(() => {
         const now = new Date();
