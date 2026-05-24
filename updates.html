@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Trade2Spend">
+<title>Trade2Spend — Updates</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-serif;}
+
+.app{max-width:480px;margin:0 auto;background:#f6f3ee;min-height:100vh;position:relative;box-shadow:0 0 60px rgba(0,0,0,0.3);}
+
+/* ── HEADER ── */
+.header{
+  position:sticky;top:0;z-index:100;
+  background:#f6f3ee;
+  border-bottom:1px solid #ede8f5;
+  padding:12px 16px 0;
+}
+.header-top{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:10px;
+}
+.header-left{display:flex;align-items:center;gap:10px;}
+.header-logo{width:32px;height:32px;border-radius:8px;overflow:hidden;}
+.header-logo img{width:100%;height:100%;object-fit:cover;}
+.header-brand{font-size:15px;font-weight:700;color:#4a2a78;}
+.header-sub{font-size:11px;color:#9ca3af;}
+.header-right{display:flex;align-items:center;gap:8px;}
+.live-badge{
+  display:flex;align-items:center;gap:5px;
+  font-size:11px;font-weight:600;color:#059669;
+  background:#f0fdf4;border:1px solid #bbf7d0;
+  border-radius:20px;padding:4px 10px;
+}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#059669;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.notif-btn{
+  width:32px;height:32px;border-radius:50%;
+  background:#f3f0f8;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;position:relative;
+}
+.notif-badge{
+  position:absolute;top:-2px;right:-2px;
+  width:16px;height:16px;border-radius:50%;
+  background:#dc2626;color:#fff;
+  font-size:9px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  display:none;
+}
+.notif-badge.show{display:flex;}
+
+/* ── TAB BAR ── */
+.tab-bar{
+  display:flex;gap:0;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.tab-bar::-webkit-scrollbar{display:none;}
+.tab-btn{
+  flex-shrink:0;padding:8px 14px;
+  font-size:13px;font-weight:500;color:#9ca3af;
+  background:none;border:none;border-bottom:2px solid transparent;
+  cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;
+  white-space:nowrap;transition:all .15s;
+}
+.tab-btn.active{color:#4a2a78;border-bottom-color:#4a2a78;font-weight:700;}
+
+/* ── DATE GROUP ── */
+.date-group{
+  padding:10px 16px 4px;
+  font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.new-badge{
+  background:#dc2626;color:#fff;
+  font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:20px;
+}
+
+/* ── POST CARD ── */
+.post-card{
+  margin:0 12px 10px;
+  background:#fff;border-radius:14px;
+  border:1.5px solid #ede8f5;
+  overflow:hidden;
+  transition:all .15s;
+}
+.post-card.unread{border-left:3px solid #4a2a78;}
+.post-card:active{opacity:0.95;}
+
+.post-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px 6px;
+}
+.post-type-badge{
+  font-size:10px;font-weight:700;
+  padding:3px 10px;border-radius:20px;
+  letter-spacing:0.04em;
+}
+.badge-trade{background:#4a2a78;color:#fff;}
+.badge-followup{background:#dbeafe;color:#1d4ed8;}
+.badge-update{background:#fef3c7;color:#92400e;}
+.badge-general{background:#f3f4f6;color:#374151;}
+.badge-premium{background:#fef9c3;color:#854d0e;border:1px solid #fde68a;}
+
+.post-time{font-size:11px;color:#9ca3af;}
+
+.post-body{padding:2px 14px 10px;}
+.post-title{font-size:14px;font-weight:700;color:#1a2030;line-height:1.4;margin-bottom:4px;}
+.post-content{font-size:13px;color:#4b5563;line-height:1.6;}
+
+.post-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 14px;
+  border-top:1px solid #f9f8fc;
+}
+.post-disclaimer{font-size:10px;color:#c4b8d8;font-style:italic;}
+.share-btn{
+  background:none;border:none;cursor:pointer;
+  color:#c4b8d8;font-size:18px;padding:4px;
+  transition:color .15s;
+}
+.share-btn:active{color:#4a2a78;}
+
+/* ── LOCKED CARD ── */
+.post-locked{
+  margin:0 12px 10px;
+  background:#fff;border-radius:14px;
+  border:1.5px solid #fde68a;
+  overflow:hidden;
+}
+.locked-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px 6px;
+}
+.locked-body{padding:4px 14px 16px;}
+.locked-blur{
+  height:40px;
+  background:linear-gradient(to bottom,#f3f0f8,#e8e0f5);
+  border-radius:6px;margin-bottom:12px;
+  display:flex;align-items:center;padding:0 12px;
+  gap:8px;
+}
+.blur-line{height:8px;border-radius:4px;background:#d8ceed;}
+.locked-overlay{
+  text-align:center;padding:4px 0 8px;
+}
+.lock-icon{font-size:20px;margin-bottom:6px;}
+.locked-title{font-size:13px;font-weight:700;color:#4a2a78;margin-bottom:4px;}
+.locked-sub{font-size:11px;color:#9ca3af;margin-bottom:10px;}
+.join-btn{
+  display:inline-block;
+  background:#4a2a78;color:#fff;
+  font-size:12px;font-weight:600;
+  padding:8px 20px;border-radius:20px;
+  text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif;
+  border:none;cursor:pointer;
+}
+
+/* ── EMPTY STATE ── */
+.empty-state{
+  text-align:center;padding:60px 24px;
+  color:#9ca3af;font-size:14px;
+}
+.empty-icon{font-size:40px;margin-bottom:12px;}
+
+/* ── LOADING ── */
+.loading-wrap{text-align:center;padding:40px;}
+.spinner{width:28px;height:28px;border:3px solid #ede8f5;border-top-color:#4a2a78;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── BOTTOM NAV ── */
+.bottom-nav{
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;
+  background:#fff;border-top:1px solid #ede8f5;
+  display:flex;padding:8px 0 16px;z-index:100;
+}
+.nav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:none;border:none;cursor:pointer;
+  font-size:10px;font-weight:500;color:#9ca3af;
+  font-family:'Plus Jakarta Sans',sans-serif;padding:4px 0;
+  transition:color .15s;
+}
+.nav-btn.active{color:#4a2a78;}
+.nav-icon{font-size:20px;line-height:1;}
+.feed-wrap{padding:8px 0 90px;}
+
+/* ── PROMO TICKER ── */
+.promo-bar{
+  background:#341d59;padding:7px 0;
+  overflow:hidden;white-space:nowrap;
+}
+.promo-inner{
+  display:inline-block;
+  animation:ticker 25s linear infinite;
+  font-size:12px;font-weight:600;color:#fff;
+  letter-spacing:0.04em;
+}
+.promo-hi{color:#d97706;}
+@keyframes ticker{from{transform:translateX(100vw)}to{transform:translateX(-100%)}}
+
+/* ── PREMIUM POPUP ── */
+#premium-popup{
+  display:none;position:fixed;inset:0;z-index:999;
+  background:rgba(0,0,0,0.6);
+  align-items:flex-end;justify-content:center;
+}
+#premium-popup.open{display:flex;}
+.popup-box{
+  background:#1a2030;border-radius:24px 24px 0 0;
+  padding:24px 20px 40px;width:100%;max-width:480px;
+  text-align:center;
+}
+.popup-close{
+  float:right;background:none;border:none;
+  color:#6b7280;font-size:20px;cursor:pointer;margin-bottom:8px;
+}
+.popup-lock{font-size:32px;margin-bottom:12px;}
+.popup-title{font-size:18px;font-weight:800;color:#d97706;margin-bottom:8px;}
+.popup-body{font-size:13px;color:#9ca3af;line-height:1.6;margin-bottom:20px;}
+.popup-btn-primary{
+  display:block;width:100%;padding:14px;
+  background:#4a2a78;border:none;border-radius:14px;
+  color:#fff;font-size:14px;font-weight:700;
+  font-family:'Plus Jakarta Sans',sans-serif;
+  cursor:pointer;margin-bottom:10px;text-decoration:none;
+}
+.popup-btn-secondary{
+  display:block;width:100%;padding:12px;
+  background:transparent;border:1.5px solid #374151;border-radius:14px;
+  color:#9ca3af;font-size:13px;font-weight:600;
+  font-family:'Plus Jakarta Sans',sans-serif;
+  cursor:pointer;text-decoration:none;
+}
+.popup-disclaimer{font-size:10px;color:#4b5563;margin-top:12px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-left">
+        <div class="header-logo">
+          <img src="logo.png" alt="T2S"
+            onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
+        </div>
+        <div>
+          <div class="header-brand">TRADE2SPEND</div>
+          <div class="header-sub">Live Tracker</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+        <button class="notif-btn" onclick="requestNotifications()">
+          🔔
+          <div class="notif-badge" id="notif-badge">0</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn" onclick="location.href='index.html'">My Trades</button>
+      <button class="tab-btn" onclick="location.href='index.html'">Markets</button>
+      <button class="tab-btn" onclick="location.href='index.html'">Performance</button>
+      <button class="tab-btn active">Updates</button>
+      <button class="tab-btn" onclick="location.href='index.html'">About</button>
+    </div>
+  </div>
+
+  <!-- Promo ticker -->
+  <div class="promo-bar">
+    <span class="promo-inner">
+      &nbsp;&nbsp;&nbsp;🔔 <span class="promo-hi">TRADE2SPEND PREMIUM</span>
+      &nbsp;—&nbsp; Trade alerts, analysis & follow-ups &nbsp;·&nbsp;
+      Message <span class="promo-hi">@tusharview</span> on Telegram &nbsp;·&nbsp;
+      Free channel: <span class="promo-hi">@trade2spend</span>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+    </span>
+  </div>
+
+  <!-- Feed -->
+  <div class="feed-wrap" id="feed-wrap">
+    <div class="loading-wrap"><div class="spinner"></div></div>
+  </div>
+
+</div>
+
+<!-- Premium Popup -->
+<div id="premium-popup">
+  <div class="popup-box">
+    <button class="popup-close" onclick="closePopup()">✕</button>
+    <div class="popup-lock">🔒</div>
+    <div class="popup-title">Premium Members Only</div>
+    <div class="popup-body">
+      Get real-time trade entries, detailed analysis and exclusive follow-ups — for premium members only.
+    </div>
+    <a href="https://t.me/tusharview" target="_blank" class="popup-btn-primary">
+      Join Premium → Message @tusharview
+    </a>
+    <a href="https://t.me/trade2spend" target="_blank" class="popup-btn-secondary">
+      Join Free Channel @trade2spend
+    </a>
+    <div class="popup-disclaimer">Educational purposes only. Not investment advice.</div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
+
+let currentMember = null;
+let unreadCount   = 0;
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+async function sbFetch(path, opts={}){
+  const { headers: extraHeaders, ...restOpts } = opts;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...restOpts,
+    headers:{
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...(extraHeaders||{})
+    }
+  });
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
+
+function formatTime(ts){
+  const d = new Date(ts);
+  return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+}
+
+function formatDate(ts){
+  const d   = new Date(ts);
+  const now = new Date();
+  const diff= Math.floor((now - d) / 86400000);
+  if(diff === 0) return 'TODAY';
+  if(diff === 1) return 'YESTERDAY';
+  return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}).toUpperCase();
+}
+
+function badgeClass(type){
+  switch(type){
+    case 'trade_alert': return 'badge-trade';
+    case 'follow_up':   return 'badge-followup';
+    case 'market_update': return 'badge-update';
+    default:            return 'badge-general';
+  }
+}
+
+function badgeLabel(type){
+  switch(type){
+    case 'trade_alert':   return 'TRADE ALERT';
+    case 'follow_up':     return 'FOLLOW-UP';
+    case 'market_update': return 'MARKET UPDATE';
+    default:              return 'GENERAL';
+  }
+}
+
+// ── MARK AS READ ──────────────────────────────────────────────────────────────
+async function markRead(postId){
+  if(!currentMember) return;
+  try {
+    // Check if already read
+    const existing = await sbFetch(
+      `read_receipts?post_id=eq.${postId}&member_id=eq.${currentMember.id}`,
+      { method:'GET' }
+    );
+    if(existing && existing.length > 0 && existing[0].opened_at) return;
+
+    if(existing && existing.length > 0){
+      // Update opened_at
+      await sbFetch(`read_receipts?id=eq.${existing[0].id}`,{
+        method:'PATCH',
+        body: JSON.stringify({ opened_at: new Date().toISOString() })
+      });
+    } else {
+      // Insert
+      await sbFetch('read_receipts',{
+        method:'POST',
+        body: JSON.stringify({
+          post_id:      postId,
+          member_id:    currentMember.id,
+          delivered_at: new Date().toISOString(),
+          opened_at:    new Date().toISOString(),
+          device_id:    localStorage.getItem('t2s_device_id') || 'unknown'
+        })
+      });
+    }
+  } catch(e){ console.log('Mark read error:', e); }
+}
+
+// ── SHARE POST ────────────────────────────────────────────────────────────────
+async function sharePost(postId, content){
+  const url  = `${location.origin}${location.pathname.replace('updates.html','preview.html')}?post=${postId}`;
+  const text = `${content.substring(0,100)}...\n\nSee full update on Trade2Spend:\n${url}`;
+
+  if(navigator.share){
+    try { await navigator.share({ title:'Trade2Spend Update', text, url }); } catch(e){}
+  } else {
+    await navigator.clipboard.writeText(text);
+    alert('Link copied to clipboard!');
+  }
+
+  // Track share
+  if(currentMember){
+    try {
+      await sbFetch('post_shares',{
+        method:'POST',
+        body: JSON.stringify({
+          post_id: postId,
+          member_id: currentMember.id,
+          platform: 'share_api',
+          shared_at: new Date().toISOString()
+        })
+      });
+    } catch(e){}
+  }
+}
+
+// ── RENDER POSTS ──────────────────────────────────────────────────────────────
+function renderPosts(posts, memberTier){
+  const feed = document.getElementById('feed-wrap');
+  if(!posts || posts.length === 0){
+    feed.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        No updates yet.<br>Check back soon!
+      </div>`;
+    return;
+  }
+
+  let html      = '';
+  let lastDate  = '';
+  let newCount  = 0;
+
+  posts.forEach(post => {
+    const dateLabel = formatDate(post.sent_at || post.created_at);
+    const isNew     = !post.opened_at;
+    const isPaidOnly= post.audience === 'paid_only';
+    const canSee    = !isPaidOnly || memberTier === 'paid';
+
+    if(isNew) newCount++;
+
+    // Date group header
+    if(dateLabel !== lastDate){
+      html += `<div class="date-group">
+        <span>${dateLabel}</span>
+        ${dateLabel === 'TODAY' && newCount > 0 ? `<span class="new-badge">${newCount} new</span>` : ''}
+      </div>`;
+      lastDate = dateLabel;
+    }
+
+    if(canSee){
+      // Visible post
+      html += `
+        <div class="post-card ${isNew ? 'unread' : ''}" 
+             onclick="markRead('${post.id}')" 
+             id="card-${post.id}">
+          <div class="post-header">
+            <span class="post-type-badge ${badgeClass(post.post_type)}">
+              ${badgeLabel(post.post_type)}
+            </span>
+            <span class="post-time">${formatTime(post.sent_at || post.created_at)}</span>
+          </div>
+          <div class="post-body">
+            <div class="post-content">${post.content.replace(/\n/g,'<br>')}</div>
+          </div>
+          <div class="post-footer">
+            <span class="post-disclaimer">Educational purposes only</span>
+            ${post.allow_sharing ? `<button class="share-btn" onclick="event.stopPropagation();sharePost('${post.id}',\`${post.content.replace(/`/g,"'")}\`)">⬆</button>` : ''}
+          </div>
+        </div>`;
+    } else {
+      // Locked post (paid only, free member)
+      html += `
+        <div class="post-locked">
+          <div class="locked-header">
+            <span class="post-type-badge badge-premium">⭐ PREMIUM</span>
+            <span class="post-time">${formatTime(post.sent_at || post.created_at)}</span>
+          </div>
+          <div class="locked-body">
+            <div class="locked-blur">
+              <div class="blur-line" style="width:60%"></div>
+              <div class="blur-line" style="width:30%"></div>
+            </div>
+            <div class="locked-overlay">
+              <div class="lock-icon">🔒</div>
+              <div class="locked-title">Premium Members Only</div>
+              <div class="locked-sub">Join premium to see this update</div>
+              <button class="join-btn" onclick="openPopup()">Join Premium →</button>
+            </div>
+          </div>
+        </div>`;
+    }
+  });
+
+  feed.innerHTML = html;
+
+  // Update notif badge
+  if(newCount > 0){
+    const badge = document.getElementById('notif-badge');
+    badge.textContent = newCount;
+    badge.classList.add('show');
+  }
+
+  // Auto-mark visible posts as read after 2s
+  setTimeout(()=>{
+    posts.forEach(p => {
+      if(!p.opened_at){
+        const card = document.getElementById(`card-${p.id}`);
+        if(card){
+          card.classList.remove('unread');
+          markRead(p.id);
+        }
+      }
+    });
+  }, 2000);
+}
+
+// ── POPUP ────────────────────────────────────────────────────────────────────
+function openPopup(){ document.getElementById('premium-popup').classList.add('open'); }
+function closePopup(){ document.getElementById('premium-popup').classList.remove('open'); }
+
+// ── NOTIFICATIONS ────────────────────────────────────────────────────────────
+async function requestNotifications(){
+  if(!('Notification' in window)){
+    alert('Notifications not supported on this browser.');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if(perm === 'granted'){
+    alert('✅ Notifications enabled! You\'ll be notified when Tushar posts.');
+  } else {
+    alert('Notifications blocked. Enable in browser settings for instant trade alerts.');
+  }
+}
+
+// ── LOAD POSTS ────────────────────────────────────────────────────────────────
+async function loadPosts(){
+  const memberId = localStorage.getItem('t2s_member_id');
+  if(!memberId){
+    window.location.href = 'login.html';
+    return;
+  }
+
+  try {
+    // Load member
+    const members = await sbFetch(
+      `members?id=eq.${memberId}&select=id,name,tier,status`,
+      { method:'GET' }
+    );
+
+    if(!members || members.length === 0 || members[0].status === 'disabled'){
+      window.location.href = 'login.html';
+      return;
+    }
+
+    currentMember = members[0];
+    const tier    = currentMember.tier;
+
+    // Load posts (newest first)
+    const posts = await sbFetch(
+      `posts?is_deleted=eq.false&order=sent_at.desc&limit=50`,
+      { method:'GET' }
+    );
+
+    // Load read receipts for this member
+    const receipts = await sbFetch(
+      `read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`,
+      { method:'GET' }
+    );
+
+    // Map receipts
+    const readMap = {};
+    receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
+
+    // Merge read status into posts
+    const postsWithRead = posts.map(p => ({
+      ...p,
+      opened_at: readMap[p.id] || null
+    }));
+
+    renderPosts(postsWithRead, tier);
+
+    // Update last active
+    localStorage.setItem('t2s_last_active', new Date().toISOString());
+
+  } catch(e){
+    console.error('Load posts error:', e);
+    document.getElementById('feed-wrap').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        Unable to load updates.<br>Check your connection.
+      </div>`;
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadPosts();
+
+// Auto-refresh every 2 minutes
+setInterval(loadPosts, 120000);
+</script>
+</body>
+</html>
