@@ -10,9 +10,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{height:100%;background:#f6f3ee;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
+html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
 
-.screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;}
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;max-width:480px;margin:0 auto;background:#f6f3ee;box-shadow:0 0 60px rgba(0,0,0,0.3);}
 
 /* ── PURPLE HEADER ── */
 .welcome-header{
@@ -106,7 +106,8 @@ html,body{height:100%;background:#f6f3ee;font-family:'Plus Jakarta Sans',sans-se
 
 /* ── BOTTOM BAR ── */
 .bottom-bar{
-  position:fixed;bottom:0;left:0;right:0;
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;
   background:#fff;border-top:1px solid #f0ebf8;
   padding:12px 20px;
   display:flex;flex-direction:column;gap:8px;
