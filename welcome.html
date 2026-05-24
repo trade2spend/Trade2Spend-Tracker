@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Trade2Spend">
+<title>Trade2Spend — Welcome</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;background:#f6f3ee;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
+
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;}
+
+/* ── PURPLE HEADER ── */
+.welcome-header{
+  background:linear-gradient(160deg,#4a2a78,#341d59);
+  padding:48px 24px 32px;
+  display:flex;flex-direction:column;align-items:center;
+  flex-shrink:0;
+}
+.header-logo{
+  width:64px;height:64px;border-radius:16px;overflow:hidden;
+  margin-bottom:16px;
+  box-shadow:0 4px 24px rgba(0,0,0,0.3);
+}
+.header-logo img{width:100%;height:100%;object-fit:cover;}
+.header-logo-fallback{
+  width:64px;height:64px;border-radius:16px;
+  background:rgba(255,255,255,0.15);
+  display:flex;align-items:center;justify-content:center;
+  font-size:24px;font-weight:800;color:#fff;
+  margin-bottom:16px;
+}
+.welcome-title{font-size:24px;font-weight:800;color:#fff;text-align:center;letter-spacing:-0.02em;}
+.welcome-name{font-size:15px;color:rgba(255,255,255,0.65);margin-top:4px;text-align:center;}
+
+/* ── WHITE CARD ── */
+.welcome-card{
+  background:#fff;
+  border-radius:24px 24px 0 0;
+  margin-top:-16px;
+  flex:1;overflow-y:auto;
+  padding:24px 20px 100px;
+}
+.card-heading{
+  font-size:15px;font-weight:700;color:#4a2a78;
+  margin-bottom:4px;
+}
+.card-sub{
+  font-size:11px;color:#9ca3af;margin-bottom:20px;
+}
+
+/* ── TILES ── */
+.tile-grid{display:flex;flex-direction:column;gap:10px;}
+
+.tile-full{
+  background:#faf9fc;border:1.5px solid #ede8f5;
+  border-radius:14px;padding:16px;
+  display:flex;align-items:center;gap:14px;
+  cursor:pointer;transition:all .15s;
+  position:relative;
+  border-left:4px solid #d97706;
+}
+.tile-full:active{background:#f3f0f8;transform:scale(0.99);}
+
+.tile-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+.tile{
+  background:#faf9fc;border:1.5px solid #ede8f5;
+  border-radius:14px;padding:16px 14px;
+  display:flex;flex-direction:column;
+  cursor:pointer;transition:all .15s;
+  position:relative;min-height:90px;
+}
+.tile:active{background:#f3f0f8;transform:scale(0.98);}
+
+.tile-icon-wrap{
+  width:36px;height:36px;border-radius:10px;
+  background:#f3f0f8;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;margin-bottom:10px;flex-shrink:0;
+}
+.tile-full .tile-icon-wrap{margin-bottom:0;}
+
+.tile-label{font-size:13px;font-weight:700;color:#1a2030;line-height:1.3;}
+.tile-full .tile-label{font-size:15px;}
+.tile-desc{font-size:11px;color:#9ca3af;margin-top:3px;}
+
+.tile-chevron{
+  position:absolute;bottom:12px;right:12px;
+  color:#c4b8d8;font-size:14px;
+}
+.tile-full .tile-chevron{
+  position:static;margin-left:auto;flex-shrink:0;
+  font-size:18px;color:#d97706;
+}
+
+/* ── HINT TEXT ── */
+.hint-text{
+  text-align:center;font-size:11px;color:#c4b8d8;
+  margin:16px 0 8px;
+}
+
+/* ── BOTTOM BAR ── */
+.bottom-bar{
+  position:fixed;bottom:0;left:0;right:0;
+  background:#fff;border-top:1px solid #f0ebf8;
+  padding:12px 20px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.start-btn{
+  width:100%;padding:15px;
+  background:#4a2a78;border:none;border-radius:14px;
+  color:#fff;font-size:15px;font-weight:700;
+  font-family:'Plus Jakarta Sans',sans-serif;
+  cursor:pointer;transition:opacity .15s;
+}
+.start-btn:active{opacity:0.85;}
+.disclaimer{
+  font-size:10px;color:#c4b8d8;text-align:center;line-height:1.5;
+}
+
+/* ── LOADING ── */
+.loading-overlay{
+  position:fixed;inset:0;background:rgba(246,243,238,0.9);
+  display:none;align-items:center;justify-content:center;z-index:999;
+}
+.loading-overlay.show{display:flex;}
+.spinner{width:32px;height:32px;border:3px solid #ede8f5;border-top-color:#4a2a78;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading"><div class="spinner"></div></div>
+
+<div class="screen">
+
+  <!-- Purple header -->
+  <div class="welcome-header">
+    <div class="header-logo">
+      <img src="logo.png" alt="Trade2Spend"
+        onerror="this.parentElement.outerHTML='<div class=\'header-logo-fallback\'>T2S</div>'">
+    </div>
+    <div class="welcome-title">Welcome to Trade2Spend</div>
+    <div class="welcome-name" id="member-name">Loading...</div>
+  </div>
+
+  <!-- White card -->
+  <div class="welcome-card">
+    <div class="card-heading">You now have access to</div>
+    <div class="card-sub">Tap any tile to go there directly</div>
+
+    <div class="tile-grid">
+
+      <!-- Premium Posts — full width -->
+      <div class="tile-full" onclick="goTo('updates.html')">
+        <div class="tile-icon-wrap">⭐</div>
+        <div style="flex:1;">
+          <div class="tile-label">Premium Posts</div>
+          <div class="tile-desc">Exclusive trade alerts & analysis</div>
+        </div>
+        <div class="tile-chevron">›</div>
+      </div>
+
+      <!-- 2-column grid -->
+      <div class="tile-row">
+        <div class="tile" onclick="goTo('index.html#trades')">
+          <div class="tile-icon-wrap">🚨</div>
+          <div class="tile-label">Trade Alerts</div>
+          <div class="tile-desc">Live entries & P&L</div>
+          <div class="tile-chevron">›</div>
+        </div>
+        <div class="tile" onclick="goTo('index.html#trades')">
+          <div class="tile-icon-wrap">💹</div>
+          <div class="tile-label">Live P&L</div>
+          <div class="tile-desc">Real-time tracking</div>
+          <div class="tile-chevron">›</div>
+        </div>
+      </div>
+
+      <div class="tile-row">
+        <div class="tile" onclick="goTo('index.html#markets')">
+          <div class="tile-icon-wrap">📊</div>
+          <div class="tile-label">Index Updates</div>
+          <div class="tile-desc">Nifty · Sensex · BankNifty</div>
+          <div class="tile-chevron">›</div>
+        </div>
+        <div class="tile" onclick="goTo('index.html#markets')">
+          <div class="tile-icon-wrap">📰</div>
+          <div class="tile-label">Market News</div>
+          <div class="tile-desc">FII/DII & analysis</div>
+          <div class="tile-chevron">›</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="hint-text">Shown once only • Tap any tile to explore</div>
+
+  </div>
+
+  <!-- Bottom bar -->
+  <div class="bottom-bar">
+    <button class="start-btn" onclick="enterApp()">Enter App →</button>
+    <div class="disclaimer">Educational purposes only. Not investment advice.</div>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
+const MAIN_APP    = 'index.html';
+
+async function sbFetch(path, opts={}){
+  const { headers: extraHeaders, ...restOpts } = opts;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...restOpts,
+    headers:{
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...(extraHeaders||{})
+    }
+  });
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
+
+function showLoading(v){ document.getElementById('loading').classList.toggle('show',v); }
+
+async function markTourComplete(){
+  const memberId = localStorage.getItem('t2s_member_id');
+  if(!memberId) return;
+  await sbFetch(`members?id=eq.${memberId}`,{
+    method:'PATCH',
+    body: JSON.stringify({ tour_completed: true })
+  });
+  showLoading(false);
+}
+
+function goTo(url){
+  markTourComplete();
+  setTimeout(()=>{ window.location.href = url; }, 200);
+}
+
+function enterApp(){
+  showLoading(true);
+  markTourComplete();
+  setTimeout(()=>{ window.location.href = MAIN_APP; }, 400);
+}
+
+// Load member name
+(async function init(){
+  const memberId = localStorage.getItem('t2s_member_id');
+  if(!memberId){
+    window.location.href = 'login.html';
+    return;
+  }
+  try {
+    const members = await sbFetch(
+      `members?id=eq.${memberId}&select=name,tier,status`,
+      { method:'GET' }
+    );
+    if(members && members.length > 0){
+      const m = members[0];
+      if(m.status === 'disabled'){
+        window.location.href = 'login.html';
+        return;
+      }
+      document.getElementById('member-name').textContent = m.name;
+      // Update last active
+      localStorage.setItem('t2s_last_active', new Date().toISOString());
+    } else {
+      window.location.href = 'login.html';
+    }
+  } catch(e){
+    console.error(e);
+    document.getElementById('member-name').textContent = 'Member';
+  }
+})();
+</script>
+</body>
+</html>
