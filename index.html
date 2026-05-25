@@ -313,6 +313,7 @@
         event.target.classList.add('active');
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        localStorage.setItem('t2s_last_tab', tabId);
         if(tabId === 'trades') fetchTrades();
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
@@ -323,7 +324,13 @@
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
     // --- SCROLL ANIMATION ---
-    fetchMarkets();
+        const lastTab = localStorage.getItem('t2s_last_tab') || 'markets';
+        const lastTabBtn = document.querySelector(`.tab[onclick*="${lastTab}"]`);
+        if(lastTab !== 'markets' && lastTabBtn){
+            lastTabBtn.click();
+        } else {
+            fetchMarkets();
+        }
         const header = document.getElementById('header-wrapper');
         const scrolled = window.scrollY > 30;
         if (scrolled && !header.classList.contains('scrolled')) {
