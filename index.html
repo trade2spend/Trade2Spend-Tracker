@@ -323,7 +323,7 @@
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
     // --- SCROLL ANIMATION ---
-    window.addEventListener('scroll', () => {
+    fetchMarkets();
         const header = document.getElementById('header-wrapper');
         const scrolled = window.scrollY > 30;
         if (scrolled && !header.classList.contains('scrolled')) {
