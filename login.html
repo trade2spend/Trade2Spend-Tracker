@@ -665,7 +665,7 @@ function checkAutoLock(){
       showLoading(false);
       // Update last_active
       localStorage.setItem('t2s_last_active', new Date().toISOString());
-      window.location.href = currentMember.tour_completed ? MAIN_APP_URL : WELCOME_URL;
+      window.location.href = MAIN_APP_URL;
       return;
     }
   }
