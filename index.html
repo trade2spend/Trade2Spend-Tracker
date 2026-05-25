@@ -325,13 +325,6 @@
 
     // --- SCROLL ANIMATION ---
     fetchMarkets();
-        const lastTab = localStorage.getItem('t2s_last_tab') || 'markets';
-        if(lastTab !== 'markets'){
-            setTimeout(() => {
-                const lastTabBtn = document.querySelector(`.tab[onclick*="${lastTab}"]`);
-                if(lastTabBtn) lastTabBtn.click();
-            }, 500);
-        }
         const header = document.getElementById('header-wrapper');
         const scrolled = window.scrollY > 30;
         if (scrolled && !header.classList.contains('scrolled')) {
