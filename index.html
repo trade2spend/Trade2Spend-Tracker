@@ -324,12 +324,13 @@
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
     // --- SCROLL ANIMATION ---
+    fetchMarkets();
         const lastTab = localStorage.getItem('t2s_last_tab') || 'markets';
-        const lastTabBtn = document.querySelector(`.tab[onclick*="${lastTab}"]`);
-        if(lastTab !== 'markets' && lastTabBtn){
-            lastTabBtn.click();
-        } else {
-            fetchMarkets();
+        if(lastTab !== 'markets'){
+            setTimeout(() => {
+                const lastTabBtn = document.querySelector(`.tab[onclick*="${lastTab}"]`);
+                if(lastTabBtn) lastTabBtn.click();
+            }, 500);
         }
         const header = document.getElementById('header-wrapper');
         const scrolled = window.scrollY > 30;
