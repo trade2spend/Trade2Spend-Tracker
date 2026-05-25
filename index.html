@@ -29,8 +29,7 @@
             background: var(--bg-color);
             z-index: 100;
             padding: 20px 20px 0;
-            transition: padding 0.4s ease, box-shadow 0.4s ease;
-            will-change: transform;
+            transition: all 0.3s ease;
         }
         .header-top {
             display: flex;
@@ -47,7 +46,7 @@
         }
         .logo-img { height: 45px; width: 45px; object-fit: contain; transition: all 0.3s ease; }
         .header-titles h1 { font-size: 1.3rem; color: var(--text-main); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; transition: all 0.3s ease;}
-        .header-titles p { font-size: 0.8rem; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; transition: opacity 0.3s ease, max-height 0.3s ease; max-height: 50px; overflow: hidden; }
+        .header-titles p { font-size: 0.8rem; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; transition: all 0.3s ease;}
         
         .header-right { text-align: right; display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--text-muted); transition: all 0.3s ease;}
         .live-badge { background: var(--red-light); color: var(--red); padding: 4px 8px; border-radius: 12px; font-weight: bold; font-size: 0.75rem; display: flex; align-items: center; gap: 5px; letter-spacing: 1px;}
@@ -62,9 +61,9 @@
         /* Scrolled State */
         .sticky-header.scrolled { padding-top: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.04); }
         .sticky-header.scrolled .header-brand { transform: scale(0.85); }
-        .sticky-header.scrolled .header-titles p { opacity: 0; max-height: 0; overflow: hidden; margin: 0; }
-        .sticky-header.scrolled .market-status { opacity: 0; max-height: 0; overflow: hidden; margin: 0; }
-        .sticky-header.scrolled .header-right { transform: scale(0.85); transform-origin: center right; }
+        .sticky-header.scrolled .header-titles p { display: none; }
+        .sticky-header.scrolled .market-status { display: none; }
+        .sticky-header.scrolled .header-right { transform: scale(0.85); transform-origin: center right;}
 
         /* --- TABS --- */
         .tabs { display: flex; border-bottom: 1px solid var(--border); margin-top: 15px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none; flex-wrap: nowrap; }
@@ -167,6 +166,25 @@
         .notif-banner { background: var(--primary-light); border: 1px solid #c4b5fd; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .notif-banner-text { font-size: 0.85rem; color: var(--primary); font-weight: 500; }
         .notif-enable-btn { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit; }
+
+        /* --- THREAD / FOLLOW-UP NESTING --- */
+        .thread-replies { margin: 0 16px 12px 24px; border-left: 2px solid var(--primary-light); padding-left: 12px; }
+        .reply-card { background: #faf9ff; border: 1px solid #ede9fe; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+        .reply-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; }
+        .reply-body { padding: 2px 12px 8px; font-size: 0.85rem; color: var(--text-main); line-height: 1.5; }
+
+        /* --- ADMIN REPLY BOX --- */
+        .admin-reply-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: var(--primary); font-size: 0.8rem; font-weight: 600; padding: 8px 16px; font-family: inherit; opacity: 0.7; }
+        .admin-reply-btn:hover { opacity: 1; }
+        .admin-compose-box { margin: 0 12px 12px; padding: 12px; background: var(--primary-light); border-radius: 10px; border: 1px solid #c4b5fd; display: none; }
+        .admin-compose-box.open { display: block; }
+        .admin-compose-textarea { width: 100%; border: 1px solid #c4b5fd; border-radius: 8px; padding: 10px; font-size: 0.85rem; font-family: inherit; background: #fff; color: var(--text-main); resize: none; outline: none; min-height: 80px; }
+        .admin-compose-row { display: flex; gap: 8px; margin-top: 8px; }
+        .admin-compose-send { flex: 1; padding: 9px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+        .admin-compose-cancel { padding: 9px 14px; background: transparent; border: 1px solid #c4b5fd; border-radius: 8px; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; font-family: inherit; }
+        .admin-audience-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .admin-aud-btn { flex: 1; padding: 7px; border-radius: 8px; border: 1px solid #c4b5fd; background: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit; color: var(--primary); transition: all .15s; }
+        .admin-aud-btn.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
@@ -287,8 +305,8 @@
         </div>
     </div>
 
-    <div class="footer-disclaimer" style="padding:30px 20px;text-align:center;margin:0 auto;">
-        Educational content only · Not investment advice · We are not a SEBI-registered Research Analyst. Trade at your own risk.
+    <div class="footer-disclaimer">
+        Educational content only · Not investment advice · Trade2Spend is not a SEBI-registered Research Analyst. <br>Trade at your own risk.
     </div>
 </div>
 
@@ -313,7 +331,6 @@
         event.target.classList.add('active');
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        localStorage.setItem('t2s_last_tab', tabId);
         if(tabId === 'trades') fetchTrades();
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
@@ -324,15 +341,15 @@
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
     // --- SCROLL ANIMATION ---
-    fetchMarkets();
+    window.addEventListener('scroll', () => {
         const header = document.getElementById('header-wrapper');
-        const scrolled = window.scrollY > 30;
-        if (scrolled && !header.classList.contains('scrolled')) {
+        if (window.scrollY > 30) {
             header.classList.add('scrolled');
-        } else if (!scrolled && header.classList.contains('scrolled')) {
+        } else {
             header.classList.remove('scrolled');
         }
-    }, { passive: true });
+    });
+
     // --- CLOCK ---
     setInterval(() => {
         const now = new Date();
@@ -591,7 +608,6 @@
         const container = document.getElementById('updates-container');
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
-        // Show notification banner if not granted
         if('Notification' in window && Notification.permission === 'default') {
             document.getElementById('notif-banner').style.display = 'flex';
         }
@@ -599,16 +615,19 @@
         try {
             const memberId = localStorage.getItem('t2s_member_id');
             let memberTier = 'free';
+            let isAdmin    = false;
 
             if(memberId) {
-                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status`, { method: 'GET' });
+                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status,is_admin`, { method: 'GET' });
                 if(members && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     memberTier = members[0].tier;
+                    isAdmin    = members[0].is_admin === true;
                 }
             }
 
-            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=50', { method: 'GET' });
+            // Fetch all posts
+            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.asc&limit=100', { method: 'GET' });
 
             let readMap = {};
             if(memberId) {
@@ -625,11 +644,22 @@
                 return;
             }
 
-            let html = '';
-            let lastDate = '';
-            let newCount = 0;
+            // Separate parent posts and replies
+            const parentPosts = posts.filter(p => !p.parent_id).reverse(); // newest first
+            const replies     = posts.filter(p => p.parent_id);
 
-            posts.forEach(post => {
+            // Group replies by parent_id
+            const replyMap = {};
+            replies.forEach(r => {
+                if(!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
+                replyMap[r.parent_id].push(r);
+            });
+
+            let html      = '';
+            let lastDate  = '';
+            let newCount  = 0;
+
+            parentPosts.forEach(post => {
                 const dateLabel  = formatPostDate(post.sent_at || post.created_at);
                 const isNew      = !readMap[post.id];
                 const isPaidOnly = post.audience === 'paid_only';
@@ -643,9 +673,48 @@
                         ${dateLabel === 'TODAY' && newCount > 0 ? `<span class="new-count">${newCount} new</span>` : ''}
                     </div>`;
                     lastDate = dateLabel;
+                    newCount = 0;
                 }
 
                 if(canSee) {
+                    // Build replies HTML
+                    const postReplies = replyMap[post.id] || [];
+                    let repliesHtml = '';
+                    if(postReplies.length > 0) {
+                        repliesHtml = `<div class="thread-replies">`;
+                        postReplies.forEach(reply => {
+                            const replyCanSee = reply.audience !== 'paid_only' || memberTier === 'paid';
+                            if(replyCanSee) {
+                                repliesHtml += `
+                                <div class="reply-card" id="ucard-${reply.id}">
+                                    <div class="reply-header">
+                                        <span class="update-badge badge-follow-up">↳ FOLLOW-UP</span>
+                                        <span class="update-time">${formatPostTime(reply.sent_at || reply.created_at)}</span>
+                                    </div>
+                                    <div class="reply-body">${reply.content.replace(/\n/g,'<br>')}</div>
+                                </div>`;
+                            }
+                        });
+                        repliesHtml += `</div>`;
+                    }
+
+                    // Admin compose box
+                    const adminHtml = isAdmin ? `
+                        <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">
+                            ↳ Add follow-up
+                        </button>
+                        <div class="admin-compose-box" id="compose-${post.id}">
+                            <div class="admin-audience-row">
+                                <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
+                                <button class="admin-aud-btn" id="aud-paid-${post.id}" onclick="selectReplyAud('${post.id}','paid_only')">Paid Only</button>
+                            </div>
+                            <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
+                            <div class="admin-compose-row">
+                                <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
+                                <button class="admin-compose-send" onclick="sendReply('${post.id}')">Send Follow-up →</button>
+                            </div>
+                        </div>` : '';
+
                     html += `
                         <div class="update-card ${isNew ? 'unread' : ''}" id="ucard-${post.id}">
                             <div class="update-header">
@@ -659,7 +728,9 @@
                                 <span class="update-disclaimer">Educational purposes only</span>
                                 ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}',\`${post.content.replace(/`/g,"'").replace(/\n/g,' ')}\`)">⬆</button>` : ''}
                             </div>
-                        </div>`;
+                        </div>
+                        ${repliesHtml}
+                        ${adminHtml}`;
                 } else {
                     html += `
                         <div class="locked-card">
@@ -685,7 +756,7 @@
 
             // Auto mark as read after 2s
             setTimeout(() => {
-                posts.forEach(p => {
+                parentPosts.forEach(p => {
                     if(!readMap[p.id]) {
                         const card = document.getElementById(`ucard-${p.id}`);
                         if(card) { card.classList.remove('unread'); markPostRead(p.id); }
@@ -696,6 +767,61 @@
         } catch(e) {
             console.error('Updates fetch failed', e);
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
+        }
+    }
+
+    // ── ADMIN REPLY FUNCTIONS ────────────────────────────────────────────────
+    const replyAudience = {};
+
+    function toggleReplyBox(postId) {
+        const box = document.getElementById(`compose-${postId}`);
+        box.classList.toggle('open');
+        if(box.classList.contains('open')) {
+            document.getElementById(`reply-text-${postId}`).focus();
+        }
+    }
+
+    function selectReplyAud(postId, val) {
+        replyAudience[postId] = val;
+        document.getElementById(`aud-all-${postId}`).classList.toggle('selected', val === 'all');
+        document.getElementById(`aud-paid-${postId}`).classList.toggle('selected', val === 'paid_only');
+    }
+
+    async function sendReply(parentId) {
+        const text     = document.getElementById(`reply-text-${parentId}`).value.trim();
+        const audience = replyAudience[parentId] || 'all';
+
+        if(!text || text.length < 3) {
+            alert('Please type a follow-up message.');
+            return;
+        }
+
+        const btn = document.querySelector(`#compose-${parentId} .admin-compose-send`);
+        btn.disabled    = true;
+        btn.textContent = 'Sending...';
+
+        try {
+            await sbFetch('posts', {
+                method: 'POST',
+                body: JSON.stringify({
+                    content:       text,
+                    post_type:     'follow_up',
+                    audience:      audience,
+                    allow_sharing: false,
+                    is_deleted:    false,
+                    parent_id:     parentId,
+                    sent_at:       new Date().toISOString()
+                })
+            });
+
+            // Refresh updates
+            fetchUpdates();
+
+        } catch(e) {
+            console.error('Reply failed:', e);
+            alert('Failed to send. Check connection.');
+            btn.disabled    = false;
+            btn.textContent = 'Send Follow-up →';
         }
     }
 
