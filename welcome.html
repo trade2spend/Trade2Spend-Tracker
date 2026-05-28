@@ -147,7 +147,7 @@ html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-se
         onerror="this.parentElement.outerHTML='<div class=\'header-logo-fallback\'>T2S</div>'">
     </div>
     <div class="welcome-title">Welcome to Trade2Spend</div>
-    <div class="welcome-name" id="member-name" style="display:none;"></div>
+    <div class="welcome-name" id="member-name">Loading...</div>
   </div>
 
   <!-- White card -->
@@ -169,13 +169,13 @@ html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-se
 
       <!-- 2-column grid -->
       <div class="tile-row">
-        <div class="tile" onclick="goTo('index.html#trades')">
+        <div class="tile" onclick="goTo('index.html','trades')">
           <div class="tile-icon-wrap">🚨</div>
           <div class="tile-label">Trade Alerts</div>
           <div class="tile-desc">Live entries & P&L</div>
           <div class="tile-chevron">›</div>
         </div>
-        <div class="tile" onclick="goTo('index.html#trades')">
+        <div class="tile" onclick="goTo('index.html','trades')">
           <div class="tile-icon-wrap">💹</div>
           <div class="tile-label">Live P&L</div>
           <div class="tile-desc">Real-time tracking</div>
@@ -184,13 +184,13 @@ html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-se
       </div>
 
       <div class="tile-row">
-        <div class="tile" onclick="goTo('index.html#markets')">
+        <div class="tile" onclick="goTo('index.html','markets')">
           <div class="tile-icon-wrap">📊</div>
           <div class="tile-label">Index Updates</div>
           <div class="tile-desc">Nifty · Sensex · BankNifty</div>
           <div class="tile-chevron">›</div>
         </div>
-        <div class="tile" onclick="goTo('index.html#markets')">
+        <div class="tile" onclick="goTo('index.html','markets')">
           <div class="tile-icon-wrap">📰</div>
           <div class="tile-label">Market News</div>
           <div class="tile-desc">FII/DII & analysis</div>
@@ -238,22 +238,24 @@ function showLoading(v){ document.getElementById('loading').classList.toggle('sh
 async function markTourComplete(){
   const memberId = localStorage.getItem('t2s_member_id');
   if(!memberId) return;
-  await sbFetch(`members?id=eq.${memberId}`,{
-    method:'PATCH',
-    body: JSON.stringify({ tour_completed: true })
-  });
-  showLoading(false);
+  try {
+    await sbFetch(`members?id=eq.${memberId}`,{
+      method:'PATCH',
+      body: JSON.stringify({ tour_completed: true })
+    });
+  } catch(e) { console.warn('markTourComplete failed', e); }
 }
 
-function goTo(url){
-  markTourComplete();
-  setTimeout(()=>{ window.location.href = url; }, 200);
+async function goTo(url, tab){
+  if(tab) localStorage.setItem('t2s_start_tab', tab);
+  await markTourComplete();
+  window.location.href = url;
 }
 
-function enterApp(){
+async function enterApp(){
   showLoading(true);
-  markTourComplete();
-  setTimeout(()=>{ window.location.href = MAIN_APP; }, 400);
+  await markTourComplete();
+  window.location.href = MAIN_APP;
 }
 
 // Load member name
@@ -265,7 +267,7 @@ function enterApp(){
   }
   try {
     const members = await sbFetch(
-      `members?id=eq.${memberId}&select=name,tier,status`,
+      `members?id=eq.${memberId}&select=tier,status`,
       { method:'GET' }
     );
     if(members && members.length > 0){
@@ -274,7 +276,7 @@ function enterApp(){
         window.location.href = 'login.html';
         return;
       }
-      document.getElementById('member-name').textContent = m.name;
+      document.getElementById('member-name').textContent = m.tier === 'paid' ? 'Premium Member' : 'Free Member';
       // Update last active
       localStorage.setItem('t2s_last_active', new Date().toISOString());
     } else {
