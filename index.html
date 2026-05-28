@@ -10,7 +10,7 @@
             --card-bg: #ffffff;
             --text-main: #2d2a32;
             --text-muted: #888380;
-            --primary: #4c1d95; /* Deep Purple */
+            --primary: #4a2a78; /* Deep Purple */
             --primary-light: #ede9fe;
             --green: #22c55e;
             --green-light: #dcfce7;
@@ -127,7 +127,7 @@
         .win-rate-badge .pct { font-size: 1.5rem; font-weight: 800; line-height: 1;}
         .win-rate-badge .lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;}
         
-        .perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .perf-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
         .history-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; padding: 20px; display: flex; justify-content: space-between; align-items: center;}
         
         /* --- PREMIUM POPUP --- */
@@ -157,10 +157,10 @@
         .update-disclaimer { font-size: 0.72rem; color: #a8a29e; font-style: italic; }
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; font-size: 1rem; padding: 4px; }
         .update-share:hover { color: var(--primary); }
-        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        .locked-blur-row { display: flex; gap: 8px; align-items: center; padding: 8px 16px; }
+        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.02); transition: all .15s; }
+        .locked-blur-row { display: flex; flex-direction: column; gap: 8px; padding: 8px 16px 12px; }
         .blur-pill { height: 10px; border-radius: 5px; background: #e8e0f5; }
-        .locked-center { text-align: center; padding: 8px 16px 16px; }
+        .locked-center { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); background: #fdfdfc; }
         .date-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); padding: 10px 0 4px; display: flex; justify-content: space-between; align-items: center; }
         .new-count { background: var(--red); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
         .notif-banner { background: var(--primary-light); border: 1px solid #c4b5fd; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -194,6 +194,9 @@
             .trade-metrics { grid-template-columns: 1fr 1fr; gap: 15px; }
             .header-right { flex-direction: column; align-items: flex-end; gap: 4px;}
         }
+
+        /* --- FOOTER DISCLAIMER --- */
+        .footer-disclaimer { padding: 20px; text-align: center; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; font-style: italic; }
     </style>
 </head>
 <body>
@@ -211,7 +214,7 @@
             </div>
             <div class="header-right">
                 <span id="current-time">--:-- --</span>
-                <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+                <span class="live-badge" id="live-badge" style="display:none;"><span class="live-dot"></span> LIVE</span>
             </div>
         </div>
         
@@ -224,11 +227,11 @@
         </div>
         
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('markets')">Markets</div>
-            <div class="tab" onclick="switchTab('trades')">My Trades</div>
-            <div class="tab" onclick="switchTab('performance')">Performance</div>
-            <div class="tab" onclick="switchTab('updates')">Updates</div>
-            <div class="tab" onclick="switchTab('about')">About</div>
+            <div class="tab active" onclick="switchTab('markets', this)">Markets</div>
+            <div class="tab" onclick="switchTab('trades', this)">My Trades</div>
+            <div class="tab" onclick="switchTab('performance', this)">Performance</div>
+            <div class="tab" onclick="switchTab('updates', this)">Updates</div>
+            <div class="tab" onclick="switchTab('about', this)">About</div>
         </div>
     </div>
 
@@ -305,8 +308,8 @@
         </div>
     </div>
 
-    <div class="footer-disclaimer" style="padding:30px 20px;text-align:center;margin:0 auto;max-width:560px;width:100%;">
-        Educational content only · Not investment advice · Trade2Spend is not a SEBI-registered Research Analyst. Trade at your own risk.
+    <div class="footer-disclaimer">
+        Educational content only · Not investment advice · Trade2Spend is not a SEBI-registered Research Analyst. <br>Trade at your own risk.
     </div>
 </div>
 
@@ -325,10 +328,10 @@
 
 <script>
     // --- UI LOGIC ---
-    function switchTab(tabId) {
+    function switchTab(tabId, el) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
-        event.target.classList.add('active');
+        el.classList.add('active');
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         if(tabId === 'trades') fetchTrades();
@@ -375,6 +378,7 @@
             const isOpen = data.marketOpen;
             document.getElementById('global-market-dot').className = isOpen ? 'status-indicator open' : 'status-indicator closed';
             document.getElementById('global-market-text').innerText = isOpen ? 'Market Open' : 'Market Closed';
+            document.getElementById('live-badge').style.display = isOpen ? 'flex' : 'none';
 
             const container = document.getElementById('market-grid-container');
             container.innerHTML = '';
@@ -401,17 +405,30 @@
                     }
                 });
             }
-        } catch(e) { console.error("Market fetch failed", e); }
+        } catch(e) {
+            console.error("Market fetch failed", e);
+            document.getElementById('market-grid-container').innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">Unable to load market data. Check connection.</div>';
+        }
     }
 
     // --- FETCH TRADES ---
     async function fetchTrades() {
         try {
+            const memberId = localStorage.getItem('t2s_member_id');
+            let isAdmin = false;
+            if(memberId) {
+                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, { method: 'GET' });
+                if(members && members.length > 0) {
+                    if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
+                    isAdmin = members[0].is_admin === true;
+                }
+            }
+
             const res = await fetch(DB_URLS.trades + '?t=' + new Date().getTime());
             const data = await res.json();
             const container = document.getElementById('trades-container');
             container.innerHTML = '';
-            
+
             if(!data.trades || data.trades.filter(t => !t.isDeleted).length === 0) {
                 container.innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">No active trades right now.</div>';
                 return;
@@ -419,8 +436,8 @@
 
             data.trades.forEach(trade => {
                 if(trade.isDeleted) return;
-                
-                let isPreBuy = !trade.isTriggered;
+
+                let isPreBuy = !trade.isTriggered && !isAdmin;
                 let badgeClass = isPreBuy ? 'watching' : (trade.status === 'ACTIVE' ? 'profit' : 'loss');
                 let badgeText = isPreBuy ? 'WATCHING' : (trade.status === 'ACTIVE' ? 'IN PROFIT' : trade.status);
                 let typeClass = trade.type.toLowerCase();
@@ -435,7 +452,7 @@
                 
                 if(!isPreBuy && trade.currentPrice) {
                     let diff = trade.type === 'CE' ? (trade.currentPrice - trade.entryPrice) : (trade.entryPrice - trade.currentPrice);
-                    let lotSize = trade.instrument.includes('BANK') ? 15 : (trade.instrument.includes('SENSEX') ? 10 : 25);
+                    let lotSize = trade.instrument.includes('BANKNIFTY') ? 15 : (trade.instrument.includes('SENSEX') ? 10 : 65);
                     let pnl = diff * lotSize; 
                     let pct = ((diff / trade.entryPrice) * 100).toFixed(1);
                     
@@ -501,8 +518,8 @@
             
             if(data.months && data.months.length > 0) {
                 // Populate Current Month (Top section) using the latest month in JSON
-                const current = data.months.summary;
-                document.getElementById('curr-month-name').innerText = data.months.month;
+                const current = data.months[0].summary;
+                document.getElementById('curr-month-name').innerText = data.months[0].month;
                 document.getElementById('perf-winrate').innerText = current.winRate + '%';
                 document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins} W · ${current.losses} L)`;
                 document.getElementById('perf-max').innerText = current.maxProfit.toLocaleString();
@@ -548,6 +565,7 @@
                 ...(extraHeaders || {})
             }
         });
+        if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
         const text = await res.text();
         return text ? JSON.parse(text) : [];
     }
@@ -558,10 +576,13 @@
 
     function formatPostDate(ts) {
         const d = new Date(ts), now = new Date();
-        const diff = Math.floor((now - d) / 86400000);
-        if(diff === 0) return 'TODAY';
-        if(diff === 1) return 'YESTERDAY';
-        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+        const tz = { timeZone: 'Asia/Kolkata' };
+        const dDay = d.toLocaleDateString('en-CA', tz);
+        const nowDay = now.toLocaleDateString('en-CA', tz);
+        if(dDay === nowDay) return 'TODAY';
+        const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+        if(dDay === yest.toLocaleDateString('en-CA', tz)) return 'YESTERDAY';
+        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', ...tz }).toUpperCase();
     }
 
     function postBadgeHtml(type) {
@@ -575,9 +596,15 @@
         return `<span class="update-badge ${cls}">${label}</span>`;
     }
 
-    async function sharePost(postId, content) {
-        const url  = `${location.origin}${location.pathname.replace('index.html','preview.html')}?post=${postId}`;
-        const text = `${content.substring(0, 120)}...\n\nSee full update: ${url}`;
+    function sanitizeHtml(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function sharePost(postId) {
+        const card = document.getElementById('ucard-' + postId);
+        const content = card ? (card.dataset.content || '') : '';
+        const url  = 'https://t.me/trade2spend';
+        const text = `${content.substring(0, 120)}...\n\nMore updates: ${url}`;
         if(navigator.share) {
             try { await navigator.share({ title: 'Trade2Spend Update', text, url }); } catch(e) {}
         } else {
@@ -657,7 +684,15 @@
 
             let html      = '';
             let lastDate  = '';
-            let newCount  = 0;
+
+            // Pre-count unread posts per date label for accurate "X new" badges
+            const newCountByDate = {};
+            parentPosts.forEach(post => {
+                const dl = formatPostDate(post.sent_at || post.created_at);
+                const isPaidOnly = post.audience === 'paid_only';
+                const canSee = !isPaidOnly || memberTier === 'paid';
+                if (!readMap[post.id] && canSee) newCountByDate[dl] = (newCountByDate[dl] || 0) + 1;
+            });
 
             parentPosts.forEach(post => {
                 const dateLabel  = formatPostDate(post.sent_at || post.created_at);
@@ -665,15 +700,13 @@
                 const isPaidOnly = post.audience === 'paid_only';
                 const canSee     = !isPaidOnly || memberTier === 'paid';
 
-                if(isNew && canSee) newCount++;
-
                 if(dateLabel !== lastDate) {
+                    const cnt = newCountByDate[dateLabel] || 0;
                     html += `<div class="date-label">
                         <span>${dateLabel}</span>
-                        ${dateLabel === 'TODAY' && newCount > 0 ? `<span class="new-count">${newCount} new</span>` : ''}
+                        ${cnt > 0 ? `<span class="new-count">${cnt} new</span>` : ''}
                     </div>`;
                     lastDate = dateLabel;
-                    newCount = 0;
                 }
 
                 if(canSee) {
@@ -691,7 +724,7 @@
                                         <span class="update-badge badge-follow-up">↳ FOLLOW-UP</span>
                                         <span class="update-time">${formatPostTime(reply.sent_at || reply.created_at)}</span>
                                     </div>
-                                    <div class="reply-body">${reply.content.replace(/\n/g,'<br>')}</div>
+                                    <div class="reply-body">${sanitizeHtml(reply.content).replace(/\n/g,'<br>')}</div>
                                 </div>`;
                             }
                         });
@@ -716,17 +749,17 @@
                         </div>` : '';
 
                     html += `
-                        <div class="update-card ${isNew ? 'unread' : ''}" id="ucard-${post.id}">
+                        <div class="update-card ${isNew ? 'unread' : ''}" id="ucard-${post.id}" data-content="${sanitizeHtml(post.content)}">
                             <div class="update-header">
                                 ${postBadgeHtml(post.post_type)}
                                 <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
                             </div>
                             <div class="update-body">
-                                <div class="update-content">${post.content.replace(/\n/g, '<br>')}</div>
+                                <div class="update-content">${sanitizeHtml(post.content).replace(/\n/g, '<br>')}</div>
                             </div>
                             <div class="update-footer">
                                 <span class="update-disclaimer">Educational purposes only</span>
-                                ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}',\`${post.content.replace(/`/g,"'").replace(/\n/g,' ')}\`)">⬆</button>` : ''}
+                                ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')">⬆</button>` : ''}
                             </div>
                         </div>
                         ${repliesHtml}
@@ -735,17 +768,16 @@
                     html += `
                         <div class="locked-card">
                             <div class="update-header">
-                                <span class="update-badge badge-premium-locked">⭐ PREMIUM</span>
+                                <span class="update-badge badge-premium-locked">🔒 PREMIUM</span>
                                 <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
                             </div>
                             <div class="locked-blur-row">
+                                <div class="blur-pill" style="width:70%"></div>
+                                <div class="blur-pill" style="width:45%"></div>
                                 <div class="blur-pill" style="width:55%"></div>
-                                <div class="blur-pill" style="width:25%"></div>
                             </div>
                             <div class="locked-center">
-                                <div style="font-size:1.3rem;margin-bottom:6px;">🔒</div>
-                                <div style="font-weight:700;color:var(--primary);font-size:0.9rem;margin-bottom:4px;">Premium Members Only</div>
-                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Join premium to see this update</div>
+                                <span class="update-disclaimer">Upgrade to view this post</span>
                                 <span class="premium-pill" onclick="showPopup()">Join Premium →</span>
                             </div>
                         </div>`;
@@ -834,9 +866,27 @@
         }
     }
 
-    // Init
-    fetchMarketData();
-    setInterval(fetchMarketData, 60000); 
+    // Init — auth gate + session heartbeat
+    (async function init() {
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (!memberId) { window.location.href = 'login.html'; return; }
+        try {
+            const members = await sbFetch(`members?id=eq.${memberId}&select=status`, { method: 'GET' });
+            if (!members || !members.length || members[0].status === 'disabled') {
+                window.location.href = 'login.html'; return;
+            }
+        } catch(e) { console.warn('Auth check failed', e); }
+        localStorage.setItem('t2s_last_active', new Date().toISOString());
+        setInterval(() => localStorage.setItem('t2s_last_active', new Date().toISOString()), 60000);
+        const startTab = localStorage.getItem('t2s_start_tab');
+        if (startTab) {
+            localStorage.removeItem('t2s_start_tab');
+            const tabEl = document.querySelector(`.tab[onclick*="${startTab}"]`);
+            if (tabEl) switchTab(startTab, tabEl);
+        }
+        fetchMarketData();
+        setInterval(fetchMarketData, 60000);
+    })();
 </script>
 </body>
 </html>
