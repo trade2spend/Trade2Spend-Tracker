@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{height:100%;background:#f6f3ee;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
+html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
 
 /* ── SCREENS ── */
 .screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;transition:opacity .3s,transform .3s;max-width:480px;left:50%;transform:translateX(-50%);}
@@ -146,7 +146,7 @@ html,body{height:100%;background:#f6f3ee;font-family:'Plus Jakarta Sans',sans-se
       <img src="logo.png" alt="T2S" onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
     </div>
     <div class="pin-greeting">Welcome back</div>
-    <div class="pin-name" id="pin-member-name" style="display:none;"></div>
+    <div class="pin-name" id="pin-member-name">Member</div>
     <div class="pin-label">ENTER YOUR PIN</div>
 
     <div class="pin-dots" id="pin-dots">
@@ -387,7 +387,6 @@ async function checkMobile(){
 
     if(sessions && sessions.length > 0 && sessions[0].pin_hash){
       // Existing session — go to PIN entry
-      document.getElementById('pin-member-name').textContent = member.name;
       if(checkLock()){ showScreen('screen-pin'); return; }
       showScreen('screen-pin');
     } else {
@@ -533,7 +532,7 @@ function forgotPin(){
 }
 
 // ── PIN SETUP ────────────────────────────────────────────────────────────────
-const WEAK_PINS = ['1111','2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212','0000'];
+const WEAK_PINS = ['1111','2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212'];
 
 function setupKey(k){
   if(setupBuffer.length >= 4) return;
@@ -649,7 +648,6 @@ function checkAutoLock(){
       if(members && members.length > 0){
         currentMember = members[0];
         currentMobile = '+91' + mobile;
-        document.getElementById('pin-member-name').textContent = currentMember.name;
         showLoading(false);
         if(checkLock()){ showScreen('screen-pin'); return; }
         showScreen('screen-pin');
@@ -665,7 +663,7 @@ function checkAutoLock(){
       showLoading(false);
       // Update last_active
       localStorage.setItem('t2s_last_active', new Date().toISOString());
-      window.location.href = MAIN_APP_URL;
+      window.location.href = currentMember.tour_completed ? MAIN_APP_URL : WELCOME_URL;
       return;
     }
   }
