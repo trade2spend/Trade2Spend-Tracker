@@ -908,8 +908,26 @@
             const tabEl = document.querySelector(`.tab[onclick*="${startTab}"]`);
             if (tabEl) switchTab(startTab, tabEl);
         }
+        function isMarketOpen(){
+            const now = new Date();
+            const istMin = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
+            const istH = Math.floor(istMin / 60), istM = istMin % 60;
+            const day = now.getUTCDay(); // 0=Sun
+            const istDay = (istMin < (now.getUTCDay() === 0 ? 1440 : 0)) ? (day + 1) % 7 : day;
+            const isWeekday = istDay >= 1 && istDay <= 5;
+            const afterOpen  = istH > 9  || (istH === 9  && istM >= 15);
+            const beforeClose= istH < 15 || (istH === 15 && istM <= 30);
+            return isWeekday && afterOpen && beforeClose;
+        }
+        // Refresh every 5s during market hours, every 60s otherwise
+        function scheduleMarketRefresh(){
+            setTimeout(async () => {
+                await fetchMarketData();
+                scheduleMarketRefresh();
+            }, isMarketOpen() ? 5000 : 60000);
+        }
         fetchMarketData();
-        setInterval(fetchMarketData, 60000);
+        scheduleMarketRefresh();
     })();
 
     // ── PWA INSTALL PROMPT ──
