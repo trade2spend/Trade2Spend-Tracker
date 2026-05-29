@@ -418,9 +418,11 @@
                 const updEl = document.getElementById('market-last-updated');
                 if(updEl) updEl.innerText = 'Data as of: ' + new Date(data.lastUpdated).toLocaleString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
             }
+            return data; // return for scheduleMarketRefresh to read specialHours
         } catch(e) {
             console.error("Market fetch failed", e);
             document.getElementById('market-grid-container').innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">Unable to load market data.<br>Check your connection.</div>';
+            return null;
         }
     }
 
@@ -908,26 +910,41 @@
             const tabEl = document.querySelector(`.tab[onclick*="${startTab}"]`);
             if (tabEl) switchTab(startTab, tabEl);
         }
-        function isMarketOpen(){
+        // Check local IST time — returns true during normal or special trading hours
+        function isMarketOpen(specialHours){
+            if(specialHours) return true; // Mahurat or special session override
             const now = new Date();
             const istMin = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
-            const istH = Math.floor(istMin / 60), istM = istMin % 60;
-            const day = now.getUTCDay(); // 0=Sun
-            const istDay = (istMin < (now.getUTCDay() === 0 ? 1440 : 0)) ? (day + 1) % 7 : day;
-            const isWeekday = istDay >= 1 && istDay <= 5;
+            const istH   = Math.floor(istMin / 60), istM = istMin % 60;
+            const utcDay = now.getUTCDay();
+            // Adjust day for IST midnight crossover
+            const istDay = (istMin + 330 >= 1440) ? (utcDay + 1) % 7 : utcDay;
+            const isWeekday  = istDay >= 1 && istDay <= 5;
             const afterOpen  = istH > 9  || (istH === 9  && istM >= 15);
             const beforeClose= istH < 15 || (istH === 15 && istM <= 30);
             return isWeekday && afterOpen && beforeClose;
         }
-        // Refresh every 5s during market hours, every 60s otherwise
-        function scheduleMarketRefresh(){
-            setTimeout(async () => {
-                await fetchMarketData();
-                scheduleMarketRefresh();
-            }, isMarketOpen() ? 5000 : 60000);
+
+        let _marketRefreshTimer = null;
+        function scheduleMarketRefresh(specialHours){
+            clearTimeout(_marketRefreshTimer);
+            if(!isMarketOpen(specialHours)){
+                // Market closed — check again in 5 min in case of special session
+                _marketRefreshTimer = setTimeout(async () => {
+                    const data = await fetchMarketData();
+                    const sp = data && data.specialHours;
+                    scheduleMarketRefresh(sp);
+                }, 5 * 60 * 1000);
+                return;
+            }
+            // Market open — refresh every 5 seconds
+            _marketRefreshTimer = setTimeout(async () => {
+                const data = await fetchMarketData();
+                const sp = data && data.specialHours;
+                scheduleMarketRefresh(sp);
+            }, 5000);
         }
-        fetchMarketData();
-        scheduleMarketRefresh();
+        fetchMarketData().then(d => scheduleMarketRefresh(d && d.specialHours));
     })();
 
     // ── PWA INSTALL PROMPT ──
