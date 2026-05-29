@@ -10,70 +10,71 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
+html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
 
-.screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;max-width:480px;margin:0 auto;background:#f6f3ee;box-shadow:0 0 60px rgba(0,0,0,0.3);}
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;max-width:480px;margin:0 auto;background:#fdfbf7;}
 
-/* ── PURPLE HEADER ── */
+/* ── HEADER ── */
 .welcome-header{
-  background:linear-gradient(160deg,#4a2a78,#341d59);
-  padding:48px 24px 32px;
+  background:#ffffff;
+  border-bottom:1px solid #ede8f5;
+  padding:44px 24px 24px;
   display:flex;flex-direction:column;align-items:center;
   flex-shrink:0;
 }
 .header-logo{
   width:64px;height:64px;border-radius:16px;overflow:hidden;
-  margin-bottom:16px;
-  box-shadow:0 4px 24px rgba(0,0,0,0.3);
+  margin-bottom:14px;
+  box-shadow:0 4px 16px rgba(74,42,120,0.12);
 }
 .header-logo img{width:100%;height:100%;object-fit:cover;}
 .header-logo-fallback{
   width:64px;height:64px;border-radius:16px;
-  background:rgba(255,255,255,0.15);
+  background:linear-gradient(135deg,#4a2a78,#6b3fa0);
   display:flex;align-items:center;justify-content:center;
   font-size:24px;font-weight:800;color:#fff;
-  margin-bottom:16px;
+  margin-bottom:14px;
 }
-.welcome-title{font-size:24px;font-weight:800;color:#fff;text-align:center;letter-spacing:-0.02em;}
-.welcome-name{font-size:15px;color:rgba(255,255,255,0.65);margin-top:4px;text-align:center;}
+.welcome-title{font-size:22px;font-weight:800;color:#1a2030;text-align:center;letter-spacing:-0.02em;}
+.welcome-name{font-size:13px;color:#9ca3af;margin-top:4px;text-align:center;}
 
-/* ── WHITE CARD ── */
+/* ── BODY ── */
 .welcome-card{
-  background:#fff;
-  border-radius:24px 24px 0 0;
-  margin-top:-16px;
+  background:#fdfbf7;
   flex:1;overflow-y:auto;
-  padding:24px 20px 100px;
+  padding:20px 20px 100px;
 }
 .card-heading{
-  font-size:15px;font-weight:700;color:#4a2a78;
+  font-size:14px;font-weight:700;color:#1a2030;
   margin-bottom:4px;
 }
 .card-sub{
-  font-size:11px;color:#9ca3af;margin-bottom:20px;
+  font-size:11px;color:#9ca3af;margin-bottom:16px;
 }
 
 /* ── TILES ── */
 .tile-grid{display:flex;flex-direction:column;gap:10px;}
 
 .tile-full{
-  background:#faf9fc;border:1.5px solid #ede8f5;
+  background:#ffffff;border:1px solid #e5e5e5;
   border-radius:14px;padding:16px;
   display:flex;align-items:center;gap:14px;
   cursor:pointer;transition:all .15s;
   position:relative;
   border-left:4px solid #d97706;
+  box-shadow:0 2px 6px rgba(0,0,0,0.03);
 }
 .tile-full:active{background:#f3f0f8;transform:scale(0.99);}
 
 .tile-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 
 .tile{
-  background:#faf9fc;border:1.5px solid #ede8f5;
+  background:#ffffff;border:1px solid #e5e5e5;
   border-radius:14px;padding:16px 14px;
   display:flex;flex-direction:column;
   cursor:pointer;transition:all .15s;
   position:relative;min-height:90px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.03);
 }
 .tile:active{background:#f3f0f8;transform:scale(0.98);}
 
@@ -108,13 +109,13 @@ html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-se
 .bottom-bar{
   position:fixed;bottom:0;left:50%;transform:translateX(-50%);
   width:100%;max-width:480px;
-  background:#fff;border-top:1px solid #f0ebf8;
+  background:#ffffff;border-top:1px solid #ede8f5;
   padding:12px 20px;
   display:flex;flex-direction:column;gap:8px;
 }
 .start-btn{
   width:100%;padding:15px;
-  background:#4a2a78;border:none;border-radius:14px;
+  background:#1a2030;border:none;border-radius:14px;
   color:#fff;font-size:15px;font-weight:700;
   font-family:'Plus Jakarta Sans',sans-serif;
   cursor:pointer;transition:opacity .15s;
@@ -126,7 +127,7 @@ html,body{height:100%;background:#4a2a78;font-family:'Plus Jakarta Sans',sans-se
 
 /* ── LOADING ── */
 .loading-overlay{
-  position:fixed;inset:0;background:rgba(246,243,238,0.9);
+  position:fixed;inset:0;background:rgba(253,251,247,0.92);
   display:none;align-items:center;justify-content:center;z-index:999;
 }
 .loading-overlay.show{display:flex;}
