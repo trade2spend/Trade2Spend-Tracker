@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Trade2Spend">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="logo.png">
     <title>Trade2Spend | Live Tracker</title>
     <style>
         :root {
@@ -237,6 +242,7 @@
 
     <!-- MARKETS TAB -->
     <div id="markets" class="content-section active">
+        <div id="market-last-updated" style="font-size:0.72rem;color:#aaa;text-align:right;padding:8px 4px 2px;"></div>
         <div class="market-grid" id="market-grid-container">
             <div style="text-align:center; padding: 40px; color: #888;">Fetching live market data...</div>
         </div>
@@ -391,7 +397,7 @@
                         const icon = isUp ? '▲' : '▼';
                         const pillClass = isUp ? 'up' : 'down';
                         const sign = isUp ? '+' : '';
-                        
+
                         container.innerHTML += `
                             <div class="market-card">
                                 <div class="market-title">${idx === 'BANKNIFTY' ? 'BANK NIFTY' : idx}</div>
@@ -405,9 +411,16 @@
                     }
                 });
             }
+            if(container.innerHTML === '') {
+                container.innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">Market data not available.<br>Will update during market hours.</div>';
+            }
+            if(data.lastUpdated) {
+                const updEl = document.getElementById('market-last-updated');
+                if(updEl) updEl.innerText = 'Data as of: ' + new Date(data.lastUpdated).toLocaleString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+            }
         } catch(e) {
             console.error("Market fetch failed", e);
-            document.getElementById('market-grid-container').innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">Unable to load market data. Check connection.</div>';
+            document.getElementById('market-grid-container').innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">Unable to load market data.<br>Check your connection.</div>';
         }
     }
 
@@ -416,11 +429,13 @@
         try {
             const memberId = localStorage.getItem('t2s_member_id');
             let isAdmin = false;
+            let memberTier = 'free';
             if(memberId) {
                 const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, { method: 'GET' });
                 if(members && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     isAdmin = members[0].is_admin === true;
+                    memberTier = members[0].tier || 'free';
                 }
             }
 
@@ -437,7 +452,7 @@
             data.trades.forEach(trade => {
                 if(trade.isDeleted) return;
 
-                let isPreBuy = !trade.isTriggered && !isAdmin;
+                let isPreBuy = !trade.isTriggered && !isAdmin && memberTier !== 'paid';
                 let badgeClass = isPreBuy ? 'watching' : (trade.status === 'ACTIVE' ? 'profit' : 'loss');
                 let badgeText = isPreBuy ? 'WATCHING' : (trade.status === 'ACTIVE' ? 'IN PROFIT' : trade.status);
                 let typeClass = trade.type.toLowerCase();
@@ -519,12 +534,21 @@
             if(data.months && data.months.length > 0) {
                 // Populate Current Month (Top section) using the latest month in JSON
                 const current = data.months[0].summary;
-                document.getElementById('curr-month-name').innerText = data.months[0].month;
-                document.getElementById('perf-winrate').innerText = current.winRate + '%';
-                document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins} W · ${current.losses} L)`;
-                document.getElementById('perf-max').innerText = current.maxProfit.toLocaleString();
-                document.getElementById('perf-pnl').innerText = (current.totalPnL >= 0 ? '+₹' : '-₹') + Math.abs(current.totalPnL).toLocaleString();
-                document.getElementById('perf-pnl').className = 'metric-value ' + (current.totalPnL >= 0 ? 'val-up' : 'val-down');
+                const monthLabel = data.months[0].month || 'CURRENT MONTH';
+                document.getElementById('curr-month-name').innerText = monthLabel;
+                if(current.totalTrades === 0) {
+                    document.getElementById('perf-winrate').innerText = '--%';
+                    document.getElementById('perf-total').innerText = 'No trades yet';
+                    document.getElementById('perf-max').innerText = '--';
+                    document.getElementById('perf-pnl').innerText = '--';
+                    document.getElementById('perf-pnl').className = 'metric-value';
+                } else {
+                    document.getElementById('perf-winrate').innerText = current.winRate + '%';
+                    document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins} W · ${current.losses} L)`;
+                    document.getElementById('perf-max').innerText = current.maxProfit.toLocaleString();
+                    document.getElementById('perf-pnl').innerText = (current.totalPnL >= 0 ? '+₹' : '-₹') + Math.abs(current.totalPnL).toLocaleString();
+                    document.getElementById('perf-pnl').className = 'metric-value ' + (current.totalPnL >= 0 ? 'val-up' : 'val-down');
+                }
 
                 // Populate Past Months
                 data.months.slice(1).forEach(m => {
@@ -887,6 +911,45 @@
         fetchMarketData();
         setInterval(fetchMarketData, 60000);
     })();
+
+    // ── PWA INSTALL PROMPT ──
+    let deferredInstall = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredInstall = e;
+      if(!localStorage.getItem('t2s_install_dismissed')){
+        const b = document.getElementById('install-banner');
+        if(b) b.style.display = 'flex';
+      }
+    });
+    function triggerInstall(){
+      if(!deferredInstall) return;
+      deferredInstall.prompt();
+      deferredInstall.userChoice.then(r => {
+        if(r.outcome === 'accepted') dismissInstall();
+        deferredInstall = null;
+      });
+    }
+    function dismissInstall(){
+      localStorage.setItem('t2s_install_dismissed','1');
+      const b = document.getElementById('install-banner');
+      if(b) b.style.display = 'none';
+    }
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('sw.js').catch(()=>{});
+    }
 </script>
+
+<!-- Install Banner -->
+<div id="install-banner" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#ffffff;border-top:1px solid #ede8f5;padding:12px 16px;z-index:500;align-items:center;gap:12px;box-shadow:0 -4px 16px rgba(74,42,120,0.08);">
+  <img src="logo.png" alt="T2S" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">
+  <div style="flex:1;">
+    <div style="font-size:13px;font-weight:700;color:#1a2030;font-family:'Plus Jakarta Sans',sans-serif;">Add Trade2Spend to Home Screen</div>
+    <div style="font-size:11px;color:#9ca3af;font-family:'Plus Jakarta Sans',sans-serif;">Open instantly like an app — no browser needed</div>
+  </div>
+  <button onclick="triggerInstall()" style="padding:8px 14px;background:#4a2a78;border:none;border-radius:10px;color:#fff;font-size:12px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;flex-shrink:0;">Add</button>
+  <button onclick="dismissInstall()" style="padding:8px;background:transparent;border:none;color:#9ca3af;font-size:18px;cursor:pointer;flex-shrink:0;line-height:1;">×</button>
+</div>
+
 </body>
 </html>
