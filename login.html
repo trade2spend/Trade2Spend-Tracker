@@ -315,18 +315,53 @@ async function checkExistingSession(){
   return false;
 }
 
-// ── CHECK LOCK STATUS ────────────────────────────────────────────────────────
-function checkLock(){
-  const lockUntil = localStorage.getItem('t2s_lock_until');
-  if(!lockUntil) return false;
-  if(new Date() < new Date(lockUntil)){
-    const mins = Math.ceil((new Date(lockUntil) - new Date()) / 60000);
+// ── CHECK LOCK STATUS (localStorage fast-path + Supabase authoritative) ──────
+async function checkLock(){
+  // Fast local check first
+  const localLock = localStorage.getItem('t2s_lock_until');
+  if(localLock && new Date() < new Date(localLock)){
+    const mins = Math.ceil((new Date(localLock) - new Date()) / 60000);
     document.getElementById('pin-lock').style.display = 'block';
     document.getElementById('pin-lock').textContent = `Account locked. Try again in ${mins} minute${mins>1?'s':''}.`;
     return true;
   }
+  // Also check Supabase session for server-enforced lockout (bypass-proof)
+  try {
+    const deviceId = getDeviceId();
+    const memberId = localStorage.getItem('t2s_member_id');
+    if(memberId) {
+      const sessions = await sbFetch(
+        `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&select=locked_until,failed_attempts_today`,
+        { method:'GET', headers:{'Accept':'application/json'} }
+      );
+      if(sessions && sessions.length > 0 && sessions[0].locked_until) {
+        const serverLock = new Date(sessions[0].locked_until);
+        if(new Date() < serverLock){
+          const mins = Math.ceil((serverLock - new Date()) / 60000);
+          localStorage.setItem('t2s_lock_until', serverLock.toISOString()); // sync locally
+          document.getElementById('pin-lock').style.display = 'block';
+          document.getElementById('pin-lock').textContent = `Account locked. Try again in ${mins} minute${mins>1?'s':''}.`;
+          return true;
+        }
+      }
+    }
+  } catch(e){ console.log('Lock check error:', e); }
   localStorage.removeItem('t2s_lock_until');
   return false;
+}
+
+// ── BLOCK KEYBOARD ON PIN SCREEN ─────────────────────────────────────────────
+function installPinKeyboardBlock(){
+  document.addEventListener('keydown', function(e){
+    const pinScreen = document.getElementById('screen-pin');
+    const setupScreen = document.getElementById('screen-setup');
+    const pinVisible  = pinScreen   && !pinScreen.classList.contains('hidden');
+    const setupVisible= setupScreen && !setupScreen.classList.contains('hidden');
+    if(pinVisible || setupVisible){
+      // Allow only Tab (accessibility) and Escape
+      if(!['Tab','Escape'].includes(e.key)) e.preventDefault();
+    }
+  });
 }
 
 // ── MOBILE NUMBER STEP ───────────────────────────────────────────────────────
@@ -463,14 +498,17 @@ async function verifyPin(){
     }
 
     if(session.pin_hash === hash){
-      // ✅ Correct PIN
+      // ✅ Correct PIN — reset lockout both locally and server-side
       failedAttempts = 0;
       localStorage.removeItem('t2s_lock_until');
 
-      // Update last_active
       await sbFetch(`sessions?id=eq.${session.id}`, {
         method:'PATCH',
-        body: JSON.stringify({ last_active: new Date().toISOString() }),
+        body: JSON.stringify({
+          last_active: new Date().toISOString(),
+          failed_attempts_today: 0,
+          locked_until: null
+        }),
         headers:{'Accept':'application/json'}
       });
 
@@ -498,22 +536,38 @@ async function verifyPin(){
 
       const remaining = MAX_ATTEMPTS - failedAttempts;
       if(remaining <= 0){
-        // Lock account
-        const lockUntil = new Date(Date.now() + LOCK_MINUTES * 60000);
-        localStorage.setItem('t2s_lock_until', lockUntil.toISOString());
+        // Lock account — write to both localStorage AND Supabase (server-enforced)
+        const lockUntil = new Date(Date.now() + LOCK_MINUTES * 60000).toISOString();
+        localStorage.setItem('t2s_lock_until', lockUntil);
         document.getElementById('pin-err').textContent = '';
         document.getElementById('pin-lock').style.display = 'block';
         document.getElementById('pin-lock').textContent = `Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;
 
-        // Notify admin via Supabase (log the lockout)
-        await sbFetch('keep_alive_log', {
-          method:'POST',
-          body: JSON.stringify({ source: `PIN_LOCKOUT_${currentMember.id}` }),
-          headers:{'Accept':'application/json'}
-        });
+        // Persist lockout server-side so it survives localStorage clear / incognito
+        try {
+          await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${getDeviceId()}`, {
+            method:'PATCH',
+            body: JSON.stringify({ locked_until: lockUntil, failed_attempts_today: failedAttempts }),
+            headers:{'Accept':'application/json'}
+          });
+          // Log lockout for admin visibility
+          await sbFetch('keep_alive_log', {
+            method:'POST',
+            body: JSON.stringify({ source: `PIN_LOCKOUT_${currentMember.id}` }),
+            headers:{'Accept':'application/json'}
+          });
+        } catch(e){ console.log('Lockout persist error:', e); }
       } else {
         document.getElementById('pin-err').textContent =
           `Incorrect PIN. ${remaining} attempt${remaining>1?'s':''} remaining.`;
+        // Increment server-side failed_attempts_today
+        try {
+          await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${getDeviceId()}`, {
+            method:'PATCH',
+            body: JSON.stringify({ failed_attempts_today: failedAttempts }),
+            headers:{'Accept':'application/json'}
+          });
+        } catch(e){ console.log('Attempt count persist error:', e); }
       }
     }
   } catch(e){
@@ -634,6 +688,7 @@ function checkAutoLock(){
 // ── INIT ─────────────────────────────────────────────────────────────────────
 (async function init(){
   showLoading(true);
+  installPinKeyboardBlock();
 
   // Auto-lock: if session exists but was idle too long → show PIN
   const autoLocked = checkAutoLock();
@@ -651,7 +706,7 @@ function checkAutoLock(){
         currentMember = members[0];
         currentMobile = '+91' + mobile;
         showLoading(false);
-        if(checkLock()){ showScreen('screen-pin'); return; }
+        if(await checkLock()){ showScreen('screen-pin'); return; }
         showScreen('screen-pin');
         return;
       }
