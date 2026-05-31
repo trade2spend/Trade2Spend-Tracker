@@ -228,7 +228,7 @@
                 <span class="status-indicator closed" id="global-market-dot"></span>
                 <span id="global-market-text">Market Closed</span>
             </div>
-            <span>9:15 AM – 3:30 PM IST · Auto-refreshes every 60 sec</span>
+            <span id="refresh-hint">9:15 AM – 3:30 PM IST · Auto-refreshes every 5 sec</span>
         </div>
         
         <div class="tabs">
@@ -385,6 +385,10 @@
             document.getElementById('global-market-dot').className = isOpen ? 'status-indicator open' : 'status-indicator closed';
             document.getElementById('global-market-text').innerText = isOpen ? 'Market Open' : 'Market Closed';
             document.getElementById('live-badge').style.display = isOpen ? 'flex' : 'none';
+            const hint = document.getElementById('refresh-hint');
+            if(hint) hint.innerText = isOpen
+                ? '9:15 AM – 3:30 PM IST · Live · updates every 5 sec'
+                : '9:15 AM – 3:30 PM IST · Resumes at market open';
 
             const container = document.getElementById('market-grid-container');
             container.innerHTML = '';
@@ -416,7 +420,15 @@
             }
             if(data.lastUpdated) {
                 const updEl = document.getElementById('market-last-updated');
-                if(updEl) updEl.innerText = 'Data as of: ' + new Date(data.lastUpdated).toLocaleString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+                if(updEl) {
+                    const ageMs  = Date.now() - new Date(data.lastUpdated).getTime();
+                    const ageMin = Math.round(ageMs / 60000);
+                    const stale  = ageMs > 60 * 60 * 1000; // >1 hour
+                    const timeStr = new Date(data.lastUpdated).toLocaleString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+                    updEl.innerHTML = stale
+                        ? `<span style="color:#dc2626">⚠ Data may be outdated · as of ${timeStr} (${ageMin}m ago) · Send /market_on to bot</span>`
+                        : `Data as of: ${timeStr}`;
+                }
             }
             return data; // return for scheduleMarketRefresh to read specialHours
         } catch(e) {
@@ -679,8 +691,11 @@
                 }
             }
 
-            // Fetch all posts
-            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.asc&limit=100', { method: 'GET' });
+            // Fetch posts — filter paid-only at DB level for free users (prevents network leakage)
+            const postQuery = memberTier === 'paid' || isAdmin
+                ? 'posts?is_deleted=eq.false&order=sent_at.desc&limit=100'
+                : 'posts?is_deleted=eq.false&or=(audience.eq.all)&order=sent_at.desc&limit=100';
+            const posts = await sbFetch(postQuery, { method: 'GET' });
 
             let readMap = {};
             if(memberId) {
@@ -697,8 +712,8 @@
                 return;
             }
 
-            // Separate parent posts and replies
-            const parentPosts = posts.filter(p => !p.parent_id).reverse(); // newest first
+            // Separate parent posts and replies — already ordered desc by DB query
+            const parentPosts = posts.filter(p => !p.parent_id);
             const replies     = posts.filter(p => p.parent_id);
 
             // Group replies by parent_id
@@ -742,7 +757,8 @@
                     if(postReplies.length > 0) {
                         repliesHtml = `<div class="thread-replies">`;
                         postReplies.forEach(reply => {
-                            const replyCanSee = reply.audience !== 'paid_only' || memberTier === 'paid';
+                            // Reply inherits parent visibility: free users cannot see any reply under a paid-only parent
+                            const replyCanSee = canSee && (reply.audience !== 'paid_only' || memberTier === 'paid');
                             if(replyCanSee) {
                                 repliesHtml += `
                                 <div class="reply-card" id="ucard-${reply.id}">
