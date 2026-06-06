@@ -14,97 +14,103 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;}
 
-/* ── SCREENS ── */
 .screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;transition:opacity .3s,transform .3s;max-width:480px;left:50%;transform:translateX(-50%);}
 .screen.hidden{opacity:0;pointer-events:none;}
 
-/* ── MOBILE SETUP SCREEN ── */
-#screen-mobile{background:#fdfbf7;}
-.logo-wrap{display:flex;flex-direction:column;align-items:center;margin-bottom:32px;}
-.logo-img{width:72px;height:72px;border-radius:18px;overflow:hidden;margin-bottom:12px;box-shadow:0 4px 20px rgba(74,42,120,0.15);}
+/* LOGO */
+.logo-wrap{display:flex;flex-direction:column;align-items:center;margin-bottom:28px;}
+.logo-img{width:68px;height:68px;border-radius:18px;overflow:hidden;margin-bottom:10px;box-shadow:0 4px 20px rgba(74,42,120,0.15);}
 .logo-img img{width:100%;height:100%;object-fit:cover;}
 .brand-name{font-size:22px;font-weight:800;color:#4a2a78;letter-spacing:-0.02em;}
 .brand-sub{font-size:13px;color:#9ca3af;margin-top:2px;}
 
-.form-card{width:100%;max-width:360px;background:#fff;border-radius:20px;padding:24px;box-shadow:0 2px 24px rgba(74,42,120,0.08);}
-.form-title{font-size:18px;font-weight:700;color:#1a2030;margin-bottom:4px;}
-.form-sub{font-size:13px;color:#9ca3af;margin-bottom:20px;}
+/* FORM CARD */
+.form-card{width:100%;max-width:360px;background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 24px rgba(74,42,120,0.08);}
+.form-title{font-size:17px;font-weight:700;color:#1a2030;margin-bottom:3px;}
+.form-sub{font-size:12px;color:#9ca3af;margin-bottom:16px;}
 
-.input-group{margin-bottom:16px;}
+/* MEMBER TYPE TOGGLE */
+.type-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
+.type-option{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:12px;border:1.5px solid #e5e0f0;background:#f9f8fc;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent;}
+.type-option input[type=radio]{display:none;}
+.type-option.active{border-color:#4a2a78;background:#f3f0f8;box-shadow:0 0 0 3px rgba(74,42,120,0.08);}
+.type-icon{font-size:1.3rem;flex-shrink:0;}
+.type-title{font-size:12px;font-weight:700;color:#1a2030;}
+.type-sub{font-size:10px;color:#9ca3af;margin-top:1px;line-height:1.3;}
+
+/* INPUT */
+.input-group{margin-bottom:14px;}
 .input-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;margin-bottom:6px;display:block;}
 .phone-input-wrap{display:flex;gap:8px;align-items:center;}
-.prefix-pill{background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:10px;padding:12px 14px;font-size:15px;font-weight:600;color:#4a2a78;white-space:nowrap;}
-.phone-input{flex:1;background:#f9f8fc;border:1.5px solid #e5e0f0;border-radius:10px;padding:12px 14px;font-size:15px;font-family:'Plus Jakarta Sans',sans-serif;color:#1a2030;outline:none;transition:border-color .2s;width:100%;}
+.prefix-pill{background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:10px;padding:11px 12px;font-size:14px;font-weight:600;color:#4a2a78;white-space:nowrap;}
+.phone-input{flex:1;background:#f9f8fc;border:1.5px solid #e5e0f0;border-radius:10px;padding:11px 12px;font-size:15px;font-family:'Plus Jakarta Sans',sans-serif;color:#1a2030;outline:none;transition:border-color .2s;width:100%;}
 .phone-input:focus{border-color:#4a2a78;background:#fff;}
 .phone-input::placeholder{color:#c4b8d8;}
 
-.submit-btn{width:100%;padding:14px;background:#4a2a78;border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:opacity .15s,transform .1s;margin-top:4px;}
+/* BUTTONS */
+.submit-btn{width:100%;padding:13px;background:#4a2a78;border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:opacity .15s,transform .1s;margin-top:4px;}
 .submit-btn:active{opacity:0.85;transform:scale(0.99);}
 .submit-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.free-btn{width:100%;padding:13px;background:linear-gradient(135deg,#059669,#0d9488);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:opacity .15s;display:none;}
+.free-btn:active{opacity:0.85;}
 
 .err-msg{font-size:12px;color:#dc2626;margin-top:10px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;display:none;}
 .err-msg.show{display:block;}
 
-/* ── PIN SCREEN ── */
+/* PIN SCREEN */
 #screen-pin{background:#fdfbf7;}
 .pin-card{width:100%;max-width:360px;background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 2px 24px rgba(74,42,120,0.08);text-align:center;}
-.pin-logo{width:56px;height:56px;border-radius:14px;overflow:hidden;margin:0 auto 14px;}
+.pin-logo{width:52px;height:52px;border-radius:14px;overflow:hidden;margin:0 auto 12px;}
 .pin-logo img{width:100%;height:100%;object-fit:cover;}
 .pin-greeting{font-size:20px;font-weight:800;color:#1a2030;margin-bottom:4px;}
-.pin-name{font-size:14px;color:#9ca3af;margin-bottom:24px;}
-.pin-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:16px;}
+.pin-name{font-size:13px;color:#9ca3af;margin-bottom:22px;}
+.pin-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:14px;}
 
-/* PIN dots */
-.pin-dots{display:flex;gap:16px;justify-content:center;margin-bottom:28px;}
+.pin-dots{display:flex;gap:16px;justify-content:center;margin-bottom:24px;}
 .pin-dot{width:16px;height:16px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;}
 .pin-dot.filled{background:#4a2a78;border-color:#4a2a78;transform:scale(1.1);}
 .pin-dot.error{background:#dc2626;border-color:#dc2626;}
 .pin-dot.shake{animation:shake .4s ease;}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 
-/* PIN pad */
 .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:280px;margin:0 auto;}
-.pin-key{height:62px;border-radius:14px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:22px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .12s;display:flex;align-items:center;justify-content:center;}
+.pin-key{height:60px;border-radius:14px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:22px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .12s;display:flex;align-items:center;justify-content:center;touch-action:manipulation;user-select:none;-webkit-user-select:none;}
 .pin-key:active{background:#ede8f5;border-color:#4a2a78;transform:scale(0.95);}
 .pin-key.del{font-size:18px;color:#9ca3af;}
-.pin-key.confirm{background:#4a2a78;border-color:#4a2a78;color:#fff;}
-.pin-key.confirm:active{background:#3a1f60;}
 .pin-key.invisible{visibility:hidden;}
 
-.pin-err-text{font-size:12px;color:#dc2626;margin-top:12px;height:16px;transition:opacity .2s;}
-.pin-forgot{font-size:12px;color:#c4b8d8;margin-top:16px;cursor:pointer;text-decoration:underline;}
+.pin-err-text{font-size:12px;color:#dc2626;margin-top:10px;height:16px;}
+.pin-forgot{font-size:12px;color:#c4b8d8;margin-top:10px;cursor:pointer;text-decoration:underline;display:block;}
+.pin-switch{font-size:12px;color:#9ca3af;margin-top:6px;cursor:pointer;display:block;}
+.pin-switch:hover{color:#4a2a78;}
 .pin-lock-msg{font-size:13px;color:#dc2626;margin-top:8px;display:none;}
 
-/* ── PIN SETUP SCREEN ── */
+/* PIN SETUP */
 #screen-setup{background:#fdfbf7;}
 .setup-card{width:100%;max-width:360px;background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 2px 24px rgba(74,42,120,0.08);text-align:center;}
 .setup-title{font-size:20px;font-weight:800;color:#1a2030;margin-bottom:4px;}
-.setup-sub{font-size:13px;color:#9ca3af;margin-bottom:28px;}
-.setup-step{font-size:12px;font-weight:600;color:#9ca3af;margin-bottom:16px;background:#f9f8fc;border-radius:20px;padding:6px 14px;display:inline-block;}
+.setup-sub{font-size:13px;color:#9ca3af;margin-bottom:24px;}
+.setup-step{font-size:12px;font-weight:600;color:#9ca3af;margin-bottom:14px;background:#f9f8fc;border-radius:20px;padding:6px 14px;display:inline-block;}
 
-/* ── LOADING ── */
-.loading-overlay{position:fixed;inset:0;background:rgba(253,251,247,0.92);display:flex;align-items:center;justify-content:center;z-index:999;display:none;}
+/* LOADING */
+.loading-overlay{position:fixed;inset:0;background:rgba(253,251,247,0.92);display:none;align-items:center;justify-content:center;z-index:999;}
 .loading-overlay.show{display:flex;}
 .spinner{width:36px;height:36px;border:3px solid #ede8f5;border-top-color:#4a2a78;border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ── TOAST ── */
+/* TOAST */
 #toast{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:#1a2030;color:#fff;font-size:13px;padding:10px 20px;border-radius:20px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
 #toast.show{opacity:1;}
 
-/* ── DISCLAIMER ── */
-.disclaimer{font-size:10px;color:#c4b8d8;text-align:center;margin-top:16px;max-width:300px;line-height:1.6;}
+.disclaimer{font-size:10px;color:#c4b8d8;text-align:center;margin-top:14px;max-width:300px;line-height:1.6;}
 </style>
 </head>
 <body>
 
-<!-- Loading -->
 <div class="loading-overlay" id="loading"><div class="spinner"></div></div>
-
-<!-- Toast -->
 <div id="toast"></div>
 
-<!-- ── SCREEN 1: MOBILE NUMBER ── -->
+<!-- ── SCREEN 1: LANDING ── -->
 <div class="screen" id="screen-mobile">
   <div class="logo-wrap">
     <div class="logo-img">
@@ -116,28 +122,53 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
 
   <div class="form-card">
     <div class="form-title">Welcome 👋</div>
-    <div class="form-sub">Enter your registered mobile number to continue</div>
+    <div class="form-sub">Select your membership type to continue</div>
 
-    <div class="input-group">
-      <label class="input-label">Mobile Number</label>
-      <div class="phone-input-wrap">
-        <div class="prefix-pill">🇮🇳 +91</div>
-        <input type="tel" class="phone-input" id="mobile-input"
-          placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric"
-          onkeyup="onMobileKey(event)" oninput="this.value=this.value.replace(/\D/g,'')">
+    <!-- Member type toggle -->
+    <div class="type-toggle">
+      <label class="type-option active" id="type-paid-label" onclick="onTypeChange('paid')">
+        <input type="radio" name="member_type" value="paid" checked>
+        <span class="type-icon">👑</span>
+        <div>
+          <div class="type-title">Paid Member</div>
+          <div class="type-sub">Full access + trade alerts</div>
+        </div>
+      </label>
+      <label class="type-option" id="type-free-label" onclick="onTypeChange('free')">
+        <input type="radio" name="member_type" value="free">
+        <span class="type-icon">👋</span>
+        <div>
+          <div class="type-title">Free Member</div>
+          <div class="type-sub">Browse public content</div>
+        </div>
+      </label>
+    </div>
+
+    <!-- Paid section -->
+    <div id="paid-section">
+      <div class="input-group">
+        <label class="input-label">Mobile Number</label>
+        <div class="phone-input-wrap">
+          <div class="prefix-pill">🇮🇳 +91</div>
+          <input type="tel" class="phone-input" id="mobile-input"
+            placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric"
+            onkeyup="onMobileKey(event)" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
       </div>
+      <button class="submit-btn" id="mobile-btn" onclick="checkMobile()">Continue →</button>
+    </div>
+
+    <!-- Free section -->
+    <div id="free-section" style="display:none;">
+      <button class="free-btn" id="free-btn" onclick="browseFree()">Browse Free →</button>
     </div>
 
     <div class="err-msg" id="mobile-err"></div>
-
-    <button class="submit-btn" id="mobile-btn" onclick="checkMobile()">
-      Continue →
-    </button>
   </div>
 
   <div class="disclaimer">
     Educational purposes only. Not investment advice.<br>
-    Access restricted to approved members only.
+    Not SEBI registered. Access controlled by membership.
   </div>
 </div>
 
@@ -147,11 +178,11 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
     <div class="pin-logo">
       <img src="logo.png" alt="T2S" onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
     </div>
-    <div class="pin-greeting">Welcome back</div>
-    <div class="pin-name" id="pin-member-name">Member</div>
+    <div class="pin-greeting">Welcome back 👋</div>
+    <div class="pin-name" id="pin-member-name">Enter your PIN</div>
     <div class="pin-label">ENTER YOUR PIN</div>
 
-    <div class="pin-dots" id="pin-dots">
+    <div class="pin-dots">
       <div class="pin-dot" id="d0"></div>
       <div class="pin-dot" id="d1"></div>
       <div class="pin-dot" id="d2"></div>
@@ -175,22 +206,23 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
 
     <div class="pin-err-text" id="pin-err"></div>
     <div class="pin-lock-msg" id="pin-lock"></div>
-    <div class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @tusharview</div>
+    <span class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @tusharview</span>
+    <span class="pin-switch" onclick="switchAccount()">Not you? Switch account</span>
   </div>
 </div>
 
-<!-- ── SCREEN 3: PIN SETUP (first time) ── -->
+<!-- ── SCREEN 3: PIN SETUP ── -->
 <div class="screen hidden" id="screen-setup">
   <div class="setup-card">
-    <div class="pin-logo" style="margin:0 auto 14px;">
+    <div class="pin-logo" style="margin:0 auto 12px;">
       <img src="logo.png" alt="T2S" onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
     </div>
     <div class="setup-title">Set Your PIN</div>
-    <div class="setup-sub">Create a 4-digit PIN to secure your account</div>
+    <div class="setup-sub">Create a 4-digit PIN to secure your account.<br>You'll only need this once every 24 hours.</div>
     <div class="setup-step" id="setup-step-label">Step 1 of 2 — Create PIN</div>
 
     <div class="pin-label" id="setup-pin-label">CHOOSE YOUR PIN</div>
-    <div class="pin-dots" id="setup-dots">
+    <div class="pin-dots">
       <div class="pin-dot" id="sd0"></div>
       <div class="pin-dot" id="sd1"></div>
       <div class="pin-dot" id="sd2"></div>
@@ -214,565 +246,415 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
 
     <div class="pin-err-text" id="setup-err"></div>
   </div>
-
-  <div class="disclaimer">
-    By continuing you agree that all content is for<br>
-    educational purposes only. Not investment advice.
-  </div>
+  <div class="disclaimer">By continuing you agree all content is for<br>educational purposes only. Not investment advice.</div>
 </div>
 
 <script>
-// ── CONFIG ──────────────────────────────────────────────────────────────────
+// ── CONFIG ─────────────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
-const MAIN_APP_URL = 'index.html';
-const WELCOME_URL  = 'welcome.html';
+const MAIN_APP_URL  = 'index.html';
+const WELCOME_URL   = 'index.html'; // welcome.html merged into index
+const SESSION_24H   = 24 * 60 * 60 * 1000;
 
-// ── STATE ───────────────────────────────────────────────────────────────────
-let currentMobile = '';
-let currentMember = null;
-let pinBuffer     = '';
-let setupBuffer   = '';
-let setupFirstPin = '';
-let setupStep     = 1;
-let failedAttempts= 0;
-const MAX_ATTEMPTS= 3;
-const LOCK_MINUTES= 30;
+// ── STATE ──────────────────────────────────────────────────────────────────
+let currentMobile  = '';
+let currentMember  = null;
+let pinBuffer      = '';
+let setupBuffer    = '';
+let setupFirstPin  = '';
+let setupStep      = 1;
+let failedAttempts = 0;
+const MAX_ATTEMPTS = 3;
+const LOCK_MINUTES = 30;
+const WEAK_PINS    = ['1111','2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212'];
 
-// ── HELPERS ─────────────────────────────────────────────────────────────────
-function showScreen(id) {
+// ── HELPERS ────────────────────────────────────────────────────────────────
+function showScreen(id){
   document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
 }
 function showLoading(v){ document.getElementById('loading').classList.toggle('show',v); }
-function toast(msg, dur=2500){
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), dur);
+function toast(msg,dur=2500){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),dur);
 }
-
-// Device ID — fingerprint from browser
 function getDeviceId(){
-  let id = localStorage.getItem('t2s_device_id');
-  if(!id){
-    id = 'dev_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem('t2s_device_id', id);
-  }
+  let id=localStorage.getItem('t2s_device_id');
+  if(!id){ id='dev_'+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('t2s_device_id',id); }
   return id;
 }
-
-// Simple hash (SHA-256 via Web Crypto)
 async function hashPin(pin){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + 'T2S_SALT'));
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pin+'T2S_SALT'));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-
-// Supabase REST helper
-async function sbFetch(path, opts={}){
-  const { headers: extraHeaders, ...restOpts } = opts;
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+async function sbFetch(path,opts={}){
+  const {headers:extraHeaders,...restOpts}=opts;
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{
     ...restOpts,
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-      ...(extraHeaders || {})
-    }
+    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...(extraHeaders||{})}
   });
-  if(!res.ok){
-    const err = await res.text();
-    throw new Error(err);
+  if(!res.ok){ const err=await res.text(); throw new Error(err); }
+  const text=await res.text(); return text?JSON.parse(text):[];
+}
+
+// ── MEMBER TYPE TOGGLE ─────────────────────────────────────────────────────
+function onTypeChange(type){
+  const paidSection  = document.getElementById('paid-section');
+  const freeSection  = document.getElementById('free-section');
+  const freeBtn      = document.getElementById('free-btn');
+  const paidLabel    = document.getElementById('type-paid-label');
+  const freeLabel    = document.getElementById('type-free-label');
+  const errEl        = document.getElementById('mobile-err');
+  errEl.classList.remove('show');
+
+  if(type==='free'){
+    paidSection.style.display='none';
+    freeSection.style.display='block';
+    freeBtn.style.display='block';
+    paidLabel.classList.remove('active');
+    freeLabel.classList.add('active');
+  } else {
+    paidSection.style.display='block';
+    freeSection.style.display='none';
+    freeBtn.style.display='none';
+    paidLabel.classList.add('active');
+    freeLabel.classList.remove('active');
   }
-  const text = await res.text();
-  return text ? JSON.parse(text) : [];
 }
 
-// ── CHECK IF ALREADY LOGGED IN ───────────────────────────────────────────────
-async function checkExistingSession(){
-  const mobile   = localStorage.getItem('t2s_mobile');
-  const deviceId = getDeviceId();
-  if(!mobile) return false;
-
-  try {
-    // Check session still valid
-    const sessions = await sbFetch(
-      `sessions?member_id=eq.${localStorage.getItem('t2s_member_id')}&device_id=eq.${deviceId}&is_active=eq.true`,
-      { method:'GET', headers:{'Accept':'application/json'} }
-    );
-    if(sessions && sessions.length > 0){
-      // Check member still enabled
-      const members = await sbFetch(
-        `members?mobile=eq.%2B91${mobile}&status=eq.enabled`,
-        { method:'GET', headers:{'Accept':'application/json'} }
-      );
-      if(members && members.length > 0){
-        currentMember = members[0];
-        return true;
-      }
-    }
-  } catch(e){ console.log('Session check failed:', e); }
-  return false;
+function browseFree(){
+  localStorage.setItem('t2s_mode','free');
+  localStorage.removeItem('t2s_member_id');
+  localStorage.removeItem('t2s_mobile');
+  localStorage.removeItem('t2s_last_login');
+  window.location.href = MAIN_APP_URL;
 }
 
-// ── CHECK LOCK STATUS (localStorage fast-path + Supabase authoritative) ──────
+function switchAccount(){
+  // Clear session and show landing screen
+  ['t2s_member_id','t2s_mobile','t2s_last_login','t2s_mode','t2s_lock_until'].forEach(k=>localStorage.removeItem(k));
+  currentMember=null; currentMobile=''; pinBuffer='';
+  updateDots('');
+  document.getElementById('pin-err').textContent='';
+  document.getElementById('pin-lock').style.display='none';
+  showScreen('screen-mobile');
+}
+
+// ── LOCK CHECK ─────────────────────────────────────────────────────────────
 async function checkLock(){
-  // Fast local check first
-  const localLock = localStorage.getItem('t2s_lock_until');
-  if(localLock && new Date() < new Date(localLock)){
-    const mins = Math.ceil((new Date(localLock) - new Date()) / 60000);
-    document.getElementById('pin-lock').style.display = 'block';
-    document.getElementById('pin-lock').textContent = `Account locked. Try again in ${mins} minute${mins>1?'s':''}.`;
+  const localLock=localStorage.getItem('t2s_lock_until');
+  if(localLock && new Date()<new Date(localLock)){
+    const mins=Math.ceil((new Date(localLock)-new Date())/60000);
+    document.getElementById('pin-lock').style.display='block';
+    document.getElementById('pin-lock').textContent=`Account locked. Try again in ${mins} minute${mins>1?'s':''}.`;
     return true;
   }
-  // Also check Supabase session for server-enforced lockout (bypass-proof)
   try {
-    const deviceId = getDeviceId();
-    const memberId = localStorage.getItem('t2s_member_id');
-    if(memberId) {
-      const sessions = await sbFetch(
-        `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&select=locked_until,failed_attempts_today`,
-        { method:'GET', headers:{'Accept':'application/json'} }
-      );
-      if(sessions && sessions.length > 0 && sessions[0].locked_until) {
-        const serverLock = new Date(sessions[0].locked_until);
-        if(new Date() < serverLock){
-          const mins = Math.ceil((serverLock - new Date()) / 60000);
-          localStorage.setItem('t2s_lock_until', serverLock.toISOString()); // sync locally
-          document.getElementById('pin-lock').style.display = 'block';
-          document.getElementById('pin-lock').textContent = `Account locked. Try again in ${mins} minute${mins>1?'s':''}.`;
+    const memberId=localStorage.getItem('t2s_member_id');
+    if(memberId){
+      const sessions=await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(sessions&&sessions.length>0&&sessions[0].locked_until){
+        const serverLock=new Date(sessions[0].locked_until);
+        if(new Date()<serverLock){
+          const mins=Math.ceil((serverLock-new Date())/60000);
+          localStorage.setItem('t2s_lock_until',serverLock.toISOString());
+          document.getElementById('pin-lock').style.display='block';
+          document.getElementById('pin-lock').textContent=`Account locked. Try again in ${mins} minute${mins>1?'s':''}.`;
           return true;
         }
       }
     }
-  } catch(e){ console.log('Lock check error:', e); }
+  } catch(e){}
   localStorage.removeItem('t2s_lock_until');
   return false;
 }
 
-// ── BLOCK KEYBOARD ON PIN SCREEN ─────────────────────────────────────────────
 function installPinKeyboardBlock(){
-  document.addEventListener('keydown', function(e){
-    const pinScreen = document.getElementById('screen-pin');
-    const setupScreen = document.getElementById('screen-setup');
-    const pinVisible  = pinScreen   && !pinScreen.classList.contains('hidden');
-    const setupVisible= setupScreen && !setupScreen.classList.contains('hidden');
-    if(pinVisible || setupVisible){
-      // Allow only Tab (accessibility) and Escape
-      if(!['Tab','Escape'].includes(e.key)) e.preventDefault();
-    }
+  document.addEventListener('keydown',function(e){
+    const pinVisible  =!document.getElementById('screen-pin').classList.contains('hidden');
+    const setupVisible=!document.getElementById('screen-setup').classList.contains('hidden');
+    if(pinVisible||setupVisible){ if(!['Tab','Escape'].includes(e.key)) e.preventDefault(); }
   });
 }
 
-// ── MOBILE NUMBER STEP ───────────────────────────────────────────────────────
-function onMobileKey(e){
-  if(e.key === 'Enter') checkMobile();
-}
+// ── MOBILE CHECK ───────────────────────────────────────────────────────────
+function onMobileKey(e){ if(e.key==='Enter') checkMobile(); }
 
 async function checkMobile(){
-  const input = document.getElementById('mobile-input').value.trim();
-  const errEl = document.getElementById('mobile-err');
+  const input=document.getElementById('mobile-input').value.trim();
+  const errEl=document.getElementById('mobile-err');
   errEl.classList.remove('show');
 
-  if(input.length !== 10 || !/^\d{10}$/.test(input)){
-    errEl.textContent = 'Please enter a valid 10-digit mobile number.';
-    errEl.classList.add('show');
-    return;
+  if(input.length!==10||!/^\d{10}$/.test(input)){
+    errEl.textContent='Please enter a valid 10-digit mobile number.';
+    errEl.classList.add('show'); return;
   }
 
   showLoading(true);
-  document.getElementById('mobile-btn').disabled = true;
+  document.getElementById('mobile-btn').disabled=true;
 
   try {
-    const mobile = '+91' + input;
-    const members = await sbFetch(
-      `members?mobile=eq.${encodeURIComponent(mobile)}`,
-      { method:'GET', headers:{'Accept':'application/json'} }
-    );
+    const mobile='+91'+input;
+    const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}`,{method:'GET',headers:{'Accept':'application/json'}});
 
-    if(!members || members.length === 0){
-      errEl.textContent = 'This number is not registered. Contact @tusharview on Telegram to join.';
-      errEl.classList.add('show');
-      showLoading(false);
-      document.getElementById('mobile-btn').disabled = false;
-      return;
+    if(!members||members.length===0){
+      errEl.textContent='This number is not registered. Contact @tusharview on Telegram to join.';
+      errEl.classList.add('show'); showLoading(false);
+      document.getElementById('mobile-btn').disabled=false; return;
     }
 
-    const member = members[0];
-
-    if(member.status === 'disabled'){
-      errEl.textContent = 'Your account has been suspended. Contact @tusharview on Telegram.';
-      errEl.classList.add('show');
-      showLoading(false);
-      document.getElementById('mobile-btn').disabled = false;
-      return;
+    const member=members[0];
+    if(member.status==='disabled'){
+      errEl.textContent='Your account is suspended. Contact @tusharview on Telegram.';
+      errEl.classList.add('show'); showLoading(false);
+      document.getElementById('mobile-btn').disabled=false; return;
     }
 
-    currentMobile = mobile;
-    currentMember = member;
-    localStorage.setItem('t2s_mobile', input);
-    localStorage.setItem('t2s_member_id', member.id);
-
+    currentMobile=mobile; currentMember=member;
+    localStorage.setItem('t2s_mobile',input);
+    localStorage.setItem('t2s_member_id',member.id);
     showLoading(false);
 
-    // Check if device has PIN already
-    const deviceId = getDeviceId();
-    const sessions = await sbFetch(
-      `sessions?member_id=eq.${member.id}&device_id=eq.${deviceId}&is_active=eq.true`,
-      { method:'GET', headers:{'Accept':'application/json'} }
-    );
+    const sessions=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
 
-    if(sessions && sessions.length > 0 && sessions[0].pin_hash){
-      // Existing session — go to PIN entry
-      if(checkLock()){ showScreen('screen-pin'); return; }
+    if(sessions&&sessions.length>0&&sessions[0].pin_hash){
+      if(await checkLock()){ showScreen('screen-pin'); return; }
       showScreen('screen-pin');
     } else {
-      // New device — go to PIN setup
       showScreen('screen-setup');
     }
-
   } catch(e){
-    console.error(e);
-    errEl.textContent = 'Unable to verify. Check your connection and try again.';
-    errEl.classList.add('show');
-    showLoading(false);
-    document.getElementById('mobile-btn').disabled = false;
+    errEl.textContent='Unable to verify. Check your connection and try again.';
+    errEl.classList.add('show'); showLoading(false);
+    document.getElementById('mobile-btn').disabled=false;
   }
 }
 
-// ── PIN ENTRY ────────────────────────────────────────────────────────────────
-function updateDots(buf, prefix='d'){
+// ── PIN ENTRY ──────────────────────────────────────────────────────────────
+function updateDots(buf,prefix='d'){
   for(let i=0;i<4;i++){
-    const dot = document.getElementById(`${prefix}${i}`);
-    dot.classList.toggle('filled', i < buf.length);
+    const dot=document.getElementById(`${prefix}${i}`);
+    if(!dot) return;
+    dot.classList.toggle('filled',i<buf.length);
     dot.classList.remove('error','shake');
   }
 }
 
 function pinKey(k){
-  if(pinBuffer.length >= 4) return;
-  if(checkLock()) return;
-  pinBuffer += k;
-  updateDots(pinBuffer);
-  if(pinBuffer.length === 4) setTimeout(verifyPin, 120);
+  if(pinBuffer.length>=4) return;
+  const lk=localStorage.getItem('t2s_lock_until');
+  if(lk&&new Date()<new Date(lk)) return;
+  pinBuffer+=k; updateDots(pinBuffer);
+  if(pinBuffer.length===4) setTimeout(verifyPin,120);
 }
 
 function pinDel(){
-  pinBuffer = pinBuffer.slice(0,-1);
-  updateDots(pinBuffer);
-  document.getElementById('pin-err').textContent = '';
+  pinBuffer=pinBuffer.slice(0,-1); updateDots(pinBuffer);
+  document.getElementById('pin-err').textContent='';
 }
 
 async function verifyPin(){
   if(!currentMember) return;
   showLoading(true);
-
   try {
-    const hash = await hashPin(pinBuffer);
-    const deviceId = getDeviceId();
+    const hash=await hashPin(pinBuffer);
+    const deviceId=getDeviceId();
+    const sessions=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${deviceId}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
 
-    const sessions = await sbFetch(
-      `sessions?member_id=eq.${currentMember.id}&device_id=eq.${deviceId}&is_active=eq.true`,
-      { method:'GET', headers:{'Accept':'application/json'} }
-    );
-
-    if(!sessions || sessions.length === 0){
+    if(!sessions||sessions.length===0){
       showLoading(false);
-      showError('Session not found. Please start over.');
-      setTimeout(()=>{ localStorage.clear(); location.reload(); }, 2000);
-      return;
+      document.getElementById('pin-err').textContent='Session not found. Please start over.';
+      setTimeout(()=>{ localStorage.clear(); location.reload(); },2000); return;
+    }
+    const session=sessions[0];
+
+    const members=await sbFetch(`members?id=eq.${currentMember.id}&status=eq.enabled`,{method:'GET',headers:{'Accept':'application/json'}});
+    if(!members||members.length===0){
+      showLoading(false);
+      document.getElementById('pin-err').textContent='Account suspended. Contact @tusharview.';
+      setTimeout(()=>{ localStorage.clear(); location.reload(); },2500); return;
     }
 
-    const session = sessions[0];
-
-    // Check member still enabled
-    const members = await sbFetch(
-      `members?id=eq.${currentMember.id}&status=eq.enabled`,
-      { method:'GET', headers:{'Accept':'application/json'} }
-    );
-    if(!members || members.length === 0){
-      showLoading(false);
-      showError('Your account has been suspended. Contact @tusharview.');
-      setTimeout(()=>{ localStorage.clear(); location.reload(); }, 2500);
-      return;
-    }
-
-    if(session.pin_hash === hash){
-      // ✅ Correct PIN — reset lockout both locally and server-side
-      failedAttempts = 0;
+    if(session.pin_hash===hash){
+      failedAttempts=0;
       localStorage.removeItem('t2s_lock_until');
+      // Set 24h session timestamp
+      localStorage.setItem('t2s_last_login', Date.now().toString());
+      localStorage.setItem('t2s_mode','paid');
 
-      await sbFetch(`sessions?id=eq.${session.id}`, {
+      await sbFetch(`sessions?id=eq.${session.id}`,{
         method:'PATCH',
-        body: JSON.stringify({
-          last_active: new Date().toISOString(),
-          failed_attempts_today: 0,
-          locked_until: null
-        }),
+        body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),
         headers:{'Accept':'application/json'}
       });
-
       showLoading(false);
-
-      // Go to welcome if first time, else main app
-      if(!currentMember.tour_completed){
-        window.location.href = WELCOME_URL;
-      } else {
-        window.location.href = MAIN_APP_URL;
-      }
-
+      window.location.href = MAIN_APP_URL;
     } else {
-      // ❌ Wrong PIN
       showLoading(false);
       failedAttempts++;
-      pinBuffer = '';
-
-      // Shake dots
+      pinBuffer='';
       for(let i=0;i<4;i++){
-        const d = document.getElementById(`d${i}`);
+        const d=document.getElementById(`d${i}`);
         d.classList.add('error','shake');
       }
-      setTimeout(()=>updateDots(''), 500);
-
-      const remaining = MAX_ATTEMPTS - failedAttempts;
-      if(remaining <= 0){
-        // Lock account — write to both localStorage AND Supabase (server-enforced)
-        const lockUntil = new Date(Date.now() + LOCK_MINUTES * 60000).toISOString();
-        localStorage.setItem('t2s_lock_until', lockUntil);
-        document.getElementById('pin-err').textContent = '';
-        document.getElementById('pin-lock').style.display = 'block';
-        document.getElementById('pin-lock').textContent = `Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;
-
-        // Persist lockout server-side so it survives localStorage clear / incognito
+      setTimeout(()=>updateDots(''),500);
+      const remaining=MAX_ATTEMPTS-failedAttempts;
+      if(remaining<=0){
+        const lockUntil=new Date(Date.now()+LOCK_MINUTES*60000).toISOString();
+        localStorage.setItem('t2s_lock_until',lockUntil);
+        document.getElementById('pin-err').textContent='';
+        document.getElementById('pin-lock').style.display='block';
+        document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;
         try {
-          await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${getDeviceId()}`, {
+          await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${getDeviceId()}`,{
             method:'PATCH',
-            body: JSON.stringify({ locked_until: lockUntil, failed_attempts_today: failedAttempts }),
+            body:JSON.stringify({locked_until:lockUntil,failed_attempts_today:failedAttempts}),
             headers:{'Accept':'application/json'}
           });
-          // Log lockout for admin visibility
-          await sbFetch('keep_alive_log', {
-            method:'POST',
-            body: JSON.stringify({ source: `PIN_LOCKOUT_${currentMember.id}` }),
-            headers:{'Accept':'application/json'}
-          });
-        } catch(e){ console.log('Lockout persist error:', e); }
+        } catch(e){}
       } else {
-        document.getElementById('pin-err').textContent =
-          `Incorrect PIN. ${remaining} attempt${remaining>1?'s':''} remaining.`;
-        // Increment server-side failed_attempts_today
+        document.getElementById('pin-err').textContent=`Incorrect PIN. ${remaining} attempt${remaining>1?'s':''} remaining.`;
         try {
-          await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${getDeviceId()}`, {
+          await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${getDeviceId()}`,{
             method:'PATCH',
-            body: JSON.stringify({ failed_attempts_today: failedAttempts }),
+            body:JSON.stringify({failed_attempts_today:failedAttempts}),
             headers:{'Accept':'application/json'}
           });
-        } catch(e){ console.log('Attempt count persist error:', e); }
+        } catch(e){}
       }
     }
   } catch(e){
-    console.error(e);
-    showLoading(false);
-    pinBuffer = '';
-    updateDots('');
-    document.getElementById('pin-err').textContent = 'Verification failed. Check connection.';
+    showLoading(false); pinBuffer=''; updateDots('');
+    document.getElementById('pin-err').textContent='Verification failed. Check connection.';
   }
 }
 
-function showError(msg){
-  document.getElementById('pin-err').textContent = msg;
-}
+function forgotPin(){ window.open('https://t.me/tusharview','_blank'); }
 
-function forgotPin(){
-  window.open('https://t.me/tusharview', '_blank');
-}
-
-// ── PIN SETUP ────────────────────────────────────────────────────────────────
-const WEAK_PINS = ['1111','2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212'];
-
+// ── PIN SETUP ──────────────────────────────────────────────────────────────
 function setupKey(k){
-  if(setupBuffer.length >= 4) return;
-  setupBuffer += k;
-
-  // Update correct dot set
-  const prefix = setupStep === 1 ? 'sd' : 'sd';
-  updateDots(setupBuffer, 'sd');
-
-  if(setupBuffer.length === 4) setTimeout(processSetupPin, 120);
+  if(setupBuffer.length>=4) return;
+  setupBuffer+=k; updateDots(setupBuffer,'sd');
+  if(setupBuffer.length===4) setTimeout(processSetupPin,120);
 }
 
 function setupDel(){
-  setupBuffer = setupBuffer.slice(0,-1);
-  updateDots(setupBuffer, 'sd');
-  document.getElementById('setup-err').textContent = '';
+  setupBuffer=setupBuffer.slice(0,-1);
+  updateDots(setupBuffer,'sd');
+  document.getElementById('setup-err').textContent='';
 }
 
 async function processSetupPin(){
-  if(setupStep === 1){
-    // Check for weak PIN
+  if(setupStep===1){
     if(WEAK_PINS.includes(setupBuffer)){
-      document.getElementById('setup-err').textContent = 'Too simple — choose a stronger PIN.';
+      document.getElementById('setup-err').textContent='Too simple — choose a stronger PIN.';
       for(let i=0;i<4;i++) document.getElementById(`sd${i}`).classList.add('error','shake');
-      setTimeout(()=>{ setupBuffer=''; updateDots('','sd'); }, 500);
-      return;
+      setTimeout(()=>{ setupBuffer=''; updateDots('','sd'); },500); return;
     }
-    // Move to confirm step
-    setupFirstPin = setupBuffer;
-    setupBuffer = '';
-    setupStep = 2;
-    document.getElementById('setup-step-label').textContent = 'Step 2 of 2 — Confirm PIN';
-    document.getElementById('setup-pin-label').textContent = 'CONFIRM YOUR PIN';
-    updateDots('','sd');
-    document.getElementById('setup-err').textContent = '';
-
+    setupFirstPin=setupBuffer; setupBuffer=''; setupStep=2;
+    document.getElementById('setup-step-label').textContent='Step 2 of 2 — Confirm PIN';
+    document.getElementById('setup-pin-label').textContent='CONFIRM YOUR PIN';
+    updateDots('','sd'); document.getElementById('setup-err').textContent='';
   } else {
-    // Confirm step — check match
-    if(setupBuffer !== setupFirstPin){
-      document.getElementById('setup-err').textContent = 'PINs do not match. Start over.';
+    if(setupBuffer!==setupFirstPin){
+      document.getElementById('setup-err').textContent='PINs do not match. Start over.';
       for(let i=0;i<4;i++) document.getElementById(`sd${i}`).classList.add('error','shake');
       setTimeout(()=>{
         setupBuffer=''; setupFirstPin=''; setupStep=1;
         updateDots('','sd');
-        document.getElementById('setup-step-label').textContent = 'Step 1 of 2 — Create PIN';
-        document.getElementById('setup-pin-label').textContent = 'CHOOSE YOUR PIN';
-      }, 600);
-      return;
+        document.getElementById('setup-step-label').textContent='Step 1 of 2 — Create PIN';
+        document.getElementById('setup-pin-label').textContent='CHOOSE YOUR PIN';
+      },600); return;
     }
-
-    // PINs match — save to Supabase
     showLoading(true);
     try {
-      const hash = await hashPin(setupBuffer);
-      const deviceId = getDeviceId();
-
-      // Create session
-      await sbFetch('sessions', {
+      const hash=await hashPin(setupBuffer);
+      const deviceId=getDeviceId();
+      await sbFetch('sessions',{
         method:'POST',
-        body: JSON.stringify({
-          member_id:   currentMember.id,
-          device_id:   deviceId,
-          device_type: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
-          device_name: navigator.platform || 'Unknown',
-          pin_hash:    hash,
-          is_active:   true,
-          last_active: new Date().toISOString()
+        body:JSON.stringify({
+          member_id:currentMember.id,device_id:deviceId,
+          device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',
+          device_name:navigator.platform||'Unknown',
+          pin_hash:hash,is_active:true,last_active:new Date().toISOString()
         }),
         headers:{'Accept':'application/json'}
       });
-
+      // Set 24h session
+      localStorage.setItem('t2s_last_login', Date.now().toString());
+      localStorage.setItem('t2s_mode','paid');
       showLoading(false);
-      toast('✓ PIN set successfully!');
-
-      // Go to welcome (first time always)
-      setTimeout(()=>{ window.location.href = WELCOME_URL; }, 800);
-
+      toast('✓ PIN set! Welcome to Trade2Spend.');
+      setTimeout(()=>{ window.location.href=MAIN_APP_URL; },800);
     } catch(e){
-      console.error(e);
       showLoading(false);
-      document.getElementById('setup-err').textContent = 'Failed to save PIN. Check connection.';
-      setupBuffer=''; setupFirstPin=''; setupStep=1;
-      updateDots('','sd');
+      document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';
+      setupBuffer=''; setupFirstPin=''; setupStep=1; updateDots('','sd');
     }
   }
 }
 
-// ── AUTO-LOCK CHECK ──────────────────────────────────────────────────────────
-function checkAutoLock(){
-  const lastActive = localStorage.getItem('t2s_last_active');
-  const lockMins   = parseInt(localStorage.getItem('t2s_auto_lock_mins') || '30');
-  if(!lastActive || lockMins === 0) return false;
-  const diff = (Date.now() - new Date(lastActive)) / 60000;
-  return diff >= lockMins;
-}
-
-// ── INIT ─────────────────────────────────────────────────────────────────────
+// ── INIT ───────────────────────────────────────────────────────────────────
 (async function init(){
   showLoading(true);
   installPinKeyboardBlock();
 
-  // Auto-lock: if session exists but was idle too long → show PIN
-  const autoLocked = checkAutoLock();
-  const memberId   = localStorage.getItem('t2s_member_id');
-  const mobile     = localStorage.getItem('t2s_mobile');
-
-  if(memberId && mobile && autoLocked){
-    // Load member and show PIN
-    try {
-      const members = await sbFetch(
-        `members?id=eq.${memberId}&status=eq.enabled`,
-        { method:'GET', headers:{'Accept':'application/json'} }
-      );
-      if(members && members.length > 0){
-        currentMember = members[0];
-        currentMobile = '+91' + mobile;
-        showLoading(false);
-        if(await checkLock()){ showScreen('screen-pin'); return; }
-        showScreen('screen-pin');
-        return;
-      }
-    } catch(e){ console.log(e); }
+  // Free mode — skip straight to app
+  if(localStorage.getItem('t2s_mode')==='free'){
+    window.location.href=MAIN_APP_URL; return;
   }
 
-  if(memberId && mobile && !autoLocked){
-    // Try to restore session silently
-    const hasSession = await checkExistingSession();
-    if(hasSession){
-      showLoading(false);
-      // Update last_active
-      localStorage.setItem('t2s_last_active', new Date().toISOString());
-      window.location.href = currentMember.tour_completed ? MAIN_APP_URL : WELCOME_URL;
-      return;
+  const memberId  = localStorage.getItem('t2s_member_id');
+  const mobile    = localStorage.getItem('t2s_mobile');
+  const lastLogin = parseInt(localStorage.getItem('t2s_last_login')||'0');
+
+  if(memberId && mobile){
+    // Within 24h — skip login entirely
+    if(Date.now()-lastLogin < SESSION_24H){
+      window.location.href=MAIN_APP_URL; return;
     }
+    // Session expired — load member and show PIN-only
+    try {
+      const members=await sbFetch(`members?id=eq.${memberId}&status=eq.enabled`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(members&&members.length>0){
+        currentMember=members[0]; currentMobile='+91'+mobile;
+        showLoading(false);
+        document.getElementById('pin-member-name').textContent='Session expired — enter PIN to continue';
+        if(await checkLock()){ showScreen('screen-pin'); return; }
+        showScreen('screen-pin'); return;
+      }
+    } catch(e){ console.log(e); }
   }
 
   showLoading(false);
   showScreen('screen-mobile');
 })();
 
-// ── PWA INSTALL PROMPT ──
-let deferredInstall = null;
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredInstall = e;
-  showInstallBanner();
+// PWA install
+let deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; });
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+
+// Touch + keyboard support
+document.querySelectorAll('.pin-key').forEach(btn=>{
+  let _t=false;
+  btn.addEventListener('touchstart',function(e){
+    e.preventDefault(); if(_t) return; _t=true; btn.click(); setTimeout(()=>{ _t=false; },150);
+  },{passive:false});
 });
-
-function showInstallBanner(){
-  if(localStorage.getItem('t2s_install_dismissed')) return;
-  const banner = document.getElementById('install-banner');
-  if(banner) banner.style.display = 'flex';
-}
-
-function triggerInstall(){
-  if(!deferredInstall) return;
-  deferredInstall.prompt();
-  deferredInstall.userChoice.then(r => {
-    if(r.outcome === 'accepted') dismissInstall();
-    deferredInstall = null;
-  });
-}
-
-function dismissInstall(){
-  localStorage.setItem('t2s_install_dismissed','1');
-  const banner = document.getElementById('install-banner');
-  if(banner) banner.style.display = 'none';
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
-}
+document.addEventListener('keydown',function(e){
+  const pinVisible  =!document.getElementById('screen-pin').classList.contains('hidden');
+  const setupVisible=!document.getElementById('screen-setup').classList.contains('hidden');
+  if(pinVisible){
+    if(e.key>='0'&&e.key<='9'){e.preventDefault();pinKey(e.key);}
+    else if(e.key==='Backspace'){e.preventDefault();pinDel();}
+  } else if(setupVisible){
+    if(e.key>='0'&&e.key<='9'){e.preventDefault();setupKey(e.key);}
+    else if(e.key==='Backspace'){e.preventDefault();setupDel();}
+  }
+});
 </script>
-
-<!-- Install Banner -->
-<div id="install-banner" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#ffffff;border-top:1px solid #ede8f5;padding:12px 16px;z-index:500;align-items:center;gap:12px;box-shadow:0 -4px 16px rgba(74,42,120,0.08);">
-  <img src="logo.png" alt="T2S" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">
-  <div style="flex:1;">
-    <div style="font-size:13px;font-weight:700;color:#1a2030;font-family:'Plus Jakarta Sans',sans-serif;">Add Trade2Spend to Home Screen</div>
-    <div style="font-size:11px;color:#9ca3af;font-family:'Plus Jakarta Sans',sans-serif;">Open instantly like an app — no browser needed</div>
-  </div>
-  <button onclick="triggerInstall()" style="padding:8px 14px;background:#4a2a78;border:none;border-radius:10px;color:#fff;font-size:12px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;flex-shrink:0;">Add</button>
-  <button onclick="dismissInstall()" style="padding:8px;background:transparent;border:none;color:#9ca3af;font-size:18px;cursor:pointer;flex-shrink:0;line-height:1;">×</button>
-</div>
-
 </body>
 </html>
