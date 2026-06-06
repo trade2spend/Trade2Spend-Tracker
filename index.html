@@ -96,34 +96,34 @@
         .mover-pct.dn { color: var(--red); }
 
         /* --- TRADE CARDS --- */
-        .trade-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.02);}
-        .trade-header { padding: 16px 20px; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed var(--border);}
-        .trade-title-box { display: flex; gap: 10px; align-items: center; }
-        .type-box { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 700; font-size: 0.9rem; }
+        .trade-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02);}
+        .trade-header { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed var(--border);}
+        .trade-title-box { display: flex; gap: 8px; align-items: center; }
+        .type-box { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; font-size: 0.8rem; }
         .type-box.ce { background: var(--green-light); color: var(--green); }
         .type-box.pe { background: var(--red-light); color: var(--red); }
-        .trade-name { font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-bottom: 2px;}
-        .trade-expiry { font-size: 0.8rem; color: var(--text-muted); }
-        .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;}
+        .trade-name { font-weight: 700; font-size: 0.95rem; color: var(--text-main); margin-bottom: 1px;}
+        .trade-expiry { font-size: 0.72rem; color: var(--text-muted); }
+        .badge { padding: 3px 8px; border-radius: 6px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;}
         .badge.watching { background: var(--primary-light); color: var(--primary); }
         .badge.profit { background: var(--green-light); color: var(--green); }
         .badge.loss { background: var(--red-light); color: var(--red); }
-        
-        .trade-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 20px; }
-        .metric-col { display: flex; flex-direction: column; gap: 5px; }
-        .metric-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;}
-        .metric-value { font-size: 1.05rem; font-weight: 700; }
-        .metric-sub { font-size: 0.75rem; color: var(--text-muted); }
+
+        .trade-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 14px; }
+        .metric-col { display: flex; flex-direction: column; gap: 3px; }
+        .metric-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.3px;}
+        .metric-value { font-size: 0.92rem; font-weight: 700; }
+        .metric-sub { font-size: 0.7rem; color: var(--text-muted); }
         .val-up { color: var(--green); }
         .val-down { color: var(--red); }
-        
-        .premium-pill { background: var(--primary); color: white; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; touch-action: manipulation; }
-        
-        .rationale-box { margin: 0 20px 20px; padding: 15px; background: #fafaf9; border: 1px solid var(--border); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;}
-        .rationale-text { font-size: 0.9rem; color: var(--text-muted); }
-        .rationale-lock { color: var(--primary); font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;}
-        
-        .trade-footer { padding: 12px 20px; background: #fdfdfc; border-top: 1px solid var(--border); font-size: 0.75rem; color: #a8a29e; font-style: italic;}
+
+        .premium-pill { background: var(--primary); color: white; padding: 5px 9px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; touch-action: manipulation; }
+
+        .rationale-box { margin: 0 14px 10px; padding: 8px 12px; background: #fafaf9; border: 1px solid var(--border); border-radius: 7px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;}
+        .rationale-text { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+        .rationale-lock { color: var(--primary); font-weight: 600; font-size: 0.78rem; display: flex; align-items: center; gap: 4px;}
+
+        .trade-footer { padding: 6px 14px; background: #fdfdfc; border-top: 1px solid var(--border); font-size: 0.68rem; color: #a8a29e; font-style: italic;}
 
         /* --- PERFORMANCE TAB --- */
         .perf-summary { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);}
@@ -198,8 +198,7 @@
         
         /* Mobile adjustments for 4 columns */
         @media (max-width: 480px) {
-            .trade-metrics { grid-template-columns: 1fr 1fr; gap: 15px; }
-            .header-right { flex-direction: column; align-items: flex-end; gap: 4px;}
+            .trade-metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
         }
 
         /* --- FOOTER DISCLAIMER --- */
@@ -219,14 +218,16 @@
                     <p>LIVE TRACKER</p>
                 </div>
             </div>
-            <div class="header-right">
-                <div class="market-badge-inline" id="market-badge-inline">
-                    <span class="status-indicator closed" id="global-market-dot"></span>
-                    <span id="global-market-text">Closed</span>
+            <div class="header-right" style="flex-direction:column;align-items:flex-end;gap:2px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <div class="market-badge-inline" id="market-badge-inline">
+                        <span class="status-indicator closed" id="global-market-dot"></span>
+                        <span id="global-market-text">Closed</span>
+                    </div>
+                    <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
-                <span id="current-time" style="font-size:0.78rem;">--:-- --</span>
+                <span id="current-time" style="font-size:0.75rem;color:var(--text-muted);">--:-- --</span>
                 <span class="live-badge" id="live-badge" style="display:none;"><span class="live-dot"></span> LIVE</span>
-                <button onclick="logout()" title="Logout" style="background:none;border:1px solid var(--border);border-radius:50%;width:22px;height:22px;font-size:0.7rem;color:var(--text-muted);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
             </div>
         </div>
 
@@ -263,13 +264,13 @@
                 </div>
             </div>
         </div>
-        <!-- Advance / Decline bar (data from market scraper when active) -->
+        <!-- Advance / Decline bar — NSE data, updated every 3 min during market hours -->
         <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
-            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50 :</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;">▲ -- advancing</span>
+            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;">▲ 32 advancing</span>
             <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;">▼ -- declining</span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.65rem;" id="adv-note">Live during market hours</span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;">▼ 18 declining</span>
+            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">NSE · every 3 min</span>
         </div>
     </div>
 
@@ -450,7 +451,14 @@
             if(container.innerHTML === '') {
                 container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
             }
-            // Show movers section (gainers/losers come from market.json when available)
+            // Advance/decline from market.json breadth data
+            if(data.breadth && data.breadth.nifty50) {
+                const b = data.breadth.nifty50;
+                document.getElementById('adv-count').textContent = `▲ ${b.advancing} advancing`;
+                document.getElementById('dec-count').textContent = `▼ ${b.declining} declining`;
+                document.getElementById('adv-note').textContent = isOpen ? 'NSE · every 3 min' : 'NSE · last session';
+            }
+            // Show movers section (gainers/losers from market.json when scraper is active)
             const moversEl = document.getElementById('movers-section');
             if(moversEl && data.gainers && data.losers) {
                 moversEl.style.display = 'block';
@@ -458,8 +466,6 @@
                     `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">+${s.changePct}%</span></div>`).join('');
                 document.getElementById('losers-list').innerHTML = data.losers.slice(0,5).map(s=>
                     `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${s.changePct}%</span></div>`).join('');
-            } else if(moversEl && isOpen) {
-                moversEl.style.display = 'block';
             }
             if(data.lastUpdated) {
                 const updEl = document.getElementById('market-last-updated');
@@ -570,7 +576,7 @@
                                 <span class="metric-value">${isPreBuy ? '—' : '₹ ' + trade.currentPrice.toFixed(2)}</span>
                             </div>
                             <div class="metric-col">
-                                <span class="metric-label">P&L (1 Lot)</span>
+                                <span class="metric-label">P&L (Per Lot)</span>
                                 <span class="metric-value ${pnlClass}">${pnlValue}${pnlPct}</span>
                             </div>
                             <div class="metric-col">
@@ -580,10 +586,10 @@
                         </div>
                         
                         <div class="rationale-box" onclick="showPopup()">
-                            <span class="rationale-text">Why did we buy this?</span>
-                            <span class="rationale-lock">🔒 Premium Members Only →</span>
+                            <span class="rationale-text">Why</span>
+                            <span class="rationale-lock">🔒 Premium Members Only</span>
                         </div>
-                        <div class="trade-footer">Trade2Spend's personal trade · educational use only</div>
+                        <div class="trade-footer">Educational Purposes Only · Not An Investment Advice</div>
                     </div>
                 `;
                 targetContainer.innerHTML += card;
