@@ -47,8 +47,8 @@
         /* Inline market status badge (in header-right) */
         .market-badge-inline { display: flex; align-items: center; gap: 5px; background: #fff; border: 1px solid var(--border); padding: 3px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; color: var(--text-main); white-space: nowrap; }
         .status-indicator { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-        .status-indicator.open { background: var(--green); box-shadow: 0 0 4px var(--green); }
-        .status-indicator.closed { background: #d1d5db; }
+        .status-indicator.open { background: var(--green); box-shadow: 0 0 5px var(--green); }
+        .status-indicator.closed { background: var(--red); }
 
         /* Legacy — keep for JS compatibility but hide */
         .market-status { display: none; }
@@ -134,8 +134,11 @@
         .win-rate-badge .pct { font-size: 1.5rem; font-weight: 800; line-height: 1;}
         .win-rate-badge .lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;}
         
-        .perf-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-        .history-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; padding: 20px; display: flex; justify-content: space-between; align-items: center;}
+        .perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .history-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; padding: 14px 16px; cursor: pointer; }
+        .history-card-row { display: flex; justify-content: space-between; align-items: center; }
+        .hist-arrow { font-size: 0.7rem; color: var(--text-muted); transition: transform .2s; }
+        .hist-arrow.open { transform: rotate(90deg); }
         
         /* --- PREMIUM POPUP --- */
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);}
@@ -309,11 +312,7 @@
                     <span class="metric-value" id="perf-total">--</span>
                 </div>
                 <div class="metric-col">
-                    <span class="metric-label">TOTAL P&L</span>
-                    <span class="metric-value val-up" id="perf-pnl">--</span>
-                </div>
-                <div class="metric-col">
-                    <span class="metric-label">MAX PROFIT</span>
+                    <span class="metric-label">MAX P&L (PER LOT)</span>
                     <span class="metric-value">₹<span id="perf-max">--</span></span>
                 </div>
             </div>
@@ -546,8 +545,8 @@
                     let pct = ((diff / trade.entryPrice) * 100).toFixed(1);
                     
                     pnlClass = pnl >= 0 ? 'val-up' : 'val-down';
-                    pnlValue = `${pnl >= 0 ? '+' : '-'} ₹ ${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
-                    pnlPct = `<br><span class="metric-sub ${pnlClass}">${pnl >= 0 ? '+' : ''}${pct}%</span>`;
+                    pnlValue = `${pnl >= 0 ? '+' : '-'} ₹ ${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})} <span style="font-size:0.7rem;opacity:0.85;">(${pnl >= 0 ? '+' : ''}${pct}%)</span>`;
+                    pnlPct = '';
                     
                     // Override badge if active but in loss
                     if(trade.status === 'ACTIVE' && pnl < 0) { badgeClass = 'loss'; badgeText = 'IN LOSS'; }
@@ -569,7 +568,7 @@
                         <div class="trade-metrics">
                             <div class="metric-col">
                                 <span class="metric-label">Entry Price</span>
-                                <span class="metric-value" style="font-size: ${isPreBuy ? '0.9rem' : '1.05rem'}">${entryHtml}</span>
+                                <span class="metric-value">${entryHtml}</span>
                             </div>
                             <div class="metric-col">
                                 <span class="metric-label">Current Price</span>
@@ -577,17 +576,14 @@
                             </div>
                             <div class="metric-col">
                                 <span class="metric-label">P&L (Per Lot)</span>
-                                <span class="metric-value ${pnlClass}">${pnlValue}${pnlPct}</span>
+                                <span class="metric-value ${pnlClass}">${pnlValue}</span>
                             </div>
-                            <div class="metric-col">
-                                <span class="metric-label">Time Active</span>
-                                <span class="metric-value" style="font-size:0.9rem">${isPreBuy ? 'Waiting...' : 'Active'}</span>
+                            <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
+                                <div class="rationale-box" onclick="showPopup()" style="margin:0;padding:5px 8px;border-radius:6px;">
+                                    <span class="rationale-text" style="font-size:0.7rem;">Why</span>
+                                    <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="rationale-box" onclick="showPopup()">
-                            <span class="rationale-text">Why</span>
-                            <span class="rationale-lock">🔒 Premium Members Only</span>
                         </div>
                         <div class="trade-footer">Educational Purposes Only · Not An Investment Advice</div>
                     </div>
@@ -614,34 +610,38 @@
                     document.getElementById('perf-winrate').innerText = '--%';
                     document.getElementById('perf-total').innerText = 'No trades yet';
                     document.getElementById('perf-max').innerText = '--';
-                    document.getElementById('perf-pnl').innerText = '--';
-                    document.getElementById('perf-pnl').className = 'metric-value';
                 } else {
                     document.getElementById('perf-winrate').innerText = current.winRate + '%';
                     document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins} W · ${current.losses} L)`;
                     document.getElementById('perf-max').innerText = current.maxProfit.toLocaleString();
-                    document.getElementById('perf-pnl').innerText = (current.totalPnL >= 0 ? '+₹' : '-₹') + Math.abs(current.totalPnL).toLocaleString();
-                    document.getElementById('perf-pnl').className = 'metric-value ' + (current.totalPnL >= 0 ? 'val-up' : 'val-down');
                 }
 
-                // Populate Past Months
-                data.months.slice(1).forEach(m => {
+                // Populate Past Months with collapse/expand
+                let openHistId = null;
+                data.months.slice(1).forEach((m, idx) => {
                     const isProfit = m.summary.totalPnL >= 0;
-                    const card = `
-                        <div class="history-card">
-                            <div>
-                                <div style="font-weight: 700; color: var(--text-main); font-size: 1.1rem; margin-bottom: 5px;">${m.month}</div>
-                                <div style="font-size: 0.8rem; color: var(--text-muted);">${m.summary.totalTrades} trades · ${m.summary.wins}W / ${m.summary.losses}L</div>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="font-weight: 700; color: ${isProfit ? 'var(--green)' : 'var(--red)'}; font-size: 1.1rem; margin-bottom: 5px;">
-                                    ${isProfit ? '+' : '-'}₹${Math.abs(m.summary.totalPnL).toLocaleString()}
+                    const detailId = `hdet-${idx}`;
+                    const arrowId  = `harr-${idx}`;
+                    container.innerHTML += `
+                        <div class="history-card" onclick="toggleHistCard('${detailId}','${arrowId}')">
+                            <div class="history-card-row">
+                                <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${m.month}</div>
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <div style="text-align:right;">
+                                        <div style="font-weight:700;color:${isProfit?'var(--green)':'var(--red)'};font-size:0.95rem;">${isProfit?'+':'-'}₹${Math.abs(m.summary.totalPnL).toLocaleString()}</div>
+                                        <div style="font-size:0.7rem;color:var(--text-muted);">Win Rate: ${m.summary.winRate}%</div>
+                                    </div>
+                                    <span id="${arrowId}" class="hist-arrow">▶</span>
                                 </div>
-                                <div style="font-size: 0.8rem; color: var(--text-muted);">Win Rate: ${m.summary.winRate}%</div>
+                            </div>
+                            <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Trades</span><span style="font-weight:700;font-size:0.88rem;">${m.summary.totalTrades} (${m.summary.wins}W · ${m.summary.losses}L)</span></div>
+                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Max P&L (If 1 Lot)</span><span style="font-weight:700;font-size:0.88rem;">₹${m.summary.maxProfit.toLocaleString()}</span></div>
+                                </div>
                             </div>
                         </div>
                     `;
-                    container.innerHTML += card;
                 });
             }
         } catch(e) { console.error("Performance fetch failed", e); }
@@ -974,6 +974,23 @@
     function logout(){
         ['t2s_member_id','t2s_mobile','t2s_last_login','t2s_mode','t2s_lock_until','t2s_last_active'].forEach(k=>localStorage.removeItem(k));
         window.location.href='login.html';
+    }
+
+    let _openHistId = null;
+    function toggleHistCard(detailId, arrowId) {
+        const detail = document.getElementById(detailId);
+        const arrow  = document.getElementById(arrowId);
+        // Close previously open card
+        if(_openHistId && _openHistId !== detailId) {
+            const prev = document.getElementById(_openHistId);
+            if(prev){ prev.style.display='none'; }
+            const prevArr = document.getElementById(_openHistId.replace('hdet-','harr-'));
+            if(prevArr){ prevArr.textContent='▶'; prevArr.classList.remove('open'); }
+        }
+        const isOpen = detail && detail.style.display !== 'none';
+        if(detail) detail.style.display = isOpen ? 'none' : 'block';
+        if(arrow){ arrow.textContent = isOpen ? '▶' : '▼'; arrow.classList.toggle('open', !isOpen); }
+        _openHistId = isOpen ? null : detailId;
     }
 
     // Init — auth gate + session heartbeat
