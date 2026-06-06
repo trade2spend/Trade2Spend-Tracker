@@ -40,7 +40,7 @@
         .header-titles h1 { font-size: 1.15rem; color: var(--text-main); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1px; }
         .header-titles p { font-size: 0.72rem; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; transition: opacity .2s ease, max-height .2s ease; overflow: hidden; max-height: 20px; }
 
-        .header-right { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); flex-shrink: 0; }
+        .header-right { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); flex-shrink: 0; flex-wrap: nowrap; }
         .live-badge { background: var(--red-light); color: var(--red); padding: 3px 7px; border-radius: 10px; font-weight: bold; font-size: 0.7rem; display: flex; align-items: center; gap: 4px; letter-spacing: 1px; }
         .live-dot { width: 5px; height: 5px; background: var(--red); border-radius: 50%; animation: pulse 1.5s infinite; }
 
@@ -148,28 +148,28 @@
         .btn-secondary { display: block; width: 100%; padding: 14px; background: #f1f5f9; color: var(--text-main); text-decoration: none; border-radius: 8px; font-weight: bold;}
         
         /* --- UPDATES TAB --- */
-        .update-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.02); transition: all .15s; }
+        .update-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); transition: all .15s; }
         .update-card.unread { border-left: 3px solid var(--primary); }
-        .update-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 6px; }
-        .update-badge { font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.04em; }
+        .update-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; }
+        .update-badge { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.04em; }
         .badge-trade-alert { background: var(--primary); color: #fff; }
         .badge-follow-up { background: #dbeafe; color: #1d4ed8; }
         .badge-market-update { background: #fef3c7; color: #92400e; }
         .badge-general { background: #f3f4f6; color: #374151; }
         .badge-premium-locked { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
-        .update-time { font-size: 0.75rem; color: var(--text-muted); }
-        .update-body { padding: 4px 16px 10px; }
-        .update-content { font-size: 0.9rem; color: var(--text-main); line-height: 1.6; }
-        .update-footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--border); background: #fdfdfc; }
-        .update-disclaimer { font-size: 0.72rem; color: #a8a29e; font-style: italic; }
-        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; font-size: 1rem; padding: 4px; }
+        .update-time { font-size: 0.7rem; color: var(--text-muted); }
+        .update-body { padding: 2px 12px 8px; }
+        .update-content { font-size: 0.85rem; color: var(--text-main); line-height: 1.55; }
+        .update-footer { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-top: 1px solid var(--border); background: #fdfdfc; }
+        .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
+        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; font-size: 0.9rem; padding: 3px; }
         .update-share:hover { color: var(--primary); }
-        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.02); transition: all .15s; }
-        .locked-blur-row { display: flex; flex-direction: column; gap: 8px; padding: 8px 16px 12px; }
-        .blur-pill { height: 10px; border-radius: 5px; background: #e8e0f5; }
-        .locked-center { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); background: #fdfdfc; }
-        .date-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); padding: 10px 0 4px; display: flex; justify-content: space-between; align-items: center; }
-        .new-count { background: var(--red); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+        .locked-blur-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 8px; }
+        .blur-pill { height: 8px; border-radius: 4px; background: #e8e0f5; }
+        .locked-center { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; border-top: 1px solid var(--border); background: #fdfdfc; }
+        .date-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); padding: 8px 0 3px; display: flex; justify-content: space-between; align-items: center; }
+        .new-count { background: var(--primary); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 1px 7px; border-radius: 20px; }
         .notif-banner { background: var(--primary-light); border: 1px solid #c4b5fd; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .notif-banner-text { font-size: 0.85rem; color: var(--primary); font-weight: 500; }
         .notif-enable-btn { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit; }
@@ -226,7 +226,7 @@
                 </div>
                 <span id="current-time" style="font-size:0.78rem;">--:-- --</span>
                 <span class="live-badge" id="live-badge" style="display:none;"><span class="live-dot"></span> LIVE</span>
-                <button onclick="logout()" style="background:none;border:1px solid var(--border);border-radius:8px;padding:3px 8px;font-size:0.68rem;color:var(--text-muted);cursor:pointer;font-family:inherit;">Exit</button>
+                <button onclick="logout()" title="Logout" style="background:none;border:1px solid var(--border);border-radius:50%;width:22px;height:22px;font-size:0.7rem;color:var(--text-muted);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
             </div>
         </div>
 
@@ -263,14 +263,29 @@
                 </div>
             </div>
         </div>
-        <div style="font-size:0.65rem;color:#c4b5d8;text-align:center;margin-top:10px;">Data from Kotak Neo · Updates every 5 min during market hours</div>
+        <!-- Advance / Decline bar (data from market scraper when active) -->
+        <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
+            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50 :</span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;">▲ -- advancing</span>
+            <span style="color:var(--border);">|</span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;">▼ -- declining</span>
+            <span style="margin-left:auto;color:#c4b8d8;font-size:0.65rem;" id="adv-note">Live during market hours</span>
+        </div>
     </div>
 
     <!-- MY TRADES TAB -->
     <div id="trades" class="content-section">
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Active Trades</p>
-        <div id="trades-container">
-            <div style="text-align:center; padding: 40px; color: #888;">Loading active trades...</div>
+        <div id="active-trades-section">
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                <span style="width:8px;height:8px;background:var(--green);border-radius:50%;display:inline-block;box-shadow:0 0 4px var(--green);"></span>Active Trades
+            </p>
+            <div id="trades-container"><div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div></div>
+        </div>
+        <div id="closed-trades-section" style="margin-top:18px;display:none;">
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                <span style="width:8px;height:8px;background:#9ca3af;border-radius:50%;display:inline-block;"></span>Closed Trades
+            </p>
+            <div id="closed-trades-container"></div>
         </div>
     </div>
 
@@ -333,7 +348,8 @@
     </div>
 
     <div class="footer-disclaimer">
-        Educational content only · Not investment advice · Trade2Spend is not a SEBI-registered Research Analyst. <br>Trade at your own risk.
+        Educational Purposes Only · Not An Investment Advice<br>
+        <span style="font-weight:700;letter-spacing:0.5px;">WE ARE NOT SEBI REGISTERED</span>
     </div>
 </div>
 
@@ -449,12 +465,13 @@
                 const updEl = document.getElementById('market-last-updated');
                 if(updEl) {
                     const ageMs  = Date.now() - new Date(data.lastUpdated).getTime();
-                    const ageMin = Math.round(ageMs / 60000);
-                    const stale  = ageMs > 60 * 60 * 1000; // >1 hour
-                    const timeStr = new Date(data.lastUpdated).toLocaleString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+                    const stale  = ageMs > 60 * 60 * 1000;
+                    const t = new Date(data.lastUpdated);
+                    const timeStr = t.toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit'})
+                                  + ' · ' + t.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short'});
                     updEl.innerHTML = stale
-                        ? `<span style="color:#dc2626">⚠ Data may be outdated · as of ${timeStr} (${ageMin}m ago) · Send /market_on to bot</span>`
-                        : `Data as of: ${timeStr}`;
+                        ? `<span style="color:#dc2626;">⚠ Last updated: ${timeStr}</span>`
+                        : `<span style="color:#9ca3af;">Last updated: ${timeStr}${isOpen ? ' · Updates every 5 sec' : ''}</span>`;
                 }
             }
             return data; // return for scheduleMarketRefresh to read specialHours
@@ -483,15 +500,25 @@
             const res = await fetch(DB_URLS.trades + '?t=' + new Date().getTime());
             const data = await res.json();
             const container = document.getElementById('trades-container');
+            const closedContainer = document.getElementById('closed-trades-container');
             container.innerHTML = '';
+            if(closedContainer) closedContainer.innerHTML = '';
 
-            if(!data.trades || data.trades.filter(t => !t.isDeleted).length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">No active trades right now.</div>';
-                return;
+            const allTrades = (data.trades || []).filter(t => !t.isDeleted);
+            const activeTrades = allTrades.filter(t => t.status === 'ACTIVE');
+            const closedTrades = allTrades.filter(t => t.status !== 'ACTIVE');
+
+            if(activeTrades.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;font-size:0.85rem;">No active trades right now.</div>';
+            }
+            if(closedTrades.length > 0 && closedContainer) {
+                document.getElementById('closed-trades-section').style.display = 'block';
             }
 
-            data.trades.forEach(trade => {
-                if(trade.isDeleted) return;
+            [...activeTrades, ...closedTrades].forEach((trade, idx) => {
+                const isClosed = trade.status !== 'ACTIVE';
+                const targetContainer = isClosed ? closedContainer : container;
+                if(!targetContainer) return;
 
                 let isPreBuy = !trade.isTriggered && !isAdmin && memberTier !== 'paid';
                 let badgeClass = isPreBuy ? 'watching' : (trade.status === 'ACTIVE' ? 'profit' : 'loss');
@@ -559,7 +586,7 @@
                         <div class="trade-footer">Trade2Spend's personal trade · educational use only</div>
                     </div>
                 `;
-                container.innerHTML += card;
+                targetContainer.innerHTML += card;
             });
         } catch(e) { console.error("Trades fetch failed", e); }
     }
@@ -772,7 +799,7 @@
                     const cnt = newCountByDate[dateLabel] || 0;
                     html += `<div class="date-label">
                         <span>${dateLabel}</span>
-                        ${cnt > 0 ? `<span class="new-count">${cnt} new</span>` : ''}
+                        ${cnt > 0 ? `<span class="new-count">● ${cnt} unread</span>` : ''}
                     </div>`;
                     lastDate = dateLabel;
                 }
@@ -827,7 +854,7 @@
                                 <div class="update-content">${sanitizeHtml(post.content).replace(/\n/g, '<br>')}</div>
                             </div>
                             <div class="update-footer">
-                                <span class="update-disclaimer">Educational purposes only</span>
+                                <span class="update-disclaimer">Educational Purposes Only · Not An Investment Advice</span>
                                 ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')">⬆</button>` : ''}
                             </div>
                         </div>
