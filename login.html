@@ -30,13 +30,12 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
 .form-sub{font-size:12px;color:#9ca3af;margin-bottom:16px;}
 
 /* MEMBER TYPE TOGGLE */
-.type-toggle{display:flex;margin-bottom:18px;border-radius:10px;overflow:hidden;border:1.5px solid #e5e0f0;}
-.type-option{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:11px 8px;background:#f9f8fc;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent;}
-.type-option:first-child{border-right:1px solid #e5e0f0;}
+.type-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
+.type-option{display:flex;align-items:center;justify-content:center;gap:7px;padding:13px 8px;border-radius:12px;border:1.5px solid #e5e0f0;background:#f9f8fc;cursor:pointer;transition:border-color .15s,background .15s;-webkit-tap-highlight-color:transparent;text-align:center;}
 .type-option input[type=radio]{display:none;}
-.type-option.active{background:#f3f0f8;border-color:#4a2a78;}
-.type-icon{font-size:1rem;flex-shrink:0;}
-.type-title{font-size:12px;font-weight:700;color:#1a2030;white-space:nowrap;}
+.type-option.active{border-color:#4a2a78;background:#f3f0f8;}
+.type-icon{font-size:1.2rem;flex-shrink:0;}
+.type-title{font-size:13px;font-weight:700;color:#1a2030;}
 .type-sub{display:none;}
 
 /* INPUT */
@@ -130,18 +129,12 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
       <label class="type-option active" id="type-paid-label" onclick="onTypeChange('paid')">
         <input type="radio" name="member_type" value="paid" checked>
         <span class="type-icon">👑</span>
-        <div>
-          <div class="type-title">Paid Member</div>
-          <div class="type-sub">Full access + trade alerts</div>
-        </div>
+        <span class="type-title">Paid Member</span>
       </label>
       <label class="type-option" id="type-free-label" onclick="onTypeChange('free')">
         <input type="radio" name="member_type" value="free">
         <span class="type-icon">👋</span>
-        <div>
-          <div class="type-title">Free Member</div>
-          <div class="type-sub">Browse public content</div>
-        </div>
+        <span class="type-title">Free Member</span>
       </label>
     </div>
 
