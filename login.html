@@ -31,11 +31,11 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
 
 /* MEMBER TYPE TOGGLE */
 .type-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
-.type-option{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:12px;border:1.5px solid #e5e0f0;background:#f9f8fc;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent;}
+.type-option{display:flex;align-items:center;gap:8px;padding:10px;border-radius:12px;border:1.5px solid #e5e0f0;background:#f9f8fc;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent;}
 .type-option input[type=radio]{display:none;}
 .type-option.active{border-color:#4a2a78;background:#f3f0f8;box-shadow:0 0 0 3px rgba(74,42,120,0.08);}
-.type-icon{font-size:1.3rem;flex-shrink:0;}
-.type-title{font-size:12px;font-weight:700;color:#1a2030;}
+.type-icon{font-size:1.2rem;flex-shrink:0;}
+.type-title{font-size:12px;font-weight:700;color:#1a2030;line-height:1.2;}
 .type-sub{font-size:10px;color:#9ca3af;margin-top:1px;line-height:1.3;}
 
 /* INPUT */
@@ -167,8 +167,8 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
   </div>
 
   <div class="disclaimer">
-    Educational purposes only. Not investment advice.<br>
-    Not SEBI registered. Access controlled by membership.
+    Educational Purposes Only · Not An Investment Advice<br>
+    <span style="font-weight:700;letter-spacing:0.5px;">WE ARE NOT SEBI REGISTERED</span>
   </div>
 </div>
 
@@ -208,6 +208,7 @@ html,body{height:100%;background:#fdfbf7;font-family:'Plus Jakarta Sans',sans-se
     <div class="pin-lock-msg" id="pin-lock"></div>
     <span class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @tusharview</span>
     <span class="pin-switch" onclick="switchAccount()">Not you? Switch account</span>
+    <button onclick="browseFree()" style="margin-top:12px;width:100%;max-width:280px;padding:10px;background:linear-gradient(135deg,#059669,#0d9488);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">👋 Browse as Free Member instead</button>
   </div>
 </div>
 
