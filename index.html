@@ -173,10 +173,15 @@
         .update-time { font-size: 0.7rem; color: var(--text-muted); }
         .update-body { padding: 2px 12px 8px; }
         .update-content { font-size: 0.85rem; color: var(--text-main); line-height: 1.55; }
-        .update-footer { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-top: 1px solid var(--border); background: #fdfdfc; }
+        .update-footer { display: flex; align-items: center; justify-content: flex-end; padding: 4px 10px 5px; border-top: 1px solid #f3effa; background: #fdfdfc; }
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
-        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; font-size: 0.9rem; padding: 3px; }
+        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 4px 5px; display:flex;align-items:center; }
         .update-share:hover { color: var(--primary); }
+        /* Updates sub-tabs */
+        .updates-sub-tab { flex:1; padding:7px 10px; border:1.5px solid #ede8f5; border-radius:20px; background:#fff; color:#888; font-size:0.78rem; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.18s; }
+        .updates-sub-tab.active { background:#4a2a78; color:#fff; border-color:#4a2a78; }
+        /* Global sticky disclaimer bar */
+        .global-disclaimer-bar { position:fixed; bottom:0; left:0; right:0; background:rgba(255,255,255,0.97); border-top:1px solid #ede8f5; text-align:center; padding:5px 16px 6px; font-size:0.57rem; color:#c4bdd5; letter-spacing:0.4px; z-index:50; font-weight:500; backdrop-filter:blur(8px); }
         .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: box-shadow .15s; }
         .locked-blur-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 8px; }
         .blur-pill { height: 8px; border-radius: 4px; background: #e8e0f5; }
@@ -283,9 +288,9 @@
         <!-- Advance / Decline bar — NSE data, updated every 3 min during market hours -->
         <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;">▲ 32 advancing</span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;">▲ 32 Advancing</span>
             <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;">▼ 18 declining</span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;">▼ 18 Declining</span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">NSE · every 3 min</span>
         </div>
     </div>
@@ -340,6 +345,10 @@
         <div id="notif-banner" class="notif-banner" style="display:none;">
             <span class="notif-banner-text">🔔 Enable notifications for instant trade alerts</span>
             <button class="notif-enable-btn" onclick="enableNotifications()">Enable</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="updates-sub-tab active" id="subtab-trade" onclick="setUpdatesFilter('trade')">Trade Alerts</button>
+            <button class="updates-sub-tab" id="subtab-general" onclick="setUpdatesFilter('general')">General</button>
         </div>
         <div id="updates-container">
             <div style="text-align:center; padding: 40px; color: #888;">Loading updates...</div>
@@ -469,18 +478,21 @@
             // Advance/decline from market.json breadth data
             if(data.breadth && data.breadth.nifty50) {
                 const b = data.breadth.nifty50;
-                document.getElementById('adv-count').textContent = `▲ ${b.advancing} advancing`;
-                document.getElementById('dec-count').textContent = `▼ ${b.declining} declining`;
+                document.getElementById('adv-count').textContent = `▲ ${b.advancing} Advancing`;
+                document.getElementById('dec-count').textContent = `▼ ${b.declining} Declining`;
                 document.getElementById('adv-note').textContent = isOpen ? 'NSE · every 3 min' : 'NSE · last session';
             }
             // Show movers section (gainers/losers from market.json when scraper is active)
             const moversEl = document.getElementById('movers-section');
             if(moversEl && data.gainers && data.losers) {
                 moversEl.style.display = 'block';
-                document.getElementById('gainers-list').innerHTML = data.gainers.slice(0,5).map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">+${s.changePct}%</span></div>`).join('');
-                document.getElementById('losers-list').innerHTML = data.losers.slice(0,5).map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${s.changePct}%</span></div>`).join('');
+                const fmtChange = c => c >= 0 ? `+${c.toFixed(2)}%` : `${c.toFixed(2)}%`;
+                const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
+                const losers  = [...data.losers].sort((a,b) => a.change - b.change);
+                document.getElementById('gainers-list').innerHTML = gainers.slice(0,8).map(s=>
+                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${fmtChange(s.change)}</span></div>`).join('');
+                document.getElementById('losers-list').innerHTML = losers.slice(0,8).map(s=>
+                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${fmtChange(s.change)}</span></div>`).join('');
             }
             if(data.lastUpdated) {
                 const updEl = document.getElementById('market-last-updated');
@@ -584,8 +596,11 @@
                             <div class="trade-title-box">
                                 <div class="type-box ${typeClass}">${t.type}</div>
                                 <div>
-                                    <div class="trade-name">${t.instrument}</div>
-                                    <div class="trade-expiry">Expiry ${t.expiry || 'Current Week'}</div>
+                                    <div class="trade-name">${t.instrument} <span style="font-weight:500;color:#888;font-size:0.9em;">${t.strike || ''}</span></div>
+                                    ${canSeePremium
+                                        ? `<div class="trade-expiry">${t.expiry || 'Current Week'}</div>`
+                                        : `<div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>`
+                                    }
                                 </div>
                             </div>
                             <span class="badge ${badgeClass}">${badgeText}</span>
@@ -605,19 +620,12 @@
                                 <span class="metric-value ${pnlClass}">${pnlValue}</span>
                             </div>
                             <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-                                ${canSeePremium
-                                    ? `<div class="rationale-box" style="margin:0;padding:5px 8px;border-radius:6px;cursor:default;">
-                                        <span class="rationale-text" style="font-size:0.7rem;">Why</span>
-                                        <span style="font-size:0.68rem;font-weight:600;color:#059669;">📲 Telegram</span>
-                                       </div>`
-                                    : `<div class="rationale-box" onclick="showPopup()" style="margin:0;padding:5px 8px;border-radius:6px;">
-                                        <span class="rationale-text" style="font-size:0.7rem;">Why</span>
-                                        <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
-                                       </div>`
-                                }
+                                <div class="rationale-box" onclick="window.open('https://t.me/tusharview','_blank')" style="margin:0;padding:5px 8px;border-radius:6px;cursor:pointer;">
+                                    <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
+                                    <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
+                                </div>
                             </div>
                         </div>
-                        <div class="trade-footer">Educational Purposes Only · Not An Investment Advice</div>
                     </div>
                 `;
                 targetContainer.innerHTML += card;
@@ -740,6 +748,27 @@
         return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // Strip boilerplate disclaimer lines from post content before render
+    function stripDisclaimerText(html) {
+        return html
+            .replace(/only\s+(?:for\s+)?information\s+and\s+educational\s+purposes[^<\n]*/gi, '')
+            .replace(/please\s+trade\s+bas(?:e|is)\s+your\s+analysis[^<\n]*/gi, '')
+            .replace(/educational\s+(?:and\s+)?informational\s+purposes[^<\n]*/gi, '')
+            .replace(/(<br\s*\/?>\s*){2,}/g, '<br>')
+            .trim();
+    }
+
+    // Updates sub-tab filter
+    let _updatesFilter = 'trade';
+    let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
+    function setUpdatesFilter(f) {
+        _updatesFilter = f;
+        document.getElementById('subtab-trade').classList.toggle('active', f === 'trade');
+        document.getElementById('subtab-general').classList.toggle('active', f === 'general');
+        if (_cachedPosts) renderUpdates(_cachedPosts, _cachedTier, _cachedIsAdmin, _cachedReadMap);
+        else fetchUpdates();
+    }
+
     async function sharePost(postId) {
         const card = document.getElementById('ucard-' + postId);
         const content = card ? (card.dataset.content || '') : '';
@@ -850,18 +879,36 @@
                 receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
             }
 
-            if(!posts || posts.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align:center;padding:60px 20px;color:#888;">
-                        <div style="font-size:2.5rem;margin-bottom:12px;">📭</div>
-                        No updates yet. Check back soon!
-                    </div>`;
-                return;
-            }
+            _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
+            renderUpdates(posts, memberTier, isAdmin, readMap);
+        } catch(e) {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
+        }
+    }
 
-            // Separate parent posts and replies — already ordered desc by DB query
-            const parentPosts = posts.filter(p => !p.parent_id);
-            const replies     = posts.filter(p => p.parent_id);
+    function renderUpdates(allPosts, memberTier, isAdmin, readMap) {
+        const container = document.getElementById('updates-container');
+        const tradeTypes   = ['trade_alert','follow_up'];
+        const generalTypes = ['market_update','general'];
+
+        if(!allPosts || allPosts.length === 0) {
+            container.innerHTML = `<div style="text-align:center;padding:60px 20px;color:#888;"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div>No updates yet. Check back soon!</div>`;
+            return;
+        }
+
+        // Filter parent posts by active sub-tab
+        const allParents = allPosts.filter(p => !p.parent_id);
+        const parentPosts = allParents.filter(p => {
+            if (_updatesFilter === 'trade')   return tradeTypes.includes(p.post_type);
+            if (_updatesFilter === 'general') return generalTypes.includes(p.post_type);
+            return true;
+        });
+        const replies = allPosts.filter(p => p.parent_id);
+
+        if(parentPosts.length === 0) {
+            container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;">No ${_updatesFilter === 'trade' ? 'trade alerts' : 'general updates'} yet.</div>`;
+            return;
+        }
 
             // Group replies by parent_id
             const replyMap = {};
@@ -941,19 +988,17 @@
                             </div>
                         </div>` : '';
 
+                    const renderedContent = stripDisclaimerText(sanitizeHtml(post.content).replace(/\n/g,'<br>'));
                     html += `
                         <div class="update-card ${isNew ? 'unread' : ''}" id="ucard-${post.id}" data-content="${sanitizeHtml(post.content)}">
                             <div class="update-header">
-                                ${postBadgeHtml(post.post_type)}
+                                ${_updatesFilter === 'all' ? postBadgeHtml(post.post_type) : ''}
                                 <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
                             </div>
                             <div class="update-body">
-                                <div class="update-content">${sanitizeHtml(post.content).replace(/\n/g, '<br>')}</div>
+                                <div class="update-content">${renderedContent}</div>
                             </div>
-                            <div class="update-footer">
-                                <span class="update-disclaimer">Educational Purposes Only · Not An Investment Advice</span>
-                                ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')">⬆</button>` : ''}
-                            </div>
+                            ${post.allow_sharing ? `<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>` : ''}
                         </div>
                         ${repliesHtml}
                         ${adminHtml}`;
@@ -977,22 +1022,17 @@
                 }
             });
 
-            container.innerHTML = html;
+        container.innerHTML = html;
 
-            // Auto mark as read after 2s
-            setTimeout(() => {
-                parentPosts.forEach(p => {
-                    if(!readMap[p.id]) {
-                        const card = document.getElementById(`ucard-${p.id}`);
-                        if(card) { card.classList.remove('unread'); markPostRead(p.id); }
-                    }
-                });
-            }, 2000);
-
-        } catch(e) {
-            console.error('Updates fetch failed', e);
-            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
-        }
+        // Auto mark as read after 2s
+        setTimeout(() => {
+            parentPosts.forEach(p => {
+                if(!readMap[p.id]) {
+                    const card = document.getElementById(`ucard-${p.id}`);
+                    if(card) { card.classList.remove('unread'); markPostRead(p.id); }
+                }
+            });
+        }, 2000);
     }
 
     // ── ADMIN REPLY FUNCTIONS ────────────────────────────────────────────────
@@ -1183,16 +1223,64 @@
     }
 </script>
 
-<!-- Install Banner -->
-<div id="install-banner" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#ffffff;border-top:1px solid #ede8f5;padding:12px 16px;z-index:500;align-items:center;gap:12px;box-shadow:0 -4px 16px rgba(74,42,120,0.08);">
-  <img src="logo.png" alt="T2S" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">
-  <div style="flex:1;">
-    <div style="font-size:13px;font-weight:700;color:#1a2030;font-family:'Plus Jakarta Sans',sans-serif;">Add Trade2Spend to Home Screen</div>
-    <div style="font-size:11px;color:#9ca3af;font-family:'Plus Jakarta Sans',sans-serif;">Open instantly like an app — no browser needed</div>
+<!-- Global Sticky Disclaimer -->
+<div class="global-disclaimer-bar">Educational Purposes Only · Not An Investment Advice · WE ARE NOT SEBI REGISTERED</div>
+
+<!-- SEBI Disclaimer Modal -->
+<div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:18px;padding:28px 22px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="font-size:2rem;margin-bottom:10px;">⚠️</div>
+    <h2 style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:12px;">Important Notice</h2>
+    <p style="font-size:0.85rem;color:#555;line-height:1.75;margin-bottom:20px;">Trade2Spend is <strong>not SEBI registered</strong>. All trade alerts, market updates, and posts are for <strong>educational and informational purposes only</strong>. They do not constitute investment advice or a recommendation to buy or sell any security. Please conduct your own research and trade only at your own risk.</p>
+    <button onclick="dismissDisclaimer()" style="width:100%;padding:13px;background:#4a2a78;color:#fff;border:none;border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:inherit;">I Understand</button>
   </div>
-  <button onclick="triggerInstall()" style="padding:8px 14px;background:#4a2a78;border:none;border-radius:10px;color:#fff;font-size:12px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;flex-shrink:0;">Add</button>
-  <button onclick="dismissInstall()" style="padding:8px;background:transparent;border:none;color:#9ca3af;font-size:18px;cursor:pointer;flex-shrink:0;line-height:1;">×</button>
 </div>
 
+<!-- A2HS FAB -->
+<div id="a2hs-fab" onclick="triggerA2HS()" style="display:none;position:fixed;bottom:36px;right:16px;z-index:500;background:#4a2a78;border-radius:50%;width:40px;height:40px;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(74,42,120,0.35);cursor:pointer;" title="Add to Home Screen">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+</div>
+<!-- A2HS Guide Modal -->
+<div id="a2hs-guide" style="display:none;position:fixed;inset:0;z-index:11001;background:rgba(0,0,0,0.6);backdrop-filter:blur(3px);align-items:flex-end;justify-content:center;">
+  <div style="background:#fff;border-radius:20px 20px 0 0;padding:26px 22px 36px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,0.2);">
+    <div style="text-align:center;margin-bottom:18px;"><div style="font-size:1rem;font-weight:700;color:#1a2030;">Add to Home Screen</div><div style="font-size:0.75rem;color:#888;margin-top:3px;">Access Trade2Spend like a native app</div></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:12px;padding:11px 13px;background:#f6f3ee;border-radius:12px;"><div style="width:34px;height:34px;background:#4a2a78;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 4v12M6 10l6-6 6 6"/><rect x="3" y="19" width="18" height="2" rx="1" fill="white" stroke="none"/></svg></div><div style="font-size:0.81rem;color:#1a2030;line-height:1.5;">Tap the <strong>Share ⬆</strong> button at the bottom of your browser</div></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:11px 13px;background:#f6f3ee;border-radius:12px;"><div style="width:34px;height:34px;background:#4a2a78;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.2rem;color:white;font-weight:700;">+</div><div style="font-size:0.81rem;color:#1a2030;line-height:1.5;">Scroll down and tap <strong>"Add to Home Screen"</strong></div></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:11px 13px;background:#f6f3ee;border-radius:12px;"><div style="width:34px;height:34px;background:#059669;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><div style="font-size:0.81rem;color:#1a2030;line-height:1.5;">Tap <strong>Add</strong> in the top-right corner — done!</div></div>
+    </div>
+    <button onclick="document.getElementById('a2hs-guide').style.display='none'" style="width:100%;padding:12px;background:#4a2a78;color:#fff;border:none;border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer;font-family:inherit;">Got it</button>
+  </div>
+</div>
+
+<script>
+// ── SEBI DISCLAIMER ───────────────────────────────────────────────────────────
+function checkDisclaimer() {
+  const today = new Intl.DateTimeFormat('en-IN', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
+  if (localStorage.getItem('t2s_disclaimer_date') !== today) document.getElementById('sebi-modal').style.display = 'flex';
+}
+function dismissDisclaimer() {
+  const today = new Intl.DateTimeFormat('en-IN', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
+  localStorage.setItem('t2s_disclaimer_date', today);
+  document.getElementById('sebi-modal').style.display = 'none';
+}
+// ── ADD TO HOME SCREEN ────────────────────────────────────────────────────────
+let _a2hsPrompt = null;
+window.addEventListener('beforeinstallprompt', function(e) { e.preventDefault(); _a2hsPrompt = e; });
+function initA2HS() {
+  const fab = document.getElementById('a2hs-fab');
+  if (!fab) return;
+  if (!window.matchMedia('(display-mode: standalone)').matches && !navigator.standalone) fab.style.display = 'flex';
+}
+async function triggerA2HS() {
+  if (_a2hsPrompt) {
+    _a2hsPrompt.prompt();
+    const { outcome } = await _a2hsPrompt.userChoice;
+    if (outcome === 'accepted') document.getElementById('a2hs-fab').style.display = 'none';
+    _a2hsPrompt = null;
+  } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
+}
+document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); });
+</script>
 </body>
 </html>
