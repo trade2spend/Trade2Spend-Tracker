@@ -297,6 +297,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   </div>
   <div class="pin-err" id="pin-err" style="line-height:1.6;font-size:12px;text-align:center;padding:0 16px;"></div>
   <div class="pin-setup-link" onclick="pinBypass()">First time? Tap to set up PIN</div>
+
+  <!-- Recovery panel — hidden until tapped, shown only when locked -->
+  <div id="recovery-link" onclick="toggleRecovery()" style="display:none;margin-top:18px;font-size:11px;color:rgba(255,255,255,0.25);cursor:pointer;letter-spacing:0.05em;">recovery</div>
+  <div id="recovery-panel" style="display:none;margin-top:10px;text-align:center;">
+    <input id="recovery-input" type="password" placeholder="Recovery code" maxlength="20"
+      style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-size:14px;padding:10px 14px;outline:none;font-family:'Space Grotesk',sans-serif;width:200px;text-align:center;letter-spacing:0.1em;">
+    <button onclick="submitRecovery()" style="display:block;margin:8px auto 0;padding:9px 20px;background:rgba(255,255,255,0.12);border:0.5px solid rgba(255,255,255,0.25);border-radius:8px;color:#fff;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Unlock</button>
+    <div id="recovery-err" style="font-size:11px;color:#f87171;margin-top:6px;"></div>
+  </div>
 </div>
 
 <!-- ALGO BOT MODAL -->
@@ -917,6 +926,13 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div class="setup-saved" id="pin-saved">✓ PIN saved</div>
     <div style="font-size:11px;color:var(--red);margin-top:4px;" id="pin-err-setup"></div>
   </div>
+  <div class="setup-card" style="border-color:rgba(234,179,8,0.3);background:rgba(234,179,8,0.04);">
+    <div class="setup-label" style="color:#fbbf24;">🔑 Recovery Code</div>
+    <div class="info-text" style="margin-bottom:8px;">A separate code (not your PIN) used to unlock the app if it gets locked after wrong attempts. Set something you can remember. Never share it.</div>
+    <input type="password" class="setup-input" id="recovery-code-input" placeholder="e.g. your own phrase or number">
+    <button class="setup-btn" style="border-color:rgba(234,179,8,0.3);color:#fbbf24;" onclick="saveRecoveryCode()">Save Recovery Code</button>
+    <div class="setup-saved" id="recovery-saved">✓ Saved</div>
+  </div>
     <div class="info-text">
       <strong>Telegram:</strong> https://t.me/tusharview<br><br>
       <strong>Add to iPhone home screen:</strong><br>
@@ -1248,6 +1264,8 @@ window.onload=()=>{
   if(api) document.getElementById('api-key-input').value=api;
   const gh=localStorage.getItem('tm_gh_token');
   if(gh) document.getElementById('gh-token-input').value=gh;
+  const rc=localStorage.getItem('t2s_admin_recovery');
+  if(rc) document.getElementById('recovery-code-input').value=rc;
   updatePreview();
   // membership defaults
   const d=window.__memDefaults||{};
@@ -1574,15 +1592,48 @@ function getAdminDeviceId() {
 // ── PIN LOCK UI ───────────────────────────────────────────────────────────────
 function showAdminLocked(reason) {
   _pinLocked = true;
-  document.getElementById('pin-sub-text').textContent = reason === 'sessions' ? 'Max sessions reached' : 'App locked';
-  const msg = reason === 'sessions'
-    ? '⚠️ 2 active sessions already open.\n\nTo free a slot:\nSupabase → Table Editor → keep_alive_log → delete a row whose source starts with "admin_session_"'
-    : '🔒 Locked after 3 wrong attempts.\n\nTo unlock:\nSupabase → Table Editor → keep_alive_log → delete the row where source = "admin_pwa_locked"';
-  document.getElementById('pin-err').textContent = msg;
+  document.getElementById('pin-sub-text').textContent = reason === 'sessions' ? 'Max sessions reached' : 'App Locked';
+  document.getElementById('pin-err').textContent = reason === 'sessions'
+    ? 'Too many active sessions. Use recovery to access.'
+    : 'Too many incorrect attempts.';
   document.querySelectorAll('.pin-key').forEach(b => b.disabled = true);
   const grid = document.querySelector('.pin-grid');
   if (grid) grid.style.opacity = '0.25';
   document.getElementById('pin-dots').style.display = 'none';
+  document.getElementById('recovery-link').style.display = 'block';
+}
+
+function toggleRecovery() {
+  const panel = document.getElementById('recovery-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') document.getElementById('recovery-input').focus();
+}
+
+async function submitRecovery() {
+  const entered = document.getElementById('recovery-input').value.trim();
+  const saved   = localStorage.getItem('t2s_admin_recovery');
+  const errEl   = document.getElementById('recovery-err');
+
+  if (!saved) { errEl.textContent = 'No recovery code set. Set one in Setup first.'; return; }
+  if (entered !== saved) { errEl.textContent = 'Incorrect recovery code.'; document.getElementById('recovery-input').value = ''; return; }
+
+  errEl.textContent = '';
+  document.getElementById('recovery-input').disabled = true;
+  try {
+    // Delete lock record from Supabase
+    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
+      method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
+    });
+    // Also clear all session records so a fresh session is registered after unlock
+    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
+      method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
+    });
+    showToast('✓ Unlocked. Reloading...');
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) {
+    errEl.textContent = 'Failed to unlock. Check connection.';
+    document.getElementById('recovery-input').disabled = false;
+  }
 }
 
 // ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
@@ -2490,6 +2541,14 @@ function saveAPIKey(){
   localStorage.setItem('tm_api_key',k);
   const s=document.getElementById('api-saved');s.style.display='block';
   setTimeout(()=>s.style.display='none',2000);
+}
+function saveRecoveryCode(){
+  const k = document.getElementById('recovery-code-input').value.trim();
+  if(!k) return;
+  localStorage.setItem('t2s_admin_recovery', k);
+  const s = document.getElementById('recovery-saved');
+  s.style.display='block'; setTimeout(()=>s.style.display='none', 2000);
+  showToast('✓ Recovery code saved');
 }
 function saveGHToken(){
   const k=document.getElementById('gh-token-input').value.trim();
