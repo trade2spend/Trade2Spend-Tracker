@@ -253,13 +253,14 @@ const WELCOME_URL   = 'index.html'; // welcome.html merged into index
 const SESSION_24H   = 24 * 60 * 60 * 1000;
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let currentMobile  = '';
-let currentMember  = null;
-let pinBuffer      = '';
-let setupBuffer    = '';
-let setupFirstPin  = '';
-let setupStep      = 1;
-let failedAttempts = 0;
+let currentMobile         = '';
+let currentMember         = null;
+let pinBuffer             = '';
+let setupBuffer           = '';
+let setupFirstPin         = '';
+let setupStep             = 1;
+let failedAttempts        = 0;
+let crossDeviceSessionId  = null; // set when verifying PIN from a different device
 const MAX_ATTEMPTS = 3;
 const LOCK_MINUTES = 30;
 const WEAK_PINS    = ['2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212'];
@@ -412,7 +413,18 @@ async function checkMobile(){
     localStorage.setItem('t2s_member_id',member.id);
     showLoading(false);
 
-    const sessions=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
+    let sessions=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
+
+    // If no session on this device, check if member has a PIN set on another device
+    if(!sessions||sessions.length===0||!sessions[0].pin_hash){
+      const anySession=await sbFetch(`sessions?member_id=eq.${member.id}&is_active=eq.true&order=last_active.desc&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(anySession&&anySession.length>0&&anySession[0].pin_hash){
+        sessions=anySession;
+        crossDeviceSessionId=anySession[0].id; // flag: PIN exists, just new device
+      }
+    } else {
+      crossDeviceSessionId=null;
+    }
 
     if(sessions&&sessions.length>0&&sessions[0].pin_hash){
       if(await checkLock()){ showScreen('screen-pin'); return; }
@@ -456,7 +468,14 @@ async function verifyPin(){
   try {
     const hash=await hashPin(pinBuffer);
     const deviceId=getDeviceId();
-    const sessions=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${deviceId}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
+
+    // Use cross-device session if set, otherwise look up by device
+    let sessions;
+    if(crossDeviceSessionId){
+      sessions=await sbFetch(`sessions?id=eq.${crossDeviceSessionId}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
+    } else {
+      sessions=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${deviceId}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
+    }
 
     if(!sessions||sessions.length===0){
       showLoading(false);
@@ -475,15 +494,32 @@ async function verifyPin(){
     if(session.pin_hash===hash){
       failedAttempts=0;
       localStorage.removeItem('t2s_lock_until');
-      // Set 24h session timestamp
       localStorage.setItem('t2s_last_login', Date.now().toString());
       localStorage.setItem('t2s_mode','paid');
 
-      await sbFetch(`sessions?id=eq.${session.id}`,{
-        method:'PATCH',
-        body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),
-        headers:{'Accept':'application/json'}
-      });
+      if(crossDeviceSessionId){
+        // New device — create a session record for this device using the same PIN hash
+        try {
+          await sbFetch('sessions',{
+            method:'POST',
+            body:JSON.stringify({
+              member_id:currentMember.id, device_id:deviceId,
+              device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',
+              device_name:navigator.platform||'Unknown',
+              pin_hash:session.pin_hash, is_active:true,
+              last_active:new Date().toISOString()
+            }),
+            headers:{'Accept':'application/json'}
+          });
+        } catch(e){}
+        crossDeviceSessionId=null;
+      } else {
+        await sbFetch(`sessions?id=eq.${session.id}`,{
+          method:'PATCH',
+          body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),
+          headers:{'Accept':'application/json'}
+        });
+      }
       showLoading(false);
       window.location.href = MAIN_APP_URL;
     } else {
