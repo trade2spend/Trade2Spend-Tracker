@@ -295,7 +295,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <button class="pin-key" onclick="pinKey('0')">0</button>
     <button class="pin-key del" onclick="pinDel()">⌫</button>
   </div>
-  <div class="pin-err" id="pin-err"></div>
+  <div class="pin-err" id="pin-err" style="line-height:1.6;font-size:12px;text-align:center;padding:0 16px;"></div>
   <div class="pin-setup-link" onclick="pinBypass()">First time? Tap to set up PIN</div>
 </div>
 
@@ -1562,44 +1562,88 @@ async function addMember(){
 let pinBuffer = '';
 let pinAttempts = 0;
 let pinAnimating = false;
-const MAX_ATTEMPTS = 5;
+let _pinLocked = false;
 
-function pinInit() {
+// ── ADMIN DEVICE ID ──────────────────────────────────────────────────────────
+function getAdminDeviceId() {
+  let id = localStorage.getItem('t2s_admin_device');
+  if (!id) { id = 'adm_' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('t2s_admin_device', id); }
+  return id;
+}
+
+// ── PIN LOCK UI ───────────────────────────────────────────────────────────────
+function showAdminLocked(reason) {
+  _pinLocked = true;
+  document.getElementById('pin-sub-text').textContent = reason === 'sessions' ? 'Max sessions reached' : 'App locked';
+  const msg = reason === 'sessions'
+    ? '⚠️ 2 active sessions already open.\n\nTo free a slot:\nSupabase → Table Editor → keep_alive_log → delete a row whose source starts with "admin_session_"'
+    : '🔒 Locked after 3 wrong attempts.\n\nTo unlock:\nSupabase → Table Editor → keep_alive_log → delete the row where source = "admin_pwa_locked"';
+  document.getElementById('pin-err').textContent = msg;
+  document.querySelectorAll('.pin-key').forEach(b => b.disabled = true);
+  const grid = document.querySelector('.pin-grid');
+  if (grid) grid.style.opacity = '0.25';
+  document.getElementById('pin-dots').style.display = 'none';
+}
+
+// ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
+async function checkSessionSlot() {
+  const mySource = 'admin_session_' + getAdminDeviceId();
+  try {
+    const rows = await sbGet('keep_alive_log?source=like.admin_session_%25&order=pinged_at.asc');
+    const mine   = rows.find(r => r.source === mySource);
+    const others = rows.filter(r => r.source !== mySource);
+    if (!mine && others.length >= 2) { showAdminLocked('sessions'); }
+  } catch(e) {}
+}
+
+async function registerAdminSession() {
+  const mySource = 'admin_session_' + getAdminDeviceId();
+  try {
+    const rows = await sbGet('keep_alive_log?source=like.admin_session_%25&order=pinged_at.asc');
+    const existing = rows.find(r => r.source === mySource);
+    if (existing) {
+      await fetch(`${SB_URL}/rest/v1/keep_alive_log?id=eq.${existing.id}`, {
+        method:'PATCH', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
+        body: JSON.stringify({ pinged_at: new Date().toISOString() })
+      });
+      return;
+    }
+    // Remove oldest if at 2
+    const others = rows.filter(r => r.source !== mySource);
+    if (others.length >= 2) {
+      await fetch(`${SB_URL}/rest/v1/keep_alive_log?id=eq.${others[0].id}`, {
+        method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
+      });
+    }
+    await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
+      method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+      body: JSON.stringify({ source: mySource, pinged_at: new Date().toISOString() })
+    });
+  } catch(e) {}
+}
+
+// ── PIN INIT ──────────────────────────────────────────────────────────────────
+async function pinInit() {
   const savedPin = localStorage.getItem('t2s_pin');
-  const lockoutUntil = parseInt(localStorage.getItem('t2s_lockout') || '0');
-  const now = Date.now();
-
-  if (lockoutUntil > now) {
-    const mins = Math.ceil((lockoutUntil - now) / 60000);
-    document.getElementById('pin-err').textContent = `Too many attempts. Try again in ${mins} min.`;
-  }
-
-  if (!savedPin) {
-    // No PIN set — bypass for first time
-    document.getElementById('pin-overlay').classList.add('hidden');
-    return;
-  }
-
-  // Show PIN screen
+  if (!savedPin) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
   document.getElementById('pin-overlay').classList.remove('hidden');
+  try {
+    const locks = await sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1');
+    if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
+  } catch(e) {}
+  await checkSessionSlot();
 }
 
 function pinKey(digit) {
-  if (pinAnimating) return;
-  const lockoutUntil = parseInt(localStorage.getItem('t2s_lockout') || '0');
-  if (Date.now() < lockoutUntil) return;
-
+  if (pinAnimating || _pinLocked) return;
   if (pinBuffer.length >= 4) return;
   pinBuffer += digit;
   updatePinDots();
-
-  if (pinBuffer.length === 4) {
-    setTimeout(() => checkPin(), 100);
-  }
+  if (pinBuffer.length === 4) setTimeout(() => checkPin(), 100);
 }
 
 function pinDel() {
-  if (pinAnimating) return;
+  if (pinAnimating || _pinLocked) return;
   pinBuffer = pinBuffer.slice(0, -1);
   updatePinDots();
   document.getElementById('pin-err').textContent = '';
@@ -1613,28 +1657,31 @@ function updatePinDots() {
   }
 }
 
-function checkPin() {
+async function checkPin() {
   const savedPin = localStorage.getItem('t2s_pin');
   if (pinBuffer === savedPin) {
     pinAttempts = 0;
     pinBuffer = '';
     updatePinDots();
     document.getElementById('pin-overlay').classList.add('hidden');
+    registerAdminSession().catch(() => {});
   } else {
     pinAttempts++;
     pinBuffer = '';
     pinAnimating = true;
     const grid = document.querySelector('.pin-grid');
     if (grid) grid.classList.add('locked');
-    for (let i = 0; i < 4; i++) {
-      document.getElementById('pd' + i).classList.add('error');
-    }
-    if (pinAttempts >= MAX_ATTEMPTS) {
-      const lockout = Date.now() + 30 * 60 * 1000;
-      localStorage.setItem('t2s_lockout', lockout.toString());
-      document.getElementById('pin-err').textContent = 'Too many attempts. Locked for 30 minutes.';
+    for (let i = 0; i < 4; i++) document.getElementById('pd' + i).classList.add('error');
+    if (pinAttempts >= 3) {
+      try {
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
+          method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+          body: JSON.stringify({ source:'admin_pwa_locked', pinged_at: new Date().toISOString() })
+        });
+      } catch(e) {}
+      showAdminLocked('pin');
     } else {
-      document.getElementById('pin-err').textContent = `Wrong PIN. ${MAX_ATTEMPTS - pinAttempts} attempts remaining.`;
+      document.getElementById('pin-err').textContent = `Wrong PIN. ${3 - pinAttempts} attempt${3 - pinAttempts !== 1 ? 's' : ''} remaining.`;
     }
     setTimeout(() => {
       pinAnimating = false;
