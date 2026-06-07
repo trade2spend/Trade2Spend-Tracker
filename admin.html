@@ -1573,6 +1573,7 @@ let pinBuffer = '';
 let pinAttempts = 0;
 let pinAnimating = false;
 let _pinLocked = false;
+let _lastAlgoSend = 0;
 
 // ── ADMIN DEVICE ID ──────────────────────────────────────────────────────────
 function getAdminDeviceId() {
@@ -1961,6 +1962,10 @@ async function sendToAlgoBot() {
 // CORE — SEND TO TRADING BOT VIA TELEGRAM
 // ═══════════════════════════════════════
 async function sendAlgoBotMessage(qty, slDuration) {
+  const now = Date.now();
+  if (now - _lastAlgoSend < 2000) { showToast('Please wait before sending again.'); return; }
+  _lastAlgoSend = now;
+
   const botToken = localStorage.getItem('t2s_algo_bot_token');
   const chatId = localStorage.getItem('t2s_algo_chat_id');
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
