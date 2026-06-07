@@ -2,6 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script>
+    (function(){
+      var mode=localStorage.getItem('t2s_mode');
+      var mid=localStorage.getItem('t2s_member_id');
+      var last=parseInt(localStorage.getItem('t2s_last_login')||'0');
+      if(mode!=='free'&&(!mid||(Date.now()-last>=86400000))){
+        window.location.replace('login.html');
+      }
+    })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -151,7 +161,7 @@
         .btn-secondary { display: block; width: 100%; padding: 14px; background: #f1f5f9; color: var(--text-main); text-decoration: none; border-radius: 8px; font-weight: bold;}
         
         /* --- UPDATES TAB --- */
-        .update-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); transition: all .15s; }
+        .update-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: box-shadow .15s; }
         .update-card.unread { border-left: 3px solid var(--primary); }
         .update-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; }
         .update-badge { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.04em; }
@@ -167,7 +177,7 @@
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; font-size: 0.9rem; padding: 3px; }
         .update-share:hover { color: var(--primary); }
-        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+        .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: box-shadow .15s; }
         .locked-blur-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 8px; }
         .blur-pill { height: 8px; border-radius: 4px; background: #e8e0f5; }
         .locked-center { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; border-top: 1px solid var(--border); background: #fdfdfc; }
@@ -393,10 +403,10 @@
         }
     });
 
-    // --- CLOCK ---
+    // --- CLOCK (forced IST) ---
     setInterval(() => {
-        const now = new Date();
-        document.getElementById('current-time').innerText = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) + " IST";
+        document.getElementById('current-time').innerText =
+            new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST';
     }, 1000);
 
     // --- GITHUB REPO URLs ---
@@ -487,6 +497,16 @@
         }
     }
 
+    // Strict lot size lookup — never use .includes() for instrument matching
+    const LOT_SIZES = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 10, MIDCAP: 75, NIFTYFIN: 25 };
+    function getLotSize(instrument) { return LOT_SIZES[instrument] || 65; }
+
+    // Strip premium fields from trade payload before rendering
+    function sanitizeTrade(trade, canSeePremium) {
+        if(canSeePremium) return trade;
+        return Object.assign({}, trade, { entryPrice: null, currentPrice: null });
+    }
+
     // --- FETCH TRADES ---
     async function fetchTrades() {
         try {
@@ -525,30 +545,30 @@
                 const targetContainer = isClosed ? closedContainer : container;
                 if(!targetContainer) return;
 
-                let isPreBuy = !trade.isTriggered && !isAdmin && memberTier !== 'paid';
+                const canSeePremium = isAdmin || memberTier === 'paid' || trade.isTriggered;
+                const t = sanitizeTrade(trade, canSeePremium); // strips entryPrice/currentPrice if not entitled
+
+                let isPreBuy = !canSeePremium;
                 let badgeClass = isPreBuy ? 'watching' : (trade.status === 'ACTIVE' ? 'profit' : 'loss');
                 let badgeText = isPreBuy ? 'WATCHING' : (trade.status === 'ACTIVE' ? 'IN PROFIT' : trade.status);
                 let typeClass = trade.type.toLowerCase();
-                
-                let entryHtml = isPreBuy 
-                    ? `<span class="premium-pill" onclick="showPopup()">🔒 Premium</span>` 
-                    : `₹ ${trade.entryPrice.toFixed(2)}`;
-                
+
+                let entryHtml = isPreBuy
+                    ? `<span class="premium-pill" onclick="showPopup()">🔒 Premium</span>`
+                    : `₹ ${t.entryPrice.toFixed(2)}`;
+
                 let pnlValue = '—';
-                let pnlPct = '';
                 let pnlClass = '';
-                
-                if(!isPreBuy && trade.currentPrice) {
-                    let diff = trade.type === 'CE' ? (trade.currentPrice - trade.entryPrice) : (trade.entryPrice - trade.currentPrice);
-                    let lotSize = trade.instrument.includes('BANKNIFTY') ? 15 : (trade.instrument.includes('SENSEX') ? 10 : 65);
-                    let pnl = diff * lotSize; 
-                    let pct = ((diff / trade.entryPrice) * 100).toFixed(1);
-                    
+
+                if(!isPreBuy && t.currentPrice) {
+                    const diff = t.type === 'CE' ? (t.currentPrice - t.entryPrice) : (t.entryPrice - t.currentPrice);
+                    const lotSize = getLotSize(t.instrument);
+                    const pnl = diff * lotSize;
+                    const pct = ((diff / t.entryPrice) * 100).toFixed(1);
+
                     pnlClass = pnl >= 0 ? 'val-up' : 'val-down';
-                    pnlValue = `${pnl >= 0 ? '+' : '-'} ₹ ${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})} <span style="font-size:0.7rem;opacity:0.85;">(${pnl >= 0 ? '+' : ''}${pct}%)</span>`;
-                    pnlPct = '';
-                    
-                    // Override badge if active but in loss
+                    pnlValue = `${pnl >= 0 ? '+' : '-'} ₹ ${Math.abs(pnl).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})} <span style="font-size:0.7rem;opacity:0.85;">(${pnl >= 0 ? '+' : ''}${pct}%)</span>`;
+
                     if(trade.status === 'ACTIVE' && pnl < 0) { badgeClass = 'loss'; badgeText = 'IN LOSS'; }
                 }
 
@@ -556,15 +576,15 @@
                     <div class="trade-card">
                         <div class="trade-header">
                             <div class="trade-title-box">
-                                <div class="type-box ${typeClass}">${trade.type}</div>
+                                <div class="type-box ${typeClass}">${t.type}</div>
                                 <div>
-                                    <div class="trade-name">${trade.instrument}</div>
-                                    <div class="trade-expiry">Expiry ${trade.expiry || 'Current Week'}</div>
+                                    <div class="trade-name">${t.instrument}</div>
+                                    <div class="trade-expiry">Expiry ${t.expiry || 'Current Week'}</div>
                                 </div>
                             </div>
                             <span class="badge ${badgeClass}">${badgeText}</span>
                         </div>
-                        
+
                         <div class="trade-metrics">
                             <div class="metric-col">
                                 <span class="metric-label">Entry Price</span>
@@ -572,7 +592,7 @@
                             </div>
                             <div class="metric-col">
                                 <span class="metric-label">Current Price</span>
-                                <span class="metric-value">${isPreBuy ? '—' : '₹ ' + trade.currentPrice.toFixed(2)}</span>
+                                <span class="metric-value">${isPreBuy ? '—' : '₹ ' + t.currentPrice.toFixed(2)}</span>
                             </div>
                             <div class="metric-col">
                                 <span class="metric-label">P&L (Per Lot)</span>
@@ -602,42 +622,52 @@
             container.innerHTML = '';
             
             if(data.months && data.months.length > 0) {
-                // Populate Current Month (Top section) using the latest month in JSON
-                const current = data.months[0].summary;
-                const monthLabel = data.months[0].month || 'CURRENT MONTH';
-                document.getElementById('curr-month-name').innerText = monthLabel;
-                if(current.totalTrades === 0) {
+                // Current month summary
+                try {
+                    const current = data.months[0].summary || {};
+                    const monthLabel = data.months[0].month || 'CURRENT MONTH';
+                    document.getElementById('curr-month-name').innerText = monthLabel;
+                    if(!current.totalTrades) {
+                        document.getElementById('perf-winrate').innerText = '--%';
+                        document.getElementById('perf-total').innerText = 'No trades yet';
+                        document.getElementById('perf-max').innerText = '--';
+                    } else {
+                        document.getElementById('perf-winrate').innerText = (current.winRate ?? '--') + '%';
+                        document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins ?? 0} W · ${current.losses ?? 0} L)`;
+                        document.getElementById('perf-max').innerText = (current.maxProfit || 0).toLocaleString();
+                    }
+                } catch(ex) {
+                    document.getElementById('curr-month-name').innerText = 'CURRENT MONTH';
                     document.getElementById('perf-winrate').innerText = '--%';
-                    document.getElementById('perf-total').innerText = 'No trades yet';
+                    document.getElementById('perf-total').innerText = '--';
                     document.getElementById('perf-max').innerText = '--';
-                } else {
-                    document.getElementById('perf-winrate').innerText = current.winRate + '%';
-                    document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins} W · ${current.losses} L)`;
-                    document.getElementById('perf-max').innerText = current.maxProfit.toLocaleString();
                 }
 
-                // Populate Past Months with collapse/expand
+                // Past Months with collapse/expand
                 let openHistId = null;
                 data.months.slice(1).forEach((m, idx) => {
-                    const isProfit = m.summary.totalPnL >= 0;
+                    const summary = m.summary || {};
+                    const isProfit = (summary.totalPnL || 0) >= 0;
                     const detailId = `hdet-${idx}`;
                     const arrowId  = `harr-${idx}`;
+                    const mLabel   = m.month || 'Unknown Month';
+                    const totalPnL = summary.totalPnL || 0;
                     container.innerHTML += `
                         <div class="history-card" onclick="toggleHistCard('${detailId}','${arrowId}')">
                             <div class="history-card-row">
-                                <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${m.month}</div>
+                                <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${mLabel}</div>
                                 <div style="display:flex;align-items:center;gap:8px;">
                                     <div style="text-align:right;">
-                                        <div style="font-weight:700;color:${isProfit?'var(--green)':'var(--red)'};font-size:0.95rem;">${isProfit?'+':'-'}₹${Math.abs(m.summary.totalPnL).toLocaleString()}</div>
-                                        <div style="font-size:0.7rem;color:var(--text-muted);">Win Rate: ${m.summary.winRate}%</div>
+                                        <div style="font-weight:700;color:${isProfit?'var(--green)':'var(--red)'};font-size:0.95rem;">${isProfit?'+':'-'}₹${Math.abs(totalPnL).toLocaleString()}</div>
+                                        <div style="font-size:0.7rem;color:var(--text-muted);">Win Rate: ${summary.winRate ?? '--'}%</div>
                                     </div>
                                     <span id="${arrowId}" class="hist-arrow">▶</span>
                                 </div>
                             </div>
                             <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
                                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Trades</span><span style="font-weight:700;font-size:0.88rem;">${m.summary.totalTrades} (${m.summary.wins}W · ${m.summary.losses}L)</span></div>
-                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Max P&L (If 1 Lot)</span><span style="font-weight:700;font-size:0.88rem;">₹${m.summary.maxProfit.toLocaleString()}</span></div>
+                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Trades</span><span style="font-weight:700;font-size:0.88rem;">${summary.totalTrades ?? '--'} (${summary.wins ?? 0}W · ${summary.losses ?? 0}L)</span></div>
+                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Max P&L (If 1 Lot)</span><span style="font-weight:700;font-size:0.88rem;">₹${(summary.maxProfit || 0).toLocaleString()}</span></div>
                                 </div>
                             </div>
                         </div>
@@ -669,7 +699,7 @@
     }
 
     function formatPostTime(ts) {
-        return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        return new Date(ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
     }
 
     function formatPostDate(ts) {
@@ -1022,18 +1052,23 @@
             const tabEl = document.querySelector(`.tab[onclick*="${startTab}"]`);
             if (tabEl) switchTab(startTab, tabEl);
         }
-        // Check local IST time — returns true during normal or special trading hours
+        // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
-            if(specialHours) return true; // Mahurat or special session override
+            if(specialHours) return true;
             const now = new Date();
-            const istMin = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
-            const istH   = Math.floor(istMin / 60), istM = istMin % 60;
-            const utcDay = now.getUTCDay();
-            // Adjust day for IST midnight crossover
-            const istDay = (istMin + 330 >= 1440) ? (utcDay + 1) % 7 : utcDay;
-            const isWeekday  = istDay >= 1 && istDay <= 5;
-            const afterOpen  = istH > 9  || (istH === 9  && istM >= 15);
-            const beforeClose= istH < 15 || (istH === 15 && istM <= 30);
+            const fmt = new Intl.DateTimeFormat('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit', minute: '2-digit', weekday: 'short',
+                hour12: false
+            });
+            const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
+            const dayMap = { Mon:1, Tue:2, Wed:3, Thu:4, Fri:5 };
+            const dayNum = dayMap[parts.weekday] || 0;
+            const h = parseInt(parts.hour, 10), m = parseInt(parts.minute, 10);
+            const totalMin = h * 60 + m;
+            const isWeekday  = dayNum >= 1 && dayNum <= 5;
+            const afterOpen  = totalMin >= 9 * 60 + 15;
+            const beforeClose= totalMin <= 15 * 60 + 30;
             return isWeekday && afterOpen && beforeClose;
         }
 
