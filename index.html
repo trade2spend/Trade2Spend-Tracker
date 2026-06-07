@@ -424,7 +424,10 @@
     // --- FETCH MARKET DATA ---
     async function fetchMarketData() {
         try {
-            const res = await fetch(DB_URLS.market + '?t=' + new Date().getTime());
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 5000);
+            const res = await fetch(DB_URLS.market + '?t=' + new Date().getTime(), { signal: ctrl.signal });
+            clearTimeout(tid);
             if(!res.ok) throw new Error('Network error');
             const data = await res.json();
             
