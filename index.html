@@ -188,6 +188,9 @@
         .notif-enable-btn { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit; }
 
         /* --- THREAD / FOLLOW-UP NESTING --- */
+        .replies-toggle { display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid #ede8f5;border-radius:20px;padding:5px 14px;margin:2px 16px 8px;font-size:0.75rem;font-weight:600;color:var(--primary);cursor:pointer;font-family:inherit;transition:background .15s; }
+        .replies-toggle:hover { background:var(--primary-light); }
+        .intent-badge { display:inline-flex;align-items:center;gap:4px;margin-top:7px;margin-right:4px;padding:3px 9px;border-radius:20px;font-size:0.7rem;font-weight:700; }
         .thread-replies { margin: 0 16px 12px 24px; border-left: 2px solid var(--primary-light); padding-left: 12px; }
         .reply-card { background: #faf9ff; border: 1px solid #ede9fe; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
         .reply-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; }
@@ -599,10 +602,16 @@
                                 <span class="metric-value ${pnlClass}">${pnlValue}</span>
                             </div>
                             <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-                                <div class="rationale-box" onclick="showPopup()" style="margin:0;padding:5px 8px;border-radius:6px;">
-                                    <span class="rationale-text" style="font-size:0.7rem;">Why</span>
-                                    <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
-                                </div>
+                                ${canSeePremium
+                                    ? `<div class="rationale-box" style="margin:0;padding:5px 8px;border-radius:6px;cursor:default;">
+                                        <span class="rationale-text" style="font-size:0.7rem;">Why</span>
+                                        <span style="font-size:0.68rem;font-weight:600;color:#059669;">📲 Telegram</span>
+                                       </div>`
+                                    : `<div class="rationale-box" onclick="showPopup()" style="margin:0;padding:5px 8px;border-radius:6px;">
+                                        <span class="rationale-text" style="font-size:0.7rem;">Why</span>
+                                        <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
+                                       </div>`
+                                }
                             </div>
                         </div>
                         <div class="trade-footer">Educational Purposes Only · Not An Investment Advice</div>
@@ -759,6 +768,51 @@
         } catch(e) {}
     }
 
+    // ── FOLLOW-UP SMART PARSING ──────────────────────────────────────────────
+    function parseFollowUpIntent(content) {
+        const t = content.toLowerCase();
+        const intents = [];
+        // SL hit / gone
+        if (/\bsl\b.{0,25}(gone|hit|triggered|breached)|stop[\s-]?loss.{0,25}(gone|hit|triggered|breached)/.test(t)) {
+            intents.push({ type:'sl_hit', label:'🔴 SL Hit', bg:'#fef2f2', color:'#dc2626', border:'#fecaca' });
+        }
+        // Full exit (only if SL not already flagged)
+        if (!intents.length && /(clos|exit|book).{0,20}(full|entire|all|complete|100\s*%|position)|full.{0,10}(exit|close|book)|position.{0,20}(clos|exit)/.test(t)) {
+            intents.push({ type:'full_exit', label:'⬛ Position Closed', bg:'#f1f5f9', color:'#334155', border:'#cbd5e1' });
+        }
+        // Partial close with %
+        const pm = t.match(/(clos|book|exit).{0,10}?(\d+)\s*%/);
+        if (pm && !intents.find(i => i.type === 'full_exit')) {
+            const pct = parseInt(pm[2]);
+            if (pct > 0 && pct < 100) intents.push({ type:'partial_close', pct, label:`🟡 ${pct}% Closed · ${100-pct}% Remaining`, bg:'#fff7ed', color:'#c2410c', border:'#fed7aa' });
+        }
+        // SL update
+        const sm = content.match(/(?:SL|stop[\s-]?loss).{0,20}?(?:modified|changed|updated|moved|shifted|revised|now|to)\s*(?:to\s*)?₹?\s*(\d+(?:\.\d+)?)/i)
+                || content.match(/new\s+SL\s*[:=]?\s*₹?\s*(\d+(?:\.\d+)?)/i);
+        if (sm && !intents.find(i => i.type === 'sl_hit')) {
+            intents.push({ type:'sl_update', newSL:sm[1], label:`✏️ SL Updated → ₹${sm[1]}`, bg:'#eff6ff', color:'#1d4ed8', border:'#bfdbfe', sensitive:true });
+        }
+        return intents;
+    }
+
+    function intentBadgeHtml(intent, tier) {
+        const lbl = intent.sensitive && tier !== 'paid' ? '✏️ SL Updated' : intent.label;
+        return `<span class="intent-badge" style="background:${intent.bg};color:${intent.color};border:1px solid ${intent.border};">${lbl}</span>`;
+    }
+
+    function toggleReplies(id) {
+        const box = document.getElementById(id);
+        const btn = document.getElementById('btn-' + id);
+        const opening = box.style.display === 'none';
+        box.style.display = opening ? 'block' : 'none';
+        if (btn) {
+            const n = btn.dataset.count;
+            btn.textContent = opening
+                ? `↳ ${n} follow-up${n > 1 ? 's' : ''} — tap to hide`
+                : `↳ ${n} follow-up${n > 1 ? 's' : ''} — tap to view`;
+        }
+    }
+
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
@@ -841,26 +895,30 @@
                 }
 
                 if(canSee) {
-                    // Build replies HTML
+                    // Build replies HTML — collapsed by default
                     const postReplies = replyMap[post.id] || [];
                     let repliesHtml = '';
                     if(postReplies.length > 0) {
-                        repliesHtml = `<div class="thread-replies">`;
-                        postReplies.forEach(reply => {
-                            // Reply inherits parent visibility: free users cannot see any reply under a paid-only parent
-                            const replyCanSee = canSee && (reply.audience !== 'paid_only' || memberTier === 'paid');
-                            if(replyCanSee) {
+                        const visibleReplies = postReplies.filter(r => canSee && (r.audience !== 'paid_only' || memberTier === 'paid'));
+                        if(visibleReplies.length > 0) {
+                            const tid = `replies-${post.id}`;
+                            const n = visibleReplies.length;
+                            repliesHtml = `<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n > 1 ? 's' : ''} — tap to view</button>
+                                <div class="thread-replies" id="${tid}" style="display:none;">`;
+                            visibleReplies.forEach(reply => {
+                                const intents = parseFollowUpIntent(reply.content);
+                                const badges = intents.map(i => intentBadgeHtml(i, memberTier)).join('');
                                 repliesHtml += `
                                 <div class="reply-card" id="ucard-${reply.id}">
                                     <div class="reply-header">
                                         <span class="update-badge badge-follow-up">↳ FOLLOW-UP</span>
                                         <span class="update-time">${formatPostTime(reply.sent_at || reply.created_at)}</span>
                                     </div>
-                                    <div class="reply-body">${sanitizeHtml(reply.content).replace(/\n/g,'<br>')}</div>
+                                    <div class="reply-body">${sanitizeHtml(reply.content).replace(/\n/g,'<br>')}${badges}</div>
                                 </div>`;
-                            }
-                        });
-                        repliesHtml += `</div>`;
+                            });
+                            repliesHtml += `</div>`;
+                        }
                     }
 
                     // Admin compose box
