@@ -461,8 +461,11 @@ async function runMarketScraper(force = false) {
       const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
       existing = await r.json();
     } catch {}
+    const day = now.getDay(); // 0=Sun, 6=Sat
+    const isWeekday = day >= 1 && day <= 5;
+    const isMarketOpen = isWeekday && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
     const marketData = {
-      marketOpen:  true,
+      marketOpen:  isMarketOpen,
       lastUpdated: new Date().toISOString(),
       indices: {
         NIFTY:     nifty     || existing.indices?.NIFTY     || { price: 0, change: 0, changePct: 0 },
