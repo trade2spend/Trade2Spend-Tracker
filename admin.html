@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -900,11 +901,8 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
   <div class="setup-card" style="border-color:rgba(5,150,105,0.3);background:rgba(5,150,105,0.04);">
-    <div class="setup-label" style="color:#34d399;">🐙 GitHub Token</div>
-    <div class="info-text" style="margin-bottom:8px;">Personal Access Token with <strong>repo write</strong> access. Used to auto-update trades.json when you close or modify a position from the Trade tab.</div>
-    <input type="password" class="setup-input" id="gh-token-input" placeholder="ghp_...">
-    <button class="setup-btn" style="border-color:rgba(5,150,105,0.3);color:#34d399;" onclick="saveGHToken()">Save Token</button>
-    <div class="setup-saved" id="gh-saved">✓ Saved</div>
+    <div class="setup-label" style="color:#34d399;">🐙 GitHub Integration</div>
+    <div class="info-text">GitHub token is stored securely on the server — not in the browser. trades.json and market.json are updated via the VM automatically. No action needed here.</div>
   </div>
   <div class="setup-card">
     <div class="setup-label">🔐 App PIN Lock</div>
@@ -1458,15 +1456,12 @@ async function sendFollowUp() {
 }
 
 async function applyTradeUpdate(tradeId, intents) {
-    const ghToken = localStorage.getItem('tm_gh_token');
-    if (!ghToken) { showToast('Add GitHub token in Setup to auto-update trades.'); return; }
+    const secret = localStorage.getItem('t2s_execute_secret');
+    if (!secret) { showToast('Add Execute Secret in Setup to auto-update trades.'); return; }
 
-    const api = `https://api.github.com/repos/${GH_REPO}/contents/trades.json`;
-    const headers = { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json' };
-
-    const r = await fetch(api, { headers });
-    const meta = await r.json();
-    const current = JSON.parse(atob(meta.content.replace(/\n/g,'')));
+    // Fetch current trades.json
+    const r = await fetch(`https://raw.githubusercontent.com/${GH_REPO}/main/trades.json?t=${Date.now()}`);
+    const current = await r.json();
 
     current.trades = current.trades.map(t => {
         if (t.id !== tradeId) return t;
@@ -1487,15 +1482,11 @@ async function applyTradeUpdate(tradeId, intents) {
         return updated;
     });
 
-    await fetch(api, {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            message: `Follow-up update: ${tradeId}`,
-            content: btoa(unescape(encodeURIComponent(JSON.stringify(current, null, 2)))),
-            sha: meta.sha,
-            branch: 'main'
-        })
+    // Push via VM — GH_TOKEN never in browser
+    await fetch('https://api.trade2spend.com/push-trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-t2s-secret': secret },
+        body: JSON.stringify(current)
     });
 }
 
