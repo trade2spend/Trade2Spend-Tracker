@@ -297,7 +297,6 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <button class="pin-key del" onclick="pinDel()">⌫</button>
   </div>
   <div class="pin-err" id="pin-err" style="line-height:1.6;font-size:12px;text-align:center;padding:0 16px;"></div>
-  <div class="pin-setup-link" onclick="pinBypass()">First time? Tap to set up PIN</div>
 
   <!-- Email unlock — shown only when locked -->
   <div id="email-unlock-wrap" style="display:none;margin-top:20px;text-align:center;">
@@ -1656,7 +1655,18 @@ async function registerAdminSession() {
 async function pinInit() {
   if (await handleMagicLink()) return; // magic link clicked from email — unlock and reload
   const savedPin = localStorage.getItem('t2s_pin');
-  if (!savedPin) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
+  if (!savedPin) {
+    // No PIN set — show overlay with setup prompt, block access until PIN is configured
+    document.getElementById('pin-overlay').classList.remove('hidden');
+    document.getElementById('pin-sub-text').textContent = 'No PIN configured';
+    document.getElementById('pin-err').textContent = 'Go to Setup tab → App PIN Lock to set your PIN.\nUse the email unlock button below to access Setup.';
+    document.querySelectorAll('.pin-key').forEach(b => b.disabled = true);
+    const grid = document.querySelector('.pin-grid');
+    if (grid) grid.style.opacity = '0.25';
+    document.getElementById('pin-dots').style.display = 'none';
+    document.getElementById('email-unlock-wrap').style.display = 'block';
+    return;
+  }
   document.getElementById('pin-overlay').classList.remove('hidden');
   try {
     const locks = await sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1');
@@ -1727,15 +1737,6 @@ async function checkPin() {
   }
 }
 
-function pinBypass() {
-  // Only works if no PIN is set
-  const savedPin = localStorage.getItem('t2s_pin');
-  if (!savedPin) {
-    document.getElementById('pin-overlay').classList.add('hidden');
-    showToast('Set a PIN in Setup → App PIN Lock');
-    showTab('setup');
-  }
-}
 
 function saveNewPin() {
   const newPin = document.getElementById('new-pin-input').value.trim();
