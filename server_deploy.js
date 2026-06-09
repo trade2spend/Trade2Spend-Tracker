@@ -887,6 +887,68 @@ async function handleCallback(cb) {
     return;
   }
 
+  // ── ADMIN PIN RESET FLOW ─────────────────────────────────────────────────────
+  if (action === 'admin_pin_reset_ask') {
+    await tgAnswer(cbId, '');
+    await tgEdit(msgId,
+      `🔐 <b>Confirm PIN Reset</b>\n━━━━━━━━━━━━━━━━━━\n` +
+      `This will clear the existing PIN.\n` +
+      `After confirming, open admin.html — you will land on Setup to create a new PIN.\n\n` +
+      `⚠️ <b>Only confirm if this was you.</b>`,
+      { inline_keyboard: [[
+        { text: '✅ Yes, Reset PIN', callback_data: 'admin_pin_reset_confirm' },
+        { text: '❌ Cancel',         callback_data: 'admin_pin_reset_cancel'  }
+      ]]}
+    );
+    return;
+  }
+  if (action === 'admin_pin_reset_confirm') {
+    await tgAnswer(cbId, 'Resetting PIN...');
+    try {
+      if (SB_KEY) {
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
+          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+        });
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
+          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+        });
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ source: 'admin_pin_reset', pinged_at: new Date().toISOString() })
+        });
+      }
+      await tgEdit(msgId,
+        `✅ <b>PIN Reset Done</b>\n━━━━━━━━━━━━━━━━━━\n` +
+        `Open <b>app.trade2spend.com/admin.html</b>\n` +
+        `You will land on Setup tab — set your new PIN there.\n\n` +
+        `<i>Done at ${istTime()} IST</i>`,
+        { inline_keyboard: [] }
+      );
+    } catch(e) {
+      await tgEdit(msgId, `❌ Reset failed: ${e.message}`, { inline_keyboard: [] });
+    }
+    return;
+  }
+  if (action === 'admin_pin_reset_cancel') {
+    await tgAnswer(cbId, 'Cancelled');
+    await tgEdit(msgId,
+      `🚨 <b>Admin PWA — Alert Dismissed</b>\n` +
+      `PIN reset cancelled. Lock remains active.\n<i>${istTime()} IST</i>`,
+      { inline_keyboard: [] }
+    );
+    return;
+  }
+  if (action === 'admin_pin_ignore') {
+    await tgAnswer(cbId, 'Dismissed');
+    await tgEdit(msgId,
+      `⚠️ <b>Admin alert dismissed.</b>\n` +
+      `Lock remains active.\n<i>${istTime()} IST</i>`,
+      { inline_keyboard: [] }
+    );
+    return;
+  }
+
   if (action === 'status_all')   { await tgAnswer(cbId, 'Refreshing...'); await sendStatus(); return; }
   if (action === 'confirm_live') { state.paperMode = false; await tgAnswer(cbId, 'LIVE ON'); await tgSend('🔴 <b>LIVE mode ON</b>'); await saveState(); return; }
   if (action === 'stay_paper')   { await tgAnswer(cbId, 'Staying Paper'); return; }
@@ -1193,12 +1255,15 @@ const server = http.createServer(async (req, res) => {
       let data = {};
       try { data = JSON.parse(body); } catch {}
       const deviceStr = data.deviceInfo ? `${data.deviceInfo.platform || ''} · ${(data.deviceInfo.userAgent || '').slice(0,60)}` : 'Unknown';
-      await tgAlert(
-        `🚨 <b>Admin PWA Locked</b>\n` +
+      await tgSend(
+        `🚨 <b>Admin PWA Locked</b>\n━━━━━━━━━━━━━━━━━━\n` +
         `3 wrong PINs entered.\n` +
         `<b>Device:</b> ${deviceStr}\n` +
-        `<b>Time:</b> ${istTime()} IST\n\n` +
-        `Use the email unlock link on the lock screen.`
+        `<b>Time:</b> ${istTime()} IST`,
+        { inline_keyboard: [[
+          { text: '🔓 Reset PIN', callback_data: 'admin_pin_reset_ask' },
+          { text: '❌ Ignore',    callback_data: 'admin_pin_ignore'     }
+        ]]}
       );
       res.writeHead(200); res.end(JSON.stringify({ ok: true }));
     });
