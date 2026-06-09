@@ -28,7 +28,7 @@ const MOBILE       = process.env.KOTAK_MOBILE;
 const UCC          = process.env.KOTAK_UCC;
 const MPIN         = process.env.KOTAK_MPIN;
 const SB_URL       = process.env.SUPABASE_URL || 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
-const SB_KEY       = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const SB_KEY       = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
 const GH_TOKEN     = process.env.GH_TOKEN || '';
 const GH_REPO      = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker';
 
