@@ -982,6 +982,8 @@ async function handleMessage(text) {
       '/market_on — Start live market scraper\n' +
       '/market_off — Stop market scraper\n' +
       '/market_status — Scraper status\n\n' +
+      '<b>Admin Recovery:</b>\n' +
+      '/unlock_admin — Unlock admin PWA + reset PIN\n\n' +
       '/cancel — Cancel current action'
     ); return;
   }
@@ -990,6 +992,26 @@ async function handleMessage(text) {
     if (!session.token) { await tgSend('❌ Login first — send your 6-digit TOTP.'); return; }
     const [n, b] = await Promise.all([fetchSpot('NIFTY'), fetchSpot('BANKNIFTY')]);
     await tgSend(`📈 <b>Live Spot</b>\nNIFTY: <b>${n||'N/A'}</b>\nBANKNIFTY: <b>${b||'N/A'}</b>`); return;
+  }
+  if (cmd === '/unlock_admin') {
+    try {
+      if (SB_KEY) {
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
+          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+        });
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
+          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+        });
+        // Signal to admin.html that PIN should be cleared and Setup shown
+        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ source: 'admin_pin_reset', pinged_at: new Date().toISOString() })
+        });
+      }
+      await tgSend('✅ <b>Admin PWA unlocked.</b>\nOpen app.trade2spend.com/admin.html — you will land on Setup tab to set a new PIN.');
+    } catch(e) { await tgSend('❌ Unlock failed: ' + e.message); }
+    return;
   }
   if (cmd === '/market_on') {
     if (!GH_TOKEN) { await tgSend('❌ GH_TOKEN not set in .env — cannot push to GitHub.'); return; }
