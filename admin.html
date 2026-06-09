@@ -300,8 +300,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 
   <!-- Email unlock — shown only when locked -->
   <div id="email-unlock-wrap" style="display:none;margin-top:20px;text-align:center;">
-    <button id="email-unlock-btn" onclick="sendUnlockEmail()" style="font-size:12px;color:rgba(255,255,255,0.3);background:none;border:none;cursor:pointer;letter-spacing:0.05em;padding:4px 8px;font-family:'Space Grotesk',sans-serif;">email unlock link</button>
-    <div id="email-unlock-status" style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:5px;line-height:1.5;"></div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.6;">Send <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">/unlock_admin</code><br>to @Trade2Spend_Algo_Bot on Telegram,<br>then reload this page.</div>
   </div>
 </div>
 
@@ -1568,34 +1567,6 @@ function showAdminLocked(reason) {
   document.getElementById('email-unlock-wrap').style.display = 'block';
 }
 
-async function sendUnlockEmail() {
-  const btn    = document.getElementById('email-unlock-btn');
-  const status = document.getElementById('email-unlock-status');
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-  status.textContent = '';
-  try {
-    const res = await fetch(`${SB_URL}/auth/v1/otp`, {
-      method: 'POST',
-      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'tusharsood.2010@gmail.com',
-        options: { emailRedirectTo: 'https://app.trade2spend.com/admin.html' }
-      })
-    });
-    if (res.ok) {
-      btn.textContent = '✓ Sent';
-      status.textContent = 'Check tusharsood.2010@gmail.com and tap the link.';
-    } else {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Unknown error');
-    }
-  } catch(e) {
-    btn.disabled = false;
-    btn.textContent = 'email unlock link';
-    status.textContent = 'Failed to send. Check connection.';
-  }
-}
 
 async function handleMagicLink() {
   const hash = window.location.hash;
@@ -1610,6 +1581,10 @@ async function handleMagicLink() {
       method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
     });
   } catch(e) {}
+  // Clear PIN so user can set a new one after email verification
+  localStorage.removeItem('t2s_pin');
+  // Flag: skip PIN overlay once and land on Setup tab
+  sessionStorage.setItem('t2s_post_unlock', '1');
   window.location.replace('https://app.trade2spend.com/admin.html');
   return true;
 }
@@ -1654,17 +1629,45 @@ async function registerAdminSession() {
 // ── PIN INIT ──────────────────────────────────────────────────────────────────
 async function pinInit() {
   if (await handleMagicLink()) return; // magic link clicked from email — unlock and reload
+
+  // If arriving from email unlock (sessionStorage flag set by handleMagicLink)
+  if (sessionStorage.getItem('t2s_post_unlock')) {
+    sessionStorage.removeItem('t2s_post_unlock');
+    document.getElementById('pin-overlay').classList.add('hidden');
+    showTab('setup');
+    showToast('Email verified — please set a new PIN below.');
+    return;
+  }
+
+  // Check if /unlock_admin was sent via Telegram — Supabase flag set by VM
+  try {
+    const pinReset = await sbGet('keep_alive_log?source=eq.admin_pin_reset&limit=1');
+    if (pinReset && pinReset.length > 0) {
+      // Delete the flag, clear PIN, go straight to Setup
+      await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pin_reset`, {
+        method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      });
+      await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
+        method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      });
+      localStorage.removeItem('t2s_pin');
+      document.getElementById('pin-overlay').classList.add('hidden');
+      showTab('setup');
+      showToast('PIN reset by Telegram. Set a new PIN below.');
+      return;
+    }
+  } catch(e) {}
+
   const savedPin = localStorage.getItem('t2s_pin');
   if (!savedPin) {
-    // No PIN set — show overlay with setup prompt, block access until PIN is configured
+    // No PIN set — block access, show unlock instructions
     document.getElementById('pin-overlay').classList.remove('hidden');
     document.getElementById('pin-sub-text').textContent = 'No PIN configured';
-    document.getElementById('pin-err').textContent = 'Go to Setup tab → App PIN Lock to set your PIN.\nUse the email unlock button below to access Setup.';
+    document.getElementById('pin-err').textContent = 'Send /unlock_admin to @Trade2Spend_Algo_Bot on Telegram, then reload this page.';
     document.querySelectorAll('.pin-key').forEach(b => b.disabled = true);
     const grid = document.querySelector('.pin-grid');
     if (grid) grid.style.opacity = '0.25';
     document.getElementById('pin-dots').style.display = 'none';
-    document.getElementById('email-unlock-wrap').style.display = 'block';
     return;
   }
   document.getElementById('pin-overlay').classList.remove('hidden');
