@@ -1660,14 +1660,10 @@ async function pinInit() {
 
   const savedPin = localStorage.getItem('t2s_pin');
   if (!savedPin) {
-    // No PIN set — block access, show unlock instructions
-    document.getElementById('pin-overlay').classList.remove('hidden');
-    document.getElementById('pin-sub-text').textContent = 'No PIN configured';
-    document.getElementById('pin-err').textContent = 'Send /unlock_admin to @Trade2Spend_Algo_Bot on Telegram, then reload this page.';
-    document.querySelectorAll('.pin-key').forEach(b => b.disabled = true);
-    const grid = document.querySelector('.pin-grid');
-    if (grid) grid.style.opacity = '0.25';
-    document.getElementById('pin-dots').style.display = 'none';
+    // No PIN set — go straight to Setup tab to create one
+    document.getElementById('pin-overlay').classList.add('hidden');
+    showTab('setup');
+    showToast('No PIN set — create one below to secure the app.');
     return;
   }
   document.getElementById('pin-overlay').classList.remove('hidden');
