@@ -875,13 +875,6 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div class="info-text">Bot token is stored securely on the server (VM). All trade alerts and notifications are handled automatically — no token needed here.</div>
   </div>
   <div class="setup-card" style="border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.04);">
-    <div class="setup-label" style="color:#a78bfa;">🤖 Trading Bot — Your Chat ID</div>
-    <div class="info-text" style="margin-bottom:8px;">Your personal Telegram Chat ID. Get from @userinfobot → /start</div>
-    <input type="text" class="setup-input" id="algo-chat-id-input" placeholder="123456789">
-    <button class="setup-btn" style="border-color:rgba(124,58,237,0.3);color:#a78bfa;" onclick="saveAlgoChatId()">Save Chat ID</button>
-    <div class="setup-saved" id="algo-chat-saved">✓ Saved</div>
-  </div>
-  <div class="setup-card" style="border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.04);">
     <div class="setup-label" style="color:#a78bfa;">🤖 Paper Trading Mode</div>
     <div class="info-text" style="margin-bottom:8px;">When ON — bot simulates trades without placing real orders. Turn OFF only when ready to go live.</div>
     <div class="toggle-row" style="margin-top:4px;">
@@ -1815,15 +1808,6 @@ async function verifyAlgoBotToken() {
   }
 }
 
-function saveAlgoChatId() {
-  const k = document.getElementById('algo-chat-id-input').value.trim();
-  if (!k) return;
-  localStorage.setItem('t2s_algo_chat_id', k);
-  const s = document.getElementById('algo-chat-saved');
-  s.style.display = 'block';
-  setTimeout(() => s.style.display = 'none', 2000);
-  showToast('✓ Chat ID saved!');
-}
 
 function savePaperMode() {
   const isOn = document.getElementById('paper-mode-toggle').checked;
@@ -1857,15 +1841,14 @@ function refreshAlgoTab() {
 
   // Update status
   const botToken = localStorage.getItem('t2s_algo_bot_token');
-  const chatId = localStorage.getItem('t2s_algo_chat_id');
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
 
-  if (botToken && chatId) {
+  if (botToken) {
     document.getElementById('algo-status-text').textContent = '🟢 Bot Connected';
     document.getElementById('algo-status-sub').textContent = paperMode ? 'Paper Trading Mode — safe to test' : '⚠️ LIVE Mode — real orders';
   } else {
     document.getElementById('algo-status-text').textContent = '⚪ Not Configured';
-    document.getElementById('algo-status-sub').textContent = 'Add bot token and chat ID in Setup tab';
+    document.getElementById('algo-status-sub').textContent = 'Add bot token in Setup tab';
   }
 
   const paperIndicator = document.getElementById('algo-paper-indicator');
@@ -1952,10 +1935,9 @@ async function sendAlgoBotMessage(qty, slDuration) {
   _lastAlgoSend = now;
 
   const botToken = localStorage.getItem('t2s_algo_bot_token');
-  const chatId = localStorage.getItem('t2s_algo_chat_id');
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
 
-  if (!botToken || !chatId) {
+  if (!botToken) {
     showToast('Configure Trading Bot in Setup tab first.');
     showTab('setup');
     return;
@@ -2090,9 +2072,6 @@ window.addEventListener('DOMContentLoaded', () => {
   if (algoBotToken) document.getElementById('algo-bot-token-input').value = algoBotToken;
   const algoBotUsername = localStorage.getItem('t2s_algo_bot_username');
   if (algoBotUsername) document.getElementById('algo-bot-username-input').value = algoBotUsername;
-  const algoChatId = localStorage.getItem('t2s_algo_chat_id');
-  if (algoChatId) document.getElementById('algo-chat-id-input').value = algoChatId;
-
   // Paper mode toggle
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
   document.getElementById('paper-mode-toggle').checked = paperMode;
