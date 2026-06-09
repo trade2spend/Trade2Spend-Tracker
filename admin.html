@@ -4170,16 +4170,6 @@ async function confirmPushToMembers(){
   btn.textContent = 'Send to Members →';
 }
 
-// ── SEBI DISCLAIMER ───────────────────────────────────────────────────────────
-function checkDisclaimer() {
-  const today = new Intl.DateTimeFormat('en-IN', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
-  if (localStorage.getItem('t2s_disclaimer_date') !== today) document.getElementById('sebi-modal').style.display = 'flex';
-}
-function dismissDisclaimer() {
-  const today = new Intl.DateTimeFormat('en-IN', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
-  localStorage.setItem('t2s_disclaimer_date', today);
-  document.getElementById('sebi-modal').style.display = 'none';
-}
 // ── ADD TO HOME SCREEN ────────────────────────────────────────────────────────
 let _a2hsPrompt = null;
 window.addEventListener('beforeinstallprompt', function(e) { e.preventDefault(); _a2hsPrompt = e; });
@@ -4196,18 +4186,9 @@ async function triggerA2HS() {
     _a2hsPrompt = null;
   } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
 }
-document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); });
+document.addEventListener('DOMContentLoaded', function() { initA2HS(); });
 </script>
 
-<!-- SEBI Disclaimer Modal -->
-<div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
-  <div style="background:#fff;border-radius:18px;padding:28px 22px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-    <div style="font-size:2rem;margin-bottom:10px;">⚠️</div>
-    <h2 style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:12px;">Important Notice</h2>
-    <p style="font-size:0.85rem;color:#555;line-height:1.75;margin-bottom:20px;">Trade2Spend is <strong>not SEBI registered</strong>. All trade alerts, market updates, and posts are for <strong>educational and informational purposes only</strong>. They do not constitute investment advice or a recommendation to buy or sell any security. Please conduct your own research and trade only at your own risk.</p>
-    <button onclick="dismissDisclaimer()" style="width:100%;padding:13px;background:#4a2a78;color:#fff;border:none;border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;">I Understand</button>
-  </div>
-</div>
 
 <!-- A2HS FAB -->
 <div id="a2hs-fab" onclick="triggerA2HS()" style="display:none;position:fixed;bottom:20px;right:16px;z-index:500;background:#4a2a78;border-radius:50%;width:40px;height:40px;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(74,42,120,0.35);cursor:pointer;" title="Add to Home Screen">
