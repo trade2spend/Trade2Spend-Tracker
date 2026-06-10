@@ -408,6 +408,27 @@ async function fetchNSEBreadth() {
   };
 }
 
+// SENSEX is a BSE index — not available in NSE's allIndices API. Use Yahoo Finance.
+async function fetchSensexYahoo() {
+  try {
+    const r = await ft(
+      'https://query1.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d',
+      { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } },
+      8000
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    const meta = d?.chart?.result?.[0]?.meta;
+    if (!meta) return null;
+    const price = parseFloat(meta.regularMarketPrice || 0);
+    const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
+    if (!price) return null;
+    const change    = parseFloat((price - prev).toFixed(2));
+    const changePct = parseFloat(((change / prev) * 100).toFixed(2));
+    return { price, change, changePct };
+  } catch(e) { console.error('fetchSensexYahoo error:', e.message); return null; }
+}
+
 async function pushMarketToGitHub(marketData) {
   if (!GH_TOKEN) { console.error('GH_TOKEN not set — cannot push market.json'); return false; }
   const api = `https://api.github.com/repos/${GH_REPO}/contents/market.json`;
@@ -441,9 +462,9 @@ async function runMarketScraper(force = false) {
     return;
   }
   try {
-    // One NSE API call gives us all indices + breadth together
-    const nseData = await fetchNSEAllIndices();
-    const [nifty, sensex, banknifty] = ['NIFTY', 'SENSEX', 'BANKNIFTY'].map(inst => {
+    // NSE API for NIFTY + BANKNIFTY; Yahoo Finance for SENSEX (BSE index, not in NSE API)
+    const [nseData, sensex] = await Promise.all([fetchNSEAllIndices(), fetchSensexYahoo()]);
+    const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
       const idx  = nseData.data?.find(x => x.indexSymbol === name || x.index === name);
