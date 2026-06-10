@@ -150,6 +150,10 @@
         .history-card-row { display: flex; justify-content: space-between; align-items: center; }
         .hist-arrow { font-size: 0.7rem; color: var(--text-muted); transition: transform .2s; }
         .hist-arrow.open { transform: rotate(90deg); }
+        .trade-detail-row { padding: 9px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .trade-detail-row:last-child { border-bottom: none; }
+        .trade-win-badge { font-size: 0.6rem; font-weight: 700; background: var(--green); color: #fff; border-radius: 3px; padding: 1px 5px; display: inline-block; margin-top: 2px; }
+        .trade-loss-badge { font-size: 0.6rem; font-weight: 700; background: var(--red); color: #fff; border-radius: 3px; padding: 1px 5px; display: inline-block; margin-top: 2px; }
         
         /* --- PREMIUM POPUP --- */
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);}
@@ -314,11 +318,11 @@
 
     <!-- PERFORMANCE TAB -->
     <div id="performance" class="content-section">
-        <div class="perf-summary">
+        <div class="perf-summary" id="curr-month-card" onclick="toggleCurrMonthDetail()" style="cursor:pointer;">
             <div class="perf-header">
                 <div>
                     <div class="perf-month" id="curr-month-name">CURRENT MONTH</div>
-                    <div class="perf-title">Summary</div>
+                    <div class="perf-title" style="display:flex;align-items:center;gap:8px;">Summary <span id="curr-month-arrow" class="hist-arrow">▶</span></div>
                 </div>
                 <div class="win-rate-badge">
                     <div class="pct" id="perf-winrate">--%</div>
@@ -335,6 +339,7 @@
                     <span class="metric-value">₹<span id="perf-max">--</span></span>
                 </div>
             </div>
+            <div id="curr-month-detail" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);"></div>
         </div>
         
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Past Months</p>
@@ -635,15 +640,33 @@
     }
 
     // --- FETCH PERFORMANCE ---
+    function renderTradeRows(trades) {
+        if (!trades || trades.length === 0) return '<div style="font-size:0.78rem;color:var(--text-muted);padding:8px 0;">No trade details available.</div>';
+        return trades.map(t => {
+            const win = t.result === 'WIN';
+            const pnl = t.pnl || 0;
+            return `<div class="trade-detail-row">
+                <div>
+                    <div style="font-size:0.83rem;font-weight:700;color:var(--text-main);">${t.instrument} ${t.type} ${(t.strike||'').toLocaleString()}</div>
+                    <div style="font-size:0.67rem;color:var(--text-muted);margin-top:2px;">${t.date} &nbsp;·&nbsp; ₹${t.entry} → ₹${t.exit}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-weight:700;font-size:0.9rem;color:${win?'var(--green)':'var(--red)'};">${pnl>=0?'+':'-'}₹${Math.abs(pnl).toLocaleString()}</div>
+                    <span class="${win?'trade-win-badge':'trade-loss-badge'}">${t.result}</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
     async function fetchPerformance() {
         try {
             const res = await fetch(DB_URLS.history + '?t=' + new Date().getTime());
             const data = await res.json();
             const container = document.getElementById('history-container');
             container.innerHTML = '';
-            
+
             if(data.months && data.months.length > 0) {
-                // Current month summary
+                // Current month
                 try {
                     const current = data.months[0].summary || {};
                     const monthLabel = data.months[0].month || 'CURRENT MONTH';
@@ -657,6 +680,8 @@
                         document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins ?? 0} W · ${current.losses ?? 0} L)`;
                         document.getElementById('perf-max').innerText = (current.maxProfit || 0).toLocaleString();
                     }
+                    const detailDiv = document.getElementById('curr-month-detail');
+                    if(detailDiv) detailDiv.innerHTML = renderTradeRows(data.months[0].trades);
                 } catch(ex) {
                     document.getElementById('curr-month-name').innerText = 'CURRENT MONTH';
                     document.getElementById('perf-winrate').innerText = '--%';
@@ -664,8 +689,7 @@
                     document.getElementById('perf-max').innerText = '--';
                 }
 
-                // Past Months with collapse/expand
-                let openHistId = null;
+                // Past months
                 data.months.slice(1).forEach((m, idx) => {
                     const summary = m.summary || {};
                     const isProfit = (summary.totalPnL || 0) >= 0;
@@ -673,6 +697,7 @@
                     const arrowId  = `harr-${idx}`;
                     const mLabel   = m.month || 'Unknown Month';
                     const totalPnL = summary.totalPnL || 0;
+                    const tradeRows = renderTradeRows(m.trades);
                     container.innerHTML += `
                         <div class="history-card" onclick="toggleHistCard('${detailId}','${arrowId}')">
                             <div class="history-card-row">
@@ -686,10 +711,7 @@
                                 </div>
                             </div>
                             <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Trades</span><span style="font-weight:700;font-size:0.88rem;">${summary.totalTrades ?? '--'} (${summary.wins ?? 0}W · ${summary.losses ?? 0}L)</span></div>
-                                    <div><span style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:2px;">Max P&L (If 1 Lot)</span><span style="font-weight:700;font-size:0.88rem;">₹${(summary.maxProfit || 0).toLocaleString()}</span></div>
-                                </div>
+                                ${tradeRows}
                             </div>
                         </div>
                     `;
@@ -1106,6 +1128,15 @@
     function logout(){
         ['t2s_member_id','t2s_mobile','t2s_last_login','t2s_mode','t2s_lock_until','t2s_last_active'].forEach(k=>localStorage.removeItem(k));
         window.location.href='login.html';
+    }
+
+    function toggleCurrMonthDetail() {
+        const detail = document.getElementById('curr-month-detail');
+        const arrow  = document.getElementById('curr-month-arrow');
+        if (!detail) return;
+        const isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'block';
+        if (arrow) { arrow.textContent = isOpen ? '▶' : '▼'; arrow.classList.toggle('open', !isOpen); }
     }
 
     let _openHistId = null;
