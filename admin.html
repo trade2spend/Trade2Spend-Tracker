@@ -370,7 +370,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
     <div>
       <div class="brand-name">Trade2Spend</div>
-      <div class="brand-sub"><span class="live-dot"></span> Live</div>
+      <div class="brand-sub"><span class="live-dot"></span> Not SEBI Registered · Educational Only</div>
     </div>
   </div>
   <div class="tabs">
@@ -1287,7 +1287,7 @@ async function loadMembers(){
     allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end&order=created_at.desc&limit=200');
     renderMemberList(allMembers);
   } catch(e){
-    el.innerHTML = `<div style="color:var(--red);text-align:center;padding:16px;">Failed to load: ${e.message}</div>`;
+    el.innerHTML = `<div style="color:var(--red);text-align:center;padding:16px;">Failed to load: ${esc(e.message)}</div>`;
   }
 }
 
@@ -1308,21 +1308,22 @@ function renderMemberList(members){
     const status = m.status === 'enabled'
       ? `<span style="background:var(--greenbg);color:var(--green);border:0.5px solid var(--greenborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">ACTIVE</span>`
       : `<span style="background:var(--redbg);color:var(--red);border:0.5px solid var(--redborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">DISABLED</span>`;
-    const subEnd = m.subscription_end ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">Exp: ${m.subscription_end}</div>` : '';
+    const subEnd = m.subscription_end ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">Exp: ${esc(m.subscription_end)}</div>` : '';
     const newTier   = m.tier==='paid' ? 'free' : 'paid';
     const newStatus = m.status==='enabled' ? 'disabled' : 'enabled';
+    const safeId    = esc(m.id);
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border);">
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:13px;">${m.name||'—'}</div>
-          <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${m.mobile||''}</div>
+          <div style="font-weight:600;font-size:13px;">${esc(m.name)||'—'}</div>
+          <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
           ${subEnd}
         </div>
         <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
           ${tier}${status}
-          <button onclick="toggleTier('${m.id}','${newTier}')" title="Toggle tier" style="padding:4px 7px;background:var(--goldbg);border:0.5px solid var(--goldborder);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">⇄</button>
-          <button onclick="toggleStatus('${m.id}','${newStatus}')" title="Toggle status" style="padding:4px 7px;background:${m.status==='enabled'?'var(--redbg)':'var(--greenbg)'};border:0.5px solid ${m.status==='enabled'?'var(--redborder)':'var(--greenborder)'};border-radius:6px;color:${m.status==='enabled'?'var(--red)':'var(--green)'};font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">${m.status==='enabled'?'✕':'✓'}</button>
-          <button onclick="resetMemberPin('${m.id}')" title="Reset PIN" style="padding:4px 7px;background:rgba(96,165,250,0.1);border:0.5px solid rgba(96,165,250,0.3);border-radius:6px;color:#60a5fa;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🔑</button>
+          <button onclick="toggleTier('${safeId}','${newTier}')" title="Toggle tier" style="padding:4px 7px;background:var(--goldbg);border:0.5px solid var(--goldborder);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">⇄</button>
+          <button onclick="toggleStatus('${safeId}','${newStatus}')" title="Toggle status" style="padding:4px 7px;background:${m.status==='enabled'?'var(--redbg)':'var(--greenbg)'};border:0.5px solid ${m.status==='enabled'?'var(--redborder)':'var(--greenborder)'};border-radius:6px;color:${m.status==='enabled'?'var(--red)':'var(--green)'};font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">${m.status==='enabled'?'✕':'✓'}</button>
+          <button onclick="resetMemberPin('${safeId}')" title="Reset PIN" style="padding:4px 7px;background:rgba(96,165,250,0.1);border:0.5px solid rgba(96,165,250,0.3);border-radius:6px;color:#60a5fa;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🔑</button>
         </div>
       </div>`;
   }).join('');
@@ -1549,8 +1550,17 @@ let _lastAlgoSend = 0;
 // ── ADMIN DEVICE ID ──────────────────────────────────────────────────────────
 function getAdminDeviceId() {
   let id = localStorage.getItem('t2s_admin_device');
-  if (!id) { id = 'adm_' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('t2s_admin_device', id); }
+  if (!id) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    id = 'adm_' + Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
+    localStorage.setItem('t2s_admin_device', id);
+  }
   return id;
+}
+
+// ── HTML ESCAPE (prevent XSS from Supabase data in innerHTML) ─────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ── PIN LOCK UI ───────────────────────────────────────────────────────────────
@@ -1651,6 +1661,7 @@ async function pinInit() {
         method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
       });
       localStorage.removeItem('t2s_pin');
+      localStorage.removeItem('t2s_admin_lock_until');
       document.getElementById('pin-overlay').classList.add('hidden');
       showTab('setup');
       showToast('PIN reset by Telegram. Set a new PIN below.');
@@ -1667,6 +1678,9 @@ async function pinInit() {
     return;
   }
   document.getElementById('pin-overlay').classList.remove('hidden');
+  // Check localStorage lockout (persists across refresh — cannot be bypassed)
+  const lockUntil = localStorage.getItem('t2s_admin_lock_until');
+  if (lockUntil && new Date() < new Date(lockUntil)) { showAdminLocked('pin'); return; }
   try {
     const locks = await sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1');
     if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
@@ -1698,15 +1712,26 @@ function updatePinDots() {
 }
 
 async function hashAdminPin(pin) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + 'T2S_ADMIN_SALT'));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(pin), { name: 'PBKDF2' }, false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: new TextEncoder().encode('T2S_ADMIN_SALT_2026'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
 async function checkPin() {
+  // Check localStorage lockout first (survives page refresh)
+  const lockUntil = localStorage.getItem('t2s_admin_lock_until');
+  if (lockUntil && new Date() < new Date(lockUntil)) { showAdminLocked('pin'); return; }
+
   const savedPin = localStorage.getItem('t2s_pin');
   const inputHash = await hashAdminPin(pinBuffer);
   if (inputHash === savedPin) {
     pinAttempts = 0;
+    localStorage.removeItem('t2s_admin_lock_until');
     pinBuffer = '';
     updatePinDots();
     document.getElementById('pin-overlay').classList.add('hidden');
@@ -1719,13 +1744,15 @@ async function checkPin() {
     if (grid) grid.classList.add('locked');
     for (let i = 0; i < 4; i++) document.getElementById('pd' + i).classList.add('error');
     if (pinAttempts >= 3) {
+      // Persist lockout so page refresh cannot bypass it
+      const lockUntilISO = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      localStorage.setItem('t2s_admin_lock_until', lockUntilISO);
       try {
         await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
           method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
           body: JSON.stringify({ source:'admin_pwa_locked', pinged_at: new Date().toISOString() })
         });
       } catch(e) {}
-      // Alert VM to send Telegram notification (no bot token in client)
       fetch('https://api.trade2spend.com/admin-alert', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } })
