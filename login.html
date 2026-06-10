@@ -664,7 +664,7 @@ async function processSetupPin(){
         if(await checkLock()){ showScreen('screen-pin'); return; }
         showScreen('screen-pin'); return;
       }
-    } catch(e){ console.log(e); }
+    } catch(e){ /* session check failed — fall through to login */ }
   }
 
   showLoading(false);
