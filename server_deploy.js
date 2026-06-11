@@ -430,38 +430,25 @@ async function fetchNSEMovers() {
   } catch (e) { console.error('fetchNSEMovers error:', e.message); return null; }
 }
 
-// SENSEX is a BSE index — not in NSE API. Use Yahoo Finance (query2 first, query1 fallback).
-async function fetchSensexYahoo() {
-  const hosts = ['query2', 'query1'];
-  for (const host of hosts) {
-    try {
-      console.log(`[SENSEX] trying ${host}`);
-      const r = await ft(
-        `https://${host}.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d`,
-        { headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json, */*',
-            'Referer': 'https://finance.yahoo.com/'
-        }},
-        8000
-      );
-      console.log(`[SENSEX] ${host} status=${r.status} ok=${r.ok}`);
-      if (!r.ok) { continue; }
-      const d = await r.json();
-      const meta = d?.chart?.result?.[0]?.meta;
-      console.log(`[SENSEX] ${host} meta=${!!meta} price=${meta?.regularMarketPrice}`);
-      if (!meta) { continue; }
-      const price = parseFloat(meta.regularMarketPrice || 0);
-      const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
-      if (!price) { continue; }
-      const change    = parseFloat((price - prev).toFixed(2));
-      const changePct = parseFloat(((change / prev) * 100).toFixed(2));
-      console.log(`[SENSEX] success: ${price}`);
-      return { price, change, changePct };
-    } catch(e) { console.log(`[SENSEX] ${host} threw: ${e.message}`); }
-  }
-  console.log('[SENSEX] all hosts failed — returning null');
-  return null;
+// SENSEX via Kotak Neo — same session used for trading, no external API needed
+async function fetchSensexKotak() {
+  if (!session.token || !session.baseUrl) return null;
+  try {
+    const r = await ft(`${session.baseUrl}/scriptdetails/1.0/quotes/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': session.token, 'neo-fin-key': 'neotradeapi', 'sid': session.sid },
+      body: JSON.stringify({ instrument_tokens: [SPOT_TOKENS.SENSEX] })
+    }, 5000);
+    const d = await r.json();
+    const q = d.data?.[0] || d[0];
+    if (!q) return null;
+    const price = parseFloat(q.ltp || q.last_traded_price || q.lastTradedPrice || q.c || 0);
+    const prev  = parseFloat(q.prev_close_price || q.previousClose || q.pc || 0);
+    if (!price) return null;
+    const change    = parseFloat((price - prev).toFixed(2));
+    const changePct = prev ? parseFloat(((change / prev) * 100).toFixed(2)) : 0;
+    return { price, change, changePct };
+  } catch(e) { console.error('fetchSensexKotak error:', e.message); return null; }
 }
 
 async function pushMarketToGitHub(marketData) {
@@ -497,8 +484,8 @@ async function runMarketScraper(force = false) {
     return;
   }
   try {
-    // NSE API for NIFTY + BANKNIFTY + movers; Yahoo Finance for SENSEX (BSE index, not in NSE API)
-    const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexYahoo(), fetchNSEMovers()]);
+    // NSE API for NIFTY + BANKNIFTY + movers; Kotak Neo for SENSEX (BSE index)
+    const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexKotak(), fetchNSEMovers()]);
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
