@@ -492,13 +492,12 @@
             const moversEl = document.getElementById('movers-section');
             if(moversEl && data.gainers && data.losers) {
                 moversEl.style.display = 'block';
-                const fmtChange = c => c >= 0 ? `+${c.toFixed(2)}%` : `${c.toFixed(2)}%`;
                 const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
                 const losers  = [...data.losers].sort((a,b) => a.change - b.change);
                 document.getElementById('gainers-list').innerHTML = gainers.slice(0,8).map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${fmtChange(s.change)}</span></div>`).join('');
+                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('');
                 document.getElementById('losers-list').innerHTML = losers.slice(0,8).map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${fmtChange(s.change)}</span></div>`).join('');
+                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('');
             }
             if(data.lastUpdated) {
                 const updEl = document.getElementById('market-last-updated');
