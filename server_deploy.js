@@ -430,25 +430,33 @@ async function fetchNSEMovers() {
   } catch (e) { console.error('fetchNSEMovers error:', e.message); return null; }
 }
 
-// SENSEX is a BSE index — not available in NSE's allIndices API. Use Yahoo Finance.
+// SENSEX is a BSE index — not in NSE API. Use Yahoo Finance (query2 first, query1 fallback).
 async function fetchSensexYahoo() {
-  try {
-    const r = await ft(
-      'https://query1.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d',
-      { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } },
-      8000
-    );
-    if (!r.ok) return null;
-    const d = await r.json();
-    const meta = d?.chart?.result?.[0]?.meta;
-    if (!meta) return null;
-    const price = parseFloat(meta.regularMarketPrice || 0);
-    const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
-    if (!price) return null;
-    const change    = parseFloat((price - prev).toFixed(2));
-    const changePct = parseFloat(((change / prev) * 100).toFixed(2));
-    return { price, change, changePct };
-  } catch(e) { console.error('fetchSensexYahoo error:', e.message); return null; }
+  const hosts = ['query2', 'query1'];
+  for (const host of hosts) {
+    try {
+      const r = await ft(
+        `https://${host}.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d`,
+        { headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json, */*',
+            'Referer': 'https://finance.yahoo.com/'
+        }},
+        8000
+      );
+      if (!r.ok) { console.error(`fetchSensexYahoo: HTTP ${r.status} (${host})`); continue; }
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      if (!meta) { console.error(`fetchSensexYahoo: no meta (${host})`); continue; }
+      const price = parseFloat(meta.regularMarketPrice || 0);
+      const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
+      if (!price) { console.error(`fetchSensexYahoo: price=0 (${host})`); continue; }
+      const change    = parseFloat((price - prev).toFixed(2));
+      const changePct = parseFloat(((change / prev) * 100).toFixed(2));
+      return { price, change, changePct };
+    } catch(e) { console.error(`fetchSensexYahoo error (${host}):`, e.message); }
+  }
+  return null;
 }
 
 async function pushMarketToGitHub(marketData) {
