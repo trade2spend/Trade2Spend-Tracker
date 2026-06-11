@@ -411,23 +411,22 @@ async function fetchNSEBreadth() {
 async function fetchNSEMovers() {
   if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
   try {
-    const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050', {
-      headers: { ...NSE_HEADERS, 'Cookie': _nseCookies }
-    }, 8000);
-    if (!r.ok) { _nseCookieTs = 0; return null; }
-    const d = await r.json();
-    const stocks = (d.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
-    const sorted = [...stocks].sort((a, b) => (parseFloat(b.pChange) || 0) - (parseFloat(a.pChange) || 0));
+    const [gr, lr] = await Promise.all([
+      ft('https://www.nseindia.com/api/live-analysis-variations?index=gainers',  { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000),
+      ft('https://www.nseindia.com/api/live-analysis-variations?index=loosers',  { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000)
+    ]);
+    if (!gr.ok || !lr.ok) { _nseCookieTs = 0; return null; }
+    const [gd, ld] = await Promise.all([gr.json(), lr.json()]);
     const mapStock = s => ({
       symbol: s.symbol,
-      price:  parseFloat(parseFloat(s.lastPrice  || 0).toFixed(2)),
-      change: parseFloat(parseFloat(s.pChange || 0).toFixed(2))
+      price:  parseFloat(parseFloat(s.ltp       || 0).toFixed(2)),
+      change: parseFloat(parseFloat(s.perChange || 0).toFixed(2))
     });
     return {
-      gainers: sorted.slice(0, 8).map(mapStock),
-      losers:  [...sorted].reverse().slice(0, 8).map(mapStock)
+      gainers: (gd?.NIFTY?.data || []).sort((a, b) => (b.perChange || 0) - (a.perChange || 0)).slice(0, 8).map(mapStock),
+      losers:  (ld?.NIFTY?.data || []).sort((a, b) => (a.perChange || 0) - (b.perChange || 0)).slice(0, 8).map(mapStock)
     };
-  } catch (e) { console.error('fetchNSEMovers error:', e.message); return null; }
+  } catch(e) { console.error('fetchNSEMovers error:', e.message); return null; }
 }
 
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
