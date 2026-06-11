@@ -502,14 +502,17 @@
             if(data.lastUpdated) {
                 const updEl = document.getElementById('market-last-updated');
                 if(updEl) {
-                    const ageMs  = Date.now() - new Date(data.lastUpdated).getTime();
-                    const stale  = ageMs > 60 * 60 * 1000;
-                    const t = new Date(data.lastUpdated);
-                    const timeStr = t.toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit'})
-                                  + ' · ' + t.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short'});
-                    updEl.innerHTML = stale
-                        ? `<span style="color:#dc2626;">⚠ Last updated: ${timeStr}</span>`
-                        : `<span style="color:#9ca3af;">Last updated: ${timeStr}${isOpen ? ' · Updates every 5 sec' : ''}</span>`;
+                    const t       = new Date(data.lastUpdated);
+                    const dateStr = t.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short'});
+                    const timeStr = t.toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit'}) + ' · ' + dateStr;
+                    if (!isOpen) {
+                        updEl.innerHTML = `<span style="color:#9ca3af;">Closing prices · ${dateStr}</span>`;
+                    } else {
+                        const stale = Date.now() - t.getTime() > 5 * 60 * 1000;
+                        updEl.innerHTML = stale
+                            ? `<span style="color:#dc2626;">⚠ Last updated: ${timeStr}</span>`
+                            : `<span style="color:#9ca3af;">Last updated: ${timeStr}</span>`;
+                    }
                 }
             }
             return data; // return for scheduleMarketRefresh to read specialHours
