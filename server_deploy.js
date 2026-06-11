@@ -435,6 +435,7 @@ async function fetchSensexYahoo() {
   const hosts = ['query2', 'query1'];
   for (const host of hosts) {
     try {
+      console.log(`[SENSEX] trying ${host}`);
       const r = await ft(
         `https://${host}.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d`,
         { headers: {
@@ -444,18 +445,22 @@ async function fetchSensexYahoo() {
         }},
         8000
       );
-      if (!r.ok) { console.error(`fetchSensexYahoo: HTTP ${r.status} (${host})`); continue; }
+      console.log(`[SENSEX] ${host} status=${r.status} ok=${r.ok}`);
+      if (!r.ok) { continue; }
       const d = await r.json();
       const meta = d?.chart?.result?.[0]?.meta;
-      if (!meta) { console.error(`fetchSensexYahoo: no meta (${host})`); continue; }
+      console.log(`[SENSEX] ${host} meta=${!!meta} price=${meta?.regularMarketPrice}`);
+      if (!meta) { continue; }
       const price = parseFloat(meta.regularMarketPrice || 0);
       const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
-      if (!price) { console.error(`fetchSensexYahoo: price=0 (${host})`); continue; }
+      if (!price) { continue; }
       const change    = parseFloat((price - prev).toFixed(2));
       const changePct = parseFloat(((change / prev) * 100).toFixed(2));
+      console.log(`[SENSEX] success: ${price}`);
       return { price, change, changePct };
-    } catch(e) { console.error(`fetchSensexYahoo error (${host}):`, e.message); }
+    } catch(e) { console.log(`[SENSEX] ${host} threw: ${e.message}`); }
   }
+  console.log('[SENSEX] all hosts failed — returning null');
   return null;
 }
 
