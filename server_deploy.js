@@ -409,7 +409,6 @@ async function fetchNSEBreadth() {
 }
 
 async function fetchNSEMovers() {
-  console.log('[MOVERS] called');
   if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
   try {
     const [gr, lr] = await Promise.all([
@@ -432,7 +431,6 @@ async function fetchNSEMovers() {
 
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
 async function fetchSensexBSE() {
-  console.log('[BSE] called');
   try {
     const r = await ft(
       'https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=1&seriesid=',
@@ -443,12 +441,10 @@ async function fetchSensexBSE() {
       }},
       8000
     );
-    console.log(`[BSE] status=${r.status} ok=${r.ok}`);
     if (!r.ok) return null;
     const d     = await r.json();
     const price = parseFloat(d?.CurrRate?.LTP  || d?.Header?.LTP       || 0);
     const prev  = parseFloat(d?.Header?.PrevClose || 0);
-    console.log(`[BSE] price=${price} prev=${prev}`);
     if (!price) return null;
     const change    = parseFloat((price - prev).toFixed(2));
     const changePct = prev ? parseFloat(((change / prev) * 100).toFixed(2)) : 0;
