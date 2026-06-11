@@ -430,25 +430,27 @@ async function fetchNSEMovers() {
   } catch (e) { console.error('fetchNSEMovers error:', e.message); return null; }
 }
 
-// SENSEX via Kotak Neo — same session used for trading, no external API needed
-async function fetchSensexKotak() {
-  if (!session.token || !session.baseUrl) return null;
+// SENSEX via BSE India public API — no login needed, works independently of TOTP
+async function fetchSensexBSE() {
   try {
-    const r = await ft(`${session.baseUrl}/scriptdetails/1.0/quotes/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': session.token, 'neo-fin-key': 'neotradeapi', 'sid': session.sid },
-      body: JSON.stringify({ instrument_tokens: [SPOT_TOKENS.SENSEX] })
-    }, 5000);
-    const d = await r.json();
-    const q = d.data?.[0] || d[0];
-    if (!q) return null;
-    const price = parseFloat(q.ltp || q.last_traded_price || q.lastTradedPrice || q.c || 0);
-    const prev  = parseFloat(q.prev_close_price || q.previousClose || q.pc || 0);
-    if (!price) return null;
+    const r = await ft(
+      'https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=1&seriesid=',
+      { headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': 'https://www.bseindia.com/',
+          'Accept': 'application/json, */*'
+      }},
+      8000
+    );
+    if (!r.ok) { console.error(`fetchSensexBSE: HTTP ${r.status}`); return null; }
+    const d     = await r.json();
+    const price = parseFloat(d?.CurrRate?.LTP  || d?.Header?.LTP       || 0);
+    const prev  = parseFloat(d?.Header?.PrevClose || 0);
+    if (!price) { console.error('fetchSensexBSE: no price in response'); return null; }
     const change    = parseFloat((price - prev).toFixed(2));
     const changePct = prev ? parseFloat(((change / prev) * 100).toFixed(2)) : 0;
     return { price, change, changePct };
-  } catch(e) { console.error('fetchSensexKotak error:', e.message); return null; }
+  } catch(e) { console.error('fetchSensexBSE error:', e.message); return null; }
 }
 
 async function pushMarketToGitHub(marketData) {
@@ -484,8 +486,8 @@ async function runMarketScraper(force = false) {
     return;
   }
   try {
-    // NSE API for NIFTY + BANKNIFTY + movers; Kotak Neo for SENSEX (BSE index)
-    const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexKotak(), fetchNSEMovers()]);
+    // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX
+    const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE(), fetchNSEMovers()]);
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
