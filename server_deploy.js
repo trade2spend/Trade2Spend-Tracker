@@ -471,7 +471,7 @@ async function pushMarketToGitHub(marketData) {
 async function runMarketScraper(force = false) {
   const now  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const mins = now.getHours() * 60 + now.getMinutes();
-  if (!force && mins >= 15 * 60 + 35) {
+  if (!force && !isMarketHours()) {
     stopMarketScraper();
     // push marketOpen:false
     try {
@@ -1397,19 +1397,24 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
+function isMarketHours() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const h = now.getHours(), m = now.getMinutes(), day = now.getDay();
+  return day >= 1 && day <= 5 && (h > 9 || (h === 9 && m >= 15)) && (h < 15 || (h === 15 && m <= 35));
+}
+
 loadState();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
 
+// Start scraper immediately on startup if within market hours (don't wait 30s)
+setTimeout(() => {
+  if (isMarketHours() && GH_TOKEN && !marketScraperInterval) startMarketScraper();
+}, 5000);
+
 // Periodic check every 30s: SL monitor + market scraper auto-start/stop
 setInterval(() => {
-  const now  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const h    = now.getHours(), m = now.getMinutes();
-  const mins = h * 60 + m;
-  const inMarket = (h > 9 || (h === 9 && m >= 15)) && (h < 15 || (h === 15 && m <= 35));
-
-  if (inMarket) {
+  if (isMarketHours()) {
     checkSLs().catch(e => tgAlert(`⚠️ SL poll: ${e.message}`));
-    // Auto-start scraper at market open if GH_TOKEN is available
     if (!marketScraperInterval && GH_TOKEN) startMarketScraper();
   }
 }, 30_000);
