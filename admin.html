@@ -1638,6 +1638,17 @@ async function registerAdminSession() {
 
 // ── PIN INIT ──────────────────────────────────────────────────────────────────
 async function pinInit() {
+  // URL escape hatch — open admin.html?reset=1 in Safari to bypass any lockout
+  if (new URLSearchParams(window.location.search).get('reset') === '1') {
+    localStorage.removeItem('t2s_pin');
+    localStorage.removeItem('t2s_admin_lock_until');
+    document.getElementById('pin-overlay').classList.add('hidden');
+    showTab('setup');
+    showToast('Reset via URL — set a new PIN below.');
+    window.history.replaceState({}, '', window.location.pathname);
+    return;
+  }
+
   if (await handleMagicLink()) return; // magic link clicked from email — unlock and reload
 
   // If arriving from email unlock (sessionStorage flag set by handleMagicLink)
