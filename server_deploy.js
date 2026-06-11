@@ -408,6 +408,28 @@ async function fetchNSEBreadth() {
   };
 }
 
+async function fetchNSEMovers() {
+  if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+  try {
+    const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050', {
+      headers: { ...NSE_HEADERS, 'Cookie': _nseCookies }
+    }, 8000);
+    if (!r.ok) { _nseCookieTs = 0; return null; }
+    const d = await r.json();
+    const stocks = (d.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
+    const sorted = [...stocks].sort((a, b) => (parseFloat(b.pChange) || 0) - (parseFloat(a.pChange) || 0));
+    const mapStock = s => ({
+      symbol: s.symbol,
+      price:  parseFloat(parseFloat(s.lastPrice  || 0).toFixed(2)),
+      change: parseFloat(parseFloat(s.pChange || 0).toFixed(2))
+    });
+    return {
+      gainers: sorted.slice(0, 8).map(mapStock),
+      losers:  [...sorted].reverse().slice(0, 8).map(mapStock)
+    };
+  } catch (e) { console.error('fetchNSEMovers error:', e.message); return null; }
+}
+
 // SENSEX is a BSE index — not available in NSE's allIndices API. Use Yahoo Finance.
 async function fetchSensexYahoo() {
   try {
@@ -462,8 +484,8 @@ async function runMarketScraper(force = false) {
     return;
   }
   try {
-    // NSE API for NIFTY + BANKNIFTY; Yahoo Finance for SENSEX (BSE index, not in NSE API)
-    const [nseData, sensex] = await Promise.all([fetchNSEAllIndices(), fetchSensexYahoo()]);
+    // NSE API for NIFTY + BANKNIFTY + movers; Yahoo Finance for SENSEX (BSE index, not in NSE API)
+    const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexYahoo(), fetchNSEMovers()]);
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
@@ -494,8 +516,8 @@ async function runMarketScraper(force = false) {
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      gainers: existing.gainers || [],
-      losers:  existing.losers  || []
+      gainers: movers?.gainers || existing.gainers || [],
+      losers:  movers?.losers  || existing.losers  || []
     };
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensex?.price} BANKNIFTY:${banknifty?.price}`);
