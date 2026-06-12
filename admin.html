@@ -376,6 +376,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   <div class="tabs">
     <button class="tab on" onclick="showTab('trade')">Trade</button>
     <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
+    <button class="tab" onclick="showTab('posts')">📢 Posts</button>
     <button class="tab" onclick="showTab('general')">General</button>
     <button class="tab" onclick="showTab('campaign')">Campaign</button>
     <button class="tab" onclick="showTab('results')">Results</button>
@@ -479,6 +480,14 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
         <button class="typepill sl-on" id="pill-below" onclick="selectSLDir('below')">Below</button>
       </div>
       <div id="sl-suggest" style="display:none;margin-top:5px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="card-title-dot"></span>Why I'm Taking This Trade <span style="font-size:10px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;">(optional · paid members only)</span></div>
+    <div class="field">
+      <textarea id="trade-why" placeholder="e.g. Nifty formed a double bottom at 23100, market structure bullish above 23200..." style="width:100%;background:var(--bg3);border:0.5px solid rgba(124,58,237,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:10px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;line-height:1.5;"></textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">Visible to paid members only. Hidden from free members (revealed after 6 days + trade closed).</div>
     </div>
   </div>
 
@@ -830,6 +839,21 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
       <div class="empty-state" style="padding:1.5rem 0;">No trades today</div>
     </div>
     <button onclick="exportAlgoHistory()" style="width:100%;padding:9px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-weight:500;font-family:'Space Grotesk',sans-serif;cursor:pointer;margin-top:8px;">Export as CSV</button>
+  </div>
+
+</div>
+</div>
+
+<!-- POSTS TAB -->
+<div id="tab-posts" style="display:none;">
+<div class="page" style="margin-top:12px;">
+
+  <div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div class="card-title" style="margin-bottom:0;"><span class="card-title-dot"></span>Posts Feed</div>
+      <button onclick="loadPostsFeed()" style="padding:6px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↺ Refresh</button>
+    </div>
+    <div id="posts-feed-list" style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">Tap Refresh to load posts</div>
   </div>
 
 </div>
@@ -1248,12 +1272,13 @@ window.onload=()=>{
 
 // ── TABS ──
 function showTab(t){
-  ['trade','algo','general','campaign','results','history','setup','membership','manage'].forEach(id=>{
+  ['trade','algo','posts','general','campaign','results','history','setup','membership','manage'].forEach(id=>{
     document.getElementById('tab-'+id).style.display=id===t?'block':'none';
   });
   document.querySelectorAll('.tab').forEach((b,i)=>{
-    b.classList.toggle('on',['trade','algo','general','campaign','results','history','setup','membership','manage'][i]===t);
+    b.classList.toggle('on',['trade','algo','posts','general','campaign','results','history','setup','membership','manage'][i]===t);
   });
+  if(t==='posts') loadPostsFeed();
   if(t==='history') renderHistory();
   if(t==='trade') loadFollowUpData();
   if(t==='algo') refreshAlgoTab();
@@ -4166,14 +4191,24 @@ async function confirmPushToMembers(){
   btn.disabled = true;
   btn.textContent = 'Sending...';
   try {
+    // Embed "Why" if provided (trade tab only)
+    let content = msg;
+    if (pushMsgType === 'trade') {
+      const whyEl = document.getElementById('trade-why');
+      const why = whyEl ? whyEl.value.trim() : '';
+      if (why) content = msg + '\n[WHY]' + why + '[/WHY]';
+    }
     await sbPost('posts', {
-      content:       msg,
+      content:       content,
       post_type:     pushMsgType === 'trade' ? 'trade_alert' : 'general',
       audience:      pushAudience,
       allow_sharing: true,
       is_deleted:    false,
       sent_at:       new Date().toISOString()
     });
+    // Clear Why field after posting
+    const whyEl = document.getElementById('trade-why');
+    if (whyEl) whyEl.value = '';
     closePushModal();
     showToast('✓ Pushed to members! Visible in Updates tab now.');
   } catch(e){
@@ -4181,6 +4216,116 @@ async function confirmPushToMembers(){
   }
   btn.disabled = false;
   btn.textContent = 'Send to Members →';
+}
+
+// ── POSTS TAB ─────────────────────────────────────────────────────────────────
+let _postsFeedCache = [];
+
+async function loadPostsFeed() {
+  const list = document.getElementById('posts-feed-list');
+  list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Loading...</div>';
+  try {
+    const posts = await sbGet('posts?is_deleted=eq.false&order=sent_at.desc&limit=50&select=id,content,post_type,audience,sent_at,parent_id');
+    _postsFeedCache = posts || [];
+    const parents = _postsFeedCache.filter(p => !p.parent_id);
+    const replyMap = {};
+    _postsFeedCache.filter(p=>p.parent_id).forEach(r=>{ if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
+
+    if(!parents.length){ list.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);">No posts yet. Push a trade to get started.</div>'; return; }
+
+    list.innerHTML = parents.map(p => {
+      const replies = replyMap[p.id]||[];
+      const d = new Date(p.sent_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
+      const preview = (p.content||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').substring(0,80).replace(/\n/g,' ');
+      const audBadge = p.audience==='paid_only'
+        ? `<span style="font-size:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;padding:2px 6px;border-radius:10px;font-weight:700;">⭐ Paid</span>`
+        : `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:2px 6px;border-radius:10px;font-weight:700;">👥 All</span>`;
+      const typeBadge = p.post_type==='trade_alert'
+        ? `<span style="font-size:10px;background:#4a2a78;color:#fff;padding:2px 7px;border-radius:10px;font-weight:700;">📢 Alert</span>`
+        : `<span style="font-size:10px;background:#f3f4f6;color:#374151;padding:2px 7px;border-radius:10px;font-weight:700;">💬 General</span>`;
+      const rCount = replies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length;
+      return `<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap;">${typeBadge}${audBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
+        <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:8px;">${preview}${(p.content||'').length>80?'…':''}</div>
+        ${rCount>0?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''}</div>`:''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button onclick="openPostsReplyBox('${p.id}')" style="flex:1;padding:7px;border-radius:var(--radius-sm);border:0.5px solid rgba(74,42,120,0.4);background:rgba(74,42,120,0.06);color:#4a2a78;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add Follow-up</button>
+          <button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Manually unlock entry/SL for free members">🔓 Unlock</button>
+        </div>
+        <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button id="pb-aud-all-${p.id}" onclick="setPostsAud('${p.id}','all')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All</button>
+            <button id="pb-aud-paid-${p.id}" onclick="setPostsAud('${p.id}','paid_only')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
+          </div>
+          <textarea id="posts-reply-text-${p.id}" placeholder="Type your follow-up... e.g. '180, Exiting 50% holding rest'" style="width:100%;background:var(--bg);border:0.5px solid rgba(74,42,120,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:9px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;"></textarea>
+          <div style="display:flex;gap:6px;">
+            <button onclick="document.getElementById('posts-reply-box-${p.id}').style.display='none'" style="padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Cancel</button>
+            <button onclick="sendPostsReply('${p.id}',this)" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:none;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red);">Failed to load: ${e.message}</div>`;
+  }
+}
+
+const _postsAudMap = {};
+function openPostsReplyBox(postId) {
+  const box = document.getElementById(`posts-reply-box-${postId}`);
+  if(!box) return;
+  box.style.display = box.style.display==='none' ? 'block' : 'none';
+  if(box.style.display==='block') {
+    if(!_postsAudMap[postId]) _postsAudMap[postId]='all';
+    setPostsAud(postId, _postsAudMap[postId]);
+    document.getElementById(`posts-reply-text-${postId}`).focus();
+  }
+}
+
+function setPostsAud(postId, val) {
+  _postsAudMap[postId]=val;
+  const allBtn  = document.getElementById(`pb-aud-all-${postId}`);
+  const paidBtn = document.getElementById(`pb-aud-paid-${postId}`);
+  if(!allBtn||!paidBtn) return;
+  const active  = 'flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:11px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
+  const inactive= 'flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
+  allBtn.style.cssText  = val==='all'       ? active : inactive;
+  paidBtn.style.cssText = val==='paid_only' ? active : inactive;
+}
+
+async function sendPostsReply(parentId, btn) {
+  const text = (document.getElementById(`posts-reply-text-${parentId}`).value||'').trim();
+  const audience = _postsAudMap[parentId]||'all';
+  if(!text||text.length<2){ showToast('Type a follow-up message first.'); return; }
+  btn.disabled=true; btn.textContent='Sending...';
+  try {
+    await sbPost('posts', {
+      content: text, post_type: 'follow_up', audience,
+      allow_sharing: false, is_deleted: false,
+      parent_id: parentId, sent_at: new Date().toISOString()
+    });
+    showToast('✓ Follow-up sent!');
+    loadPostsFeed();
+  } catch(e) {
+    showToast('Failed: ' + (e.message||'Check connection'));
+    btn.disabled=false; btn.textContent='Send Follow-up →';
+  }
+}
+
+async function unlockPostForAll(postId, btn) {
+  btn.disabled=true; btn.textContent='Unlocking...';
+  try {
+    await sbPost('posts', {
+      content: '[T2S_UNLOCK]', post_type: 'follow_up', audience: 'all',
+      allow_sharing: false, is_deleted: false,
+      parent_id: postId, sent_at: new Date().toISOString()
+    });
+    showToast('✓ Unlocked — free members now see full details.');
+    btn.textContent='✅ Unlocked'; btn.style.color='var(--green)';
+  } catch(e) {
+    showToast('Failed: ' + (e.message||'Check connection'));
+    btn.disabled=false; btn.textContent='🔓 Unlock';
+  }
 }
 
 // ── ADD TO HOME SCREEN ────────────────────────────────────────────────────────
