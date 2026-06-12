@@ -178,10 +178,10 @@
         .update-time { font-size: 0.7rem; color: var(--text-muted); }
         .update-body { padding: 2px 12px 8px; }
         .update-content { font-size: 0.85rem; color: var(--text-main); line-height: 1.55; }
-        .update-footer { display: flex; align-items: center; justify-content: flex-end; padding: 4px 10px 5px; border-top: 1px solid #f3effa; background: #fdfdfc; }
+        .update-footer { display: flex; align-items: center; justify-content: flex-end; padding: 0 8px 6px; }
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
-        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 4px 5px; display:flex;align-items:center; }
-        .update-share:hover { color: var(--primary); }
+        .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 5px 6px; display:flex;align-items:center; border-radius:6px; }
+        .update-share:hover { color: var(--primary); background: var(--primary-light); }
         /* Updates sub-tabs */
         .updates-sub-tab { flex:1; padding:7px 10px; border:1.5px solid #ede8f5; border-radius:20px; background:#fff; color:#888; font-size:0.78rem; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.18s; }
         .updates-sub-tab.active { background:#4a2a78; color:#fff; border-color:#4a2a78; }
@@ -299,7 +299,7 @@
         
         <div class="tabs">
             <div class="tab active" onclick="switchTab('markets', this)">Markets</div>
-            <div class="tab" onclick="switchTab('trades', this)">My Trades</div>
+            <div class="tab" onclick="switchTab('trades', this)">Trade Alert</div>
             <div class="tab" onclick="switchTab('performance', this)">Performance</div>
             <div class="tab" onclick="switchTab('updates', this)">Updates</div>
             <div class="tab" onclick="switchTab('about', this)">About</div>
@@ -335,8 +335,26 @@
         </div>
     </div>
 
-    <!-- MY TRADES TAB -->
+    <!-- TRADE ALERT TAB -->
     <div id="trades" class="content-section">
+        <!-- Admin quick-post compose — shown only to admin via fetchTrades() -->
+        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <span style="font-size:0.82rem;font-weight:700;color:var(--primary);">Quick Post</span>
+                <button onclick="toggleNewAlertBox()" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;">＋ New Alert</button>
+            </div>
+            <div id="new-alert-box" style="display:none;">
+                <div class="admin-audience-row" style="margin-top:6px;">
+                    <button class="admin-aud-btn selected" id="na-aud-all" onclick="selectNewAlertAud('all')">All Members</button>
+                    <button class="admin-aud-btn" id="na-aud-paid" onclick="selectNewAlertAud('paid_only')">Paid Only</button>
+                </div>
+                <textarea class="admin-compose-textarea" id="new-alert-text" placeholder="Type trade alert... e.g. Buying Nifty 23500 CE at 142, CMP 139, SL below 23450"></textarea>
+                <div class="admin-compose-row">
+                    <button class="admin-compose-cancel" onclick="toggleNewAlertBox()">Cancel</button>
+                    <button class="admin-compose-send" id="new-alert-send-btn" onclick="sendNewAlert()">Post Alert →</button>
+                </div>
+            </div>
+        </div>
         <div id="active-trades-section">
             <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
                 <span style="width:8px;height:8px;background:var(--green);border-radius:50%;display:inline-block;box-shadow:0 0 4px var(--green);"></span>Active Trades
@@ -387,10 +405,6 @@
             <span class="notif-banner-text">🔔 Enable notifications for instant trade alerts</span>
             <button class="notif-enable-btn" onclick="enableNotifications()">Enable</button>
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <button class="updates-sub-tab active" id="subtab-trade" onclick="setUpdatesFilter('trade')">Trade Alerts</button>
-            <button class="updates-sub-tab" id="subtab-general" onclick="setUpdatesFilter('general')">General</button>
-        </div>
         <div id="updates-container">
             <div style="text-align:center; padding: 40px; color: #888;">Loading updates...</div>
         </div>
@@ -410,10 +424,7 @@
         </div>
     </div>
 
-    <div class="footer-disclaimer">
-        Educational Purposes Only · Not An Investment Advice<br>
-        <span style="font-weight:700;letter-spacing:0.5px;">WE ARE NOT SEBI REGISTERED</span>
-    </div>
+
 </div>
 
 <!-- PREMIUM POPUP -->
@@ -437,9 +448,26 @@
         el.classList.add('active');
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        localStorage.setItem('t2s_last_tab', tabId);
+        if(tabId === 'updates') updateUnreadBadge(0);
         if(tabId === 'trades') fetchTrades();
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
+    }
+
+    function updateUnreadBadge(count) {
+        const tabEl = document.querySelector('.tab[onclick*="updates"]');
+        if (!tabEl) return;
+        if (count > 0) {
+            tabEl.innerHTML = `Updates&thinsp;<span style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:50%;width:16px;height:16px;font-size:0.6rem;font-weight:700;vertical-align:middle;">${Math.min(count,9)}</span>`;
+        } else {
+            tabEl.textContent = 'Updates';
+        }
+    }
+
+    function goToTradeAlert() {
+        const tabEl = document.querySelector('.tab[onclick*="trades"]');
+        if (tabEl) switchTab('trades', tabEl);
     }
 
     function showPopup() { document.getElementById('premiumPopup').style.display = 'flex'; }
@@ -515,6 +543,8 @@
             }
             if(container.innerHTML === '') {
                 container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
+            } else {
+                container.innerHTML += `<div style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
             }
             // Advance/decline from market.json breadth data
             if(data.breadth && data.breadth.nifty50) {
@@ -530,9 +560,11 @@
                 const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
                 const losers  = [...data.losers].sort((a,b) => a.change - b.change);
                 document.getElementById('gainers-list').innerHTML = gainers.slice(0,8).map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('');
+                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
+                    + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
                 document.getElementById('losers-list').innerHTML = losers.slice(0,8).map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('');
+                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
+                    + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
             }
             if(data.lastUpdated) {
                 const updEl = document.getElementById('market-last-updated');
@@ -590,12 +622,23 @@
             container.innerHTML = '';
             if(closedContainer) closedContainer.innerHTML = '';
 
+            // Show admin compose / free member premium banner
+            const composeDiv = document.getElementById('admin-trade-compose');
+            if (composeDiv) composeDiv.style.display = isAdmin ? 'block' : 'none';
+
             const allTrades = (data.trades || []).filter(t => !t.isDeleted);
             const activeTrades = allTrades.filter(t => t.status === 'ACTIVE');
             const closedTrades = allTrades.filter(t => t.status !== 'ACTIVE');
 
+            // 🔒 Premium Only banner for free members (shown once at top, not per card)
+            if (!isAdmin && memberTier !== 'paid') {
+                container.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+                    <button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>
+                </div>`;
+            }
+
             if(activeTrades.length === 0) {
-                container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;font-size:0.85rem;">No active trades right now.</div>';
+                container.innerHTML += '<div style="text-align:center;padding:20px;color:#888;font-size:0.85rem;">No active trades right now.</div>';
             }
             if(closedTrades.length > 0 && closedContainer) {
                 document.getElementById('closed-trades-section').style.display = 'block';
@@ -637,7 +680,10 @@
                     <div class="trade-card">
                         <div class="trade-header">
                             <div class="trade-title-box">
-                                <div class="type-box ${typeClass}">${t.type}</div>
+                                ${canSeePremium
+                                    ? `<div class="type-box ${typeClass}">${t.type}</div>`
+                                    : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`
+                                }
                                 <div>
                                     <div class="trade-name">${t.instrument} <span style="font-weight:500;color:#888;font-size:0.9em;">${t.strike || ''}</span></div>
                                     ${canSeePremium
@@ -682,7 +728,7 @@
         return trades.map(t => {
             const win = t.result === 'WIN';
             const pnl = t.pnl || 0;
-            return `<div class="trade-detail-row">
+            return `<div class="trade-detail-row" onclick="goToTradeAlert()" style="cursor:pointer;" title="View in Trade Alert tab">
                 <div>
                     <div style="font-size:0.83rem;font-weight:700;color:var(--text-main);">${t.instrument} ${t.type} ${(t.strike||'').toLocaleString()}</div>
                     <div style="font-size:0.67rem;color:var(--text-muted);margin-top:2px;">${t.date} &nbsp;·&nbsp; ₹${t.entry} → ₹${t.exit}</div>
@@ -822,16 +868,7 @@
             .trim();
     }
 
-    // Updates sub-tab filter
-    let _updatesFilter = 'trade';
     let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
-    function setUpdatesFilter(f) {
-        _updatesFilter = f;
-        document.getElementById('subtab-trade').classList.toggle('active', f === 'trade');
-        document.getElementById('subtab-general').classList.toggle('active', f === 'general');
-        if (_cachedPosts) renderUpdates(_cachedPosts, _cachedTier, _cachedIsAdmin, _cachedReadMap);
-        else fetchUpdates();
-    }
 
     async function sharePost(postId) {
         const card = document.getElementById('ucard-' + postId);
@@ -1108,6 +1145,12 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
+            // Unread badge — count unread general/market posts
+            const generalTypes = ['market_update','general'];
+            const unreadCount = posts.filter(p => !p.parent_id && generalTypes.includes(p.post_type) && !readMap[p.id]).length;
+            // Only show badge if user is NOT on Updates tab right now
+            const updSection = document.getElementById('updates');
+            if (!updSection || !updSection.classList.contains('active')) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
@@ -1116,7 +1159,6 @@
 
     function renderUpdates(allPosts, memberTier, isAdmin, readMap) {
         const container = document.getElementById('updates-container');
-        const tradeTypes   = ['trade_alert','follow_up'];
         const generalTypes = ['market_update','general'];
 
         if(!allPosts || allPosts.length === 0) {
@@ -1125,15 +1167,11 @@
         }
 
         const allParents = allPosts.filter(p => !p.parent_id);
-        const parentPosts = allParents.filter(p => {
-            if (_updatesFilter === 'trade')   return tradeTypes.includes(p.post_type);
-            if (_updatesFilter === 'general') return generalTypes.includes(p.post_type);
-            return true;
-        });
+        const parentPosts = allParents.filter(p => generalTypes.includes(p.post_type));
         const replies = allPosts.filter(p => p.parent_id);
 
         if(parentPosts.length === 0) {
-            container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;">No ${_updatesFilter === 'trade' ? 'trade alerts' : 'general updates'} yet.</div>`;
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">No updates yet.</div>';
             return;
         }
 
@@ -1185,7 +1223,9 @@
                 html += `<div class="teased-card${isNew?' unread':''}">
                     <div class="update-header"><span class="update-badge badge-trade-alert">📢 TRADE ALERT</span><span class="update-time">${timeStr}</span></div>
                     <div class="teased-instr">${instrLine}</div>
-                    <div class="teased-lock-row"><span class="teased-lock-text">CE/PE · Entry · SL — Premium only</span><span class="premium-pill" onclick="showPopup()">🔒 Join Premium</span></div>
+                    <div class="teased-lock-row" onclick="showPopup()" style="cursor:pointer;">
+                        <span style="font-size:0.75rem;color:var(--text-muted);">🔒 CE/PE &nbsp;·&nbsp; 🔒 Entry &nbsp;·&nbsp; 🔒 SL &nbsp;·&nbsp; 🔒 Why</span>
+                    </div>
                     ${fupHint}</div>`;
 
             } else {
@@ -1193,7 +1233,7 @@
                 let repliesHtml = '';
                 if(postReplies.length > 0) {
                     let cumExit = 0;
-                    let currentSL = fields ? fields.sl : null;
+                    let currentSL = null; // track only premium-level SL revisions in follow-ups
                     const visibleReplies = postReplies.filter(r => {
                         if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                         if (r.audience==='paid_only' && isFreeViewer) return false;
@@ -1249,13 +1289,13 @@
                 html += `
                     <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}">
                         <div class="update-header">
-                            ${_updatesFilter==='all' ? postBadgeHtml(post.post_type) : ''}
+                            ${postBadgeHtml(post.post_type)}
                             <span class="update-time">${timeStr}</span>
                         </div>
                         <div class="update-body"><div class="update-content">${renderedContent}</div></div>
                         ${whyHtml}
                         ${closedBar}
-                        ${post.allow_sharing ? `<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>` : ''}
+                        ${post.allow_sharing ? `<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share this update"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>` : ''}
                     </div>
                     ${repliesHtml}
                     ${adminHtml}`;
@@ -1272,7 +1312,44 @@
                     if(card) { card.classList.remove('unread'); markPostRead(p.id); }
                 }
             });
+            updateUnreadBadge(0);
         }, 2000);
+    }
+
+    // ── ADMIN NEW TRADE ALERT (from Trade Alert tab) ─────────────────────────
+    let _newAlertAud = 'all';
+    function toggleNewAlertBox() {
+        const box = document.getElementById('new-alert-box');
+        if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
+    function selectNewAlertAud(val) {
+        _newAlertAud = val;
+        const allBtn  = document.getElementById('na-aud-all');
+        const paidBtn = document.getElementById('na-aud-paid');
+        if(allBtn)  allBtn.classList.toggle('selected', val === 'all');
+        if(paidBtn) paidBtn.classList.toggle('selected', val === 'paid_only');
+    }
+    async function sendNewAlert() {
+        const text = (document.getElementById('new-alert-text').value || '').trim();
+        if (!text || text.length < 5) { alert('Type a message first.'); return; }
+        const btn = document.getElementById('new-alert-send-btn');
+        btn.disabled = true; btn.textContent = 'Posting...';
+        try {
+            await sbFetch('posts', {
+                method: 'POST',
+                body: JSON.stringify({
+                    content: text, post_type: 'trade_alert', audience: _newAlertAud,
+                    allow_sharing: true, is_deleted: false, sent_at: new Date().toISOString()
+                })
+            });
+            document.getElementById('new-alert-text').value = '';
+            toggleNewAlertBox();
+            btn.disabled = false; btn.textContent = 'Post Alert →';
+            alert('✅ Trade alert posted to members!');
+        } catch(e) {
+            alert('Failed to post. Check connection.');
+            btn.disabled = false; btn.textContent = 'Post Alert →';
+        }
     }
 
     // ── ADMIN REPLY FUNCTIONS ────────────────────────────────────────────────
@@ -1406,10 +1483,12 @@
         }, 60000);
         window.addEventListener('beforeunload', () => clearInterval(_heartbeat));
         const startTab = localStorage.getItem('t2s_start_tab');
-        if (startTab) {
-            localStorage.removeItem('t2s_start_tab');
-            const tabEl = document.querySelector(`.tab[onclick*="${startTab}"]`);
-            if (tabEl) switchTab(startTab, tabEl);
+        const lastTab  = localStorage.getItem('t2s_last_tab');
+        const restoreTab = startTab || lastTab;
+        if (startTab) localStorage.removeItem('t2s_start_tab');
+        if (restoreTab && restoreTab !== 'markets') {
+            const tabEl = document.querySelector(`.tab[onclick*="'${restoreTab}'"]`);
+            if (tabEl) switchTab(restoreTab, tabEl);
         }
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
