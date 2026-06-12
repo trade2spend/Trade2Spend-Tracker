@@ -203,6 +203,11 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 .algo-btn{width:100%;padding:13px;border-radius:var(--radius);border:0.5px solid rgba(124,58,237,0.4);background:rgba(124,58,237,0.08);color:#a78bfa;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;margin-bottom:10px;}
 .algo-btn:active{opacity:0.75;}
 .algo-btn:disabled{opacity:0.4;cursor:not-allowed;}
+.action-icon-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px;}
+.action-icon-btn{padding:9px 6px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:all .15s;white-space:nowrap;}
+.action-icon-btn:active{opacity:0.7;}
+.action-icon-btn .aib-icon{font-size:15px;line-height:1;}
+.action-icon-btn .aib-label{font-size:10px;color:var(--muted2);}
 
 /* ALGO QTY MODAL */
 #algo-modal{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.6);align-items:flex-end;justify-content:center;}
@@ -370,7 +375,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
     <div>
       <div class="brand-name">Trade2Spend</div>
-      <div class="brand-sub"><span class="live-dot"></span> Not SEBI Registered · Educational Only</div>
+      <div class="brand-sub">Not SEBI Registered · Educational Only</div>
     </div>
   </div>
   <div class="tabs">
@@ -537,47 +542,44 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 
   <div class="err-msg" id="trade-err"></div>
   <button class="gen-btn" id="trade-btn" onclick="generateTrade()">Generate & Polish with AI</button>
-  <button class="tg-btn" id="tg-trade-btn" onclick="shareTG('trade')" style="width:100%;margin-bottom:10px;">
-    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-    Post to Telegram
-  </button>
   <button onclick="openPushModal('trade')" style="width:100%;padding:13px;border-radius:var(--radius);border:none;background:#4a2a78;color:#fff;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;">
     📲 Push to Members (PWA)
   </button>
-  <button class="copy-btn-full" onclick="copyMsg('trade')">Copy full message to clipboard</button>
-  <button class="tw-btn" id="tw-trade-btn" onclick="shareTwitter('trade')">
-      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.261 5.638 5.903-5.638zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-      Share on X (Twitter)
+  <div class="action-icon-row">
+    <button class="action-icon-btn" id="tg-trade-btn" onclick="shareTG('trade')">
+      <span class="aib-icon"><svg width="15" height="15" fill="#60a5fa" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></span>
+      <span class="aib-label">Telegram</span>
     </button>
-  <button class="algo-btn" id="algo-trade-btn" onclick="openAlgoModal()">
-    🤖 Alert Trading Bot
-  </button>
+    <button class="action-icon-btn" id="tw-trade-btn" onclick="shareTwitter('trade')">
+      <span class="aib-icon"><svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.261 5.638 5.903-5.638zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></span>
+      <span class="aib-label">Twitter</span>
+    </button>
+    <button class="action-icon-btn" onclick="copyMsg('trade')">
+      <span class="aib-icon">📋</span>
+      <span class="aib-label">Copy</span>
+    </button>
+    <button class="action-icon-btn" id="algo-trade-btn" onclick="openAlgoModal()">
+      <span class="aib-icon">🤖</span>
+      <span class="aib-label">Bot</span>
+    </button>
+  </div>
 </div>
 
 <!-- FOLLOW-UP CARD -->
 <div class="card" style="margin-top:0;">
   <div class="card-title"><span class="card-title-dot"></span>Post Follow-up to Members</div>
   <div class="field" style="margin-bottom:10px;">
-    <div class="field-label">Select Trade (for auto-update)</div>
-    <select id="fu-trade-select" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;">
-      <option value="">— No trade update needed —</option>
-    </select>
-  </div>
-  <div class="field" style="margin-bottom:10px;">
-    <div class="field-label">Select Parent Post (the original trade alert in Updates)</div>
+    <div class="field-label">Link to Post (optional)</div>
     <select id="fu-post-select" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;">
-      <option value="">Loading recent posts...</option>
+      <option value="">— Post as standalone (no parent) —</option>
     </select>
   </div>
   <div class="field" style="margin-bottom:10px;">
     <div class="field-label">Follow-up Message</div>
-    <textarea id="fu-text" placeholder="e.g. Closing 50% of position, booking profits..." rows="4" oninput="previewFollowUpIntent()" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;font-family:'Space Grotesk',sans-serif;resize:vertical;"></textarea>
+    <textarea id="fu-text" placeholder="e.g. 180 Exiting 50%, holding rest at cost..." rows="4" oninput="previewFollowUpIntent()" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;font-family:'Space Grotesk',sans-serif;resize:vertical;"></textarea>
   </div>
   <div id="fu-intent-preview" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(74,42,120,0.06);border-radius:8px;font-size:12px;"></div>
-  <div class="grid2" style="gap:8px;">
-    <button onclick="loadFollowUpData()" style="padding:10px;background:var(--bg4);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↺ Reload Lists</button>
-    <button onclick="sendFollowUp()" style="padding:10px;background:#4a2a78;border:none;border-radius:var(--radius-sm);color:#fff;font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
-  </div>
+  <button onclick="sendFollowUp()" style="width:100%;padding:12px;background:#4a2a78;border:none;border-radius:var(--radius-sm);color:#fff;font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
   <div id="fu-status" style="font-size:12px;margin-top:8px;text-align:center;display:none;"></div>
 </div>
 </div>
@@ -624,18 +626,27 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   </div>
   <div class="err-msg" id="gen-err"></div>
   <button class="gen-btn" id="gen-btn" onclick="generateGeneral()">Generate Message</button>
-  <button class="tg-btn" id="tg-gen-btn" onclick="shareTG('gen')" style="width:100%;margin-bottom:10px;">
-    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-    Post to Telegram
-  </button>
   <button onclick="openPushModal('gen')" style="width:100%;padding:13px;border-radius:var(--radius);border:none;background:#4a2a78;color:#fff;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;">
     📲 Push to Members (PWA)
   </button>
-  <button class="copy-btn-full" onclick="copyMsg('gen')">Copy full message to clipboard</button>
-  <button class="tw-btn" id="tw-gen-btn" onclick="shareTwitter('gen')">
-      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.261 5.638 5.903-5.638zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-      Share on X (Twitter)
+  <div class="action-icon-row">
+    <button class="action-icon-btn" id="tg-gen-btn" onclick="shareTG('gen')">
+      <span class="aib-icon"><svg width="15" height="15" fill="#60a5fa" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></span>
+      <span class="aib-label">Telegram</span>
     </button>
+    <button class="action-icon-btn" id="tw-gen-btn" onclick="shareTwitter('gen')">
+      <span class="aib-icon"><svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.261 5.638 5.903-5.638zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></span>
+      <span class="aib-label">Twitter</span>
+    </button>
+    <button class="action-icon-btn" onclick="copyMsg('gen')">
+      <span class="aib-icon">📋</span>
+      <span class="aib-label">Copy</span>
+    </button>
+    <button class="action-icon-btn" onclick="showToast('No bot action for general posts.')">
+      <span class="aib-icon">🤖</span>
+      <span class="aib-label">Bot</span>
+    </button>
+  </div>
 </div>
 </div>
 
@@ -853,7 +864,12 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
       <div class="card-title" style="margin-bottom:0;"><span class="card-title-dot"></span>Posts Feed</div>
       <button onclick="loadPostsFeed()" style="padding:6px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↺ Refresh</button>
     </div>
-    <div id="posts-feed-list" style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">Tap Refresh to load posts</div>
+    <!-- Alert / General sub-tabs -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+      <button id="posts-tab-alert" onclick="setPostsFilter('alert')" style="padding:7px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">📢 Alert</button>
+      <button id="posts-tab-general" onclick="setPostsFilter('general')" style="padding:7px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">💬 General</button>
+    </div>
+    <div id="posts-feed-list" style="font-size:13px;color:var(--muted);text-align:left;padding:10px 0;">Loading...</div>
   </div>
 
 </div>
@@ -1268,6 +1284,8 @@ window.onload=()=>{
   if(d.start  && document.getElementById('mem-wl-start'))  document.getElementById('mem-wl-start').value=d.start;
   memRenderRenewal();
   memRenderWelcome();
+  // Auto-load follow-up post list since Trade tab is the default
+  loadFollowUpData();
 };
 
 // ── TABS ──
@@ -1386,34 +1404,30 @@ function previewFollowUpIntent() {
     box.innerHTML = '<strong>Detected:</strong> ' + intents.map(i=>`<span style="color:#4a2a78;">${i.label}</span>`).join(' · ');
 }
 
-async function loadFollowUpData() {
-    // Load active trades from trades.json
-    try {
-        const r = await fetch('https://raw.githubusercontent.com/' + GH_REPO + '/main/trades.json?t=' + Date.now());
-        const data = await r.json();
-        const sel = document.getElementById('fu-trade-select');
-        sel.innerHTML = '<option value="">— No trade update needed —</option>';
-        (data.trades||[]).filter(t=>!t.isDeleted && t.status==='ACTIVE').forEach(t=>{
-            sel.innerHTML += `<option value="${t.id}">${t.id}: ${t.instrument} ${t.type} ${t.strike} (Entry ₹${t.entryPrice})</option>`;
-        });
-    } catch(e) { showToast('Could not load trades'); }
+function extractPostDropdownLabel(content, sentAt) {
+    const d = new Date(sentAt);
+    const timeStr = d.toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short'}) + ' ' +
+                    d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true});
+    const m = (content||'').match(/\b(BANK\s*NIFTY|NIFTY|SENSEX|FINNIFTY)\s*(\d{4,6})\s*(?:\w+\s+){0,2}(CE|PE)\b/i);
+    if (m) return `${m[1].toUpperCase().replace(/\s+/g,'')} ${m[2]} ${m[3].toUpperCase()} · ${timeStr}`;
+    const preview = (content||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').replace(/\n/g,' ').substring(0,22);
+    return `${preview}… · ${timeStr}`;
+}
 
-    // Load recent trade alert posts from Supabase
+async function loadFollowUpData() {
     try {
-        const posts = await sbGet('posts?is_deleted=eq.false&post_type=eq.trade_alert&order=sent_at.desc&limit=20&select=id,content,sent_at');
-        const sel2 = document.getElementById('fu-post-select');
-        sel2.innerHTML = '<option value="">— Post as standalone (no parent) —</option>';
+        const posts = await sbGet('posts?is_deleted=eq.false&parent_id=is.null&order=sent_at.desc&limit=30&select=id,content,post_type,sent_at');
+        const sel = document.getElementById('fu-post-select');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— Post as standalone (no parent) —</option>';
         posts.forEach(p=>{
-            const preview = p.content.substring(0,60).replace(/\n/g,' ');
-            const t = new Date(p.sent_at).toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
-            sel2.innerHTML += `<option value="${p.id}">[${t}] ${preview}...</option>`;
+            sel.innerHTML += `<option value="${p.id}">${extractPostDropdownLabel(p.content, p.sent_at)}</option>`;
         });
     } catch(e) { showToast('Could not load posts'); }
 }
 
 async function sendFollowUp() {
     const text     = document.getElementById('fu-text').value.trim();
-    const tradeId  = document.getElementById('fu-trade-select').value;
     const parentId = document.getElementById('fu-post-select').value;
     const statusEl = document.getElementById('fu-status');
 
@@ -1441,16 +1455,8 @@ async function sendFollowUp() {
         });
         if (!res.ok) throw new Error(await res.text());
 
-        // 2. Detect intent and update trades.json if a trade is selected
-        if (tradeId) {
-            const intents = detectFollowUpIntent(text);
-            if (intents.length > 0) {
-                await applyTradeUpdate(tradeId, intents);
-            }
-        }
-
         statusEl.style.color = 'var(--green)';
-        statusEl.textContent = '✓ Follow-up sent' + (tradeId ? ' · Trade updated' : '');
+        statusEl.textContent = '✓ Follow-up sent';
         document.getElementById('fu-text').value = '';
         document.getElementById('fu-intent-preview').style.display = 'none';
         setTimeout(() => { statusEl.style.display='none'; }, 3000);
@@ -2316,7 +2322,7 @@ function buildTradeMessage(){
 
   // Disclaimer
   if(ftr){
-    msg+=`\n\nOnly information and educational purposes, please trade basis your analysis.`;
+    msg+=`\n\nOnly for informational purposes. Please trade based on your own analysis.`;
   }
 
   // Channel links
@@ -4220,53 +4226,107 @@ async function confirmPushToMembers(){
 
 // ── POSTS TAB ─────────────────────────────────────────────────────────────────
 let _postsFeedCache = [];
+let _postsFeedFilter = 'alert'; // 'alert' or 'general'
+let _postsOpenReplyId = null;   // only one reply box open at a time
+
+function setPostsFilter(f) {
+  _postsFeedFilter = f;
+  const alertBtn   = document.getElementById('posts-tab-alert');
+  const generalBtn = document.getElementById('posts-tab-general');
+  const activeStyle   = 'padding:7px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
+  const inactiveStyle = 'padding:7px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
+  if (alertBtn)   alertBtn.style.cssText   = f==='alert'   ? activeStyle : inactiveStyle;
+  if (generalBtn) generalBtn.style.cssText = f==='general' ? activeStyle : inactiveStyle;
+  renderPostsFeed();
+}
+
+function renderPostsFeed() {
+  const list = document.getElementById('posts-feed-list');
+  if (!list) return;
+  const alertTypes   = ['trade_alert'];
+  const generalTypes = ['general','market_update'];
+  const parents = _postsFeedCache.filter(p => !p.parent_id && (
+    _postsFeedFilter === 'alert'   ? alertTypes.includes(p.post_type)   :
+    _postsFeedFilter === 'general' ? generalTypes.includes(p.post_type) : true
+  ));
+  const replyMap = {};
+  _postsFeedCache.filter(p=>p.parent_id).forEach(r=>{ if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
+
+  if (!parents.length) {
+    list.innerHTML = `<div style="text-align:left;padding:16px 0;color:var(--muted);font-size:13px;">No ${_postsFeedFilter==='alert'?'trade alerts':'general posts'} yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = parents.map(p => {
+    const replies = replyMap[p.id]||[];
+    const d = new Date(p.sent_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
+    const mainContent = (p.content||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const audBadge = p.audience==='paid_only'
+      ? `<span style="font-size:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;padding:2px 6px;border-radius:10px;font-weight:700;">⭐ Paid</span>`
+      : `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:2px 6px;border-radius:10px;font-weight:700;">👥 All</span>`;
+    const rCount = replies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length;
+    const repliesHtml = rCount > 0 ? replies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).map(r => {
+      const rt = new Date(r.sent_at).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true});
+      const rc = (r.content||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      const aud2 = r.audience==='paid_only'
+        ? `<span style="font-size:9px;background:#fef9c3;color:#854d0e;padding:1px 4px;border-radius:6px;font-weight:700;">⭐</span>` : '';
+      return `<div style="background:var(--bg);border-left:2px solid rgba(74,42,120,0.3);padding:6px 8px;border-radius:0 6px 6px 0;margin-bottom:5px;font-size:12px;color:var(--text);line-height:1.5;">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">${aud2}<span style="font-size:10px;color:var(--muted);">${rt}</span></div>
+        ${rc}
+      </div>`;
+    }).join('') : '';
+
+    return `<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;text-align:left;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">${audBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
+      <div style="font-size:12px;color:var(--text);line-height:1.55;margin-bottom:6px;white-space:pre-wrap;">${mainContent}</div>
+      ${rCount>0?`
+      <button onclick="togglePostsReplies('${p.id}')" id="prf-btn-${p.id}" style="background:none;border:none;padding:0;font-size:11px;color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''} ▶</button>
+      <div id="prf-list-${p.id}" style="display:none;margin-bottom:6px;">${repliesHtml}</div>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button onclick="openPostsReplyBox('${p.id}')" style="flex:1;padding:7px;border-radius:var(--radius-sm);border:0.5px solid rgba(74,42,120,0.4);background:rgba(74,42,120,0.06);color:#4a2a78;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add Follow-up</button>
+        <button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>
+      </div>
+      <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <button id="pb-aud-all-${p.id}" onclick="setPostsAud('${p.id}','all')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All</button>
+          <button id="pb-aud-paid-${p.id}" onclick="setPostsAud('${p.id}','paid_only')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
+        </div>
+        <textarea id="posts-reply-text-${p.id}" placeholder="e.g. 180 Exiting 50%, holding rest at cost…" style="width:100%;background:var(--bg);border:0.5px solid rgba(74,42,120,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:9px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;"></textarea>
+        <div style="display:flex;gap:6px;">
+          <button onclick="openPostsReplyBox('${p.id}')" style="padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Cancel</button>
+          <button onclick="sendPostsReply('${p.id}',this)" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:none;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function togglePostsReplies(postId) {
+  const box = document.getElementById(`prf-list-${postId}`);
+  const btn = document.getElementById(`prf-btn-${postId}`);
+  if (!box) return;
+  const opening = box.style.display === 'none';
+  // Close all other open reply lists
+  document.querySelectorAll('[id^="prf-list-"]').forEach(el => {
+    if (el.id !== `prf-list-${postId}`) {
+      el.style.display = 'none';
+      const b = document.getElementById(el.id.replace('prf-list-','prf-btn-'));
+      if (b) b.textContent = b.textContent.replace('▼','▶');
+    }
+  });
+  box.style.display = opening ? 'block' : 'none';
+  if (btn) btn.textContent = btn.textContent.replace(opening?'▶':'▼', opening?'▼':'▶');
+}
 
 async function loadPostsFeed() {
   const list = document.getElementById('posts-feed-list');
-  list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Loading...</div>';
+  if (list) list.innerHTML = '<div style="text-align:left;padding:12px 0;color:var(--muted);">Loading...</div>';
   try {
-    const posts = await sbGet('posts?is_deleted=eq.false&order=sent_at.desc&limit=50&select=id,content,post_type,audience,sent_at,parent_id');
+    const posts = await sbGet('posts?is_deleted=eq.false&order=sent_at.desc&limit=60&select=id,content,post_type,audience,sent_at,parent_id');
     _postsFeedCache = posts || [];
-    const parents = _postsFeedCache.filter(p => !p.parent_id);
-    const replyMap = {};
-    _postsFeedCache.filter(p=>p.parent_id).forEach(r=>{ if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
-
-    if(!parents.length){ list.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);">No posts yet. Push a trade to get started.</div>'; return; }
-
-    list.innerHTML = parents.map(p => {
-      const replies = replyMap[p.id]||[];
-      const d = new Date(p.sent_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
-      const preview = (p.content||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').substring(0,80).replace(/\n/g,' ');
-      const audBadge = p.audience==='paid_only'
-        ? `<span style="font-size:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;padding:2px 6px;border-radius:10px;font-weight:700;">⭐ Paid</span>`
-        : `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:2px 6px;border-radius:10px;font-weight:700;">👥 All</span>`;
-      const typeBadge = p.post_type==='trade_alert'
-        ? `<span style="font-size:10px;background:#4a2a78;color:#fff;padding:2px 7px;border-radius:10px;font-weight:700;">📢 Alert</span>`
-        : `<span style="font-size:10px;background:#f3f4f6;color:#374151;padding:2px 7px;border-radius:10px;font-weight:700;">💬 General</span>`;
-      const rCount = replies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length;
-      return `<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap;">${typeBadge}${audBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
-        <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:8px;">${preview}${(p.content||'').length>80?'…':''}</div>
-        ${rCount>0?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''}</div>`:''}
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button onclick="openPostsReplyBox('${p.id}')" style="flex:1;padding:7px;border-radius:var(--radius-sm);border:0.5px solid rgba(74,42,120,0.4);background:rgba(74,42,120,0.06);color:#4a2a78;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add Follow-up</button>
-          <button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Manually unlock entry/SL for free members">🔓 Unlock</button>
-        </div>
-        <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
-          <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <button id="pb-aud-all-${p.id}" onclick="setPostsAud('${p.id}','all')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All</button>
-            <button id="pb-aud-paid-${p.id}" onclick="setPostsAud('${p.id}','paid_only')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
-          </div>
-          <textarea id="posts-reply-text-${p.id}" placeholder="Type your follow-up... e.g. '180, Exiting 50% holding rest'" style="width:100%;background:var(--bg);border:0.5px solid rgba(74,42,120,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:9px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;"></textarea>
-          <div style="display:flex;gap:6px;">
-            <button onclick="document.getElementById('posts-reply-box-${p.id}').style.display='none'" style="padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Cancel</button>
-            <button onclick="sendPostsReply('${p.id}',this)" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:none;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
+    renderPostsFeed();
   } catch(e) {
-    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red);">Failed to load: ${e.message}</div>`;
+    if (list) list.innerHTML = `<div style="text-align:left;padding:12px 0;color:var(--red);">Failed to load: ${e.message}</div>`;
   }
 }
 
