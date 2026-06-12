@@ -229,6 +229,41 @@
 
         /* --- FOOTER DISCLAIMER --- */
         .footer-disclaimer { padding: 20px; text-align: center; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; font-style: italic; }
+
+        /* ── STRUCTURED FOLLOW-UP CARDS ── */
+        .fu-body { padding: 8px 12px 10px; }
+        .fu-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f0ecfa; font-size: 0.82rem; }
+        .fu-row:last-child { border-bottom: none; }
+        .fu-label { color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3px; }
+        .fu-val { font-weight: 700; color: var(--text-main); }
+        .fu-exit { color: #d97706; }
+        .fu-cumulative { font-size: 0.69rem; color: var(--text-muted); text-align: right; padding-top: 3px; }
+        .fu-no-loss { background: #dcfce7; color: #15803d; border-radius: 6px; padding: 4px 10px; font-size: 0.74rem; font-weight: 700; margin-top: 6px; display: inline-block; }
+        .sl-old-val { text-decoration: line-through; color: var(--text-muted); font-weight: 400; margin-right: 2px; }
+        .reply-exit-card { border-left: 3px solid #d97706 !important; }
+        .reply-sl-card { border-left: 3px solid #2563eb !important; }
+        .badge-sl-update { background: #dbeafe; color: #1d4ed8; }
+        .badge-closed-trade { background: #dcfce7; color: #15803d; }
+
+        /* ── TEASED CARD (free member, locked trade, no exit yet) ── */
+        .teased-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+        .teased-instr { display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; }
+        .teased-instr-name { font-size: 1.0rem; font-weight: 800; color: var(--primary); letter-spacing: 0.5px; }
+        .teased-strike { font-size: 1.0rem; font-weight: 700; color: var(--text-main); }
+        .teased-lock-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px 8px; gap: 8px; }
+        .teased-lock-text { font-size: 0.75rem; color: var(--text-muted); }
+        .teased-followup-hint { font-size: 0.7rem; color: var(--primary); padding: 3px 12px 8px; font-weight: 600; border-top: 1px dashed #ede8f5; }
+
+        /* ── WHY SECTION ── */
+        .why-section { margin: 4px 12px 8px; padding: 8px 12px; background: #fdf6e3; border: 1px solid #fde68a; border-radius: 8px; }
+        .why-label { font-size: 0.68rem; font-weight: 700; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .why-content { font-size: 0.82rem; color: #78350f; line-height: 1.55; }
+        .why-locked { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #fdf6e3; border: 1px solid #fde68a; border-radius: 8px; margin: 4px 12px 8px; cursor: pointer; }
+        .why-locked-text { font-size: 0.78rem; color: #92400e; font-weight: 600; }
+
+        /* ── CLOSED TRADE BAR ── */
+        .closed-trade-bar { background: #dcfce7; border-top: 1px solid #bbf7d0; padding: 5px 12px; display: flex; justify-content: space-between; align-items: center; }
+        .max-profit-text { font-size: 0.72rem; color: #15803d; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -874,6 +909,173 @@
         }
     }
 
+    // ── FOLLOW-UP CONTENT PARSER ─────────────────────────────────────────────
+    function parseFollowUpContent(text) {
+        const lo = (text||'').toLowerCase().trim();
+        const r = { type:'status', price:null, exitPct:null, slRevised:null, cmp:null,
+                    isHolding:false, isFullExit:false, noLossPossible:false, isAdminUnlock:false };
+        if (!text) return r;
+        if (text.includes('[T2S_UNLOCK]')) { r.isAdminUnlock = true; return r; }
+        // Overnight/swing holding
+        if (/hold(?:ing)?\s+(?:for\s+)?(?:next\s+day|tomorrow|overnight|long(?:\s+term)?|positional|swing|marathon|long\s+hold)|(?:positional|swing)\s+trade|overnight\s+position/i.test(text))
+            r.isHolding = true;
+        // SL hit / full exit (exclude future tense: "till SL hit", "if SL hit")
+        const loNoFuture = lo.replace(/(?:till|until|if|when)\s+(?:the\s+)?(?:sl|stop\s*loss)\s+(?:is\s+)?(?:hit|triggered)/gi,'');
+        if (/\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(loNoFuture)) { r.isFullExit=true; r.type='exit'; }
+        if (/fully\s+exit|full\s+exit|position\s+clos|clos.*position|booked?\s+full|100\s*%\s*exit|exiting\s+full|exit\s+all/.test(lo)) { r.isFullExit=true; r.type='exit'; }
+        // Exit %
+        const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
+        if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
+        // Leading option price
+        const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\s*(?:[,\n\r\s]|$)/);
+        if (lm) { const n=parseFloat(lm[1]); if(n>5&&n<9999){ r.price=n; if(r.type==='status') r.type=r.exitPct?'exit':'cmp_update'; } }
+        // SL to cost (check before numeric SL)
+        if (/sl\s+(?:to|at|moved?\s+to|revised?\s+to|of\s+remaining\s+to)\s+cost|modif[a-z]*\s+sl[^0-9]*to\s+cost|sl\s+at\s+entry|at\s+breakeven/i.test(text)) {
+            r.slRevised='cost'; r.noLossPossible=true; if(!r.exitPct) r.type='sl_update';
+        }
+        // Numeric SL revision
+        if (!r.slRevised) {
+            const slPats = [
+                /(?:revised?|modif(?:y|ied|ying)|moved?|shifted?|new|updated?)\s+sl\s+(?:to\s+)?(?:for\s+\w+\s+)?(\d+(?:\.\d+)?)/i,
+                /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
+                /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
+                /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i
+            ];
+            for (const p of slPats) { const m=text.match(p); if(m&&m[1]){ r.slRevised=parseFloat(m[1]); if(!r.exitPct) r.type='sl_update'; break; } }
+        }
+        // No loss explicit
+        if (/no\s+loss\s+(?:possible|now)|can.t\s+lose/i.test(text)) r.noLossPossible=true;
+        // CMP mention — allow up to 6 digits to cover option premiums and spot levels
+        const cm = text.match(/cmp\s*[=:]?\s*(\d{2,6}(?:\.\d+)?)/i);
+        if (cm) { const n=parseFloat(cm[1]); if(n>5) r.cmp=n; }
+        return r;
+    }
+
+    // ── EXTRACT TRADE ALERT FIELDS ────────────────────────────────────────────
+    function extractTradeAlertFields(content) {
+        const f={instrument:null,strike:null,optType:null,expiry:null,entry:null,sl:null,action:null};
+        if (!content) return f;
+        const lo = content.toLowerCase();
+        if (/\bbuying\b|\bbuy\b/.test(lo)) f.action='BUY'; else if (/\bselling\b|\bsell\b/.test(lo)) f.action='SELL';
+        if (/bank\s*nifty/i.test(content)) f.instrument='BANKNIFTY';
+        else if (/\bnifty\b/i.test(content)) f.instrument='NIFTY';
+        else if (/\bsensex\b/i.test(content)) f.instrument='SENSEX';
+        else if (/\bfinnifty\b/i.test(content)) f.instrument='FINNIFTY';
+        else if (/\bbankex\b/i.test(content)) f.instrument='BANKEX';
+        const sm = content.match(/(?:nifty|banknifty|bank\s*nifty|sensex|finnifty)\s+(\d{4,6})/i);
+        if (sm) f.strike = sm[1];
+        if (/\bce\b|\bcall\b/i.test(content)) f.optType='CE'; else if (/\bpe\b|\bput\b/i.test(content)) f.optType='PE';
+        if (/next\s+weekly/i.test(lo)) f.expiry='Next Weekly';
+        else if (/monthly/i.test(lo)) f.expiry='Monthly';
+        else if (/weekly/i.test(lo)) f.expiry='Weekly';
+        else if (/today.s?\s+expiry|expiry\s+today/i.test(lo)) f.expiry="Today's Expiry";
+        const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
+        if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
+        const slm = content.match(/(?:below|above)\s+(\d{4,6}(?:\.\d+)?)/i);
+        if (slm) f.sl = parseFloat(slm[1]);
+        return f;
+    }
+
+    // ── WHY SECTION HELPERS ───────────────────────────────────────────────────
+    function getMainContent(c) { return (c||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').trim(); }
+    function getWhyContent(c) { const m=(c||'').match(/\[WHY\]([\s\S]*?)\[\/WHY\]/i); return m?m[1].trim():null; }
+
+    // ── UNLOCK / CLOSED STATE ─────────────────────────────────────────────────
+    function isTradeUnlocked(replies) {
+        if (!replies||!replies.length) return false;
+        for (const r of replies) {
+            if ((r.content||'').includes('[T2S_UNLOCK]')) return true;
+            const p = parseFollowUpContent(r.content||'');
+            if (p.isAdminUnlock||p.type==='exit'||p.exitPct>0||p.isFullExit) return true;
+        }
+        return false;
+    }
+
+    function isTradeFullyClosed(post, replies) {
+        const reps = replies||[];
+        let cum=0, hasHolding=false;
+        for (const r of reps) {
+            const p = parseFollowUpContent(r.content||'');
+            if (p.isHolding) hasHolding=true;
+            if (p.isFullExit) return true;
+            if (p.exitPct) { cum+=p.exitPct; hasHolding=false; }
+        }
+        if (cum>=100) return true;
+        if (reps.length>0 && !hasHolding) {
+            const pd = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+            const td = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+            if (pd.toDateString()!==td.toDateString()) return true;
+        }
+        return false;
+    }
+
+    function daysSincePost(post) {
+        return (Date.now()-new Date(post.sent_at||post.created_at).getTime())/86400000;
+    }
+
+    function calculateMaxProfit(entry, replies) {
+        if (!entry||!replies||!replies.length) return null;
+        let maxP=entry;
+        for (const r of replies) {
+            const nums=[...(r.content||'').matchAll(/\b(\d{2,4}(?:\.\d+)?)\b/g)].map(m=>parseFloat(m[1])).filter(n=>n>10&&n<9999);
+            for (const n of nums) if(n>maxP) maxP=n;
+        }
+        return maxP>entry ? {max:maxP, pts:parseFloat((maxP-entry).toFixed(2))} : null;
+    }
+
+    // ── RENDER STRUCTURED FOLLOW-UP CARD ─────────────────────────────────────
+    function renderFollowUpCard(reply, parsed, cumulativeExit, prevSL) {
+        if (parsed.isAdminUnlock||(reply.content||'').includes('[T2S_UNLOCK]')) return '';
+        const ts = formatPostTime(reply.sent_at||reply.created_at);
+        const rawText = stripDisclaimerText(sanitizeHtml(reply.content||'').replace(/\n/g,'<br>'));
+
+        if (parsed.isHolding && !parsed.exitPct && !parsed.slRevised) {
+            return `<div class="reply-card" style="border-left:3px solid var(--primary)"><div class="reply-header"><span class="update-badge badge-follow-up">📌 Holding</span><span class="update-time">${ts}</span></div><div class="reply-body">${rawText}</div></div>`;
+        }
+
+        if (parsed.type==='exit'||parsed.exitPct>0) {
+            const remaining=Math.max(0,100-cumulativeExit);
+            let rows='';
+            if (parsed.isFullExit&&!parsed.exitPct) {
+                rows+=`<div class="fu-row"><span class="fu-label">Status</span><span class="fu-val fu-exit">Position Closed</span></div>`;
+                if (parsed.price) rows+=`<div class="fu-row"><span class="fu-label">Exit Price</span><span class="fu-val">₹${parsed.price}</span></div>`;
+            } else if (parsed.exitPct) {
+                rows+=`<div class="fu-row"><span class="fu-label">Exiting</span><span class="fu-val fu-exit">${parsed.exitPct}%${parsed.price?` at ₹${parsed.price}`:''}</span></div>`;
+                if (cumulativeExit<100) {
+                    rows+=`<div class="fu-row"><span class="fu-label">Remaining</span><span class="fu-val">${remaining}% holding</span></div>`;
+                    const prevExit=cumulativeExit-parsed.exitPct;
+                    if (prevExit>0) rows+=`<div class="fu-cumulative">Total exited so far: ${cumulativeExit}%</div>`;
+                } else {
+                    rows+=`<div class="fu-row"><span class="fu-label">Position</span><span class="fu-val fu-exit">Fully Closed ✅</span></div>`;
+                }
+            }
+            if (parsed.slRevised) {
+                const nsl=parsed.slRevised==='cost'?'Entry (Cost)':parsed.slRevised;
+                const osl=prevSL?(prevSL==='cost'?`<s class="sl-old-val">Entry</s> → `:`<s class="sl-old-val">${prevSL}</s> → `):'';
+                rows+=`<div class="fu-row"><span class="fu-label">SL</span><span class="fu-val">${osl}${nsl}</span></div>`;
+            }
+            if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
+            if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
+            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div></div>`;
+        }
+
+        if (parsed.type==='sl_update'&&parsed.slRevised) {
+            const nsl=parsed.slRevised==='cost'?'Entry (Cost)':parsed.slRevised;
+            const osl=prevSL?(prevSL==='cost'?`<s class="sl-old-val">Entry</s> → `:`<s class="sl-old-val">${prevSL}</s> → `):'';
+            let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
+            if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
+            if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
+            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div></div>`;
+        }
+
+        if (parsed.type==='cmp_update'&&parsed.price) {
+            return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div></div></div>`;
+        }
+
+        // Free text / status
+        return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">💬 Update</span><span class="update-time">${ts}</span></div><div class="reply-body">${rawText}</div></div>`;
+    }
+
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
@@ -896,11 +1098,8 @@
                 }
             }
 
-            // Fetch posts — filter paid-only at DB level for free users (prevents network leakage)
-            const postQuery = memberTier === 'paid' || isAdmin
-                ? 'posts?is_deleted=eq.false&order=sent_at.desc&limit=100'
-                : 'posts?is_deleted=eq.false&or=(audience.eq.all)&order=sent_at.desc&limit=100';
-            const posts = await sbFetch(postQuery, { method: 'GET' });
+            // Fetch ALL posts — visibility (teased vs full) handled client-side
+            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
 
             let readMap = {};
             if(memberId) {
@@ -925,7 +1124,6 @@
             return;
         }
 
-        // Filter parent posts by active sub-tab
         const allParents = allPosts.filter(p => !p.parent_id);
         const parentPosts = allParents.filter(p => {
             if (_updatesFilter === 'trade')   return tradeTypes.includes(p.post_type);
@@ -939,121 +1137,134 @@
             return;
         }
 
-            // Group replies by parent_id
-            const replyMap = {};
-            replies.forEach(r => {
-                if(!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
-                replyMap[r.parent_id].push(r);
-            });
+        const replyMap = {};
+        replies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
-            let html      = '';
-            let lastDate  = '';
+        const isFreeViewer = !isAdmin && memberTier !== 'paid';
+        let html = '', lastDate = '';
 
-            // Pre-count unread posts per date label for accurate "X new" badges
-            const newCountByDate = {};
-            parentPosts.forEach(post => {
-                const dl = formatPostDate(post.sent_at || post.created_at);
-                const isPaidOnly = post.audience === 'paid_only';
-                const canSee = !isPaidOnly || memberTier === 'paid';
-                if (!readMap[post.id] && canSee) newCountByDate[dl] = (newCountByDate[dl] || 0) + 1;
-            });
+        // Pre-count unread
+        const newCountByDate = {};
+        parentPosts.forEach(post => {
+            const dl = formatPostDate(post.sent_at||post.created_at);
+            const pr = replyMap[post.id]||[];
+            const locked = isFreeViewer && post.audience==='paid_only' && !isTradeUnlocked(pr) && !isTradeFullyClosed(post,pr);
+            if (!readMap[post.id] && !locked) newCountByDate[dl] = (newCountByDate[dl]||0)+1;
+        });
 
-            parentPosts.forEach(post => {
-                const dateLabel  = formatPostDate(post.sent_at || post.created_at);
-                const isNew      = !readMap[post.id];
-                const isPaidOnly = post.audience === 'paid_only';
-                const canSee     = !isPaidOnly || memberTier === 'paid';
+        parentPosts.forEach(post => {
+            const dateLabel = formatPostDate(post.sent_at||post.created_at);
+            const isNew     = !readMap[post.id];
+            const isPaidOnly = post.audience === 'paid_only';
+            const postReplies = replyMap[post.id] || [];
 
-                if(dateLabel !== lastDate) {
-                    const cnt = newCountByDate[dateLabel] || 0;
-                    html += `<div class="date-label">
-                        <span>${dateLabel}</span>
-                        ${cnt > 0 ? `<span class="new-count">● ${cnt} unread</span>` : ''}
-                    </div>`;
-                    lastDate = dateLabel;
-                }
+            if(dateLabel !== lastDate) {
+                const cnt = newCountByDate[dateLabel]||0;
+                html += `<div class="date-label"><span>${dateLabel}</span>${cnt>0?`<span class="new-count">● ${cnt} unread</span>`:''}</div>`;
+                lastDate = dateLabel;
+            }
 
-                if(canSee) {
-                    // Build replies HTML — collapsed by default
-                    const postReplies = replyMap[post.id] || [];
-                    let repliesHtml = '';
-                    if(postReplies.length > 0) {
-                        const visibleReplies = postReplies.filter(r => canSee && (r.audience !== 'paid_only' || memberTier === 'paid'));
-                        if(visibleReplies.length > 0) {
-                            const tid = `replies-${post.id}`;
-                            const n = visibleReplies.length;
-                            repliesHtml = `<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n > 1 ? 's' : ''} — tap to view</button>
-                                <div class="thread-replies" id="${tid}" style="display:none;">`;
-                            visibleReplies.forEach(reply => {
-                                const intents = parseFollowUpIntent(reply.content);
-                                const badges = intents.map(i => intentBadgeHtml(i, memberTier)).join('');
-                                repliesHtml += `
-                                <div class="reply-card" id="ucard-${reply.id}">
-                                    <div class="reply-header">
-                                        <span class="update-badge badge-follow-up">↳ FOLLOW-UP</span>
-                                        <span class="update-time">${formatPostTime(reply.sent_at || reply.created_at)}</span>
-                                    </div>
-                                    <div class="reply-body">${sanitizeHtml(reply.content).replace(/\n/g,'<br>')}${badges}</div>
-                                </div>`;
-                            });
-                            repliesHtml += `</div>`;
-                        }
+            // Visibility state
+            const isClosed   = isTradeFullyClosed(post, postReplies);
+            const isUnlocked = isClosed || isTradeUnlocked(postReplies);
+            const showTeased = isFreeViewer && isPaidOnly && !isUnlocked;
+
+            const timeStr = formatPostTime(post.sent_at||post.created_at);
+            const fields  = post.post_type==='trade_alert' ? extractTradeAlertFields(post.content) : null;
+            const why     = getWhyContent(post.content);
+            const mainContent = getMainContent(post.content);
+            const whyVisible = isAdmin || memberTier==='paid' || (isClosed && daysSincePost(post)>=6);
+
+            if (showTeased) {
+                // ── TEASED: free member, trade locked (no exit yet) ──
+                const instrLine = fields&&fields.instrument
+                    ? `<span class="teased-instr-name">${fields.instrument}</span>${fields.strike?`<span class="teased-strike"> ${fields.strike}</span>`:''}`
+                    : `<span class="teased-instr-name">Trade Alert</span>`;
+                const fupHint = postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length > 0
+                    ? `<div class="teased-followup-hint">↳ ${postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length} follow-up${postReplies.length>1?'s':''} — visible after unlock</div>` : '';
+                html += `<div class="teased-card${isNew?' unread':''}">
+                    <div class="update-header"><span class="update-badge badge-trade-alert">📢 TRADE ALERT</span><span class="update-time">${timeStr}</span></div>
+                    <div class="teased-instr">${instrLine}</div>
+                    <div class="teased-lock-row"><span class="teased-lock-text">CE/PE · Entry · SL — Premium only</span><span class="premium-pill" onclick="showPopup()">🔒 Join Premium</span></div>
+                    ${fupHint}</div>`;
+
+            } else {
+                // ── FULL CARD ──
+                let repliesHtml = '';
+                if(postReplies.length > 0) {
+                    let cumExit = 0;
+                    let currentSL = fields ? fields.sl : null;
+                    const visibleReplies = postReplies.filter(r => {
+                        if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
+                        if (r.audience==='paid_only' && isFreeViewer) return false;
+                        return true;
+                    });
+                    if(visibleReplies.length > 0) {
+                        const tid = `replies-${post.id}`;
+                        const n = visibleReplies.length;
+                        repliesHtml = `<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
+                            <div class="thread-replies" id="${tid}" style="display:none;">`;
+                        visibleReplies.forEach(reply => {
+                            const parsed = parseFollowUpContent(reply.content||'');
+                            const prevSL = currentSL;
+                            if (parsed.slRevised) currentSL = parsed.slRevised;
+                            if (parsed.exitPct) cumExit += parsed.exitPct;
+                            repliesHtml += renderFollowUpCard(reply, parsed, cumExit, prevSL);
+                        });
+                        repliesHtml += `</div>`;
                     }
-
-                    // Admin compose box
-                    const adminHtml = isAdmin ? `
-                        <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">
-                            ↳ Add follow-up
-                        </button>
-                        <div class="admin-compose-box" id="compose-${post.id}">
-                            <div class="admin-audience-row">
-                                <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
-                                <button class="admin-aud-btn" id="aud-paid-${post.id}" onclick="selectReplyAud('${post.id}','paid_only')">Paid Only</button>
-                            </div>
-                            <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
-                            <div class="admin-compose-row">
-                                <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
-                                <button class="admin-compose-send" onclick="sendReply('${post.id}')">Send Follow-up →</button>
-                            </div>
-                        </div>` : '';
-
-                    const renderedContent = stripDisclaimerText(sanitizeHtml(post.content).replace(/\n/g,'<br>'));
-                    html += `
-                        <div class="update-card ${isNew ? 'unread' : ''}" id="ucard-${post.id}" data-content="${sanitizeHtml(post.content)}">
-                            <div class="update-header">
-                                ${_updatesFilter === 'all' ? postBadgeHtml(post.post_type) : ''}
-                                <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
-                            </div>
-                            <div class="update-body">
-                                <div class="update-content">${renderedContent}</div>
-                            </div>
-                            ${post.allow_sharing ? `<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>` : ''}
-                        </div>
-                        ${repliesHtml}
-                        ${adminHtml}`;
-                } else {
-                    html += `
-                        <div class="locked-card">
-                            <div class="update-header">
-                                <span class="update-badge badge-premium-locked">🔒 PREMIUM</span>
-                                <span class="update-time">${formatPostTime(post.sent_at || post.created_at)}</span>
-                            </div>
-                            <div class="locked-blur-row">
-                                <div class="blur-pill" style="width:70%"></div>
-                                <div class="blur-pill" style="width:45%"></div>
-                                <div class="blur-pill" style="width:55%"></div>
-                            </div>
-                            <div class="locked-center">
-                                <span class="update-disclaimer">Upgrade to view this post</span>
-                                <span class="premium-pill" onclick="showPopup()">Join Premium →</span>
-                            </div>
-                        </div>`;
                 }
-            });
+
+                // Closed trade bar
+                let closedBar = '';
+                if (isClosed && fields && fields.entry) {
+                    const mp = calculateMaxProfit(fields.entry, postReplies);
+                    closedBar = `<div class="closed-trade-bar"><span class="update-badge badge-closed-trade">✅ Closed Trade</span>${mp?`<span class="max-profit-text">Max: ₹${mp.max} · +${mp.pts} pts</span>`:''}</div>`;
+                }
+
+                // Why section
+                let whyHtml = '';
+                if (why) {
+                    whyHtml = whyVisible
+                        ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
+                        : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`;
+                }
+
+                // Admin compose
+                const adminHtml = isAdmin ? `
+                    <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                    <div class="admin-compose-box" id="compose-${post.id}">
+                        <div class="admin-audience-row">
+                            <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
+                            <button class="admin-aud-btn" id="aud-paid-${post.id}" onclick="selectReplyAud('${post.id}','paid_only')">Paid Only</button>
+                        </div>
+                        <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
+                        <div class="admin-compose-row">
+                            <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
+                            <button class="admin-compose-send" onclick="sendReply('${post.id}')">Send Follow-up →</button>
+                        </div>
+                    </div>` : '';
+
+                const renderedContent = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
+                html += `
+                    <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}">
+                        <div class="update-header">
+                            ${_updatesFilter==='all' ? postBadgeHtml(post.post_type) : ''}
+                            <span class="update-time">${timeStr}</span>
+                        </div>
+                        <div class="update-body"><div class="update-content">${renderedContent}</div></div>
+                        ${whyHtml}
+                        ${closedBar}
+                        ${post.allow_sharing ? `<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>` : ''}
+                    </div>
+                    ${repliesHtml}
+                    ${adminHtml}`;
+            }
+        });
 
         container.innerHTML = html;
 
-        // Auto mark as read after 2s
+        // Auto mark as read after 2s (only visible cards)
         setTimeout(() => {
             parentPosts.forEach(p => {
                 if(!readMap[p.id]) {
