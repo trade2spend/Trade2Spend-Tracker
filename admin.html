@@ -1404,6 +1404,15 @@ function previewFollowUpIntent() {
     box.innerHTML = '<strong>Detected:</strong> ' + intents.map(i=>`<span style="color:#4a2a78;">${i.label}</span>`).join(' · ');
 }
 
+function stripPostDisclaimer(text) {
+    return (text||'')
+        .replace(/only (?:for )?inform\w+[^\n]*/gi, '')
+        .replace(/please trade bas\w+ on[^\n]*/gi, '')
+        .replace(/plz trade basis[^\n]*/gi, '')
+        .replace(/\n{3,}/g,'\n\n')
+        .trim();
+}
+
 function extractPostDropdownLabel(content, sentAt) {
     const d = new Date(sentAt);
     const timeStr = d.toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short'}) + ' ' +
@@ -4260,7 +4269,7 @@ function renderPostsFeed() {
   list.innerHTML = parents.map(p => {
     const replies = replyMap[p.id]||[];
     const d = new Date(p.sent_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
-    const mainContent = (p.content||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const mainContent = stripPostDisclaimer((p.content||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'')).replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const audBadge = p.audience==='paid_only'
       ? `<span style="font-size:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;padding:2px 6px;border-radius:10px;font-weight:700;">⭐ Paid</span>`
       : `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:2px 6px;border-radius:10px;font-weight:700;">👥 All</span>`;
