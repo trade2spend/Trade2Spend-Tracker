@@ -355,17 +355,8 @@
                 </div>
             </div>
         </div>
-        <div id="active-trades-section">
-            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
-                <span style="width:8px;height:8px;background:var(--green);border-radius:50%;display:inline-block;box-shadow:0 0 4px var(--green);"></span>Active Trades
-            </p>
-            <div id="trades-container"><div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div></div>
-        </div>
-        <div id="closed-trades-section" style="margin-top:18px;display:none;">
-            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
-                <span style="width:8px;height:8px;background:#9ca3af;border-radius:50%;display:inline-block;"></span>Closed Trades
-            </p>
-            <div id="closed-trades-container"></div>
+        <div id="trade-alert-container">
+            <div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading trade alerts...</div>
         </div>
     </div>
 
@@ -450,7 +441,7 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
         if(tabId === 'updates') updateUnreadBadge(0);
-        if(tabId === 'trades') fetchTrades();
+        if(tabId === 'trades') fetchTradeAlerts();
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
     }
@@ -465,7 +456,8 @@
         }
     }
 
-    function goToTradeAlert() {
+    function goToSpecificTrade(instr, type, strike) {
+        window._highlightTradeKey = instr + '-' + type + '-' + (strike||'');
         const tabEl = document.querySelector('.tab[onclick*="trades"]');
         if (tabEl) switchTab('trades', tabEl);
     }
@@ -728,7 +720,7 @@
         return trades.map(t => {
             const win = t.result === 'WIN';
             const pnl = t.pnl || 0;
-            return `<div class="trade-detail-row" onclick="goToTradeAlert()" style="cursor:pointer;" title="View in Trade Alert tab">
+            return `<div class="trade-detail-row" onclick="goToSpecificTrade('${t.instrument||''}','${t.type||''}','${t.strike||''}')" style="cursor:pointer;" title="Tap to view this trade">
                 <div>
                     <div style="font-size:0.83rem;font-weight:700;color:var(--text-main);">${t.instrument} ${t.type} ${(t.strike||'').toLocaleString()}</div>
                     <div style="font-size:0.67rem;color:var(--text-muted);margin-top:2px;">${t.date} &nbsp;·&nbsp; ₹${t.entry} → ₹${t.exit}</div>
@@ -861,8 +853,9 @@
     // Strip boilerplate disclaimer lines from post content before render
     function stripDisclaimerText(html) {
         return html
-            .replace(/only\s+(?:for\s+)?information\s+and\s+educational\s+purposes[^<\n]*/gi, '')
-            .replace(/please\s+trade\s+bas(?:e|is)\s+your\s+analysis[^<\n]*/gi, '')
+            .replace(/only\s+(?:for\s+)?inform\w+[^<\n]*/gi, '')
+            .replace(/please\s+trade\s+bas\w+[^<\n]*/gi, '')
+            .replace(/plz\s+trade\s+basis[^<\n]*/gi, '')
             .replace(/educational\s+(?:and\s+)?informational\s+purposes[^<\n]*/gi, '')
             .replace(/(<br\s*\/?>\s*){2,}/g, '<br>')
             .trim();
@@ -1113,6 +1106,199 @@
         return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">💬 Update</span><span class="update-time">${ts}</span></div><div class="reply-body">${rawText}</div></div>`;
     }
 
+    // ── TRADE ALERT TAB (Supabase posts) ─────────────────────────────────────
+    async function fetchTradeAlerts() {
+        const container = document.getElementById('trade-alert-container');
+        if (!container) return;
+        container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div>';
+
+        const memberId = localStorage.getItem('t2s_member_id');
+        let isAdmin = false, memberTier = 'free';
+        if (memberId) {
+            try {
+                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, {method:'GET'});
+                if (members?.length) {
+                    if (members[0].status === 'disabled') { window.location.href='login.html'; return; }
+                    isAdmin = members[0].is_admin === true;
+                    memberTier = members[0].tier || 'free';
+                }
+            } catch(e) {}
+        }
+
+        const composeDiv = document.getElementById('admin-trade-compose');
+        if (composeDiv) composeDiv.style.display = isAdmin ? 'block' : 'none';
+
+        try {
+            const allPosts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', {method:'GET'});
+            const replyMap = {};
+            allPosts.filter(p=>p.parent_id).forEach(r=>{
+                if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[];
+                replyMap[r.parent_id].push(r);
+            });
+            const tradePosts = allPosts.filter(p => !p.parent_id && p.post_type==='trade_alert');
+            renderTradeAlerts(tradePosts, replyMap, memberTier, isAdmin);
+        } catch(e) {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
+        }
+    }
+
+    function renderTradeAlerts(tradePosts, replyMap, memberTier, isAdmin) {
+        const container = document.getElementById('trade-alert-container');
+        const isFreeViewer = !isAdmin && memberTier !== 'paid';
+
+        if (!tradePosts.length) {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;font-size:0.85rem;">No trade alerts yet.</div>';
+            return;
+        }
+
+        const activePosts = tradePosts.filter(p => !isTradeFullyClosed(p, replyMap[p.id]||[]));
+        const closedPosts  = tradePosts.filter(p =>  isTradeFullyClosed(p, replyMap[p.id]||[]));
+
+        let html = '';
+
+        if (isFreeViewer) {
+            html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+                <button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>
+            </div>`;
+        }
+
+        function sectionHeader(label, dotColor, glow) {
+            return `<p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                <span style="width:8px;height:8px;background:${dotColor};border-radius:50%;display:inline-block;${glow?'box-shadow:0 0 4px '+dotColor+';':''}"></span>${label}</p>`;
+        }
+
+        if (activePosts.length) {
+            html += sectionHeader('Active Trades','var(--green)',true);
+            activePosts.forEach(p => { html += buildTradeAlertCard(p, replyMap[p.id]||[], memberTier, isAdmin, isFreeViewer); });
+        }
+        if (closedPosts.length) {
+            html += `<div style="margin-top:18px;">` + sectionHeader('Closed Trades','#9ca3af',false);
+            closedPosts.forEach(p => { html += buildTradeAlertCard(p, replyMap[p.id]||[], memberTier, isAdmin, isFreeViewer); });
+            html += `</div>`;
+        }
+
+        container.innerHTML = html;
+
+        // Highlight & scroll to specific trade if navigating from Performance tab
+        if (window._highlightTradeKey) {
+            const key = window._highlightTradeKey;
+            window._highlightTradeKey = null;
+            setTimeout(() => {
+                const parts = key.split('-');
+                const instr = parts[0], strike = parts[2]||'';
+                const cards = container.querySelectorAll('.update-card,.teased-card');
+                for (const card of cards) {
+                    const txt = (card.dataset.content||'') + card.textContent;
+                    if (instr && txt.toUpperCase().includes(instr) && (!strike || txt.includes(strike))) {
+                        card.scrollIntoView({behavior:'smooth', block:'center'});
+                        const orig = card.style.outline;
+                        card.style.outline = '2px solid var(--primary)';
+                        card.style.transition = 'outline .3s';
+                        setTimeout(() => { card.style.outline = orig; }, 2500);
+                        break;
+                    }
+                }
+            }, 600);
+        }
+    }
+
+    function buildTradeAlertCard(post, postReplies, memberTier, isAdmin, isFreeViewer) {
+        const isPaidOnly  = post.audience === 'paid_only';
+        const isClosed    = isTradeFullyClosed(post, postReplies);
+        const isUnlocked  = isClosed || isTradeUnlocked(postReplies);
+        const showTeased  = isFreeViewer && isPaidOnly && !isUnlocked;
+        const timeStr     = formatPostTime(post.sent_at||post.created_at);
+        const fields      = extractTradeAlertFields(post.content);
+        const why         = getWhyContent(post.content);
+        const mainContent = getMainContent(post.content);
+        const whyVisible  = isAdmin || memberTier==='paid' || (isClosed && daysSincePost(post)>=6);
+        const tradeKey    = (fields.instrument&&fields.optType&&fields.strike)
+            ? `${fields.instrument}-${fields.optType}-${fields.strike}` : '';
+
+        if (showTeased) {
+            const instrLine = fields.instrument
+                ? `<span class="teased-instr-name">${fields.instrument}</span>${fields.strike?`<span class="teased-strike"> ${fields.strike}</span>`:''}`
+                : `<span class="teased-instr-name">Trade Alert</span>`;
+            const visibleReplies = postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]'));
+            const fupHint = visibleReplies.length>0
+                ? `<div class="teased-followup-hint">↳ ${visibleReplies.length} follow-up${visibleReplies.length>1?'s':''} — visible after unlock</div>` : '';
+            return `<div class="teased-card" data-trade-key="${tradeKey}">
+                <div class="update-header"><span class="update-badge badge-trade-alert">📢 TRADE ALERT</span><span class="update-time">${timeStr}</span></div>
+                <div class="teased-instr">${instrLine}</div>
+                <div class="teased-lock-row" onclick="showPopup()" style="cursor:pointer;">
+                    <span style="font-size:0.75rem;color:var(--text-muted);">🔒 CE/PE &nbsp;·&nbsp; 🔒 Entry &nbsp;·&nbsp; 🔒 SL &nbsp;·&nbsp; 🔒 Why</span>
+                </div>
+                ${fupHint}</div>`;
+        }
+
+        // Full card — build follow-ups
+        let repliesHtml = '';
+        if (postReplies.length > 0) {
+            let cumExit = 0, currentSL = null;
+            const visibleReplies = postReplies.filter(r => {
+                if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
+                if (r.audience==='paid_only' && isFreeViewer) return false;
+                return true;
+            });
+            if (visibleReplies.length > 0) {
+                const tid = `replies-${post.id}`;
+                const n = visibleReplies.length;
+                repliesHtml = `<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
+                    <div class="thread-replies" id="${tid}" style="display:none;">`;
+                visibleReplies.forEach(reply => {
+                    const parsed = parseFollowUpContent(reply.content||'');
+                    const prevSL = currentSL;
+                    if (parsed.slRevised) currentSL = parsed.slRevised;
+                    if (parsed.exitPct) cumExit += parsed.exitPct;
+                    repliesHtml += renderFollowUpCard(reply, parsed, cumExit, prevSL);
+                });
+                repliesHtml += `</div>`;
+            }
+        }
+
+        let closedBar = '';
+        if (isClosed && fields.entry) {
+            const mp = calculateMaxProfit(fields.entry, postReplies);
+            closedBar = `<div class="closed-trade-bar"><span class="update-badge badge-closed-trade">✅ Closed Trade</span>${mp?`<span class="max-profit-text">Max: ₹${mp.max} · +${mp.pts} pts</span>`:''}</div>`;
+        }
+
+        let whyHtml = '';
+        if (why) {
+            whyHtml = whyVisible
+                ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
+                : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`;
+        }
+
+        const adminHtml = isAdmin ? `
+            <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+            <div class="admin-compose-box" id="compose-${post.id}">
+                <div class="admin-audience-row">
+                    <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
+                    <button class="admin-aud-btn" id="aud-paid-${post.id}" onclick="selectReplyAud('${post.id}','paid_only')">Paid Only</button>
+                </div>
+                <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
+                <div class="admin-compose-row">
+                    <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
+                    <button class="admin-compose-send" onclick="sendReply('${post.id}','trades')">Send Follow-up →</button>
+                </div>
+            </div>` : '';
+
+        const renderedContent = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
+        return `
+            <div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
+                <div class="update-header">
+                    <span class="update-badge badge-trade-alert">📢 TRADE ALERT</span>
+                    <span class="update-time">${timeStr}</span>
+                </div>
+                <div class="update-body"><div class="update-content">${renderedContent}</div></div>
+                ${whyHtml}
+                ${closedBar}
+                ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
+            </div>
+            ${repliesHtml}
+            ${adminHtml}`;
+    }
+
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
@@ -1289,7 +1475,6 @@
                 html += `
                     <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}">
                         <div class="update-header">
-                            ${postBadgeHtml(post.post_type)}
                             <span class="update-time">${timeStr}</span>
                         </div>
                         <div class="update-body"><div class="update-content">${renderedContent}</div></div>
@@ -1372,7 +1557,7 @@
         document.getElementById(`aud-paid-${postId}`).classList.toggle('selected', val === 'paid_only');
     }
 
-    async function sendReply(parentId) {
+    async function sendReply(parentId, fromTab) {
         const text     = document.getElementById(`reply-text-${parentId}`).value.trim();
         const audience = replyAudience[parentId] || 'all';
 
@@ -1399,8 +1584,9 @@
                 })
             });
 
-            // Refresh updates
-            fetchUpdates();
+            // Refresh the correct tab
+            if (fromTab === 'trades') fetchTradeAlerts();
+            else fetchUpdates();
 
         } catch(e) {
             console.error('Reply failed:', e);
@@ -1489,6 +1675,9 @@
         if (restoreTab && restoreTab !== 'markets') {
             const tabEl = document.querySelector(`.tab[onclick*="'${restoreTab}'"]`);
             if (tabEl) switchTab(restoreTab, tabEl);
+        } else {
+            // Pre-load trade alerts in background so tab is instant when user switches
+            fetchTradeAlerts();
         }
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
