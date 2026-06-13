@@ -95,7 +95,7 @@
         .movers-section { margin-top: 14px; }
         .movers-title { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
         .movers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .movers-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+        .movers-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; max-height: 240px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
         .movers-card-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
         .movers-card-title.g { color: var(--green); }
         .movers-card-title.l { color: var(--red); }
@@ -445,6 +445,7 @@
 
 <script>
     // --- UI LOGIC ---
+    let _tradeRefreshTimer = null;
     function switchTab(tabId, el) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
@@ -452,8 +453,12 @@
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
+        if (_tradeRefreshTimer) { clearInterval(_tradeRefreshTimer); _tradeRefreshTimer = null; }
         if(tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => updateUnreadBadge(0), 2500); }
-        if(tabId === 'trades') fetchTradeAlerts();
+        if(tabId === 'trades') {
+            fetchTradeAlerts();
+            _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
+        }
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
     }
@@ -874,6 +879,8 @@
     }
 
     let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
+    let _localReadCache = {};
+    try { _localReadCache = JSON.parse(localStorage.getItem('t2s_read_cache') || '{}'); } catch(e) {}
     let _updatesTabViewed = false;
 
     async function sharePost(postId) {
@@ -1205,9 +1212,8 @@
         if (composeDiv) composeDiv.style.display = isAdmin ? 'block' : 'none';
 
         try {
-            const [tradeParents, generalParents, allFollowUps] = await Promise.all([
+            const [tradeParents, allFollowUps] = await Promise.all([
                 sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
-                sbFetch('posts?is_deleted=eq.false&post_type=eq.general&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
                 sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', {method:'GET'})
             ]);
             const replyMap = {};
@@ -1215,14 +1221,7 @@
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
                 replyMap[r.parent_id].push(r);
             });
-            // Include general posts that have follow-ups OR contain trade-related keywords
-            const tradeKw = /buying|selling|\bce\b|\bpe\b|\bcall\b|\bput\b|nifty|banknifty|sensex|entry\s+at|expiry/i;
-            const generalWithReplies = generalParents.filter(p =>
-                (replyMap[p.id]||[]).length > 0 || tradeKw.test(p.content||'')
-            );
-            const allTradeParents = [...tradeParents, ...generalWithReplies]
-                .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
-            renderTradeAlerts(allTradeParents, replyMap, memberTier, isAdmin);
+            renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
         }
@@ -1354,7 +1353,7 @@
                         <span style="font-size:0.95rem;font-weight:800;color:var(--text-muted);">${instrName}${strikeStr?' '+strikeStr:''}</span>
                         <span class="update-time">${dateTimeStr}</span>
                     </div>
-                    <div style="padding:4px 12px 10px;"><span class="not-triggered-pill">⚫ Not Triggered</span></div>
+                    <div style="padding:4px 12px 10px;"><span class="not-triggered-pill">⚫ Removed</span></div>
                 </div>`;
             }
 
@@ -1374,8 +1373,7 @@
                         <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                     </div>
                     <div class="trigger-banner">
-                        <span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>
-                        <span style="font-size:0.65rem;color:var(--text-muted);">Waiting for market entry</span>
+                        <span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>
                     </div>
                 </div>`;
             }
@@ -1411,7 +1409,7 @@
                                 ${showExpiry&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
                             </div>
                         </div>
-                        <span style="background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">✅ Triggered</span>
+                        <span style="background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'✅ SELLING':fields.action==='BUY'?'✅ BUYING':'✅ Triggered'}</span>
                     </div>
                     <div class="trade-metrics" style="padding:6px 12px 10px;">
                         <div class="metric-col"><span class="metric-label">Entry</span>
@@ -1421,7 +1419,7 @@
                         <div class="metric-col"><span class="metric-label">SL</span>
                             <span class="metric-value" style="font-size:0.88rem;">${showSL?(currentSL||'—'):lockBtn}</span></div>
                         <div class="metric-col"><span class="metric-label">Why</span>
-                            <span class="metric-value" style="font-size:0.88rem;">${why?(whyOldEnough?`<span onclick="showWhyPopup('${post.id}')" style="cursor:pointer;color:var(--primary);font-size:0.78rem;font-weight:600;">View →</span>`:lockBtn):'—'}</span></div>
+                            <span class="metric-value" style="font-size:0.88rem;">${why?lockBtn:'—'}</span></div>
                     </div>`;
             } else {
                 cardBodyHtml = `<div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
@@ -1439,14 +1437,18 @@
         }
 
         // ── 3. ADMIN / PAID / CLOSED TRADE → full card ───────────────────────
-        // "Any trade that is over must be fully displayed other than Why"
-        const whyVisible = isAdmin || memberTier==='paid' || whyOldEnough;
+        const whyVisible = isAdmin || memberTier === 'paid';
 
         let latestCmp = null;
         for (const r of postReplies) {
             const fp = parseFollowUpContent(r.content||'');
             if (fp.cmp) { latestCmp=fp.cmp; break; }
             if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
+        }
+        let exitPrice = null;
+        for (const r of postReplies) {
+            const fp = parseFollowUpContent(r.content||'');
+            if ((fp.isFullExit || fp.type==='exit' || fp.exitPct) && fp.price) { exitPrice = fp.price; break; }
         }
 
         let cardBodyHtml;
@@ -1455,6 +1457,9 @@
             const typeBoxHtml = fields.optType
                 ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`;
+            const actionBadge = isClosed ? `<span class="update-badge badge-closed-trade">✅ Closed</span>` :
+                fields.action==='SELL' ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">SELLING</span>` :
+                fields.action==='BUY'  ? `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">BUYING</span>` : '';
             cardBodyHtml = `
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
@@ -1464,12 +1469,15 @@
                             ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
                         </div>
                     </div>
+                    ${actionBadge}
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;">
                     <div class="metric-col"><span class="metric-label">Entry</span>
                         <span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div class="metric-col"><span class="metric-label">Latest CMP</span>
-                        <span class="metric-value" style="font-size:0.88rem;">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+                    <div class="metric-col"><span class="metric-label">${isClosed?'Exit Price':'Latest CMP'}</span>
+                        <span class="metric-value ${isClosed&&exitPrice?'val-up':''}" style="font-size:0.88rem;">${isClosed?(exitPrice?`₹${exitPrice}`:(latestCmp?`₹${latestCmp}`:'—')):(latestCmp?`₹${latestCmp}`:'—')}</span></div>
+                    ${fields.expiry?`<div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.88rem;">${fields.expiry}</span></div>`:''}
+                    ${isClosed&&fields.entry&&exitPrice?`<div class="metric-col"><span class="metric-label">P&L / Lot</span><span class="metric-value ${exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice>fields.entry?'+':''}₹${((exitPrice-fields.entry)).toFixed(0)} pts</span></div>`:''}
                 </div>`;
         } else {
             cardBodyHtml = `<div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
@@ -1513,8 +1521,6 @@
         if (why) {
             if (whyVisible) {
                 whyHtml = `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`;
-            } else if (whyOldEnough) {
-                whyHtml = `<div class="why-locked" onclick="showWhyPopup('${post.id}')"><span>📝</span><span class="why-locked-text">Why I took this trade — Tap to view</span><span style="font-size:0.7rem;color:var(--primary);margin-left:auto;">→</span></div>`;
             } else {
                 whyHtml = `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`;
             }
@@ -1570,10 +1576,12 @@
             // Fetch ALL posts — visibility (teased vs full) handled client-side
             const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
 
-            let readMap = {};
+            let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
                 const receipts = await sbFetch(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
                 receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
+                _localReadCache = readMap;
+                try { localStorage.setItem('t2s_read_cache', JSON.stringify(readMap)); } catch(e) {}
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
@@ -1649,7 +1657,7 @@
             const fields  = post.post_type==='trade_alert' ? extractTradeAlertFields(post.content) : null;
             const why     = getWhyContent(post.content);
             const mainContent = getMainContent(post.content);
-            const whyVisible = isAdmin || memberTier==='paid' || (isClosed && daysSincePost(post)>=6);
+            const whyVisible = isAdmin || memberTier === 'paid';
 
             if (showTeased) {
                 // ── TEASED: free member, trade locked (no exit yet) ──
@@ -1739,14 +1747,21 @@
 
         container.innerHTML = html;
 
-        // Auto mark as read after 2s (only visible cards)
+        // Auto mark as read after 2s — only when Updates tab is actually visible
         setTimeout(() => {
+            const updSection = document.getElementById('updates');
+            if (!updSection || !updSection.classList.contains('active')) return;
             parentPosts.forEach(p => {
                 if(!readMap[p.id]) {
                     const card = document.getElementById(`ucard-${p.id}`);
-                    if(card) { card.classList.remove('unread'); markPostRead(p.id); }
+                    if(card) {
+                        card.classList.remove('unread');
+                        markPostRead(p.id);
+                        _localReadCache[p.id] = new Date().toISOString();
+                    }
                 }
             });
+            try { localStorage.setItem('t2s_read_cache', JSON.stringify(_localReadCache)); } catch(e) {}
             updateUnreadBadge(0);
         }, 2000);
     }
