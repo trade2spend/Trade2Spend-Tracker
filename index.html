@@ -35,7 +35,7 @@
             --border: #e5e5e5;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
-        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; overflow-y: auto; -webkit-overflow-scrolling: touch; }
         .app-container { width: 100%; max-width: 600px; min-height: 100vh; position: relative; padding-bottom: 80px; }
         
         /* --- STICKY HEADER & ANIMATION --- */
@@ -260,6 +260,18 @@
         .why-content { font-size: 0.82rem; color: #78350f; line-height: 1.55; }
         .why-locked { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #fdf6e3; border: 1px solid #fde68a; border-radius: 8px; margin: 4px 12px 8px; cursor: pointer; }
         .why-locked-text { font-size: 0.78rem; color: #92400e; font-weight: 600; }
+        /* ── WHY POPUP ── */
+        #whyPopup { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;z-index:1001;justify-content:center;align-items:center;backdrop-filter:blur(4px); }
+        .why-popup-box { background:#fff;width:90%;max-width:380px;border-radius:16px;padding:24px 20px;position:relative;box-shadow:0 10px 30px rgba(0,0,0,0.15); }
+        .why-popup-title { font-size:1rem;font-weight:700;color:#78350f;margin-bottom:12px;display:flex;align-items:center;gap:8px; }
+        .why-popup-body { font-size:0.85rem;color:#555;line-height:1.65;margin-bottom:16px; }
+        .why-popup-note { font-size:0.7rem;color:#aaa;font-style:italic;margin-bottom:0; }
+        /* ── EXIT PROGRESS BAR ── */
+        .exit-progress { margin:0 12px 8px;padding:5px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;font-size:0.73rem;font-weight:700;color:#c2410c; }
+        .exit-progress.full { background:#dcfce7;border-color:#bbf7d0;color:#15803d; }
+        /* ── YET TO TRIGGER ── */
+        .trigger-banner { padding:4px 12px 10px;display:flex;align-items:center;gap:6px;border-top:1px dashed #ede8f5;margin-top:2px; }
+        .not-triggered-pill { background:#f1f5f9;color:#64748b;border-radius:6px;padding:4px 10px;font-size:0.73rem;font-weight:700; }
 
         /* ── CLOSED TRADE BAR ── */
         .closed-trade-bar { background: #dcfce7; border-top: 1px solid #bbf7d0; padding: 5px 12px; display: flex; justify-content: space-between; align-items: center; }
@@ -440,7 +452,7 @@
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
-        if(tabId === 'updates') { updateUnreadBadge(0); _updatesTabViewed = true; }
+        if(tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => updateUnreadBadge(0), 2500); }
         if(tabId === 'trades') fetchTradeAlerts();
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
@@ -1011,6 +1023,67 @@
     function getMainContent(c) { return (c||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').trim(); }
     function getWhyContent(c) { const m=(c||'').match(/\[WHY\]([\s\S]*?)\[\/WHY\]/i); return m?m[1].trim():null; }
 
+    // ── DATE + TIME FORMATTER ─────────────────────────────────────────────────
+    function formatPostDateTime(ts) {
+        const d = new Date(ts);
+        const tz = { timeZone: 'Asia/Kolkata' };
+        const dateStr = d.toLocaleDateString('en-IN', { day:'numeric', month:'short', ...tz });
+        const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true, ...tz });
+        return `${dateStr}, ${timeStr}`;
+    }
+
+    // ── TRADE STATE (for free member unlock logic) ────────────────────────────
+    function getTradeState(post, replies) {
+        const validReplies = (replies||[]).filter(r => !(r.content||'').includes('[T2S_UNLOCK]'));
+        if (validReplies.length > 0) return 'triggered';
+        const tz = { timeZone:'Asia/Kolkata' };
+        const nowIST  = new Date(new Date().toLocaleString('en-US', tz));
+        const postIST = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US', tz));
+        if (postIST.toDateString() !== nowIST.toDateString()) return 'not_triggered';
+        return (nowIST.getHours()*60+nowIST.getMinutes()) < (15*60+30) ? 'yet_to_trigger' : 'not_triggered';
+    }
+
+    // ── PROGRESSIVE FIELD UNLOCK FOR FREE MEMBERS ────────────────────────────
+    function getFreeUnlockedFields(replies) {
+        const u = { callPut:false, entry:false, expiry:false, cmp:false, sl:false, all:false };
+        for (const r of (replies||[])) {
+            const c = r.content||'';
+            if (c.includes('[T2S_UNLOCK]')) { u.all=true; return u; }
+            if (c.trim().length > 3) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
+            if (/\bsl\b|\bstop[\s-]?loss\b/i.test(c)) u.sl=true;
+        }
+        return u;
+    }
+
+    // ── CUMULATIVE EXIT % ─────────────────────────────────────────────────────
+    function getCumulativeExit(replies) {
+        let cum = 0;
+        const sorted = [...(replies||[])].reverse(); // oldest first
+        for (const r of sorted) {
+            const p = parseFollowUpContent(r.content||'');
+            if (p.isFullExit) return 100;
+            if (p.exitPct) cum = Math.min(100, cum + p.exitPct);
+        }
+        return cum;
+    }
+
+    // ── LATEST SL VALUE ───────────────────────────────────────────────────────
+    function getCurrentSL(replies) {
+        let sl = null;
+        const sorted = [...(replies||[])].reverse();
+        for (const r of sorted) { const p=parseFollowUpContent(r.content||''); if(p.slRevised) sl=p.slRevised; }
+        return sl ? (sl==='cost'?'Cost (No Loss)':'₹'+sl) : null;
+    }
+
+    // ── WHY POPUP ─────────────────────────────────────────────────────────────
+    const _whyMap = {};
+    function showWhyPopup(postId) {
+        const why = _whyMap[postId]||'';
+        document.getElementById('why-popup-content').innerHTML = sanitizeHtml(why).replace(/\n/g,'<br>');
+        document.getElementById('whyPopup').style.display = 'flex';
+    }
+    function closeWhyPopup() { document.getElementById('whyPopup').style.display='none'; }
+
     // ── UNLOCK / CLOSED STATE ─────────────────────────────────────────────────
     function isTradeUnlocked(replies) {
         if (!replies||!replies.length) return false;
@@ -1133,17 +1206,20 @@
 
         try {
             const [tradeParents, generalParents, allFollowUps] = await Promise.all([
-                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=30', {method:'GET'}),
-                sbFetch('posts?is_deleted=eq.false&post_type=eq.general&parent_id=is.null&order=sent_at.desc&limit=20', {method:'GET'}),
-                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=300', {method:'GET'})
+                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
+                sbFetch('posts?is_deleted=eq.false&post_type=eq.general&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
+                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', {method:'GET'})
             ]);
             const replyMap = {};
             allFollowUps.forEach(r => {
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
                 replyMap[r.parent_id].push(r);
             });
-            // Include general posts that have follow-ups (trade threads posted via General tab)
-            const generalWithReplies = generalParents.filter(p => (replyMap[p.id]||[]).length > 0);
+            // Include general posts that have follow-ups OR contain trade-related keywords
+            const tradeKw = /buying|selling|\bce\b|\bpe\b|\bcall\b|\bput\b|nifty|banknifty|sensex|entry\s+at|expiry/i;
+            const generalWithReplies = generalParents.filter(p =>
+                (replyMap[p.id]||[]).length > 0 || tradeKw.test(p.content||'')
+            );
             const allTradeParents = [...tradeParents, ...generalWithReplies]
                 .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
             renderTradeAlerts(allTradeParents, replyMap, memberTier, isAdmin);
@@ -1227,30 +1303,33 @@
     }
 
     function buildTradeAlertCard(post, postReplies, memberTier, isAdmin, isFreeViewer) {
-        const isPaidOnly  = post.audience === 'paid_only';
-        const isClosed    = isTradeFullyClosed(post, postReplies);
-        const isUnlocked  = isClosed || isTradeUnlocked(postReplies);
-        const showTeased  = isFreeViewer && isPaidOnly && !isUnlocked;
-        const timeStr     = formatPostTime(post.sent_at||post.created_at);
-        const fields      = extractTradeAlertFields(post.content);
-        const why         = getWhyContent(post.content);
-        const mainContent = getMainContent(post.content);
-        const whyVisible  = isAdmin || memberTier==='paid' || (isClosed && daysSincePost(post)>=6);
-        const tradeKey    = (fields.instrument&&fields.optType&&fields.strike)
+        const isPaidOnly   = post.audience === 'paid_only';
+        const isClosed     = isTradeFullyClosed(post, postReplies);
+        const fields       = extractTradeAlertFields(post.content);
+        const why          = getWhyContent(post.content);
+        const mainContent  = getMainContent(post.content);
+        const dateTimeStr  = formatPostDateTime(post.sent_at||post.created_at);
+        const whyOldEnough = daysSincePost(post) >= 7;
+        const tradeKey     = (fields.instrument&&fields.optType&&fields.strike)
             ? `${fields.instrument}-${fields.optType}-${fields.strike}` : '';
 
-        if (showTeased) {
-            const instrName = fields.instrument || 'Trade Alert';
-            const strikeStr = fields.strike || '';
-            const visibleReplies = postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]'));
-            const fupHint = visibleReplies.length>0
-                ? `<div class="teased-followup-hint">↳ ${visibleReplies.length} follow-up${visibleReplies.length>1?'s':''} — tap to unlock</div>` : '';
+        if (why) _whyMap[post.id] = why;
+
+        const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;background:var(--primary);color:#fff;border-radius:5px;padding:2px 7px;font-size:0.72rem;font-weight:600;">🔒</span>`;
+
+        // ── 1. PAID-ONLY → free member sees teased lock card ─────────────────
+        if (isFreeViewer && isPaidOnly) {
+            const instrName = fields.instrument||'Trade Alert';
+            const strikeStr = fields.strike||'';
+            const visReplies = postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]'));
+            const fupHint = visReplies.length>0
+                ? `<div class="teased-followup-hint">↳ ${visReplies.length} follow-up${visReplies.length>1?'s':''} — tap to unlock</div>` : '';
             return `<div class="teased-card" data-trade-key="${tradeKey}" onclick="showPopup()" style="cursor:pointer;">
                 <div class="update-header" style="padding-bottom:2px;">
                     <span style="font-size:1rem;font-weight:800;color:var(--primary);">${instrName}${strikeStr?` <span style="font-weight:700;color:var(--text-main);">${strikeStr}</span>`:''}</span>
-                    <span class="update-time">${timeStr}</span>
+                    <span class="update-time">${dateTimeStr}</span>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 8px;padding:4px 12px 10px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 8px;padding:4px 12px 8px;">
                     <div class="metric-col"><span class="metric-label">Call / Put</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                     <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
@@ -1258,30 +1337,124 @@
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                 </div>
+                <div style="padding:0 12px 8px;font-size:0.68rem;color:var(--primary);font-weight:600;">🔒 Premium Members Only</div>
                 ${fupHint}</div>`;
         }
 
-        // Latest CMP from replies (reps[0] = newest)
+        // ── 2. FREE MEMBER + trade not closed → progressive unlock ───────────
+        if (isFreeViewer && !isClosed) {
+            const tradeState = getTradeState(post, postReplies);
+            const instrName  = fields.instrument||'Trade Alert';
+            const strikeStr  = fields.strike||'';
+
+            // 2a. NOT TRIGGERED — collapsed card
+            if (tradeState === 'not_triggered') {
+                return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.65;">
+                    <div class="update-header">
+                        <span style="font-size:0.95rem;font-weight:800;color:var(--text-muted);">${instrName}${strikeStr?' '+strikeStr:''}</span>
+                        <span class="update-time">${dateTimeStr}</span>
+                    </div>
+                    <div style="padding:4px 12px 10px;"><span class="not-triggered-pill">⚫ Not Triggered</span></div>
+                </div>`;
+            }
+
+            // 2b. YET TO TRIGGER — locked grid
+            if (tradeState === 'yet_to_trigger') {
+                return `<div class="teased-card" data-trade-key="${tradeKey}">
+                    <div class="update-header" style="padding-bottom:2px;">
+                        <span style="font-size:1rem;font-weight:800;color:var(--primary);">${instrName}${strikeStr?` <span style="font-weight:700;color:var(--text-main);">${strikeStr}</span>`:''}</span>
+                        <span class="update-time">${dateTimeStr}</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 8px;padding:4px 12px 8px;">
+                        <div class="metric-col"><span class="metric-label">Call / Put</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
+                        <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
+                        <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
+                        <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
+                        <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
+                        <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
+                    </div>
+                    <div class="trigger-banner">
+                        <span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>
+                        <span style="font-size:0.65rem;color:var(--text-muted);">Waiting for market entry</span>
+                    </div>
+                </div>`;
+            }
+
+            // 2c. TRIGGERED — progressively unlock fields
+            const unlocked = getFreeUnlockedFields(postReplies);
+            let latestCmp = null;
+            for (const r of postReplies) {
+                const fp = parseFollowUpContent(r.content||'');
+                if (fp.cmp) { latestCmp=fp.cmp; break; }
+                if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
+            }
+            const cumExit   = getCumulativeExit(postReplies);
+            const currentSL = getCurrentSL(postReplies);
+            const showCP    = unlocked.all||unlocked.callPut;
+            const showEntry = unlocked.all||unlocked.entry;
+            const showExpiry= unlocked.all||unlocked.expiry;
+            const showCmp   = unlocked.all||unlocked.cmp;
+            const showSL    = unlocked.all||unlocked.sl;
+            const typeClass = (fields.optType||'').toLowerCase();
+
+            let cardBodyHtml;
+            if (fields.instrument) {
+                const typeBoxHtml = showCP && fields.optType
+                    ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
+                    : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">${lockBtn}</div>`;
+                cardBodyHtml = `
+                    <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+                        <div class="trade-title-box">
+                            ${typeBoxHtml}
+                            <div>
+                                <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:500;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
+                                ${showExpiry&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                            </div>
+                        </div>
+                        <span style="background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">✅ Triggered</span>
+                    </div>
+                    <div class="trade-metrics" style="padding:6px 12px 10px;">
+                        <div class="metric-col"><span class="metric-label">Entry</span>
+                            <span class="metric-value" style="font-size:0.88rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                        <div class="metric-col"><span class="metric-label">Latest CMP</span>
+                            <span class="metric-value" style="font-size:0.88rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'—'):lockBtn}</span></div>
+                        <div class="metric-col"><span class="metric-label">SL</span>
+                            <span class="metric-value" style="font-size:0.88rem;">${showSL?(currentSL||'—'):lockBtn}</span></div>
+                        <div class="metric-col"><span class="metric-label">Why</span>
+                            <span class="metric-value" style="font-size:0.88rem;">${why?(whyOldEnough?`<span onclick="showWhyPopup('${post.id}')" style="cursor:pointer;color:var(--primary);font-size:0.78rem;font-weight:600;">View →</span>`:lockBtn):'—'}</span></div>
+                    </div>`;
+            } else {
+                cardBodyHtml = `<div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
+            }
+
+            let exitBar = '';
+            if (cumExit>0&&cumExit<100) exitBar=`<div class="exit-progress">Exited ${cumExit}% · Holding ${100-cumExit}%</div>`;
+            else if (cumExit>=100) exitBar=`<div class="exit-progress full">✅ Fully Exited</div>`;
+
+            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
+                <div class="update-header"><span class="update-time">${dateTimeStr}</span></div>
+                ${cardBodyHtml}${exitBar}
+                ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
+            </div>`;
+        }
+
+        // ── 3. ADMIN / PAID / CLOSED TRADE → full card ───────────────────────
+        // "Any trade that is over must be fully displayed other than Why"
+        const whyVisible = isAdmin || memberTier==='paid' || whyOldEnough;
+
         let latestCmp = null;
         for (const r of postReplies) {
             const fp = parseFollowUpContent(r.content||'');
-            if (fp.cmp) { latestCmp = fp.cmp; break; }
-            if (fp.price && (fp.type==='cmp_update'||fp.type==='status')) { latestCmp = fp.price; break; }
+            if (fp.cmp) { latestCmp=fp.cmp; break; }
+            if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
         }
 
-        const canSeeFull = isAdmin || memberTier==='paid' || post.audience!=='paid_only';
-
-        // Build card body — structured when fields parsed, raw text fallback
         let cardBodyHtml;
         if (fields.instrument) {
-            const typeClass = (fields.optType||'').toLowerCase();
-            const typeBoxHtml = canSeeFull && fields.optType
+            const typeClass   = (fields.optType||'').toLowerCase();
+            const typeBoxHtml = fields.optType
                 ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`;
-            const entryDisplay = canSeeFull && fields.entry
-                ? `₹${fields.entry}`
-                : `<span onclick="showPopup()" style="cursor:pointer;background:var(--primary);color:#fff;border-radius:5px;padding:2px 7px;font-size:0.72rem;font-weight:600;">🔒</span>`;
-            const cmpDisplay = latestCmp ? `₹${latestCmp}` : '—';
             cardBodyHtml = `
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
@@ -1293,44 +1466,42 @@
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;">
-                    <div class="metric-col">
-                        <span class="metric-label">Entry</span>
-                        <span class="metric-value" style="font-size:0.88rem;">${entryDisplay}</span>
-                    </div>
-                    <div class="metric-col">
-                        <span class="metric-label">Latest CMP</span>
-                        <span class="metric-value" style="font-size:0.88rem;">${cmpDisplay}</span>
-                    </div>
+                    <div class="metric-col"><span class="metric-label">Entry</span>
+                        <span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                    <div class="metric-col"><span class="metric-label">Latest CMP</span>
+                        <span class="metric-value" style="font-size:0.88rem;">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
                 </div>`;
         } else {
-            const renderedFallback = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
-            cardBodyHtml = `<div class="update-body"><div class="update-content">${renderedFallback}</div></div>`;
+            cardBodyHtml = `<div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
         }
 
-        // Full card — build follow-ups
+        // Follow-ups
         let repliesHtml = '';
         if (postReplies.length > 0) {
-            let cumExit = 0, currentSL = null;
+            let cumExit=0, currentSL=null;
             const visibleReplies = postReplies.filter(r => {
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                 if (r.audience==='paid_only' && isFreeViewer) return false;
                 return true;
             });
             if (visibleReplies.length > 0) {
-                const tid = `replies-${post.id}`;
-                const n = visibleReplies.length;
-                repliesHtml = `<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
+                const tid=`replies-${post.id}`, n=visibleReplies.length;
+                repliesHtml=`<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
                     <div class="thread-replies" id="${tid}" style="display:none;">`;
                 visibleReplies.forEach(reply => {
-                    const parsed = parseFollowUpContent(reply.content||'');
-                    const prevSL = currentSL;
-                    if (parsed.slRevised) currentSL = parsed.slRevised;
-                    if (parsed.exitPct) cumExit += parsed.exitPct;
-                    repliesHtml += renderFollowUpCard(reply, parsed, cumExit, prevSL);
+                    const parsed=parseFollowUpContent(reply.content||'');
+                    const prevSL=currentSL;
+                    if (parsed.slRevised) currentSL=parsed.slRevised;
+                    if (parsed.exitPct) cumExit+=parsed.exitPct;
+                    repliesHtml+=renderFollowUpCard(reply,parsed,cumExit,prevSL);
                 });
-                repliesHtml += `</div>`;
+                repliesHtml+=`</div>`;
             }
         }
+
+        const cumExitFull = getCumulativeExit(postReplies);
+        let exitBar = '';
+        if (!isClosed && cumExitFull>0 && cumExitFull<100) exitBar=`<div class="exit-progress">Exited ${cumExitFull}% · Holding ${100-cumExitFull}%</div>`;
 
         let closedBar = '';
         if (isClosed && fields.entry) {
@@ -1340,9 +1511,13 @@
 
         let whyHtml = '';
         if (why) {
-            whyHtml = whyVisible
-                ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
-                : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`;
+            if (whyVisible) {
+                whyHtml = `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`;
+            } else if (whyOldEnough) {
+                whyHtml = `<div class="why-locked" onclick="showWhyPopup('${post.id}')"><span>📝</span><span class="why-locked-text">Why I took this trade — Tap to view</span><span style="font-size:0.7rem;color:var(--primary);margin-left:auto;">→</span></div>`;
+            } else {
+                whyHtml = `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`;
+            }
         }
 
         const adminHtml = isAdmin ? `
@@ -1355,18 +1530,15 @@
                 <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
                 <div class="admin-compose-row">
                     <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
-                    <button class="admin-compose-send" onclick="sendReply('${post.id}','trades')">Send Follow-up →</button>
+                    <button style="padding:9px 10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit;" onclick="forceUnlock('${post.id}')">🔓 Unlock</button>
+                    <button class="admin-compose-send" onclick="sendReply('${post.id}','trades')">Send →</button>
                 </div>
             </div>` : '';
 
         return `
             <div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
-                <div class="update-header">
-                    <span class="update-time">${timeStr}</span>
-                </div>
-                ${cardBodyHtml}
-                ${whyHtml}
-                ${closedBar}
+                <div class="update-header"><span class="update-time">${dateTimeStr}</span></div>
+                ${cardBodyHtml}${whyHtml}${exitBar}${closedBar}
                 ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
             </div>
             ${repliesHtml}
@@ -1405,9 +1577,15 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            // Unread badge — count unread general/market posts
-            const generalTypes = ['market_update','general'];
-            const unreadCount = posts.filter(p => !p.parent_id && generalTypes.includes(p.post_type) && !readMap[p.id]).length;
+            // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
+            const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
+            let unreadCount;
+            if (memberId && Object.keys(readMap).length > 0) {
+                unreadCount = posts.filter(p => !p.parent_id && !readMap[p.id] &&
+                    (memberTier==='paid'||isAdmin||p.audience!=='paid_only')).length;
+            } else {
+                unreadCount = posts.filter(p => !p.parent_id && new Date(p.sent_at||p.created_at)>=cutoffT1).length;
+            }
             // Only show badge if user hasn't visited Updates tab this session
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
@@ -1571,6 +1749,22 @@
             });
             updateUnreadBadge(0);
         }, 2000);
+    }
+
+    // ── ADMIN FORCE UNLOCK ────────────────────────────────────────────────────
+    async function forceUnlock(parentId) {
+        if (!confirm('Force unlock this card for all free members?')) return;
+        try {
+            await sbFetch('posts', {
+                method:'POST',
+                body: JSON.stringify({
+                    content:'[T2S_UNLOCK]', post_type:'follow_up', audience:'all',
+                    allow_sharing:false, is_deleted:false, parent_id:parentId,
+                    sent_at: new Date().toISOString()
+                })
+            });
+            fetchTradeAlerts();
+        } catch(e) { alert('Failed. Check connection.'); }
     }
 
     // ── ADMIN NEW TRADE ALERT (from Trade Alert tab) ─────────────────────────
@@ -1821,6 +2015,16 @@
       navigator.serviceWorker.register('sw.js').catch(()=>{});
     }
 </script>
+
+<!-- WHY POPUP (for posts older than T-7 days) -->
+<div id="whyPopup" onclick="if(event.target.id==='whyPopup')closeWhyPopup()">
+  <div class="why-popup-box">
+    <div class="close-btn" onclick="closeWhyPopup()">✕</div>
+    <div class="why-popup-title">📝 Why this trade</div>
+    <div class="why-popup-body" id="why-popup-content"></div>
+    <p class="why-popup-note">Educational purposes only · Not investment advice</p>
+  </div>
+</div>
 
 <!-- Global Sticky Disclaimer -->
 <div class="global-disclaimer-bar">Educational Purposes Only · Not An Investment Advice<br>WE ARE NOT SEBI REGISTERED</div>
