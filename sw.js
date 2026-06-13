@@ -1,4 +1,4 @@
-const CACHE = 't2s-v1';
+const CACHE = 't2s-v3';
 const SHELL = ['./index.html','./login.html','./welcome.html','./logo.png','./manifest.json'];
 
 self.addEventListener('install', e => {
