@@ -568,10 +568,10 @@
                 moversEl.style.display = 'block';
                 const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
                 const losers  = [...data.losers].sort((a,b) => a.change - b.change);
-                document.getElementById('gainers-list').innerHTML = gainers.slice(0,8).map(s=>
+                document.getElementById('gainers-list').innerHTML = gainers.map(s=>
                     `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
                     + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
-                document.getElementById('losers-list').innerHTML = losers.slice(0,8).map(s=>
+                document.getElementById('losers-list').innerHTML = losers.map(s=>
                     `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
                     + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
             }
@@ -803,6 +803,16 @@
                                 </div>
                             </div>
                             <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+                                <div class="perf-grid" style="margin-bottom:12px;gap:8px;">
+                                    <div class="metric-col">
+                                        <span class="metric-label">TRADES</span>
+                                        <span class="metric-value" style="font-size:0.9rem;">${summary.totalTrades ? summary.totalTrades + ' (' + (summary.wins||0) + 'W · ' + (summary.losses||0) + 'L)' : '--'}</span>
+                                    </div>
+                                    <div class="metric-col">
+                                        <span class="metric-label">MAX P&L / LOT</span>
+                                        <span class="metric-value" style="font-size:0.9rem;">₹${(summary.maxProfit||0).toLocaleString()}</span>
+                                    </div>
+                                </div>
                                 ${tradeRows}
                             </div>
                         </div>
@@ -973,12 +983,18 @@
         const loNoFuture = lo.replace(/(?:till|until|if|when)\s+(?:the\s+)?(?:sl|stop\s*loss)\s+(?:is\s+)?(?:hit|triggered)/gi,'');
         if (/\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(loNoFuture)) { r.isFullExit=true; r.type='exit'; }
         if (/fully\s+exit|full\s+exit|position\s+clos|clos.*position|booked?\s+full|100\s*%\s*exit|exiting\s+full|exit\s+all/.test(lo)) { r.isFullExit=true; r.type='exit'; }
+        if (/\bfully\s+out\b|trade\s+(?:is\s+)?(?:done|over|closed?)\b|exit(?:ed|ing)\s+(?:all|full|everything)|position\s+(?:done|over|exited?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
         // Exit %
         const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
         if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
         // Leading option price
         const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\s*(?:[,\n\r\s]|$)/);
         if (lm) { const n=parseFloat(lm[1]); if(n>5&&n<9999){ r.price=n; if(r.type==='status') r.type=r.exitPct?'exit':'cmp_update'; } }
+        // Also extract price from "at ₹XX" or "₹XX" patterns (covers "triggered at ₹222", "exit at ₹300")
+        if (!r.price) {
+            const pm = text.match(/(?:(?:at|@)\s*₹?\s*|₹\s*)(\d{2,4}(?:\.\d+)?)\b/i);
+            if (pm) { const n=parseFloat(pm[1]); if(n>5&&n<9999) r.price=n; }
+        }
         // SL to cost (check before numeric SL)
         if (/sl\s+(?:to|at|moved?\s+to|revised?\s+to|of\s+remaining\s+to)\s+cost|modif[a-z]*\s+sl[^0-9]*to\s+cost|sl\s+at\s+entry|at\s+breakeven/i.test(text)) {
             r.slRevised='cost'; r.noLossPossible=true; if(!r.exitPct) r.type='sl_update';
@@ -1296,6 +1312,12 @@
                         found.style.backgroundColor = '';
                         setTimeout(() => { found.style.transition = ''; }, 500);
                     }, 1800);
+                } else {
+                    const _toast = document.createElement('div');
+                    _toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:8px 18px;border-radius:20px;font-size:0.78rem;font-weight:600;z-index:999;pointer-events:none;white-space:nowrap;';
+                    _toast.textContent = 'Historical trade — not in current Trade Alert view';
+                    document.body.appendChild(_toast);
+                    setTimeout(() => _toast.remove(), 2500);
                 }
             }, 700);
         }
@@ -1323,6 +1345,12 @@
             const visReplies = postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]'));
             const fupHint = visReplies.length>0
                 ? `<div class="teased-followup-hint">↳ ${visReplies.length} follow-up${visReplies.length>1?'s':''} — tap to unlock</div>` : '';
+            const _trState = getTradeState(post, postReplies);
+            const _statePill = _trState==='yet_to_trigger'
+                ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
+                : _trState==='triggered'
+                ? `<span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered — details for Premium members</span>`
+                : `<span class="not-triggered-pill">⚫ Not Triggered</span>`;
             return `<div class="teased-card" data-trade-key="${tradeKey}" onclick="showPopup()" style="cursor:pointer;">
                 <div class="update-header" style="padding-bottom:2px;">
                     <span style="font-size:1rem;font-weight:800;color:var(--primary);">${instrName}${strikeStr?` <span style="font-weight:700;color:var(--text-main);">${strikeStr}</span>`:''}</span>
@@ -1336,7 +1364,7 @@
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
                 </div>
-                <div style="padding:0 12px 8px;font-size:0.68rem;color:var(--primary);font-weight:600;">🔒 Premium Members Only</div>
+                <div class="trigger-banner">${_statePill}</div>
                 ${fupHint}</div>`;
         }
 
@@ -1353,7 +1381,7 @@
                         <span style="font-size:0.95rem;font-weight:800;color:var(--text-muted);">${instrName}${strikeStr?' '+strikeStr:''}</span>
                         <span class="update-time">${dateTimeStr}</span>
                     </div>
-                    <div style="padding:4px 12px 10px;"><span class="not-triggered-pill">⚫ Removed</span></div>
+                    <div style="padding:4px 12px 10px;display:flex;justify-content:space-between;align-items:center;"><span class="not-triggered-pill">⚫ Not Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);font-weight:500;">Removed</span></div>
                 </div>`;
             }
 
@@ -1409,7 +1437,7 @@
                                 ${showExpiry&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
                             </div>
                         </div>
-                        <span style="background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'✅ SELLING':fields.action==='BUY'?'✅ BUYING':'✅ Triggered'}</span>
+                        <span style="background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
                     </div>
                     <div class="trade-metrics" style="padding:6px 12px 10px;">
                         <div class="metric-col"><span class="metric-label">Entry</span>
@@ -1429,15 +1457,35 @@
             if (cumExit>0&&cumExit<100) exitBar=`<div class="exit-progress">Exited ${cumExit}% · Holding ${100-cumExit}%</div>`;
             else if (cumExit>=100) exitBar=`<div class="exit-progress full">✅ Fully Exited</div>`;
 
+            // Follow-ups visible to free members once triggered
+            let freeRepliesHtml = '';
+            const _freeVisReplies = postReplies.filter(r => {
+                if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
+                if (r.audience==='paid_only') return false;
+                return true;
+            });
+            if (_freeVisReplies.length > 0) {
+                let _cumExitFR = 0;
+                const _tid = `replies-${post.id}`;
+                const _n = _freeVisReplies.length;
+                freeRepliesHtml = `<button class="replies-toggle" id="btn-${_tid}" data-count="${_n}" onclick="toggleReplies('${_tid}')">↳ ${_n} follow-up${_n>1?'s':''} — tap to view</button><div class="thread-replies" id="${_tid}" style="display:none;">`;
+                _freeVisReplies.forEach(reply => {
+                    const _fp = parseFollowUpContent(reply.content||'');
+                    if (_fp.exitPct) _cumExitFR = Math.min(100, _cumExitFR + _fp.exitPct);
+                    freeRepliesHtml += renderFollowUpCard(reply, _fp, _cumExitFR, null);
+                });
+                freeRepliesHtml += `</div>`;
+            }
+
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
                 <div class="update-header"><span class="update-time">${dateTimeStr}</span></div>
-                ${cardBodyHtml}${exitBar}
+                ${cardBodyHtml}${exitBar}${freeRepliesHtml}
                 ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
             </div>`;
         }
 
         // ── 3. ADMIN / PAID / CLOSED TRADE → full card ───────────────────────
-        const whyVisible = isAdmin || memberTier === 'paid';
+        const whyVisible = isAdmin || memberTier === 'paid' || whyOldEnough;
 
         let latestCmp = null;
         for (const r of postReplies) {
@@ -1458,8 +1506,8 @@
                 ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`;
             const actionBadge = isClosed ? `<span class="update-badge badge-closed-trade">✅ Closed</span>` :
-                fields.action==='SELL' ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">SELLING</span>` :
-                fields.action==='BUY'  ? `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">BUYING</span>` : '';
+                fields.action==='SELL' ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>` :
+                `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
             cardBodyHtml = `
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
@@ -1657,7 +1705,8 @@
             const fields  = post.post_type==='trade_alert' ? extractTradeAlertFields(post.content) : null;
             const why     = getWhyContent(post.content);
             const mainContent = getMainContent(post.content);
-            const whyVisible = isAdmin || memberTier === 'paid';
+            const whyOldEnough2 = daysSincePost(post) >= 7;
+            const whyVisible = isAdmin || memberTier === 'paid' || whyOldEnough2;
 
             if (showTeased) {
                 // ── TEASED: free member, trade locked (no exit yet) ──
