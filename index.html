@@ -148,8 +148,7 @@
         .perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .history-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; padding: 14px 16px; cursor: pointer; }
         .history-card-row { display: flex; justify-content: space-between; align-items: center; }
-        .hist-arrow { font-size: 0.7rem; color: var(--text-muted); transition: transform .2s; }
-        .hist-arrow.open { transform: rotate(90deg); }
+        .hist-arrow { font-size: 0.7rem; color: var(--text-muted); }
         .trade-detail-row { padding: 9px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
         .trade-detail-row:last-child { border-bottom: none; }
         .trade-win-badge { font-size: 0.6rem; font-weight: 700; background: var(--green); color: #fff; border-radius: 3px; padding: 1px 5px; display: inline-block; margin-top: 2px; }
@@ -186,7 +185,7 @@
         .updates-sub-tab { flex:1; padding:7px 10px; border:1.5px solid #ede8f5; border-radius:20px; background:#fff; color:#888; font-size:0.78rem; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.18s; }
         .updates-sub-tab.active { background:#4a2a78; color:#fff; border-color:#4a2a78; }
         /* Global sticky disclaimer bar */
-        .global-disclaimer-bar { position:fixed; bottom:0; left:0; right:0; background:rgba(255,255,255,0.97); border-top:1px solid #ede8f5; text-align:center; padding:5px 16px 6px; font-size:0.72rem; color:#9ca3af; letter-spacing:0.4px; z-index:50; font-weight:500; backdrop-filter:blur(8px); }
+        .global-disclaimer-bar { position:fixed; bottom:0; left:0; right:0; background:rgba(255,255,255,0.97); border-top:1px solid #ede8f5; text-align:center; padding:3px 16px 4px; font-size:0.6rem; color:#b5bec9; letter-spacing:0.3px; z-index:50; font-weight:500; backdrop-filter:blur(8px); line-height:1.5; }
         .locked-card { background: var(--card-bg); border: 1px solid #fde68a; border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: box-shadow .15s; }
         .locked-blur-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 8px; }
         .blur-pill { height: 8px; border-radius: 4px; background: #e8e0f5; }
@@ -440,7 +439,7 @@
         document.getElementById(tabId).classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
-        if(tabId === 'updates') updateUnreadBadge(0);
+        if(tabId === 'updates') { updateUnreadBadge(0); _updatesTabViewed = true; }
         if(tabId === 'trades') fetchTradeAlerts();
         if(tabId === 'performance') fetchPerformance();
         if(tabId === 'updates') fetchUpdates();
@@ -862,6 +861,7 @@
     }
 
     let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
+    let _updatesTabViewed = false;
 
     async function sharePost(postId) {
         const card = document.getElementById('ucard-' + postId);
@@ -1032,9 +1032,11 @@
         }
         if (cum>=100) return true;
         if (reps.length>0 && !hasHolding) {
-            const pd = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+            // Use latest reply's date (reps[0] = newest, since allPosts sorted desc)
+            const latestRep = reps[0];
+            const lrd = new Date(new Date(latestRep.sent_at||latestRep.created_at).toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
             const td = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
-            if (pd.toDateString()!==td.toDateString()) return true;
+            if (lrd.toDateString()!==td.toDateString()) return true;
         }
         return false;
     }
@@ -1129,14 +1131,16 @@
         if (composeDiv) composeDiv.style.display = isAdmin ? 'block' : 'none';
 
         try {
-            const allPosts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', {method:'GET'});
+            const [tradeParents, allFollowUps] = await Promise.all([
+                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=30', {method:'GET'}),
+                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=300', {method:'GET'})
+            ]);
             const replyMap = {};
-            allPosts.filter(p=>p.parent_id).forEach(r=>{
-                if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[];
+            allFollowUps.forEach(r => {
+                if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
                 replyMap[r.parent_id].push(r);
             });
-            const tradePosts = allPosts.filter(p => !p.parent_id && p.post_type==='trade_alert');
-            renderTradeAlerts(tradePosts, replyMap, memberTier, isAdmin);
+            renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
         }
@@ -1179,24 +1183,35 @@
 
         container.innerHTML = html;
 
-        // Highlight & scroll to specific trade if navigating from Performance tab
+        // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
-            const key = window._highlightTradeKey;
+            const key = window._highlightTradeKey.toUpperCase();
             window._highlightTradeKey = null;
             setTimeout(() => {
-                const parts = key.split('-');
-                const instr = parts[0], strike = parts[2]||'';
-                const cards = container.querySelectorAll('.update-card,.teased-card');
+                const cards = container.querySelectorAll('[data-trade-key]');
+                let found = null;
                 for (const card of cards) {
-                    const txt = (card.dataset.content||'') + card.textContent;
-                    if (instr && txt.toUpperCase().includes(instr) && (!strike || txt.includes(strike))) {
-                        card.scrollIntoView({behavior:'smooth', block:'center'});
-                        const orig = card.style.outline;
-                        card.style.outline = '2px solid var(--primary)';
-                        card.style.transition = 'outline .3s';
-                        setTimeout(() => { card.style.outline = orig; }, 2500);
-                        break;
+                    const tKey = (card.dataset.tradeKey||'').toUpperCase();
+                    if (tKey && key && tKey.length > 0 && key.startsWith(tKey.split('-')[0])) {
+                        found = card; break;
                     }
+                }
+                if (!found) {
+                    // Fallback: text search
+                    const parts = key.split('-');
+                    const instr = parts[0];
+                    for (const card of container.querySelectorAll('.update-card,.teased-card')) {
+                        if (instr && (card.dataset.content||card.textContent).toUpperCase().includes(instr)) { found = card; break; }
+                    }
+                }
+                if (found) {
+                    found.scrollIntoView({behavior:'smooth', block:'center'});
+                    found.style.transition = 'background-color 0.4s ease';
+                    found.style.backgroundColor = '#ede9fe';
+                    setTimeout(() => {
+                        found.style.backgroundColor = '';
+                        setTimeout(() => { found.style.transition = ''; }, 500);
+                    }, 1800);
                 }
             }, 600);
         }
@@ -1229,6 +1244,52 @@
                     <span style="font-size:0.75rem;color:var(--text-muted);">🔒 CE/PE &nbsp;·&nbsp; 🔒 Entry &nbsp;·&nbsp; 🔒 SL &nbsp;·&nbsp; 🔒 Why</span>
                 </div>
                 ${fupHint}</div>`;
+        }
+
+        // Latest CMP from replies (reps[0] = newest)
+        let latestCmp = null;
+        for (const r of postReplies) {
+            const fp = parseFollowUpContent(r.content||'');
+            if (fp.cmp) { latestCmp = fp.cmp; break; }
+            if (fp.price && (fp.type==='cmp_update'||fp.type==='status')) { latestCmp = fp.price; break; }
+        }
+
+        const canSeeFull = isAdmin || memberTier==='paid' || post.audience!=='paid_only';
+
+        // Build card body — structured when fields parsed, raw text fallback
+        let cardBodyHtml;
+        if (fields.instrument) {
+            const typeClass = (fields.optType||'').toLowerCase();
+            const typeBoxHtml = canSeeFull && fields.optType
+                ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
+                : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`;
+            const entryDisplay = canSeeFull && fields.entry
+                ? `₹${fields.entry}`
+                : `<span onclick="showPopup()" style="cursor:pointer;background:var(--primary);color:#fff;border-radius:5px;padding:2px 7px;font-size:0.72rem;font-weight:600;">🔒</span>`;
+            const cmpDisplay = latestCmp ? `₹${latestCmp}` : '—';
+            cardBodyHtml = `
+                <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+                    <div class="trade-title-box">
+                        ${typeBoxHtml}
+                        <div>
+                            <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:500;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
+                            ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                        </div>
+                    </div>
+                </div>
+                <div class="trade-metrics" style="padding:6px 12px 10px;">
+                    <div class="metric-col">
+                        <span class="metric-label">Entry</span>
+                        <span class="metric-value" style="font-size:0.88rem;">${entryDisplay}</span>
+                    </div>
+                    <div class="metric-col">
+                        <span class="metric-label">Latest CMP</span>
+                        <span class="metric-value" style="font-size:0.88rem;">${cmpDisplay}</span>
+                    </div>
+                </div>`;
+        } else {
+            const renderedFallback = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
+            cardBodyHtml = `<div class="update-body"><div class="update-content">${renderedFallback}</div></div>`;
         }
 
         // Full card — build follow-ups
@@ -1283,14 +1344,13 @@
                 </div>
             </div>` : '';
 
-        const renderedContent = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
         return `
             <div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
                 <div class="update-header">
                     <span class="update-badge badge-trade-alert">📢 TRADE ALERT</span>
                     <span class="update-time">${timeStr}</span>
                 </div>
-                <div class="update-body"><div class="update-content">${renderedContent}</div></div>
+                ${cardBodyHtml}
                 ${whyHtml}
                 ${closedBar}
                 ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
@@ -1334,9 +1394,9 @@
             // Unread badge — count unread general/market posts
             const generalTypes = ['market_update','general'];
             const unreadCount = posts.filter(p => !p.parent_id && generalTypes.includes(p.post_type) && !readMap[p.id]).length;
-            // Only show badge if user is NOT on Updates tab right now
+            // Only show badge if user hasn't visited Updates tab this session
             const updSection = document.getElementById('updates');
-            if (!updSection || !updSection.classList.contains('active')) updateUnreadBadge(unreadCount);
+            if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
@@ -1530,6 +1590,7 @@
             document.getElementById('new-alert-text').value = '';
             toggleNewAlertBox();
             btn.disabled = false; btn.textContent = 'Post Alert →';
+            fetchTradeAlerts();
             alert('✅ Trade alert posted to members!');
         } catch(e) {
             alert('Failed to post. Check connection.');
@@ -1750,7 +1811,7 @@
 </script>
 
 <!-- Global Sticky Disclaimer -->
-<div class="global-disclaimer-bar">Educational Purposes Only · Not An Investment Advice · WE ARE NOT SEBI REGISTERED</div>
+<div class="global-disclaimer-bar">Educational Purposes Only · Not An Investment Advice<br>WE ARE NOT SEBI REGISTERED</div>
 
 <!-- SEBI Disclaimer Modal -->
 <div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
