@@ -774,6 +774,17 @@
 
     async function fetchPerformance() {
         const container = document.getElementById('history-container');
+        const _pc = _cLoad('t2s_perf_state', 5*60*1000);
+        if (_pc) {
+            container.innerHTML = _pc.histHtml || '';
+            document.getElementById('curr-month-name').innerText = _pc.currName || 'CURRENT MONTH';
+            document.getElementById('perf-winrate').innerText = _pc.currWinrate || '--%';
+            document.getElementById('perf-total').innerText = _pc.currTotal || '--';
+            document.getElementById('perf-max').innerText = _pc.currMax || '--';
+            const _dd = document.getElementById('curr-month-detail');
+            if (_dd) { _dd.innerHTML = _pc.currDetailHtml || ''; _dd.style.display = 'none'; }
+            return;
+        }
         container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;font-size:0.85rem;">Loading...</div>';
         try {
             const [tradePosts, allReplies] = await Promise.all([
@@ -822,9 +833,9 @@
             });
             // Merge history.json for past months not already in Supabase
             try {
-                const _hr = await fetch(DB_URLS.history + '?t=' + Date.now());
-                if (_hr.ok) {
-                    const _hj = await _hr.json();
+                let _hj = _cLoad('t2s_hist_json', 24*60*60*1000);
+                if (!_hj) { const _hr=await fetch(DB_URLS.history+'?t='+Date.now()); if(_hr.ok){_hj=await _hr.json();_cSave('t2s_hist_json',_hj);} }
+                if (_hj) {
                     const _ABR = {JAN:'January',FEB:'February',MAR:'March',APR:'April',MAY:'May',JUN:'June',JUL:'July',AUG:'August',SEP:'September',OCT:'October',NOV:'November',DEC:'December'};
                     const _NUM = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
                     (_hj.months || []).forEach(hm => {
@@ -888,6 +899,7 @@
                     </div>`;
             });
             if (months.length === 0) container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">No closed trades yet. Completed trades will appear here.</div>';
+            _cSave('t2s_perf_state', {histHtml:container.innerHTML, currName:document.getElementById('curr-month-name').innerText, currWinrate:document.getElementById('perf-winrate').innerText, currTotal:document.getElementById('perf-total').innerText, currMax:document.getElementById('perf-max').innerText, currDetailHtml:(document.getElementById('curr-month-detail')||{}).innerHTML||''});
         } catch(e) {
             console.error('Performance fetch failed', e);
             container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Unable to load. Check connection.</div>';
@@ -964,6 +976,8 @@
     let _localReadCache = {};
     try { _localReadCache = JSON.parse(localStorage.getItem('t2s_read_cache') || '{}'); } catch(e) {}
     let _updatesTabViewed = false;
+    function _cSave(k,v){try{localStorage.setItem(k,JSON.stringify({_t:Date.now(),_v:v}));}catch(e){}}
+    function _cLoad(k,ms){try{const x=JSON.parse(localStorage.getItem(k)||'null');if(!x)return null;if(ms&&Date.now()-x._t>ms)return null;return x._v;}catch(e){return null;}}
 
     async function sharePost(postId) {
         const card = document.getElementById('ucard-' + postId);
@@ -1297,9 +1311,10 @@
     async function fetchTradeAlerts() {
         const container = document.getElementById('trade-alert-container');
         if (!container) return;
-        // Only show loading spinner on first load — subsequent 30s refreshes update silently
         if (!container.dataset.loaded) {
-            container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div>';
+            const _ac = _cLoad('t2s_alerts_html');
+            if (_ac) { container.innerHTML = _ac; container.dataset.loaded = 'cached'; }
+            else container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div>';
         }
 
         const memberId = localStorage.getItem('t2s_member_id');
@@ -1330,6 +1345,7 @@
             });
             container.dataset.loaded = '1';
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
+            _cSave('t2s_alerts_html', container.innerHTML);
             // Trade Alert tab badge: count today's new trade alerts
             const todayStart = new Date(); todayStart.setHours(0,0,0,0);
             const todayCount = tradeParents.filter(p => new Date(p.sent_at||p.created_at) >= todayStart).length;
@@ -1789,7 +1805,9 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
+        const _uc = _cLoad('t2s_upd_posts');
+        if (_uc && _uc.posts && _cachedTier) renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+        else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
         if('Notification' in window && Notification.permission === 'default') {
             document.getElementById('notif-banner').style.display = 'flex';
@@ -1809,8 +1827,15 @@
                 }
             }
 
-            // Fetch ALL posts — visibility (teased vs full) handled client-side
-            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
+            // Incremental fetch — only new posts since last cache, full fetch on first load
+            const _uc2 = _cLoad('t2s_upd_posts');
+            let posts;
+            if (_uc2 && _uc2.latestTs) {
+                const _np = await sbFetch(`posts?is_deleted=eq.false&sent_at=gt.${encodeURIComponent(_uc2.latestTs)}&order=sent_at.desc&limit=100`, {method:'GET'});
+                posts = _np.length > 0 ? [..._np, ...(_uc2.posts||[])].slice(0,100) : (_uc2.posts||[]);
+            } else {
+                posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
+            }
 
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
@@ -1821,6 +1846,7 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
+            if (posts.length > 0) _cSave('t2s_upd_posts', {posts, latestTs: posts[0].sent_at||posts[0].created_at});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
