@@ -1576,7 +1576,7 @@
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${showSL1?(getCurrentSL(pubReplies_s1)||'—'):lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'—'):lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
                 ${s1RepliesHtml}
@@ -1697,7 +1697,7 @@
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
-                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'—'):lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
                 ${freeRepliesHtml2}${stateBanner2}
