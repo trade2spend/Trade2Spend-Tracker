@@ -320,8 +320,8 @@
     </div>
 
     <!-- MARKETS TAB -->
-    <div id="markets" class="content-section active">
-        <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:6px 2px 6px;"></div>
+    <div id="markets" class="content-section active" style="padding-top:10px;">
+        <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:0 2px 4px;"></div>
         <div class="market-grid" id="market-grid-container">
             <div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Fetching live market data...</div>
         </div>
@@ -1471,6 +1471,8 @@
                 ? `<div class="type-box ${typeClass_s1}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`;
             const _trState = getTradeState(post, pubReplies_s1);
+            const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+            const _s1ShareBtn = post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>` : '';
             const _statePill = _trState==='not_triggered'
                 ? `<div style="display:flex;justify-content:space-between;align-items:center;width:100%;"><span class="not-triggered-pill">⚫ Not Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);font-weight:500;">Removed</span></div>`
                 : _trState==='yet_to_trigger'
@@ -1507,7 +1509,7 @@
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
                 ${s1RepliesHtml}
-                <div class="trigger-banner">${_statePill}</div>
+                <div class="trigger-banner" style="${_trState!=='not_triggered'?'justify-content:space-between;':''}">${_statePill}${_trState!=='not_triggered'?_s1ShareBtn:''}</div>
             </div>`;
         }
 
