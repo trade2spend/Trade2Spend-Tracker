@@ -1144,7 +1144,7 @@
         else if (/today.s?\s+expiry|expiry\s+today/i.test(lo)) f.expiry="Today's Expiry";
         const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
-        const slm = content.match(/(?:below|above)\s+(\d{4,6}(?:\.\d+)?)/i);
+        const slm = content.match(/(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
         if (slm) f.sl = parseFloat(slm[1]);
         return f;
     }
