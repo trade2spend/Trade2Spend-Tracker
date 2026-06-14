@@ -1366,8 +1366,21 @@
             return;
         }
 
-        const activePosts = tradePosts.filter(p => !isTradeFullyClosed(p, replyMap[p.id]||[]));
-        const closedPosts  = tradePosts.filter(p =>  isTradeFullyClosed(p, replyMap[p.id]||[]));
+        // Archive: hide trades older than start of last calendar month
+        const _archiveCutoff = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
+        const _twoDay = 2 * 24 * 60 * 60 * 1000;
+        const _recentPosts = tradePosts.filter(p =>
+            new Date(p.sent_at || p.created_at).getTime() >= _archiveCutoff
+        );
+
+        const activePosts = _recentPosts
+            .filter(p => !isTradeFullyClosed(p, replyMap[p.id]||[]))
+            .filter(p => {
+                const st = getTradeState(p, replyMap[p.id]||[]);
+                if (st !== 'not_triggered') return true;
+                return Date.now() - new Date(p.sent_at || p.created_at).getTime() < _twoDay;
+            });
+        const closedPosts = _recentPosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]));
 
         let html = '';
 
@@ -1474,9 +1487,13 @@
 
             // Not-triggered paid-only posts: same compact card as section 2
             if (_trState === 'not_triggered') {
+                const _ntOpt1 = (fields.optType||'').toLowerCase();
+                const _ntBox1 = fields.optType
+                    ? `<div class="type-box ${_ntOpt1}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType}</div>`
+                    : `<div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:#f3f4f6;color:#9ca3af;">—</div>`;
                 return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
                     <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
-                        <div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">🔒</div>
+                        ${_ntBox1}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
                         <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
@@ -1538,7 +1555,7 @@
                 const _ntOpt = (fields.optType||'').toLowerCase();
                 const _ntBox = fields.optType
                     ? `<div class="type-box ${_ntOpt}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType}</div>`
-                    : `<div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">🔒</div>`;
+                    : `<div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:#f3f4f6;color:#9ca3af;">—</div>`;
                 return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
                     <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
                         ${_ntBox}
