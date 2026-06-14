@@ -720,7 +720,7 @@
                                     : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`
                                 }
                                 <div>
-                                    <div class="trade-name">${t.instrument} <span style="font-weight:500;color:#888;font-size:0.9em;">${t.strike || ''}</span></div>
+                                    <div class="trade-name">${t.instrument} <span style="font-weight:700;color:#888;font-size:0.9em;">${t.strike || ''}</span></div>
                                     ${canSeePremium
                                         ? `<div class="trade-expiry">${t.expiry || 'Current Week'}</div>`
                                         : `<div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>`
@@ -1685,7 +1685,7 @@
                     <div class="trade-title-box">
                         ${typeBoxHtml2}
                         <div>
-                            <div class="trade-name">${instrName}${strikeStr?` <span style="font-weight:500;color:#888;font-size:0.9em;">${strikeStr}</span>`:''}</div>
+                            <div class="trade-name">${instrName}${strikeStr?` <span style="font-weight:700;color:#888;font-size:0.9em;">${strikeStr}</span>`:''}</div>
                             <div class="trade-expiry">${showExpiry&&fields.expiry?fields.expiry:'Expiry 🔓'}</div>
                         </div>
                     </div>
@@ -1712,21 +1712,29 @@
             const typeBox25 = fields.optType
                 ? `<div class="type-box ${typeClass25}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">🔒</div>`;
-            // Max (Post trigger) = highest price seen in any follow-up
+            // Max (Post trigger): highest option price seen in follow-ups
             const mp25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
             const maxPrice25 = mp25 ? mp25.max : null;
+            // Exit price: from structured exit follow-up (works for losers too)
+            let exitPrice25 = null;
+            for (const r of postReplies) {
+                const fp = parseFollowUpContent(r.content||'');
+                if ((fp.isFullExit || fp.type==='exit' || fp.exitPct) && fp.price) { exitPrice25 = fp.price; break; }
+            }
+            // Use exit price if available, else max seen; label changes accordingly
+            const displayPrice25 = exitPrice25 || maxPrice25;
+            const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
             const lotSize25 = getLotSize(fields.instrument);
             let maxPnlPts25 = null, maxPnlRs25 = null;
-            if (fields.entry && maxPrice25) {
-                maxPnlPts25 = fields.optType === 'PE'
-                    ? Math.round(fields.entry - maxPrice25)
-                    : Math.round(maxPrice25 - fields.entry);
+            if (fields.entry && displayPrice25) {
+                // For BOTH CE and PE: option profit = display price − entry (positive = gain, negative = loss)
+                maxPnlPts25 = Math.round(displayPrice25 - fields.entry);
                 maxPnlRs25 = Math.abs(maxPnlPts25) * lotSize25;
             }
             // SL display with strikethrough
             const initSL25 = fields.sl;
             const revSL25  = getCurrentSL(postReplies);
-            let slDisp25 = '—';
+            let slDisp25 = 'No SL';
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
@@ -1740,7 +1748,7 @@
                     <div class="trade-title-box">
                         ${typeBox25}
                         <div>
-                            <div class="trade-name">${instrName25}${strikeStr25?` <span style="font-weight:500;color:#888;font-size:0.9em;">${strikeStr25}</span>`:''}</div>
+                            <div class="trade-name">${instrName25}${strikeStr25?` <span style="font-weight:700;color:#888;font-size:0.9em;">${strikeStr25}</span>`:''}</div>
                             ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
                         </div>
                     </div>
@@ -1751,12 +1759,12 @@
                 </div>
                 <div class="trade-metrics" style="padding:4px 12px 8px;grid-template-columns:1fr 1fr;">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div class="metric-col"><span class="metric-label">Max (Post trigger)</span><span class="metric-value val-up" style="font-size:0.88rem;">${maxPrice25?`₹${maxPrice25}`:'—'}</span></div>
+                    <div class="metric-col"><span class="metric-label">${displayPriceLabel25}</span><span class="metric-value ${displayPrice25&&displayPrice25>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
                     <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisp25}</span></div>
                 </div>
                 <div class="closed-trade-bar">
                     <span class="update-badge badge-closed-trade">✅ Closed Trade</span>
-                    ${maxPnlPts25!==null?`<span class="max-profit-text">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts (₹${Math.abs(maxPnlRs25).toLocaleString()})</span>`:''}
+                    ${maxPnlPts25!==null?`<span class="max-profit-text ${maxPnlPts25>=0?'':'val-down'}">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts (₹${Math.abs(maxPnlRs25).toLocaleString()})</span>`:''}
                 </div>
             </div>`;
         }
@@ -1793,7 +1801,7 @@
                     <div class="trade-title-box">
                         ${typeBoxHtml}
                         <div>
-                            <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:500;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
+                            <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
                             ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
                         </div>
                     </div>
