@@ -96,7 +96,7 @@
         .movers-section { margin-top: 14px; }
         .movers-title { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
         .movers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .movers-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 0 12px 10px; max-height: 360px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .movers-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 0 12px 10px; height: 185px; overflow-y: scroll; -webkit-overflow-scrolling: touch; }
         .movers-card-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding: 10px 0 6px; position: sticky; top: 0; background: var(--card-bg); z-index: 1; }
         .movers-card-title.g { color: var(--green); }
         .movers-card-title.l { color: var(--red); }
@@ -743,8 +743,9 @@
 
     // --- FETCH PERFORMANCE (from Supabase) ---
     function _perfMonthSummary(trades) {
-        const wins = trades.filter(t => t.isWin).length;
-        const losses = trades.filter(t => !t.isWin && t.pnlPts !== null).length;
+        const valid = trades.filter(t => t.pnlPts !== null && t.pnlPts !== 0);
+        const wins = valid.filter(t => t.isWin).length;
+        const losses = valid.filter(t => !t.isWin).length;
         const total = wins + losses;
         const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
         const maxPnlRs = trades.reduce((mx, t) => t.pnlRs !== null ? Math.max(mx, Math.abs(t.pnlRs)) : mx, 0);
@@ -753,8 +754,9 @@
     }
 
     function renderPerfTradeRows(trades) {
-        if (!trades || !trades.length) return '<div style="font-size:0.78rem;color:var(--text-muted);padding:8px 0;">No closed trades this month yet.</div>';
-        return trades.map(t => {
+        const valid = (trades||[]).filter(t => t.pnlPts !== null && t.pnlPts !== 0);
+        if (!valid.length) return '<div style="font-size:0.78rem;color:var(--text-muted);padding:8px 0;">No closed trades with P&L data yet.</div>';
+        return valid.map(t => {
             const pnl = t.pnlRs || 0;
             const pts = t.pnlPts || 0;
             return `<div class="trade-detail-row" onclick="goToSpecificTrade('${t.instrument||''}','${t.optType||''}','${t.strike||''}')" style="cursor:pointer;" title="Tap to view this trade">
@@ -1109,8 +1111,15 @@
     }
 
     // ── TRADE STATE (for free member unlock logic) ────────────────────────────
+    // Status-only messages don't count as "triggered" — only actual entry/exit signals do
+    const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch)/i;
     function getTradeState(post, replies) {
-        const validReplies = (replies||[]).filter(r => !(r.content||'').includes('[T2S_UNLOCK]'));
+        const validReplies = (replies||[]).filter(r => {
+            const c = (r.content||'').trim();
+            if (c.includes('[T2S_UNLOCK]')) return false;
+            if (_STATUS_ONLY_RE.test(c)) return false; // ignore pure status messages
+            return true;
+        });
         if (validReplies.length > 0) return 'triggered';
         const tz = { timeZone:'Asia/Kolkata' };
         const nowIST  = new Date(new Date().toLocaleString('en-US', tz));
@@ -1467,14 +1476,15 @@
             const instrName  = fields.instrument||'Trade Alert';
             const strikeStr  = fields.strike||'';
 
-            // 2a. NOT TRIGGERED — compact single-row card
+            // 2a. NOT TRIGGERED — compact single-row card with date/time
             if (tradeState === 'not_triggered') {
-                return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:6px 12px 8px;">
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">
-                        <div class="type-box" style="width:26px;height:26px;font-size:0.75rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">?</div>
-                        <span style="font-weight:700;font-size:0.88rem;color:var(--text-muted);white-space:nowrap;">${instrName}${strikeStr?' '+strikeStr:''}</span>
-                        <span class="not-triggered-pill" style="white-space:nowrap;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.68rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
+                    <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
+                        <div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">?</div>
+                        <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName}${strikeStr?' '+strikeStr:''}</span>
+                        <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="font-size:0.62rem;color:var(--text-muted);white-space:nowrap;flex-shrink:0;">${dateTimeStr}</span>
                     </div>
                 </div>`;
             }
@@ -1523,15 +1533,18 @@
             if (cumExit>0&&cumExit<100) exitBar2=`<div class="exit-progress">Exited ${cumExit}% · Holding ${100-cumExit}%</div>`;
             else if (cumExit>=100) exitBar2=`<div class="exit-progress full">✅ Fully Exited</div>`;
 
-            // Public follow-ups — always shown when triggered
+            // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
             const _freeVisReplies2 = postReplies.filter(r => {
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                 if (r.audience==='paid_only') return false;
+                if (_STATUS_ONLY_RE.test((r.content||'').trim())) return false;
                 return true;
             });
             if (_freeVisReplies2.length > 0 && tradeState === 'triggered') {
-                freeRepliesHtml2 = `<div class="thread-replies" style="display:block;">`;
+                const _ftid = `free-replies-${post.id}`, _fn = _freeVisReplies2.length;
+                freeRepliesHtml2 = `<button class="replies-toggle" id="fbtn-${_ftid}" data-count="${_fn}" onclick="toggleReplies('${_ftid}')">↳ ${_fn} update${_fn>1?'s':''} — tap to view</button>
+                    <div class="thread-replies" id="${_ftid}" style="display:none;">`;
                 _freeVisReplies2.forEach(r => {
                     const _ts = formatPostTime(r.sent_at||r.created_at);
                     const _txt = stripDisclaimerText(sanitizeHtml(r.content||'').replace(/\n/g,'<br>'));
@@ -1542,6 +1555,8 @@
 
             const stateBanner2 = tradeState === 'yet_to_trigger'
                 ? `<div class="trigger-banner"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span></div>`
+                : tradeState === 'triggered'
+                ? `<div class="trigger-banner"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span></div>`
                 : '';
 
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
@@ -1676,7 +1691,9 @@
         // Follow-ups
         let repliesHtml = '';
         if (postReplies.length > 0) {
-            let cumExit=0, currentSL=null;
+            let cumExit=0;
+            // Seed currentSL from initial post content so first SL revision shows old value struck through
+            let currentSL = fields.sl ? fields.sl : null;
             const visibleReplies = postReplies.filter(r => {
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                 if (r.audience==='paid_only' && isFreeViewer) return false;
@@ -1842,7 +1859,9 @@
             // Visibility state
             const isClosed   = isTradeFullyClosed(post, postReplies);
             const isUnlocked = isClosed || isTradeUnlocked(postReplies);
-            const showTeased = isFreeViewer && isPaidOnly && !isUnlocked;
+
+            // Free members: skip paid_only general/market_update posts entirely (no teaser)
+            if (isFreeViewer && isPaidOnly) return;
 
             const timeStr = formatPostTime(post.sent_at||post.created_at);
             const fields  = post.post_type==='trade_alert' ? extractTradeAlertFields(post.content) : null;
@@ -1851,20 +1870,7 @@
             const whyOldEnough2 = daysSincePost(post) >= 7;
             const whyVisible = isAdmin || memberTier === 'paid' || whyOldEnough2;
 
-            if (showTeased) {
-                // ── TEASED: free member, trade locked (no exit yet) ──
-                const instrLine = fields&&fields.instrument
-                    ? `<span class="teased-instr-name">${fields.instrument}</span>${fields.strike?`<span class="teased-strike"> ${fields.strike}</span>`:''}`
-                    : `<span class="teased-instr-name">Trade Alert</span>`;
-                const fupHint = postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length > 0
-                    ? `<div class="teased-followup-hint">↳ ${postReplies.filter(r=>!(r.content||'').includes('[T2S_UNLOCK]')).length} follow-up${postReplies.length>1?'s':''} — visible after unlock</div>` : '';
-                html += `<div class="teased-card${isNew?' unread':''}">
-                    <div class="update-header"><span class="update-badge badge-trade-alert">📢 TRADE ALERT</span><span class="update-time">${timeStr}</span></div>
-                    <div class="teased-instr">${instrLine}</div>
-                    <div class="teased-lock-row" onclick="showPopup()" style="cursor:pointer;">
-                        <span style="font-size:0.75rem;color:var(--text-muted);">🔒 CE/PE &nbsp;·&nbsp; 🔒 Entry &nbsp;·&nbsp; 🔒 SL &nbsp;·&nbsp; 🔒 Why</span>
-                    </div>
-                    ${fupHint}</div>`;
+            if (false) { // teased block removed — Updates tab never shows trade alerts to free members
 
             } else {
                 // ── FULL CARD ──
