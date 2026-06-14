@@ -1494,7 +1494,7 @@
 
         if (why) _whyMap[post.id] = why;
 
-        const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;background:var(--primary);color:#fff;border-radius:5px;padding:2px 7px;font-size:0.72rem;font-weight:600;">🔒</span>`;
+        const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;font-size:0.9rem;">🔒</span>`;
 
         // ── 1. PAID-ONLY → free member ──
         if (isFreeViewer && isPaidOnly && !isClosed) {
@@ -1734,7 +1734,7 @@
             // SL display with strikethrough
             const initSL25 = fields.sl;
             const revSL25  = getCurrentSL(postReplies);
-            let slDisp25 = 'No SL';
+            let slDisp25 = '—';
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
