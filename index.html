@@ -1511,6 +1511,14 @@
             const showEn1 = _u1.all || _u1.entry;
             const showEx1 = _u1.all || _u1.expiry;
             const showSL1 = _u1.all || _u1.sl;
+            const showCmp1 = _u1.all || _u1.cmp;
+            let latestCmp1 = null;
+            for (const r of pubReplies_s1) {
+                const fp = parseFollowUpContent(r.content||'');
+                if (fp.cmp) { latestCmp1 = fp.cmp; break; }
+                if (fp.price && (fp.type==='cmp_update'||fp.type==='status')) { latestCmp1 = fp.price; break; }
+            }
+            const cumExit1 = getCumulativeExit(pubReplies_s1);
             const typeBoxS1 = showCP1 && fields.optType
                 ? `<div class="type-box ${typeClass_s1}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">🔒</div>`;
@@ -1535,11 +1543,10 @@
 
             const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
-            const _statePill = _trState==='not_triggered'
-                ? `<div style="display:flex;justify-content:space-between;align-items:center;width:100%;"><span class="not-triggered-pill">⚫ Not Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);font-weight:500;">Removed</span></div>`
-                : _trState==='yet_to_trigger'
+            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : 'Holding 100%';
+            const _statePill = _trState==='yet_to_trigger'
                 ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
-                : `<span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span>`;
+                : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
             let s1RepliesHtml = '';
             if (pubReplies_s1.length > 0 && _trState === 'triggered') {
                 const _s1id = `s1-replies-${post.id}`, _s1n = pubReplies_s1.length;
@@ -1556,8 +1563,10 @@
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
                         ${typeBoxS1}
-                        <div><div class="trade-name">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</div>
-                        ${showEx1&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}</div>
+                        <div>
+                            <div class="trade-name">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</div>
+                            <div class="trade-expiry">${showEx1&&fields.expiry?fields.expiry:'Expiry 🔓'}</div>
+                        </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
                         <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
@@ -1566,12 +1575,12 @@
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">${showEx1&&fields.expiry?fields.expiry:lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${showSL1?(getCurrentSL(pubReplies_s1)||'—'):lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'—'):lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
                 ${s1RepliesHtml}
-                <div class="trigger-banner" style="${_trState!=='not_triggered'?'justify-content:space-between;':''}">${_statePill}${_trState!=='not_triggered'?_s1ShareBtn:''}</div>
+                <div class="trigger-banner" style="justify-content:space-between;">${_statePill}${_s1ShareBtn}</div>
             </div>`;
         }
 
@@ -1641,9 +1650,7 @@
             }
 
             const cumExit = getCumulativeExit(postReplies);
-            let exitBar2 = '';
-            if (cumExit>0&&cumExit<100) exitBar2=`<div class="exit-progress">Exited ${cumExit}% · Holding ${100-cumExit}%</div>`;
-            else if (cumExit>=100) exitBar2=`<div class="exit-progress full">✅ Fully Exited</div>`;
+            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : 'Holding 100%';
 
             // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
@@ -1670,7 +1677,7 @@
             const stateBanner2 = tradeState === 'yet_to_trigger'
                 ? `<div class="trigger-banner" style="justify-content:space-between;"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>${_shareBtn2}</div>`
                 : tradeState === 'triggered'
-                ? `<div class="trigger-banner" style="justify-content:space-between;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span>${_shareBtn2}</div>`
+                ? `<div class="trigger-banner" style="justify-content:space-between;"><div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText2}</span></div>${_shareBtn2}</div>`
                 : (_shareBtn2 ? `<div class="update-footer">${_shareBtn2}</div>` : '');
 
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
@@ -1679,7 +1686,7 @@
                         ${typeBoxHtml2}
                         <div>
                             <div class="trade-name">${instrName}${strikeStr?` <span style="font-weight:500;color:#888;font-size:0.9em;">${strikeStr}</span>`:''}</div>
-                            ${showExpiry&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                            <div class="trade-expiry">${showExpiry&&fields.expiry?fields.expiry:'Expiry 🔓'}</div>
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
@@ -1689,11 +1696,11 @@
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">${showExpiry&&fields.expiry?fields.expiry:lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'—'):lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
-                ${exitBar2}${freeRepliesHtml2}${stateBanner2}
+                ${freeRepliesHtml2}${stateBanner2}
             </div>`;
         }
 
@@ -1801,7 +1808,6 @@
                         <span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                     <div class="metric-col"><span class="metric-label">${isClosed?'Exit Price':'Latest CMP'}</span>
                         <span class="metric-value ${isClosed&&exitPrice?'val-up':''}" style="font-size:0.88rem;">${isClosed?(exitPrice?`₹${exitPrice}`:(latestCmp?`₹${latestCmp}`:'—')):(latestCmp?`₹${latestCmp}`:'—')}</span></div>
-                    ${fields.expiry?`<div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.88rem;">${fields.expiry}</span></div>`:''}
                     ${isClosed&&fields.entry&&exitPrice?`<div class="metric-col"><span class="metric-label">P&L / Lot</span><span class="metric-value ${exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice>fields.entry?'+':''}₹${((exitPrice-fields.entry)).toFixed(0)} pts</span></div>`:''}
                 </div>`;
         } else {
