@@ -300,7 +300,10 @@
                     </div>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
-                <span id="current-time" style="font-size:0.75rem;color:var(--text-muted);">--:-- --</span>
+                <div style="display:flex;align-items:center;gap:5px;">
+                    <button id="refresh-btn" onclick="refreshCurrentTab()" title="Refresh" style="background:none;border:none;font-size:0.85rem;color:var(--text-muted);cursor:pointer;padding:0;line-height:1;transition:transform 0.3s;">↻</button>
+                    <span id="current-time" style="font-size:0.75rem;color:var(--text-muted);">--:-- --</span>
+                </div>
                 <span class="live-badge" id="live-badge" style="display:none;"><span class="live-dot"></span> LIVE</span>
             </div>
         </div>
@@ -459,6 +462,18 @@
         }
     }
     function updateUnreadBadge(count) { setTabBadge('updates', count); }
+
+    function refreshCurrentTab() {
+        const btn = document.getElementById('refresh-btn');
+        if (btn) { btn.style.transform = 'rotate(360deg)'; setTimeout(() => btn.style.transform = '', 300); }
+        const activeTab = document.querySelector('.tab.active');
+        if (!activeTab) return;
+        const tabId = activeTab.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+        if (tabId === 'trades') fetchTradeAlerts();
+        else if (tabId === 'markets') fetchMarketData();
+        else if (tabId === 'updates') fetchUpdates();
+        else if (tabId === 'performance') fetchPerformance();
+    }
 
     function switchTab(tabId, el) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1482,7 +1497,7 @@
         const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;background:var(--primary);color:#fff;border-radius:5px;padding:2px 7px;font-size:0.72rem;font-weight:600;">🔒</span>`;
 
         // ── 1. PAID-ONLY → free member ──
-        if (isFreeViewer && isPaidOnly) {
+        if (isFreeViewer && isPaidOnly && !isClosed) {
             const instrName_s1 = fields.instrument||'Trade Alert';
             const strikeStr_s1 = fields.strike||'';
             const typeClass_s1 = (fields.optType||'').toLowerCase();
