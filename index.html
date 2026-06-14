@@ -530,6 +530,7 @@
             const INDEX_LIST = ['NIFTY', 'SENSEX', 'BANKNIFTY'];
             let anyIndex = false;
             if(data.indices) {
+                if (!document.getElementById('mcard-NIFTY')) container.innerHTML = '';
                 INDEX_LIST.forEach(idx => {
                     if(!data.indices[idx]) return;
                     anyIndex = true;
@@ -1477,7 +1478,9 @@
                 : `<span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span>`;
             let s1RepliesHtml = '';
             if (pubReplies_s1.length > 0 && _trState === 'triggered') {
-                s1RepliesHtml = `<div class="thread-replies" style="display:block;">`;
+                const _s1id = `s1-replies-${post.id}`, _s1n = pubReplies_s1.length;
+                s1RepliesHtml = `<button class="replies-toggle" id="btn-${_s1id}" data-count="${_s1n}" onclick="toggleReplies('${_s1id}')">↳ ${_s1n} update${_s1n>1?'s':''} — tap to view</button>
+                    <div class="thread-replies" id="${_s1id}" style="display:none;">`;
                 pubReplies_s1.forEach(r => {
                     const _ts = formatPostTime(r.sent_at||r.created_at);
                     const _txt = stripDisclaimerText(sanitizeHtml(r.content||'').replace(/\n/g,'<br>'));
@@ -1598,11 +1601,13 @@
                 freeRepliesHtml2 += `</div>`;
             }
 
+            const _shareSvg2 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+            const _shareBtn2 = post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_shareSvg2}</button>` : '';
             const stateBanner2 = tradeState === 'yet_to_trigger'
-                ? `<div class="trigger-banner"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span></div>`
+                ? `<div class="trigger-banner" style="justify-content:space-between;"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>${_shareBtn2}</div>`
                 : tradeState === 'triggered'
-                ? `<div class="trigger-banner"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span></div>`
-                : '';
+                ? `<div class="trigger-banner" style="justify-content:space-between;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span>${_shareBtn2}</div>`
+                : (_shareBtn2 ? `<div class="update-footer">${_shareBtn2}</div>` : '');
 
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
@@ -1625,7 +1630,6 @@
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'—'):lockBtn}</span></div>
                 </div>
                 ${exitBar2}${freeRepliesHtml2}${stateBanner2}
-                ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
             </div>`;
         }
 
@@ -1710,6 +1714,9 @@
             const actionBadge = isClosed ? `<span class="update-badge badge-closed-trade">✅ Closed</span>` :
                 fields.action==='SELL' ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>` :
                 `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
+            const _audBadge = post.audience==='paid_only'
+                ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
+                : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`;
             cardBodyHtml = `
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
@@ -1719,7 +1726,11 @@
                             ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
                         </div>
                     </div>
-                    ${actionBadge}
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                        ${actionBadge}
+                        <span class="update-time">${dateTimeStr}</span>
+                        ${_audBadge}
+                    </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;">
                     <div class="metric-col"><span class="metric-label">Entry</span>
@@ -1730,7 +1741,10 @@
                     ${isClosed&&fields.entry&&exitPrice?`<div class="metric-col"><span class="metric-label">P&L / Lot</span><span class="metric-value ${exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice>fields.entry?'+':''}₹${((exitPrice-fields.entry)).toFixed(0)} pts</span></div>`:''}
                 </div>`;
         } else {
-            cardBodyHtml = `<div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
+            const _audBadge2 = post.audience==='paid_only'
+                ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
+                : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`;
+            cardBodyHtml = `<div class="update-header"><span class="update-time">${dateTimeStr}</span>${_audBadge2}</div><div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
         }
 
         // Follow-ups
@@ -1745,7 +1759,7 @@
                 return true;
             });
             if (visibleReplies.length > 0) {
-                const tid=`replies-${post.id}`, n=visibleReplies.length;
+                const tid=`ta-replies-${post.id}`, n=visibleReplies.length;
                 repliesHtml=`<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
                     <div class="thread-replies" id="${tid}" style="display:none;">`;
                 visibleReplies.forEach(reply => {
@@ -1795,7 +1809,6 @@
 
         return `
             <div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
-                <div class="update-header"><span class="update-time">${dateTimeStr}</span></div>
                 ${cardBodyHtml}${whyHtml}${exitBar}${closedBar}
                 ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
             </div>
