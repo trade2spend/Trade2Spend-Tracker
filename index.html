@@ -1366,19 +1366,35 @@
             return;
         }
 
-        // Archive: hide trades older than start of last calendar month
+        // Archive: hide trades older than start of month-2 (rolling 3-month window)
         const _archiveCutoff = new Date(new Date().getFullYear(), new Date().getMonth() - 2, 1).getTime();
         const _twoDay = 2 * 24 * 60 * 60 * 1000;
         const _recentPosts = tradePosts.filter(p =>
             new Date(p.sent_at || p.created_at).getTime() >= _archiveCutoff
         );
 
+        // Helper: public-only replies (same view free members see)
+        const _pubReplies = p => (replyMap[p.id]||[]).filter(r =>
+            !(r.content||'').includes('[T2S_UNLOCK]') && r.audience !== 'paid_only'
+        );
+        // Helper: state rank for sorting (triggered=0, yet_to_trigger=1, not_triggered=2)
+        const _stateRank = p => {
+            const st = getTradeState(p, _pubReplies(p));
+            return st === 'triggered' ? 0 : st === 'yet_to_trigger' ? 1 : 2;
+        };
+
         const activePosts = _recentPosts
             .filter(p => !isTradeFullyClosed(p, replyMap[p.id]||[]))
             .filter(p => {
-                const st = getTradeState(p, replyMap[p.id]||[]);
+                // Use public-only replies so paid-only follow-ups don't bypass the filter
+                const st = getTradeState(p, _pubReplies(p));
                 if (st !== 'not_triggered') return true;
                 return Date.now() - new Date(p.sent_at || p.created_at).getTime() < _twoDay;
+            })
+            .sort((a, b) => {
+                const diff = _stateRank(a) - _stateRank(b);
+                if (diff !== 0) return diff; // triggered first
+                return new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
             });
         const closedPosts = _recentPosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]));
 
