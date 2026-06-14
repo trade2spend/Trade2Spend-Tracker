@@ -75,6 +75,7 @@
         .tabs::-webkit-scrollbar { display: none; }
         .tab { padding: 12px 15px; color: var(--text-muted); font-size: 0.95rem; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; transition: all 0.2s ease; white-space: nowrap; flex-shrink: 0; touch-action: manipulation; }
         .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+        .tab-badge { display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:50%;width:16px;height:16px;font-size:0.6rem;font-weight:700;vertical-align:middle;margin-left:2px; }
         
         /* --- CONTENT AREAS --- */
         .content-section { padding: 20px; display: none; animation: fadeIn 0.3s ease; }
@@ -446,6 +447,19 @@
 <script>
     // --- UI LOGIC ---
     let _tradeRefreshTimer = null;
+    const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', about:'About' };
+    function setTabBadge(tabKey, count) {
+        const tabEl = document.querySelector(`.tab[onclick*="'${tabKey}'"]`);
+        if (!tabEl) return;
+        const label = _TAB_LABELS[tabKey] || tabKey;
+        if (count > 0) {
+            tabEl.innerHTML = `${label}&thinsp;<span class="tab-badge">${Math.min(count,9)}</span>`;
+        } else {
+            tabEl.textContent = label;
+        }
+    }
+    function updateUnreadBadge(count) { setTabBadge('updates', count); }
+
     function switchTab(tabId, el) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
@@ -454,23 +468,10 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
         if (_tradeRefreshTimer) { clearInterval(_tradeRefreshTimer); _tradeRefreshTimer = null; }
-        if(tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => updateUnreadBadge(0), 2500); }
-        if(tabId === 'trades') {
-            fetchTradeAlerts();
-            _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
-        }
-        if(tabId === 'performance') fetchPerformance();
-        if(tabId === 'updates') fetchUpdates();
-    }
-
-    function updateUnreadBadge(count) {
-        const tabEl = document.querySelector('.tab[onclick*="updates"]');
-        if (!tabEl) return;
-        if (count > 0) {
-            tabEl.innerHTML = `Updates&thinsp;<span style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:50%;width:16px;height:16px;font-size:0.6rem;font-weight:700;vertical-align:middle;">${Math.min(count,9)}</span>`;
-        } else {
-            tabEl.textContent = 'Updates';
-        }
+        if (tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => setTabBadge('updates', 0), 2500); fetchUpdates(); }
+        if (tabId === 'trades') { setTabBadge('trades', 0); fetchTradeAlerts(); _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000); }
+        if (tabId === 'performance') fetchPerformance();
+        if (tabId === 'markets') fetchMarketData();
     }
 
     function goToSpecificTrade(instr, type, strike) {
@@ -526,34 +527,43 @@
             document.getElementById('live-badge').style.display = isOpen ? 'flex' : 'none';
 
             const container = document.getElementById('market-grid-container');
-            container.innerHTML = '';
-
+            const INDEX_LIST = ['NIFTY', 'SENSEX', 'BANKNIFTY'];
+            let anyIndex = false;
             if(data.indices) {
-                ['NIFTY', 'SENSEX', 'BANKNIFTY'].forEach(idx => {
-                    if(data.indices[idx]) {
-                        const info = data.indices[idx];
-                        const isUp = info.change >= 0;
-                        const icon = isUp ? '▲' : '▼';
-                        const pillClass = isUp ? 'up' : 'down';
-                        const sign = isUp ? '+' : '';
-
+                INDEX_LIST.forEach(idx => {
+                    if(!data.indices[idx]) return;
+                    anyIndex = true;
+                    const info = data.indices[idx];
+                    const isUp = info.change >= 0;
+                    const icon = isUp ? '▲' : '▼';
+                    const pillClass = isUp ? 'up' : 'down';
+                    const sign = isUp ? '+' : '';
+                    const priceStr = info.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+                    const changeStr = `${sign}${info.changePct}% &nbsp; ${sign}${info.change}`;
+                    const cardId = `mcard-${idx}`;
+                    const existing = document.getElementById(cardId);
+                    if (existing) {
+                        // Update in-place — no DOM rebuild, no flash
+                        existing.querySelector('.market-price').textContent = priceStr;
+                        const pill = existing.querySelector('.change-pill');
+                        if (pill) { pill.className = `change-pill ${pillClass}`; pill.innerHTML = changeStr; }
+                        const trend = existing.querySelector('.trend-icon');
+                        if (trend) { trend.className = `trend-icon ${pillClass}`; trend.textContent = icon; }
+                    } else {
                         container.innerHTML += `
-                            <div class="market-card">
+                            <div class="market-card" id="${cardId}">
                                 <div class="market-title">${idx === 'BANKNIFTY' ? 'BANK NIFTY' : idx}</div>
                                 <div class="trend-icon ${pillClass}">${icon}</div>
-                                <div class="market-price">${info.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-                                <div class="change-pill ${pillClass}">
-                                    ${sign}${info.changePct}% &nbsp; ${sign}${info.change}
-                                </div>
-                            </div>
-                        `;
+                                <div class="market-price">${priceStr}</div>
+                                <div class="change-pill ${pillClass}">${changeStr}</div>
+                            </div>`;
                     }
                 });
             }
-            if(container.innerHTML === '') {
+            if(!anyIndex) {
                 container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
-            } else {
-                container.innerHTML += `<div style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
+            } else if (!document.getElementById('mcard-src')) {
+                container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
             }
             // Advance/decline from market.json breadth data
             if(data.breadth && data.breadth.nifty50) {
@@ -731,95 +741,133 @@
         } catch(e) { console.error("Trades fetch failed", e); }
     }
 
-    // --- FETCH PERFORMANCE ---
-    function renderTradeRows(trades) {
-        if (!trades || trades.length === 0) return '<div style="font-size:0.78rem;color:var(--text-muted);padding:8px 0;">No trade details available.</div>';
+    // --- FETCH PERFORMANCE (from Supabase) ---
+    function _perfMonthSummary(trades) {
+        const wins = trades.filter(t => t.isWin).length;
+        const losses = trades.filter(t => !t.isWin && t.pnlPts !== null).length;
+        const total = wins + losses;
+        const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
+        const maxPnlRs = trades.reduce((mx, t) => t.pnlRs !== null ? Math.max(mx, Math.abs(t.pnlRs)) : mx, 0);
+        const totalPnlRs = trades.reduce((s, t) => t.pnlRs !== null ? s + t.pnlRs : s, 0);
+        return { wins, losses, total, winRate, maxPnlRs, totalPnlRs };
+    }
+
+    function renderPerfTradeRows(trades) {
+        if (!trades || !trades.length) return '<div style="font-size:0.78rem;color:var(--text-muted);padding:8px 0;">No closed trades this month yet.</div>';
         return trades.map(t => {
-            const win = t.result === 'WIN';
-            const pnl = t.pnl || 0;
-            return `<div class="trade-detail-row" onclick="goToSpecificTrade('${t.instrument||''}','${t.type||''}','${t.strike||''}')" style="cursor:pointer;" title="Tap to view this trade">
+            const pnl = t.pnlRs || 0;
+            const pts = t.pnlPts || 0;
+            return `<div class="trade-detail-row" onclick="goToSpecificTrade('${t.instrument||''}','${t.optType||''}','${t.strike||''}')" style="cursor:pointer;" title="Tap to view this trade">
                 <div>
-                    <div style="font-size:0.83rem;font-weight:700;color:var(--text-main);">${t.instrument} ${t.type} ${(t.strike||'').toLocaleString()}</div>
-                    <div style="font-size:0.67rem;color:var(--text-muted);margin-top:2px;">${t.date} &nbsp;·&nbsp; ₹${t.entry} → ₹${t.exit}</div>
+                    <div style="font-size:0.83rem;font-weight:700;color:var(--text-main);">${t.instrument} ${t.optType} ${t.strike}${t.expiry?' · '+t.expiry:''}</div>
+                    <div style="font-size:0.67rem;color:var(--text-muted);margin-top:2px;">${t.date}${t.entry?' &nbsp;·&nbsp; ₹'+t.entry+' → ₹'+(t.exit||'—'):''}</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-weight:700;font-size:0.9rem;color:${win?'var(--green)':'var(--red)'};">${pnl>=0?'+':'-'}₹${Math.abs(pnl).toLocaleString()}</div>
-                    <span class="${win?'trade-win-badge':'trade-loss-badge'}">${t.result}</span>
+                    <div style="font-weight:700;font-size:0.9rem;color:${pts>=0?'var(--green)':'var(--red)'};">${pts>=0?'+':'-'}₹${Math.abs(pnl).toLocaleString()} <span style="font-size:0.7rem;">(${pts>=0?'+':''}${pts}pt)</span></div>
+                    <span class="${t.isWin?'trade-win-badge':'trade-loss-badge'}">${t.isWin?'WIN':'LOSS'}</span>
                 </div>
             </div>`;
         }).join('');
     }
 
     async function fetchPerformance() {
+        const container = document.getElementById('history-container');
+        container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;font-size:0.85rem;">Loading...</div>';
         try {
-            const res = await fetch(DB_URLS.history + '?t=' + new Date().getTime());
-            const data = await res.json();
-            const container = document.getElementById('history-container');
-            container.innerHTML = '';
+            const [tradePosts, allReplies] = await Promise.all([
+                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=200', {method:'GET'}),
+                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=1000', {method:'GET'})
+            ]);
+            const replyMap = {};
+            allReplies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
-            if(data.months && data.months.length > 0) {
-                // Current month
-                try {
-                    const current = data.months[0].summary || {};
-                    const monthLabel = data.months[0].month || 'CURRENT MONTH';
-                    document.getElementById('curr-month-name').innerText = monthLabel;
-                    if(!current.totalTrades) {
-                        document.getElementById('perf-winrate').innerText = '--%';
-                        document.getElementById('perf-total').innerText = 'No trades yet';
-                        document.getElementById('perf-max').innerText = '--';
-                    } else {
-                        document.getElementById('perf-winrate').innerText = (current.winRate ?? '--') + '%';
-                        document.getElementById('perf-total').innerText = current.totalTrades + ` (${current.wins ?? 0} W · ${current.losses ?? 0} L)`;
-                        document.getElementById('perf-max').innerText = (current.maxProfit || 0).toLocaleString();
-                    }
-                    const detailDiv = document.getElementById('curr-month-detail');
-                    if(detailDiv) detailDiv.innerHTML = renderTradeRows(data.months[0].trades);
-                } catch(ex) {
-                    document.getElementById('curr-month-name').innerText = 'CURRENT MONTH';
-                    document.getElementById('perf-winrate').innerText = '--%';
-                    document.getElementById('perf-total').innerText = '--';
-                    document.getElementById('perf-max').innerText = '--';
+            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]));
+
+            const tz = {timeZone:'Asia/Kolkata'};
+            const tradeData = closedTrades.map(p => {
+                const replies = replyMap[p.id] || [];
+                const f = extractTradeAlertFields(p.content);
+                const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
+                const maxPrice = mp ? mp.max : null;
+                const lotSize = getLotSize(f.instrument);
+                let pnlPts = null, pnlRs = null, isWin = false;
+                if (f.entry && maxPrice) {
+                    pnlPts = f.optType === 'PE' ? Math.round(f.entry - maxPrice) : Math.round(maxPrice - f.entry);
+                    pnlRs = pnlPts * lotSize;
+                    isWin = pnlPts > 0;
                 }
+                const d = new Date(p.sent_at || p.created_at);
+                return {
+                    postId: p.id,
+                    instrument: f.instrument || 'Trade',
+                    optType: f.optType || '',
+                    strike: f.strike || '',
+                    expiry: f.expiry || '',
+                    entry: f.entry,
+                    exit: maxPrice,
+                    pnlPts, pnlRs, isWin,
+                    date: d.toLocaleDateString('en-IN', {day:'numeric', month:'short', ...tz}),
+                    monthKey: d.toLocaleDateString('en-IN', {month:'long', year:'numeric', ...tz}),
+                    sortMonth: d.getFullYear()*100 + d.getMonth()
+                };
+            });
 
-                // Past months
-                data.months.slice(1).forEach((m, idx) => {
-                    const summary = m.summary || {};
-                    const isProfit = (summary.totalPnL || 0) >= 0;
-                    const detailId = `hdet-${idx}`;
-                    const arrowId  = `harr-${idx}`;
-                    const mLabel   = m.month || 'Unknown Month';
-                    const totalPnL = summary.totalPnL || 0;
-                    const tradeRows = renderTradeRows(m.trades);
-                    container.innerHTML += `
-                        <div class="history-card" onclick="toggleHistCard('${detailId}','${arrowId}')">
-                            <div class="history-card-row">
-                                <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${mLabel}</div>
-                                <div style="display:flex;align-items:center;gap:8px;">
-                                    <div style="text-align:right;">
-                                        <div style="font-weight:700;color:${isProfit?'var(--green)':'var(--red)'};font-size:0.95rem;">${isProfit?'+':'-'}₹${Math.abs(totalPnL).toLocaleString()}</div>
-                                        <div style="font-size:0.7rem;color:var(--text-muted);">Win Rate: ${summary.winRate ?? '--'}%</div>
-                                    </div>
-                                    <span id="${arrowId}" class="hist-arrow">›</span>
+            // Group by month
+            const byMonth = {};
+            tradeData.forEach(t => {
+                if (!byMonth[t.monthKey]) byMonth[t.monthKey] = {key:t.monthKey, sortKey:t.sortMonth, trades:[]};
+                byMonth[t.monthKey].trades.push(t);
+            });
+            const months = Object.values(byMonth).sort((a,b) => b.sortKey - a.sortKey);
+
+            // Current month summary
+            const curr = months[0];
+            const currS = curr ? _perfMonthSummary(curr.trades) : null;
+            document.getElementById('curr-month-name').innerText = curr ? curr.key.toUpperCase() : 'CURRENT MONTH';
+            if (currS && currS.total > 0) {
+                document.getElementById('perf-winrate').innerText = currS.winRate + '%';
+                document.getElementById('perf-total').innerText = `${currS.total} (${currS.wins}W · ${currS.losses}L)`;
+                document.getElementById('perf-max').innerText = currS.maxPnlRs.toLocaleString();
+            } else {
+                document.getElementById('perf-winrate').innerText = '--%';
+                document.getElementById('perf-total').innerText = 'No closed trades yet';
+                document.getElementById('perf-max').innerText = '--';
+            }
+            const detailDiv = document.getElementById('curr-month-detail');
+            if (detailDiv && curr) detailDiv.innerHTML = renderPerfTradeRows(curr.trades);
+
+            // Past months
+            container.innerHTML = '';
+            months.slice(1).forEach((m, idx) => {
+                const s = _perfMonthSummary(m.trades);
+                const detailId = `hdet-${idx}`, arrowId = `harr-${idx}`;
+                const isProfit = s.totalPnlRs >= 0;
+                container.innerHTML += `
+                    <div class="history-card" onclick="toggleHistCard('${detailId}','${arrowId}')">
+                        <div class="history-card-row">
+                            <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${m.key}</div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div style="text-align:right;">
+                                    <div style="font-weight:700;color:${isProfit?'var(--green)':'var(--red)'};font-size:0.95rem;">${isProfit?'+':'-'}₹${Math.abs(s.totalPnlRs).toLocaleString()}</div>
+                                    <div style="font-size:0.7rem;color:var(--text-muted);">Win Rate: ${s.winRate}% · ${s.total} trades</div>
                                 </div>
-                            </div>
-                            <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-                                <div class="perf-grid" style="margin-bottom:12px;gap:8px;">
-                                    <div class="metric-col">
-                                        <span class="metric-label">TRADES</span>
-                                        <span class="metric-value" style="font-size:0.9rem;">${summary.totalTrades ? summary.totalTrades + ' (' + (summary.wins||0) + 'W · ' + (summary.losses||0) + 'L)' : '--'}</span>
-                                    </div>
-                                    <div class="metric-col">
-                                        <span class="metric-label">MAX P&L / LOT</span>
-                                        <span class="metric-value" style="font-size:0.9rem;">₹${(summary.maxProfit||0).toLocaleString()}</span>
-                                    </div>
-                                </div>
-                                ${tradeRows}
+                                <span id="${arrowId}" class="hist-arrow">›</span>
                             </div>
                         </div>
-                    `;
-                });
-            }
-        } catch(e) { console.error("Performance fetch failed", e); }
+                        <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+                            <div class="perf-grid" style="margin-bottom:12px;gap:8px;">
+                                <div class="metric-col"><span class="metric-label">TRADES</span><span class="metric-value" style="font-size:0.9rem;">${s.total+' ('+s.wins+'W · '+s.losses+'L)'}</span></div>
+                                <div class="metric-col"><span class="metric-label">MAX P&L / LOT</span><span class="metric-value" style="font-size:0.9rem;">₹${s.maxPnlRs.toLocaleString()}</span></div>
+                            </div>
+                            ${renderPerfTradeRows(m.trades)}
+                        </div>
+                    </div>`;
+            });
+            if (months.length === 0) container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">No closed trades yet. Completed trades will appear here.</div>';
+        } catch(e) {
+            console.error('Performance fetch failed', e);
+            container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Unable to load. Check connection.</div>';
+        }
     }
 
     // --- SUPABASE CONFIG ---
@@ -1072,13 +1120,17 @@
     }
 
     // ── PROGRESSIVE FIELD UNLOCK FOR FREE MEMBERS ────────────────────────────
+    // Unlock Entry/Expiry/Call-Put/CMP only when: 50%+ exit, SL hit/gone, full exit, or admin unlock
     function getFreeUnlockedFields(replies) {
         const u = { callPut:false, entry:false, expiry:false, cmp:false, sl:false, all:false };
         for (const r of (replies||[])) {
             const c = r.content||'';
             if (c.includes('[T2S_UNLOCK]')) { u.all=true; return u; }
-            if (c.trim().length > 3) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
-            if (/\bsl\b|\bstop[\s-]?loss\b/i.test(c)) u.sl=true;
+            const p = parseFollowUpContent(c);
+            if (p.isFullExit || (p.exitPct && p.exitPct >= 50)) {
+                u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true;
+            }
+            if (p.slRevised) u.sl=true;
         }
         return u;
     }
@@ -1214,7 +1266,10 @@
     async function fetchTradeAlerts() {
         const container = document.getElementById('trade-alert-container');
         if (!container) return;
-        container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div>';
+        // Only show loading spinner on first load — subsequent 30s refreshes update silently
+        if (!container.dataset.loaded) {
+            container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div>';
+        }
 
         const memberId = localStorage.getItem('t2s_member_id');
         let isAdmin = false, memberTier = 'free';
@@ -1242,7 +1297,13 @@
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
                 replyMap[r.parent_id].push(r);
             });
+            container.dataset.loaded = '1';
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
+            // Trade Alert tab badge: count today's new trade alerts
+            const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+            const todayCount = tradeParents.filter(p => new Date(p.sent_at||p.created_at) >= todayStart).length;
+            const tradesTabActive = document.querySelector('.tab.active[onclick*="\'trades\'"]');
+            if (!tradesTabActive) setTabBadge('trades', todayCount);
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
         }
@@ -1343,7 +1404,7 @@
 
         const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;background:var(--primary);color:#fff;border-radius:5px;padding:2px 7px;font-size:0.72rem;font-weight:600;">🔒</span>`;
 
-        // ── 1. PAID-ONLY → free member: show instrument+CE/PE+action, lock details, follow-ups visible ──
+        // ── 1. PAID-ONLY → free member ──
         if (isFreeViewer && isPaidOnly) {
             const instrName_s1 = fields.instrument||'Trade Alert';
             const strikeStr_s1 = fields.strike||'';
@@ -1353,14 +1414,22 @@
                 if (r.audience==='paid_only') return false;
                 return true;
             });
-            const _trState = getTradeState(post, postReplies);
-            const _statePill = _trState==='yet_to_trigger'
+            const _u1 = getFreeUnlockedFields(pubReplies_s1);
+            const showCP1 = _u1.all || _u1.callPut;
+            const showEn1 = _u1.all || _u1.entry;
+            const showEx1 = _u1.all || _u1.expiry;
+            const showSL1 = _u1.all || _u1.sl;
+            const typeBoxS1 = showCP1 && fields.optType
+                ? `<div class="type-box ${typeClass_s1}">${fields.optType}</div>`
+                : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`;
+            const _trState = getTradeState(post, pubReplies_s1);
+            const _statePill = _trState==='not_triggered'
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;width:100%;"><span class="not-triggered-pill">⚫ Not Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);font-weight:500;">Removed</span></div>`
+                : _trState==='yet_to_trigger'
                 ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
-                : _trState==='triggered'
-                ? `<span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span>`
-                : `<div style="display:flex;justify-content:space-between;align-items:center;width:100%;"><span class="not-triggered-pill">⚫ Not Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);font-weight:500;">Removed</span></div>`;
+                : `<span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span>`;
             let s1RepliesHtml = '';
-            if (pubReplies_s1.length > 0) {
+            if (pubReplies_s1.length > 0 && _trState === 'triggered') {
                 s1RepliesHtml = `<div class="thread-replies" style="display:block;">`;
                 pubReplies_s1.forEach(r => {
                     const _ts = formatPostTime(r.sent_at||r.created_at);
@@ -1372,18 +1441,19 @@
             return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
-                        ${fields.optType ? `<div class="type-box ${typeClass_s1}">${fields.optType}</div>` : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`}
-                        <div><div class="trade-name">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</div></div>
+                        ${typeBoxS1}
+                        <div><div class="trade-name">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</div>
+                        ${showEx1&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}</div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
                         <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
                         <span class="update-time">${dateTimeStr}</span>
                     </div>
                 </div>
-                <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:1fr 1fr 1fr 1fr;">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
+                <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">${showEx1&&fields.expiry?fields.expiry:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${showSL1?(getCurrentSL(pubReplies_s1)||'—'):lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
                 ${s1RepliesHtml}
@@ -1396,116 +1466,163 @@
             const tradeState = getTradeState(post, postReplies);
             const instrName  = fields.instrument||'Trade Alert';
             const strikeStr  = fields.strike||'';
-            const typeClass2 = (fields.optType||'').toLowerCase();
 
-            // 2a. NOT TRIGGERED — collapsed card
+            // 2a. NOT TRIGGERED — compact single-row card
             if (tradeState === 'not_triggered') {
-                return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.65;">
-                    <div class="update-header">
-                        <span style="font-size:0.95rem;font-weight:800;color:var(--text-muted);">${instrName}${strikeStr?' '+strikeStr:''}</span>
-                        <span class="update-time">${dateTimeStr}</span>
+                return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:6px 12px 8px;">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">
+                        <div class="type-box" style="width:26px;height:26px;font-size:0.75rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">?</div>
+                        <span style="font-weight:700;font-size:0.88rem;color:var(--text-muted);white-space:nowrap;">${instrName}${strikeStr?' '+strikeStr:''}</span>
+                        <span class="not-triggered-pill" style="white-space:nowrap;">⚫ Not Triggered</span>
+                        <span style="margin-left:auto;font-size:0.68rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
                     </div>
-                    <div style="padding:4px 12px 10px;display:flex;justify-content:space-between;align-items:center;"><span class="not-triggered-pill">⚫ Not Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);font-weight:500;">Removed</span></div>
                 </div>`;
             }
 
-            // 2b. YET TO TRIGGER — show instrument+CE/PE+action, lock entry/expiry/SL/Why
-            if (tradeState === 'yet_to_trigger') {
-                return `<div class="update-card" data-trade-key="${tradeKey}">
-                    <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
-                        <div class="trade-title-box">
-                            ${fields.optType ? `<div class="type-box ${typeClass2}">${fields.optType}</div>` : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`}
-                            <div><div class="trade-name">${instrName}${strikeStr?' '+strikeStr:''}</div></div>
-                        </div>
-                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
-                            <span class="update-time">${dateTimeStr}</span>
-                        </div>
-                    </div>
-                    <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:1fr 1fr 1fr 1fr;">
-                        <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
-                        <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
-                        <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
-                        <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">🔒</span></div>
-                    </div>
-                    <div class="trigger-banner"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span></div>
-                </div>`;
+            // Determine unlock state
+            const unlocked  = getFreeUnlockedFields(postReplies);
+            const showCP    = unlocked.all || unlocked.callPut;
+            const showEntry = unlocked.all || unlocked.entry;
+            const showExpiry= unlocked.all || unlocked.expiry;
+            const showCmp   = unlocked.all || unlocked.cmp;
+            const showSL    = unlocked.all || unlocked.sl;
+            const typeClass2 = (fields.optType||'').toLowerCase();
+            const typeBoxHtml2 = showCP && fields.optType
+                ? `<div class="type-box ${typeClass2}">${fields.optType}</div>`
+                : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`;
+
+            // SL display: spot-based → option-price-based with strikethrough
+            const initialSL2 = fields.sl;
+            const revisedSL2 = getCurrentSL(postReplies);
+            let slDisplay2;
+            if (!showSL && !showCP) {
+                slDisplay2 = lockBtn;
+            } else if (revisedSL2) {
+                const revNum2 = parseFloat(String(revisedSL2).replace(/[^0-9.]/g,''));
+                if (initialSL2 && initialSL2 > 5000 && revNum2 < 5000) {
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s>&rarr;${revisedSL2}<span style="font-size:0.65rem;color:#6b7280;">&nbsp;(Adj)</span>`;
+                } else {
+                    slDisplay2 = revisedSL2;
+                }
+            } else if (initialSL2) {
+                slDisplay2 = `₹${initialSL2}`;
+            } else {
+                slDisplay2 = '—';
             }
 
-            // 2c. TRIGGERED — show entry + all follow-ups as plain text (always expanded)
-            const unlocked = getFreeUnlockedFields(postReplies);
+            // Latest CMP from follow-ups
             let latestCmp = null;
             for (const r of postReplies) {
                 const fp = parseFollowUpContent(r.content||'');
                 if (fp.cmp) { latestCmp=fp.cmp; break; }
                 if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
             }
-            const cumExit   = getCumulativeExit(postReplies);
-            const currentSL = getCurrentSL(postReplies);
-            const showCP    = unlocked.all||unlocked.callPut;
-            const showEntry = unlocked.all||unlocked.entry;
-            const showExpiry= unlocked.all||unlocked.expiry;
-            const showCmp   = unlocked.all||unlocked.cmp;
-            const showSL    = unlocked.all||unlocked.sl;
-            const typeClass = (fields.optType||'').toLowerCase();
 
-            let cardBodyHtml;
-            if (fields.instrument) {
-                const typeBoxHtml = fields.optType
-                    ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
-                    : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`;
-                cardBodyHtml = `
-                    <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
-                        <div class="trade-title-box">
-                            ${typeBoxHtml}
-                            <div>
-                                <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:500;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
-                                ${showExpiry&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
-                            </div>
-                        </div>
-                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                            <span style="background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
-                            <span class="update-time">${dateTimeStr}</span>
-                        </div>
-                    </div>
-                    <div class="trade-metrics" style="padding:6px 12px 10px;">
-                        <div class="metric-col"><span class="metric-label">Entry</span>
-                            <span class="metric-value" style="font-size:0.88rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
-                        <div class="metric-col"><span class="metric-label">Latest CMP</span>
-                            <span class="metric-value" style="font-size:0.88rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'—'):lockBtn}</span></div>
-                        <div class="metric-col"><span class="metric-label">SL</span>
-                            <span class="metric-value" style="font-size:0.88rem;">${showSL?(currentSL||'—'):lockBtn}</span></div>
-                        <div class="metric-col"><span class="metric-label">Why</span>
-                            <span class="metric-value" style="font-size:0.88rem;">${why?lockBtn:'—'}</span></div>
-                    </div>`;
-            } else {
-                cardBodyHtml = `<div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
-            }
+            const cumExit = getCumulativeExit(postReplies);
+            let exitBar2 = '';
+            if (cumExit>0&&cumExit<100) exitBar2=`<div class="exit-progress">Exited ${cumExit}% · Holding ${100-cumExit}%</div>`;
+            else if (cumExit>=100) exitBar2=`<div class="exit-progress full">✅ Fully Exited</div>`;
 
-            let exitBar = '';
-            if (cumExit>0&&cumExit<100) exitBar=`<div class="exit-progress">Exited ${cumExit}% · Holding ${100-cumExit}%</div>`;
-            else if (cumExit>=100) exitBar=`<div class="exit-progress full">✅ Fully Exited</div>`;
-
-            // All public follow-ups shown as plain text, always expanded
-            let freeRepliesHtml = '';
-            const _freeVisReplies = postReplies.filter(r => {
+            // Public follow-ups — always shown when triggered
+            let freeRepliesHtml2 = '';
+            const _freeVisReplies2 = postReplies.filter(r => {
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                 if (r.audience==='paid_only') return false;
                 return true;
             });
-            if (_freeVisReplies.length > 0) {
-                freeRepliesHtml = `<div class="thread-replies" style="display:block;">`;
-                _freeVisReplies.forEach(r => {
+            if (_freeVisReplies2.length > 0 && tradeState === 'triggered') {
+                freeRepliesHtml2 = `<div class="thread-replies" style="display:block;">`;
+                _freeVisReplies2.forEach(r => {
                     const _ts = formatPostTime(r.sent_at||r.created_at);
                     const _txt = stripDisclaimerText(sanitizeHtml(r.content||'').replace(/\n/g,'<br>'));
-                    freeRepliesHtml += `<div class="reply-card"><div class="reply-header"><span class="update-time">${_ts}</span></div><div class="reply-body">${_txt}</div></div>`;
+                    freeRepliesHtml2 += `<div class="reply-card"><div class="reply-header"><span class="update-time">${_ts}</span></div><div class="reply-body">${_txt}</div></div>`;
                 });
-                freeRepliesHtml += `</div>`;
+                freeRepliesHtml2 += `</div>`;
             }
 
+            const stateBanner2 = tradeState === 'yet_to_trigger'
+                ? `<div class="trigger-banner"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span></div>`
+                : '';
+
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
-                ${cardBodyHtml}${exitBar}${freeRepliesHtml}
+                <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+                    <div class="trade-title-box">
+                        ${typeBoxHtml2}
+                        <div>
+                            <div class="trade-name">${instrName}${strikeStr?` <span style="font-weight:500;color:#888;font-size:0.9em;">${strikeStr}</span>`:''}</div>
+                            ${showExpiry&&fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
+                        <span class="update-time">${dateTimeStr}</span>
+                    </div>
+                </div>
+                <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Expiry</span><span class="metric-value" style="font-size:0.82rem;">${showExpiry&&fields.expiry?fields.expiry:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
+                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'—'):lockBtn}</span></div>
+                </div>
+                ${exitBar2}${freeRepliesHtml2}${stateBanner2}
                 ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
+            </div>`;
+        }
+
+        // ── 2.5. FREE MEMBER + CLOSED TRADE → Image 3 design ────────────────
+        if (isFreeViewer && isClosed) {
+            const instrName25 = fields.instrument||'Trade';
+            const strikeStr25 = fields.strike||'';
+            const typeClass25 = (fields.optType||'').toLowerCase();
+            const typeBox25 = fields.optType
+                ? `<div class="type-box ${typeClass25}">${fields.optType}</div>`
+                : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">?</div>`;
+            // Max (Post trigger) = highest price seen in any follow-up
+            const mp25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
+            const maxPrice25 = mp25 ? mp25.max : null;
+            const lotSize25 = getLotSize(fields.instrument);
+            let maxPnlPts25 = null, maxPnlRs25 = null;
+            if (fields.entry && maxPrice25) {
+                maxPnlPts25 = fields.optType === 'PE'
+                    ? Math.round(fields.entry - maxPrice25)
+                    : Math.round(maxPrice25 - fields.entry);
+                maxPnlRs25 = Math.abs(maxPnlPts25) * lotSize25;
+            }
+            // SL display with strikethrough
+            const initSL25 = fields.sl;
+            const revSL25  = getCurrentSL(postReplies);
+            let slDisp25 = '—';
+            if (revSL25) {
+                const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
+                if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
+                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> &rarr; ${revSL25} <span style="font-size:0.68rem;color:#6b7280;">(Adjusting)</span>`;
+                } else { slDisp25 = revSL25; }
+            } else if (initSL25) {
+                slDisp25 = `₹${initSL25}`;
+            }
+            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid #bbf7d0;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
+                    <div class="trade-title-box">
+                        ${typeBox25}
+                        <div>
+                            <div class="trade-name">${instrName25}${strikeStr25?` <span style="font-weight:500;color:#888;font-size:0.9em;">${strikeStr25}</span>`:''}</div>
+                            ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="update-time">${dateTimeStr}</div>
+                        <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;">✅ Closed</span>
+                    </div>
+                </div>
+                <div class="trade-metrics" style="padding:4px 12px 8px;grid-template-columns:1fr 1fr;">
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                    <div class="metric-col"><span class="metric-label">Max (Post trigger)</span><span class="metric-value val-up" style="font-size:0.88rem;">${maxPrice25?`₹${maxPrice25}`:'—'}</span></div>
+                    <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisp25}</span></div>
+                </div>
+                <div class="closed-trade-bar">
+                    <span class="update-badge badge-closed-trade">✅ Closed Trade</span>
+                    ${maxPnlPts25!==null?`<span class="max-profit-text">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts (₹${Math.abs(maxPnlRs25).toLocaleString()})</span>`:''}
+                </div>
             </div>`;
         }
 
