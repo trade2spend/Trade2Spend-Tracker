@@ -820,6 +820,28 @@
                 if (!byMonth[t.monthKey]) byMonth[t.monthKey] = {key:t.monthKey, sortKey:t.sortMonth, trades:[]};
                 byMonth[t.monthKey].trades.push(t);
             });
+            // Merge history.json for past months not already in Supabase
+            try {
+                const _hr = await fetch(DB_URLS.history + '?t=' + Date.now());
+                if (_hr.ok) {
+                    const _hj = await _hr.json();
+                    const _ABR = {JAN:'January',FEB:'February',MAR:'March',APR:'April',MAY:'May',JUN:'June',JUL:'July',AUG:'August',SEP:'September',OCT:'October',NOV:'November',DEC:'December'};
+                    const _NUM = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+                    (_hj.months || []).forEach(hm => {
+                        const pts = (hm.month || '').split(' ');
+                        const mKey = (_ABR[pts[0]] || pts[0]) + ' ' + pts[1];
+                        if (byMonth[mKey]) return; // Supabase has this month — skip
+                        const sKey = (parseInt(pts[1]) || 0) * 100 + (_NUM[pts[0]] !== undefined ? _NUM[pts[0]] : 0);
+                        const htrades = (hm.trades || []).map(t => {
+                            const lot = getLotSize(t.instrument);
+                            const pnlRs = t.pnl || 0;
+                            const pnlPts = lot > 0 ? Math.round(pnlRs / lot) : (pnlRs ? 1 : null);
+                            return { instrument:t.instrument||'', optType:t.type||'', strike:String(t.strike||''), expiry:'', entry:t.entry||null, exit:t.exit||null, pnlPts:pnlPts||(pnlRs?1:null), pnlRs, isWin:t.result==='WIN', date:t.date||'', monthKey:mKey };
+                        });
+                        byMonth[mKey] = { key:mKey, sortKey:sKey, trades:htrades };
+                    });
+                }
+            } catch(_e) {}
             const months = Object.values(byMonth).sort((a,b) => b.sortKey - a.sortKey);
 
             // Current month summary
@@ -1476,21 +1498,28 @@
             const instrName  = fields.instrument||'Trade Alert';
             const strikeStr  = fields.strike||'';
 
-            // 2a. NOT TRIGGERED — compact single-row card with date/time
+            // 2a. NOT TRIGGERED — compact two-line card
             if (tradeState === 'not_triggered') {
+                const _ntOpt = (fields.optType||'').toLowerCase();
+                const _ntBox = fields.optType
+                    ? `<div class="type-box ${_ntOpt}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType}</div>`
+                    : `<div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">🔒</div>`;
                 return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
                     <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
-                        <div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:var(--primary-light);color:var(--primary);">?</div>
+                        ${_ntBox}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName}${strikeStr?' '+strikeStr:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
                         <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
-                        <span style="font-size:0.62rem;color:var(--text-muted);white-space:nowrap;flex-shrink:0;">${dateTimeStr}</span>
                     </div>
+                    <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
             }
 
             // Determine unlock state
             const unlocked  = getFreeUnlockedFields(postReplies);
+            // Past-day triggered trade → unlock all fields for free members (trade is history)
+            const _postDay = new Date(post.sent_at||post.created_at).toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'});
+            if (tradeState === 'triggered' && _postDay < new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'})) unlocked.all = true;
             const showCP    = unlocked.all || unlocked.callPut;
             const showEntry = unlocked.all || unlocked.entry;
             const showExpiry= unlocked.all || unlocked.expiry;
@@ -1543,7 +1572,7 @@
             });
             if (_freeVisReplies2.length > 0 && tradeState === 'triggered') {
                 const _ftid = `free-replies-${post.id}`, _fn = _freeVisReplies2.length;
-                freeRepliesHtml2 = `<button class="replies-toggle" id="fbtn-${_ftid}" data-count="${_fn}" onclick="toggleReplies('${_ftid}')">↳ ${_fn} update${_fn>1?'s':''} — tap to view</button>
+                freeRepliesHtml2 = `<button class="replies-toggle" id="btn-${_ftid}" data-count="${_fn}" onclick="toggleReplies('${_ftid}')">↳ ${_fn} update${_fn>1?'s':''} — tap to view</button>
                     <div class="thread-replies" id="${_ftid}" style="display:none;">`;
                 _freeVisReplies2.forEach(r => {
                     const _ts = formatPostTime(r.sent_at||r.created_at);
