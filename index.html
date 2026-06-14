@@ -1371,19 +1371,19 @@
 
         let html = '';
 
-        if (isFreeViewer) {
-            html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-                <button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>
+        function sectionHeader(label, dotColor, glow, trailingHtml='') {
+            return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <p style="font-size:0.75rem;color:var(--text-muted);margin:0;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                    <span style="width:8px;height:8px;background:${dotColor};border-radius:50%;display:inline-block;${glow?'box-shadow:0 0 4px '+dotColor+';':''}"></span>${label}</p>
+                ${trailingHtml}
             </div>`;
         }
 
-        function sectionHeader(label, dotColor, glow) {
-            return `<p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:flex;align-items:center;gap:6px;">
-                <span style="width:8px;height:8px;background:${dotColor};border-radius:50%;display:inline-block;${glow?'box-shadow:0 0 4px '+dotColor+';':''}"></span>${label}</p>`;
-        }
-
         if (activePosts.length) {
-            html += sectionHeader('Active Trades','var(--green)',true);
+            const premiumPill = isFreeViewer
+                ? `<button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>`
+                : '';
+            html += sectionHeader('Active Trades','var(--green)',true, premiumPill);
             activePosts.forEach(p => { html += buildTradeAlertCard(p, replyMap[p.id]||[], memberTier, isAdmin, isFreeViewer); });
         }
         if (closedPosts.length) {
