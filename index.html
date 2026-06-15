@@ -615,6 +615,18 @@
                     : `<span style="color:#9ca3af;">Closing prices · ${dateStr}</span>`;
             }
         }
+        // Update live option CMPs on trade cards in-place
+        if (data.optionLTPs && isOpen) updateTradeCMPs(data.optionLTPs);
+    }
+
+    // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
+    function updateTradeCMPs(optionLTPs) {
+        if (!optionLTPs) return;
+        document.querySelectorAll('[data-live-cmp]').forEach(el => {
+            const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-PE"
+            const ltp = optionLTPs[key];
+            if (ltp != null && ltp > 0) el.textContent = `₹${ltp.toFixed(2)}`;
+        });
     }
 
     async function fetchMarketData() {
@@ -1127,6 +1139,11 @@
         // Exit %
         const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
         if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
+        // "Exiting with/at [price]" or "Exiting [price]" (number present, no %) = full exit
+        if (!r.isFullExit && !r.exitPct) {
+            const exPriceM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
+            if (exPriceM) { r.isFullExit=true; r.type='exit'; r.price=parseFloat(exPriceM[1]); }
+        }
         // Leading option price
         const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\s*(?:[,\n\r\s]|$)/);
         if (lm) { const n=parseFloat(lm[1]); if(n>5&&n<9999){ r.price=n; if(r.type==='status') r.type=r.exitPct?'exit':'cmp_update'; } }
@@ -1197,7 +1214,7 @@
 
     // ── TRADE STATE (for free member unlock logic) ────────────────────────────
     // Status-only messages don't count as "triggered" — only actual entry/exit signals do
-    const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch)/i;
+    const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['’]?t\s+(?:take|enter))/i;
     function getTradeState(post, replies) {
         const validReplies = (replies||[]).filter(r => {
             const c = (r.content||'').trim();
@@ -1279,12 +1296,19 @@
             if (p.exitPct) { cum+=p.exitPct; hasHolding=false; }
         }
         if (cum>=100) return true;
-        if (reps.length>0 && !hasHolding) {
-            // Use latest reply's date (reps[0] = newest, since allPosts sorted desc)
-            const latestRep = reps[0];
-            const lrd = new Date(new Date(latestRep.sent_at||latestRep.created_at).toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
-            const td = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
-            if (lrd.toDateString()!==td.toDateString()) return true;
+        if (!hasHolding) {
+            const tz = { timeZone:'Asia/Kolkata' };
+            const td = new Date(new Date().toLocaleString('en-US', tz));
+            const postIST = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US', tz));
+            if (reps.length > 0) {
+                const lrd = new Date(new Date(reps[0].sent_at||reps[0].created_at).toLocaleString('en-US', tz));
+                if (lrd.toDateString() !== td.toDateString()) return true; // reply from prev day → closed
+            }
+            // Intraday auto-close: trade posted today + market closed (after 3:30 PM) + no overnight hold
+            if (postIST.toDateString() === td.toDateString()) {
+                const nowMins = td.getHours() * 60 + td.getMinutes();
+                if (nowMins >= 15 * 60 + 30) return true;
+            }
         }
         return false;
     }
@@ -2008,7 +2032,7 @@
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                 <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
-                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${tradeKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
                 <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${whyBtn3}</span></div>
             </div>
             ${repliesHtml}
