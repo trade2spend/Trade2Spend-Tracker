@@ -1147,7 +1147,7 @@ async function handleMessage(text) {
     const inMarket = minsIST >= 9 * 60 + 15 && minsIST < 15 * 60 + 35;
     if (inMarket) {
       if (startMarketScraper()) {
-        await tgSend('📊 <b>Market scraper started</b>\nFetching NIFTY / SENSEX / BANKNIFTY every 30s\nPushing to market.json on GitHub\nAuto-stops at 3:35 PM IST');
+        await tgSend('📊 <b>Market scraper started</b>\nFetching NIFTY / SENSEX / BANKNIFTY every 15s\nPushing to market.json on GitHub\nAuto-stops at 3:35 PM IST');
       } else {
         await tgSend('⚠️ Market scraper already running. Use /market_off to stop.');
       }
