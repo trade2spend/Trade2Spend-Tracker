@@ -1,87 +1,92 @@
 {
   "marketOpen": true,
-  "lastUpdated": "2026-06-15T03:47:12.784Z",
+  "lastUpdated": "2026-06-15T03:47:43.616Z",
   "indices": {
     "NIFTY": {
-      "price": 23968.85,
-      "change": 345.95,
+      "price": 23966.8,
+      "change": 343.9,
       "changePct": 1.46
     },
     "SENSEX": {
-      "price": 76661.86,
-      "change": 1133.91,
-      "changePct": 1.5
+      "price": 76682.8,
+      "change": 1154.85,
+      "changePct": 1.53
     },
     "BANKNIFTY": {
-      "price": 57760.1,
-      "change": 945.3,
-      "changePct": 1.66
+      "price": 57728.75,
+      "change": 913.95,
+      "changePct": 1.61
     }
   },
   "breadth": {
     "nifty50": {
-      "advancing": 48,
-      "declining": 2,
+      "advancing": 46,
+      "declining": 4,
       "unchanged": 0
     }
   },
   "gainers": [
     {
       "symbol": "SHRIRAMFIN",
-      "price": 958,
-      "change": 8.1
+      "price": 995.15,
+      "change": 4.21
+    },
+    {
+      "symbol": "INDIGO",
+      "price": 4893.6,
+      "change": 3.9
+    },
+    {
+      "symbol": "ULTRACEMCO",
+      "price": 11479,
+      "change": 3.26
+    },
+    {
+      "symbol": "LT",
+      "price": 4180.5,
+      "change": 3.24
     },
     {
       "symbol": "BAJFINANCE",
-      "price": 920,
-      "change": 5.68
+      "price": 947.45,
+      "change": 3.17
     },
     {
       "symbol": "TMPV",
-      "price": 391,
-      "change": 4.02
+      "price": 402,
+      "change": 3.08
     },
     {
-      "symbol": "JIOFIN",
-      "price": 236.33,
-      "change": 3.64
+      "symbol": "ETERNAL",
+      "price": 250.95,
+      "change": 2.93
     },
     {
-      "symbol": "BAJAJFINSV",
-      "price": 1691.9,
-      "change": 2.84
-    },
-    {
-      "symbol": "KOTAKBANK",
-      "price": 404,
-      "change": 2.71
-    },
-    {
-      "symbol": "RELIANCE",
-      "price": 1296.4,
-      "change": 2.64
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "price": 1825,
-      "change": 2.38
+      "symbol": "MARUTI",
+      "price": 13709,
+      "change": 2.57
     }
   ],
   "losers": [
     {
-      "symbol": "ONGC",
-      "price": 245.1,
-      "change": -0.45
-    },
-    {
       "symbol": "CIPLA",
-      "price": 1387.7,
-      "change": -0.12
+      "price": 1384.2,
+      "change": -0.37
     },
     {
       "symbol": "SUNPHARMA",
-      "price": 1807.5,
-      "change": -0.01
+      "price": 1801,
+      "change": -0.37
+    },
+    {
+      "symbol": "ONGC",
+      "price": 245.65,
+      "change": -0.22
+    },
+    {
+      "symbol": "APOLLOHOSP",
+      "price": 8487,
+      "change": -0.13
     }
   ]
 }
