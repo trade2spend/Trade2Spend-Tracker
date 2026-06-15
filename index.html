@@ -277,6 +277,21 @@
         /* ── CLOSED TRADE BAR ── */
         .closed-trade-bar { background: #dcfce7; border-top: 1px solid #bbf7d0; padding: 5px 12px; display: flex; justify-content: space-between; align-items: center; }
         .max-profit-text { font-size: 0.72rem; color: #15803d; font-weight: 700; }
+
+        /* ── TOTP MODAL ── */
+        #totp-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); z-index:1002; justify-content:center; align-items:center; backdrop-filter:blur(4px); }
+        #totp-modal.visible { display:flex; }
+        .totp-box { background:#fff; width:90%; max-width:340px; border-radius:16px; padding:22px 18px; box-shadow:0 12px 40px rgba(0,0,0,0.2); }
+        .totp-title { font-size:1rem; font-weight:700; color:#4a2a78; margin-bottom:4px; }
+        .totp-sub { font-size:0.8rem; color:#666; margin-bottom:16px; line-height:1.5; }
+        .totp-input { width:100%; border:2px solid #c4b5fd; border-radius:10px; padding:13px; font-size:1.5rem; letter-spacing:10px; text-align:center; font-weight:700; outline:none; box-sizing:border-box; font-family:inherit; color:#1a2030; transition:border-color 0.2s; }
+        .totp-input:focus { border-color:#4a2a78; }
+        .totp-error { color:#dc2626; font-size:0.78rem; margin-top:6px; min-height:18px; }
+        .totp-actions { display:flex; gap:8px; margin-top:14px; }
+        .totp-skip { flex:1; padding:10px; background:transparent; border:1px solid #e5e7eb; border-radius:8px; font-size:0.85rem; color:#9ca3af; cursor:pointer; font-family:inherit; }
+        .totp-submit { flex:2; padding:10px; background:#4a2a78; color:#fff; border:none; border-radius:8px; font-size:0.88rem; font-weight:700; cursor:pointer; font-family:inherit; transition:opacity 0.2s; }
+        .totp-submit:disabled { opacity:0.6; cursor:not-allowed; }
+        .totp-footer { text-align:center; font-size:0.68rem; color:#9ca3af; margin-top:10px; }
     </style>
 </head>
 <body>
@@ -2327,7 +2342,7 @@
             toggleNewAlertBox();
             btn.disabled = false; btn.textContent = 'Post Alert →';
             fetchTradeAlerts();
-            alert('✅ Trade alert posted to members!');
+            checkAndPromptTotp(); // ask for TOTP if Kotak not yet connected today
         } catch(e) {
             alert('Failed to post. Check connection.');
             btn.disabled = false; btn.textContent = 'Post Alert →';
@@ -2620,6 +2635,81 @@ async function triggerA2HS() {
   } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
 }
 document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); });
+
+    // ── TOTP MODAL ───────────────────────────────────────────────────────────
+    const VM_BASE = 'https://api.trade2spend.com';
+
+    function showTotpModal() {
+        document.getElementById('totp-input').value = '';
+        document.getElementById('totp-error').textContent = '';
+        document.getElementById('totp-submit-btn').disabled = false;
+        document.getElementById('totp-submit-btn').textContent = 'Start Tracking →';
+        document.getElementById('totp-modal').classList.add('visible');
+        setTimeout(() => document.getElementById('totp-input').focus(), 300);
+    }
+
+    function closeTotpModal() {
+        document.getElementById('totp-modal').classList.remove('visible');
+    }
+
+    async function checkAndPromptTotp() {
+        if (isMarketClosedNow()) return; // outside market hours — skip
+        try {
+            const r = await fetch(`${VM_BASE}/`, { signal: AbortSignal.timeout(4000) });
+            const d = await r.json();
+            if (!d.loggedIn) showTotpModal();
+        } catch(e) { /* VM unreachable — skip silently */ }
+    }
+
+    async function submitTotpFromPwa() {
+        const totp = (document.getElementById('totp-input').value || '').trim();
+        const errEl = document.getElementById('totp-error');
+        const btn   = document.getElementById('totp-submit-btn');
+        if (!/^\d{6}$/.test(totp)) { errEl.textContent = 'Enter exactly 6 digits.'; return; }
+        btn.disabled = true; btn.textContent = 'Connecting...';
+        errEl.textContent = '';
+        try {
+            const r = await fetch(`${VM_BASE}/totp-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ totp }),
+                signal: AbortSignal.timeout(15000)
+            });
+            const d = await r.json();
+            if (d.ok) {
+                closeTotpModal();
+                const t = document.createElement('div');
+                t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:10px 20px;border-radius:20px;font-size:0.82rem;font-weight:700;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+                t.textContent = '✅ Kotak connected — live CMP tracking started';
+                document.body.appendChild(t);
+                setTimeout(() => t.remove(), 4000);
+            } else {
+                errEl.textContent = d.error || 'Login failed. Try again.';
+                btn.disabled = false; btn.textContent = 'Start Tracking →';
+            }
+        } catch(e) {
+            errEl.textContent = 'Could not reach server. Check connection.';
+            btn.disabled = false; btn.textContent = 'Start Tracking →';
+        }
+    }
 </script>
+
+<!-- TOTP Modal -->
+<div id="totp-modal">
+    <div class="totp-box">
+        <div class="totp-title">📲 Start Live CMP Tracking</div>
+        <div class="totp-sub">Trade alert is live! Enter your 6-digit Kotak TOTP to start fetching live option prices from Kotak Neo.</div>
+        <input id="totp-input" class="totp-input" type="text" inputmode="numeric" maxlength="6" placeholder="——————"
+               oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
+               onkeydown="if(event.key==='Enter')submitTotpFromPwa()">
+        <div id="totp-error" class="totp-error"></div>
+        <div class="totp-actions">
+            <button class="totp-skip" onclick="closeTotpModal()">Skip</button>
+            <button id="totp-submit-btn" class="totp-submit" onclick="submitTotpFromPwa()">Start Tracking →</button>
+        </div>
+        <div class="totp-footer">Auto-stops at 3:35 PM IST · Kotak Neo only</div>
+    </div>
+</div>
+
 </body>
 </html>
