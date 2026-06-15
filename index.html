@@ -325,9 +325,7 @@
     <!-- MARKETS TAB -->
     <div id="markets" class="content-section active" style="padding-top:10px;">
         <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:0 2px 4px;"></div>
-        <div class="market-grid" id="market-grid-container">
-            <div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Fetching live market data...</div>
-        </div>
+        <div class="market-grid" id="market-grid-container"></div>
         <!-- Gainers / Losers -->
         <div class="movers-section" id="movers-section" style="display:none;">
             <div class="movers-grid">
@@ -525,7 +523,121 @@
     };
 
     // --- FETCH MARKET DATA ---
+    function isMarketClosedNow() {
+        const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const d = now.getDay(), mins = now.getHours() * 60 + now.getMinutes();
+        return d === 0 || d === 6 || mins < 9 * 60 + 15 || mins >= 15 * 60 + 35;
+    }
+
+    function renderMarketUI(data) {
+        const isOpen = data.marketOpen === true && !isMarketClosedNow();
+
+        const dotEl = document.getElementById('global-market-dot');
+        const txtEl = document.getElementById('global-market-text');
+        if(dotEl) dotEl.className = isOpen ? 'status-indicator open' : 'status-indicator closed';
+        if(txtEl) txtEl.innerText = isOpen ? 'Open' : 'Closed';
+        const liveBadge = document.getElementById('live-badge');
+        if(liveBadge) liveBadge.style.display = isOpen ? 'flex' : 'none';
+
+        const container = document.getElementById('market-grid-container');
+        const INDEX_LIST = ['NIFTY', 'SENSEX', 'BANKNIFTY'];
+        let anyIndex = false;
+        if(data.indices) {
+            if (!document.getElementById('mcard-NIFTY')) container.innerHTML = '';
+            INDEX_LIST.forEach(idx => {
+                if(!data.indices[idx]) return;
+                anyIndex = true;
+                const info = data.indices[idx];
+                const isUp = info.change >= 0;
+                const icon = isUp ? '▲' : '▼';
+                const pillClass = isUp ? 'up' : 'down';
+                const sign = isUp ? '+' : '';
+                const priceStr = info.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+                const changeStr = `${sign}${info.changePct}% &nbsp; ${sign}${info.change}`;
+                const cardId = `mcard-${idx}`;
+                const existing = document.getElementById(cardId);
+                if (existing) {
+                    existing.querySelector('.market-price').textContent = priceStr;
+                    const pill = existing.querySelector('.change-pill');
+                    if (pill) { pill.className = `change-pill ${pillClass}`; pill.innerHTML = changeStr; }
+                    const trend = existing.querySelector('.trend-icon');
+                    if (trend) { trend.className = `trend-icon ${pillClass}`; trend.textContent = icon; }
+                } else {
+                    container.innerHTML += `
+                        <div class="market-card" id="${cardId}">
+                            <div class="market-title">${idx === 'BANKNIFTY' ? 'BANK NIFTY' : idx}</div>
+                            <div class="trend-icon ${pillClass}">${icon}</div>
+                            <div class="market-price">${priceStr}</div>
+                            <div class="change-pill ${pillClass}">${changeStr}</div>
+                        </div>`;
+                }
+            });
+        }
+        if(!anyIndex) {
+            container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
+        } else if (!document.getElementById('mcard-src')) {
+            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
+        }
+
+        if(data.breadth && data.breadth.nifty50) {
+            const b = data.breadth.nifty50;
+            const advEl = document.getElementById('adv-count');
+            const decEl = document.getElementById('dec-count');
+            const noteEl = document.getElementById('adv-note');
+            if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
+            if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
+            if(noteEl) noteEl.textContent = isOpen ? 'NSE · every 3 min' : 'NSE · last session';
+        }
+
+        const moversEl = document.getElementById('movers-section');
+        if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
+            moversEl.style.display = 'block';
+            const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
+            const losers  = [...data.losers].sort((a,b) => a.change - b.change);
+            document.getElementById('gainers-list').innerHTML = gainers.map(s=>
+                `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+            document.getElementById('losers-list').innerHTML = losers.map(s=>
+                `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+        }
+
+        if(data.lastUpdated) {
+            const updEl = document.getElementById('market-last-updated');
+            if(updEl) {
+                const t = new Date(data.lastUpdated);
+                const dateStr = t.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short'});
+                const timeStr = t.toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit'}) + ' · ' + dateStr;
+                updEl.innerHTML = isOpen
+                    ? (Date.now() - t.getTime() > 5 * 60 * 1000
+                        ? `<span style="color:#dc2626;">⚠ Last updated: ${timeStr}</span>`
+                        : `<span style="color:#9ca3af;">Last updated: ${timeStr}</span>`)
+                    : `<span style="color:#9ca3af;">Closing prices · ${dateStr}</span>`;
+            }
+        }
+    }
+
     async function fetchMarketData() {
+        // Step 1: Always render from cache first — instant, no "Fetching..." state ever
+        let cachedData = null;
+        try {
+            const raw = localStorage.getItem('t2s_market_cache');
+            if (raw) {
+                const { data, ts } = JSON.parse(raw);
+                if (Date.now() - ts < 24 * 60 * 60 * 1000) { cachedData = data; renderMarketUI(data); }
+            }
+        } catch {}
+
+        // Step 2: Market closed — no network call needed, data won't change
+        if (isMarketClosedNow()) {
+            if (!cachedData) {
+                document.getElementById('market-grid-container').innerHTML =
+                    '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market closed · Open 9:15 AM IST</div>';
+            }
+            return cachedData;
+        }
+
+        // Step 3: Market open — fetch live data from VM
         try {
             const ctrl = new AbortController();
             const tid = setTimeout(() => ctrl.abort(), 5000);
@@ -533,95 +645,16 @@
             clearTimeout(tid);
             if(!res.ok) throw new Error('Network error');
             const data = await res.json();
-            
-            const isOpen = data.marketOpen;
-            const dotEl = document.getElementById('global-market-dot');
-            const txtEl = document.getElementById('global-market-text');
-            if(dotEl) dotEl.className = isOpen ? 'status-indicator open' : 'status-indicator closed';
-            if(txtEl) txtEl.innerText = isOpen ? 'Open' : 'Closed';
-            document.getElementById('live-badge').style.display = isOpen ? 'flex' : 'none';
-
-            const container = document.getElementById('market-grid-container');
-            const INDEX_LIST = ['NIFTY', 'SENSEX', 'BANKNIFTY'];
-            let anyIndex = false;
-            if(data.indices) {
-                if (!document.getElementById('mcard-NIFTY')) container.innerHTML = '';
-                INDEX_LIST.forEach(idx => {
-                    if(!data.indices[idx]) return;
-                    anyIndex = true;
-                    const info = data.indices[idx];
-                    const isUp = info.change >= 0;
-                    const icon = isUp ? '▲' : '▼';
-                    const pillClass = isUp ? 'up' : 'down';
-                    const sign = isUp ? '+' : '';
-                    const priceStr = info.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-                    const changeStr = `${sign}${info.changePct}% &nbsp; ${sign}${info.change}`;
-                    const cardId = `mcard-${idx}`;
-                    const existing = document.getElementById(cardId);
-                    if (existing) {
-                        // Update in-place — no DOM rebuild, no flash
-                        existing.querySelector('.market-price').textContent = priceStr;
-                        const pill = existing.querySelector('.change-pill');
-                        if (pill) { pill.className = `change-pill ${pillClass}`; pill.innerHTML = changeStr; }
-                        const trend = existing.querySelector('.trend-icon');
-                        if (trend) { trend.className = `trend-icon ${pillClass}`; trend.textContent = icon; }
-                    } else {
-                        container.innerHTML += `
-                            <div class="market-card" id="${cardId}">
-                                <div class="market-title">${idx === 'BANKNIFTY' ? 'BANK NIFTY' : idx}</div>
-                                <div class="trend-icon ${pillClass}">${icon}</div>
-                                <div class="market-price">${priceStr}</div>
-                                <div class="change-pill ${pillClass}">${changeStr}</div>
-                            </div>`;
-                    }
-                });
-            }
-            if(!anyIndex) {
-                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
-            } else if (!document.getElementById('mcard-src')) {
-                container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
-            }
-            // Advance/decline from market.json breadth data
-            if(data.breadth && data.breadth.nifty50) {
-                const b = data.breadth.nifty50;
-                document.getElementById('adv-count').textContent = `▲ ${b.advancing} Advancing`;
-                document.getElementById('dec-count').textContent = `▼ ${b.declining} Declining`;
-                document.getElementById('adv-note').textContent = isOpen ? 'NSE · every 3 min' : 'NSE · last session';
-            }
-            // Show movers section (gainers/losers from market.json when scraper is active)
-            const moversEl = document.getElementById('movers-section');
-            if(moversEl && data.gainers && data.losers) {
-                moversEl.style.display = 'block';
-                const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
-                const losers  = [...data.losers].sort((a,b) => a.change - b.change);
-                document.getElementById('gainers-list').innerHTML = gainers.map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                    + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
-                document.getElementById('losers-list').innerHTML = losers.map(s=>
-                    `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                    + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
-            }
-            if(data.lastUpdated) {
-                const updEl = document.getElementById('market-last-updated');
-                if(updEl) {
-                    const t       = new Date(data.lastUpdated);
-                    const dateStr = t.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata', day:'numeric', month:'short'});
-                    const timeStr = t.toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit'}) + ' · ' + dateStr;
-                    if (!isOpen) {
-                        updEl.innerHTML = `<span style="color:#9ca3af;">Closing prices · ${dateStr}</span>`;
-                    } else {
-                        const stale = Date.now() - t.getTime() > 5 * 60 * 1000;
-                        updEl.innerHTML = stale
-                            ? `<span style="color:#dc2626;">⚠ Last updated: ${timeStr}</span>`
-                            : `<span style="color:#9ca3af;">Last updated: ${timeStr}</span>`;
-                    }
-                }
-            }
-            return data; // return for scheduleMarketRefresh to read specialHours
+            renderMarketUI(data);
+            localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
+            return data;
         } catch(e) {
-            console.error("Market fetch failed", e);
-            document.getElementById('market-grid-container').innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">Unable to load market data.<br>Check your connection.</div>';
-            return null;
+            console.error('Market fetch failed', e);
+            if (!cachedData) {
+                document.getElementById('market-grid-container').innerHTML =
+                    '<div style="text-align:center;padding:40px;color:#888;">Unable to load market data.<br>Check your connection.</div>';
+            }
+            return cachedData;
         }
     }
 
@@ -2168,11 +2201,11 @@
                     <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}">
                         <div class="update-header">
                             <span class="update-time">${timeStr}</span>
+                            ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share this update"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>` : ''}
                         </div>
                         <div class="update-body"><div class="update-content">${renderedContent}</div></div>
                         ${whyHtml}
                         ${closedBar}
-                        ${post.allow_sharing ? `<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share this update"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>` : ''}
                     </div>
                     ${repliesHtml}
                     ${adminHtml}`;
@@ -2416,25 +2449,24 @@
         }
 
         let _marketRefreshTimer = null;
-        function scheduleMarketRefresh(specialHours){
+        function scheduleMarketRefresh() {
             clearTimeout(_marketRefreshTimer);
-            if(!isMarketOpen(specialHours)){
-                // Market closed — check again in 5 min in case of special session
+            if (isMarketClosedNow()) {
+                // No polling when market is closed — prices don't change after 3:35 PM
+                // Re-check every 10 min so the tab auto-activates when market opens next day
                 _marketRefreshTimer = setTimeout(async () => {
-                    const data = await fetchMarketData();
-                    const sp = data && data.specialHours;
-                    scheduleMarketRefresh(sp);
-                }, 5 * 60 * 1000);
+                    await fetchMarketData();
+                    scheduleMarketRefresh();
+                }, 10 * 60 * 1000);
                 return;
             }
             // Market open — refresh every 5 seconds
             _marketRefreshTimer = setTimeout(async () => {
-                const data = await fetchMarketData();
-                const sp = data && data.specialHours;
-                scheduleMarketRefresh(sp);
+                await fetchMarketData();
+                scheduleMarketRefresh();
             }, 5000);
         }
-        fetchMarketData().then(d => scheduleMarketRefresh(d && d.specialHours));
+        fetchMarketData().then(() => scheduleMarketRefresh());
     })();
 
     // ── PWA INSTALL PROMPT ──
