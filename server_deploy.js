@@ -69,6 +69,8 @@ function kvUnlock(key) { _locks.delete(key); }
 
 let marketScraperInterval = null;
 let _latestMarketData    = null;
+let _optionChain         = {}; // key: "NIFTY-23900-PE" → nearest-expiry LTP
+let _optionChainTs       = 0;  // last refresh timestamp
 
 function loadState() {
   try {
@@ -453,6 +455,41 @@ async function fetchNSEMovers() {
   } catch(e) { console.error('[movers] fallback also failed:', e.message); return null; }
 }
 
+// Option chain — NSE, nearest expiry per strike, refresh every 3 min during market hours
+async function fetchOptionChain(symbol) {
+  try {
+    if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+    const url = `https://www.nseindia.com/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`;
+    const r = await ft(url, { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
+    if (!r.ok) { console.error(`[options] ${symbol} HTTP ${r.status}`); return; }
+    const data = await r.json();
+    const rows = data?.records?.data || [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    // Sort by expiry so we always take nearest future expiry first
+    const sorted = [...rows].sort((a,b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+    const seen = {};
+    sorted.forEach(row => {
+      const exp = new Date(row.expiryDate);
+      exp.setHours(0,0,0,0);
+      if (exp < today) return; // skip already-expired
+      ['CE','PE'].forEach(type => {
+        const key = `${symbol}-${row.strikePrice}-${type}`;
+        if (seen[key]) return; // keep nearest expiry only
+        const ltp = row[type]?.lastPrice;
+        if (ltp != null && ltp > 0) { _optionChain[key] = ltp; seen[key] = true; }
+      });
+    });
+    console.log(`[options] ${symbol}: ${Object.keys(seen).length} strikes updated`);
+  } catch(e) { console.error(`[options] fetchOptionChain(${symbol}) error:`, e.message); }
+}
+
+async function maybeRefreshOptionChain() {
+  if (Date.now() - _optionChainTs < 3 * 60 * 1000) return; // refresh every 3 min
+  _optionChainTs = Date.now();
+  await Promise.all(['NIFTY','BANKNIFTY'].map(s => fetchOptionChain(s)));
+}
+
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
 async function fetchSensexBSE() {
   try {
@@ -509,8 +546,9 @@ async function runMarketScraper(force = false) {
     return;
   }
   try {
-    // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX
+    // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX; option chain every 3 min
     const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE(), fetchNSEMovers()]);
+    maybeRefreshOptionChain().catch(e => console.error('[options] bg refresh error:', e.message));
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
@@ -540,7 +578,8 @@ async function runMarketScraper(force = false) {
       gainers: movers?.gainers || existing.gainers || [],
       losers:  movers?.losers  || existing.losers  || []
     };
-    _latestMarketData = marketData;
+    // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
+    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain } };
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensex?.price} BANKNIFTY:${banknifty?.price}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
