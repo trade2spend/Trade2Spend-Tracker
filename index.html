@@ -1938,10 +1938,11 @@
             slDisplay3 = `₹${initSL3}`;
         } else { slDisplay3 = '—'; }
 
-        // Why — 📝 tap to open popup, else —
-        const whyBtn3 = (why && whyVisible)
-            ? `<button onclick="showWhyPopup('${post.id}')" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;" title="Why this trade">📝</button>`
-            : '—';
+        // Why — separate row below metrics, only if why exists
+        const whyRow3 = why ? (whyVisible
+            ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
+            : `<div class="why-locked"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
+        ) : '';
 
         // Audience badge — shown to admin only
         const _audBadge3 = isAdmin ? (post.audience==='paid_only'
@@ -2032,9 +2033,12 @@
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${exitPrice&&exitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
-                    <div style="flex:1;min-width:0;"><span class="metric-label">Why</span><span style="display:block;font-size:0.72rem;color:#555;line-height:1.3;margin-top:2px;">${(()=>{const _w=getWhyContent(post.content);return _w?_w.slice(0,35)+(_w.length>35?'…':''):'—';})()}</span></div>
+                    <div style="flex:1;min-width:0;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
+                ${why ? (whyVisible
+                    ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
+                    : `<div class="why-locked"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
+                ) : ''}
                 <div class="closed-trade-bar" style="${_barStyle3}">
                     <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
                     ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
@@ -2068,12 +2072,12 @@
                     ${_audBadge3}
                 </div>
             </div>
-            <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
+            <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                 <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${tradeKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
-                <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${whyBtn3}</span></div>
             </div>
+            ${whyRow3}
             ${repliesHtml}
             <div class="trigger-banner" style="justify-content:space-between;">${statePill3}${shareBtn3}</div>
         </div>
