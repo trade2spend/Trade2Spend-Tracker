@@ -1304,6 +1304,8 @@
                 const lrd = new Date(new Date(reps[0].sent_at||reps[0].created_at).toLocaleString('en-US', tz));
                 if (lrd.toDateString() !== td.toDateString()) return true; // reply from prev day → closed
             }
+            // No replies + posted on a previous calendar day → expired (never triggered)
+            if (reps.length === 0 && postIST.toDateString() !== td.toDateString()) return true;
             // Intraday auto-close: trade posted today + market closed (after 3:30 PM) + no overnight hold
             if (postIST.toDateString() === td.toDateString()) {
                 const nowMins = td.getHours() * 60 + td.getMinutes();
@@ -1468,7 +1470,9 @@
                 if (diff !== 0) return diff; // triggered first
                 return new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
             });
-        const closedPosts = _recentPosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]));
+        const closedPosts = _recentPosts
+            .filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]))
+            .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
 
         let html = '';
 
