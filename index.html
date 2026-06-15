@@ -519,7 +519,7 @@
     const GITHUB_USER = 'trade2spend';
     const GITHUB_REPO = 'Trade2Spend-Tracker';
     const DB_URLS = {
-        market: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/market.json`, 
+        market: `https://api.trade2spend.com/market`,
         trades: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/trades.json`,
         history: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/history.json`
     };
@@ -529,7 +529,7 @@
         try {
             const ctrl = new AbortController();
             const tid = setTimeout(() => ctrl.abort(), 5000);
-            const res = await fetch(DB_URLS.market + '?t=' + new Date().getTime(), { signal: ctrl.signal });
+            const res = await fetch(DB_URLS.market, { signal: ctrl.signal });
             clearTimeout(tid);
             if(!res.ok) throw new Error('Network error');
             const data = await res.json();
