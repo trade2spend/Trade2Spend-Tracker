@@ -68,6 +68,7 @@ function kvLock(key, ttlSec = 45) {
 function kvUnlock(key) { _locks.delete(key); }
 
 let marketScraperInterval = null;
+let _latestMarketData    = null;
 
 function loadState() {
   try {
@@ -411,21 +412,25 @@ async function fetchNSEBreadth() {
 async function fetchNSEMovers() {
   if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
   try {
-    const [gr, lr] = await Promise.all([
-      ft('https://www.nseindia.com/api/live-analysis-variations?index=gainers',  { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000),
-      ft('https://www.nseindia.com/api/live-analysis-variations?index=loosers',  { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000)
-    ]);
-    if (!gr.ok || !lr.ok) { _nseCookieTs = 0; return null; }
-    const [gd, ld] = await Promise.all([gr.json(), lr.json()]);
+    // Use all-stocks endpoint so gainers/losers count matches the advance/decline bar
+    const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050', {
+      headers: { ...NSE_HEADERS, 'Cookie': _nseCookies }
+    }, 8000);
+    if (!r.ok) { _nseCookieTs = 0; return null; }
+    const d = await r.json();
+    const stocks = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
     const mapStock = s => ({
       symbol: s.symbol,
-      price:  parseFloat(parseFloat(s.ltp       || 0).toFixed(2)),
-      change: parseFloat(parseFloat(s.perChange || 0).toFixed(2))
+      price:  parseFloat(parseFloat(s.lastPrice || 0).toFixed(2)),
+      change: parseFloat(parseFloat(s.pChange   || 0).toFixed(2))
     });
-    return {
-      gainers: (gd?.NIFTY?.data || []).sort((a, b) => (b.perChange || 0) - (a.perChange || 0)).slice(0, 8).map(mapStock),
-      losers:  (ld?.NIFTY?.data || []).sort((a, b) => (a.perChange || 0) - (b.perChange || 0)).slice(0, 8).map(mapStock)
-    };
+    const gainers = stocks.filter(s => parseFloat(s.pChange || 0) > 0)
+      .sort((a, b) => parseFloat(b.pChange) - parseFloat(a.pChange))
+      .slice(0, 8).map(mapStock);
+    const losers = stocks.filter(s => parseFloat(s.pChange || 0) < 0)
+      .sort((a, b) => parseFloat(a.pChange) - parseFloat(b.pChange))
+      .slice(0, 8).map(mapStock);
+    return { gainers, losers };
   } catch(e) { console.error('fetchNSEMovers error:', e.message); return null; }
 }
 
@@ -500,11 +505,7 @@ async function runMarketScraper(force = false) {
     });
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     const breadth = n50 ? { advancing: parseInt(n50.advances)||0, declining: parseInt(n50.declines)||0, unchanged: parseInt(n50.unchanged)||0 } : null;
-    let existing = { gainers: [], losers: [], breadth: { nifty50: { advancing: 0, declining: 0, unchanged: 0 } } };
-    try {
-      const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
-      existing = await r.json();
-    } catch {}
+    const existing = _latestMarketData || { gainers: [], losers: [], breadth: { nifty50: { advancing: 0, declining: 0, unchanged: 0 } } };
     const day = now.getDay(); // 0=Sun, 6=Sat
     const isWeekday = day >= 1 && day <= 5;
     const isMarketOpen = isWeekday && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
@@ -520,6 +521,7 @@ async function runMarketScraper(force = false) {
       gainers: movers?.gainers || existing.gainers || [],
       losers:  movers?.losers  || existing.losers  || []
     };
+    _latestMarketData = marketData;
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensex?.price} BANKNIFTY:${banknifty?.price}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
@@ -527,7 +529,7 @@ async function runMarketScraper(force = false) {
 
 function startMarketScraper() {
   if (marketScraperInterval) return false;
-  marketScraperInterval = setInterval(runMarketScraper, 30_000);
+  marketScraperInterval = setInterval(runMarketScraper, 15_000);
   runMarketScraper();
   return true;
 }
@@ -1215,6 +1217,17 @@ async function executeFromPWA(trade) {
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
 
+  // Live market data — GET /market (used by PWA instead of GitHub CDN)
+  if (req.method === 'GET' && urlPath === '/market') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache, no-store'
+    });
+    res.end(JSON.stringify(_latestMarketData || { marketOpen: false, indices: {}, lastUpdated: new Date().toISOString() }));
+    return;
+  }
+
   // Health check — GET /
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1406,8 +1419,13 @@ function isMarketHours() {
 loadState();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
 
-// Start scraper immediately on startup if within market hours (don't wait 30s)
-setTimeout(() => {
+// On startup: populate _latestMarketData from GitHub so /market works immediately
+setTimeout(async () => {
+  try {
+    const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 8000);
+    if (r.ok) _latestMarketData = await r.json();
+  } catch(e) { console.log('Startup market.json fetch failed:', e.message); }
+  // Start scraper if within market hours
   if (isMarketHours() && GH_TOKEN && !marketScraperInterval) startMarketScraper();
 }, 5000);
 
