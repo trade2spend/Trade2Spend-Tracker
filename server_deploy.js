@@ -426,10 +426,10 @@ async function fetchNSEMovers() {
     });
     const gainers = stocks.filter(s => parseFloat(s.pChange || 0) > 0)
       .sort((a, b) => parseFloat(b.pChange) - parseFloat(a.pChange))
-      .slice(0, 8).map(mapStock);
+      .map(mapStock);
     const losers = stocks.filter(s => parseFloat(s.pChange || 0) < 0)
       .sort((a, b) => parseFloat(a.pChange) - parseFloat(b.pChange))
-      .slice(0, 8).map(mapStock);
+      .map(mapStock);
     return { gainers, losers };
   } catch(e) { console.error('fetchNSEMovers error:', e.message); return null; }
 }
