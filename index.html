@@ -1800,7 +1800,11 @@
             } else if (initSL25) {
                 slDisp25 = `₹${initSL25}`;
             }
-            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid #bbf7d0;">
+            const _loss25 = maxPnlPts25 !== null && maxPnlPts25 < 0;
+            const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
+            const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
+            const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
+            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
                         ${typeBox25}
@@ -1811,7 +1815,7 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
-                        <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;">✅ Closed</span>
+                        <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;${_badgeStyle25}">${_barLabel25}</span>
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:4px 12px 8px;grid-template-columns:1fr 1fr;">
@@ -1819,9 +1823,9 @@
                     <div class="metric-col"><span class="metric-label">${displayPriceLabel25}</span><span class="metric-value ${displayPrice25&&displayPrice25>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
                     <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisp25}</span></div>
                 </div>
-                <div class="closed-trade-bar">
-                    <span class="update-badge badge-closed-trade">✅ Closed Trade</span>
-                    ${maxPnlPts25!==null?`<span class="max-profit-text ${maxPnlPts25>=0?'':'val-down'}">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts (₹${Math.abs(maxPnlRs25).toLocaleString()})</span>`:''}
+                <div class="closed-trade-bar" style="${_barStyle25}">
+                    <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">${_barLabel25}</span>
+                    ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
                 </div>
             </div>`;
         }
@@ -1974,7 +1978,11 @@
                 maxPnlPts3 = Math.round(exitPrice - fields.entry);
                 maxPnlRs3  = Math.abs(maxPnlPts3) * lotSize3;
             }
-            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid #bbf7d0;">
+            const _loss3 = maxPnlPts3 !== null && maxPnlPts3 < 0;
+            const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
+            const _badgeStyle3 = _loss3 ? 'background:#fee2e2;color:#dc2626;' : '';
+            const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
+            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
                         ${typeBoxHtml3}
@@ -1986,7 +1994,7 @@
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
                         <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:3px;">
-                            <span class="update-badge badge-closed-trade">✅ Closed</span>
+                            <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">${_barLabel3}</span>
                             ${_audBadge3}
                         </div>
                     </div>
@@ -1996,9 +2004,9 @@
                     <div class="metric-col"><span class="metric-label">Exit Price</span><span class="metric-value ${exitPrice&&exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
                     <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisplay3}</span></div>
                 </div>
-                <div class="closed-trade-bar">
-                    <span class="update-badge badge-closed-trade">✅ Closed Trade</span>
-                    ${maxPnlPts3!==null?`<span class="max-profit-text ${maxPnlPts3>=0?'':'val-down'}">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts (₹${Math.abs(maxPnlRs3).toLocaleString()})</span>`:''}
+                <div class="closed-trade-bar" style="${_barStyle3}">
+                    <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">${_barLabel3}</span>
+                    ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
                 </div>
                 ${repliesHtml}
             </div>
