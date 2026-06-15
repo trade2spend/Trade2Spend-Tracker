@@ -1550,6 +1550,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // TOTP login from PWA — POST /totp-login
+  if (req.method === 'POST' && urlPath === '/totp-login') {
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+    if (!kvLock(`totp_ip_${ip}`, 60)) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ ok: false, error: 'One attempt per minute. Wait for a fresh TOTP code.' }));
+      return;
+    }
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', async () => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'application/json');
+      let data = {};
+      try { data = JSON.parse(body); } catch {}
+      const totp = String(data.totp || '').trim();
+      if (!/^\d{6}$/.test(totp)) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ ok: false, error: 'Enter your 6-digit TOTP.' }));
+        return;
+      }
+      try {
+        const ok = await loginKotak(totp);
+        if (ok) {
+          if (isMarketHours() && GH_TOKEN && !marketScraperInterval) startMarketScraper();
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, message: 'Kotak connected. Live CMP tracking started.' }));
+        } else {
+          res.writeHead(401);
+          res.end(JSON.stringify({ ok: false, error: 'TOTP rejected by Kotak. Wait for a fresh code and try again.' }));
+        }
+      } catch(e) {
+        kvUnlock(`totp_ip_${ip}`);
+        res.writeHead(500);
+        res.end(JSON.stringify({ ok: false, error: 'Server error: ' + e.message }));
+      }
+    });
+    return;
+  }
+
   // CORS preflight for PWA requests
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
