@@ -69,8 +69,12 @@ function kvUnlock(key) { _locks.delete(key); }
 
 let marketScraperInterval = null;
 let _latestMarketData    = null;
-let _optionChain         = {}; // key: "NIFTY-23900-PE" → nearest-expiry LTP
-let _optionChainTs       = 0;  // last refresh timestamp
+let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, NSE fallback)
+let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
+let _scripMasterTs       = 0;  // last scrip master download timestamp
+let _activeContracts     = []; // [{instrument,strike,type,expiry}] parsed from Supabase
+let _activeContractsTs   = 0;  // last Supabase refresh timestamp
+let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 
 function loadState() {
   try {
@@ -318,6 +322,8 @@ async function loginKotak(totp) {
       `<i>Market scraper runs automatically 9:15–3:35 IST (no TOTP needed)</i>`
     );
     await saveState();
+    // Download scrip master in background after login so option tokens are ready
+    downloadScripMaster().catch(e => console.error('[scrip] post-login download error:', e.message));
     return true;
   } catch (e) {
     await tgSend(`❌ Login error: ${e.message}`);
@@ -455,39 +461,159 @@ async function fetchNSEMovers() {
   } catch(e) { console.error('[movers] fallback also failed:', e.message); return null; }
 }
 
-// Option chain — NSE, nearest expiry per strike, refresh every 3 min during market hours
-async function fetchOptionChain(symbol) {
+// ── KOTAK OPTION LTP SYSTEM ──────────────────────────────────────────────────
+
+// Download NFO scrip master CSV from Kotak → build token lookup map
+// Called once after TOTP login (and refreshed daily)
+async function downloadScripMaster() {
+  if (!session.token || !session.baseUrl) return;
+  if (Date.now() - _scripMasterTs < 22 * 60 * 60 * 1000) return; // once per 22h
   try {
-    if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
-    const url = `https://www.nseindia.com/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`;
-    const r = await ft(url, { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
-    if (!r.ok) { console.error(`[options] ${symbol} HTTP ${r.status}`); return; }
-    const data = await r.json();
-    const rows = data?.records?.data || [];
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    // Sort by expiry so we always take nearest future expiry first
-    const sorted = [...rows].sort((a,b) => new Date(a.expiryDate) - new Date(b.expiryDate));
-    const seen = {};
-    sorted.forEach(row => {
-      const exp = new Date(row.expiryDate);
-      exp.setHours(0,0,0,0);
-      if (exp < today) return; // skip already-expired
-      ['CE','PE'].forEach(type => {
-        const key = `${symbol}-${row.strikePrice}-${type}`;
-        if (seen[key]) return; // keep nearest expiry only
-        const ltp = row[type]?.lastPrice;
-        if (ltp != null && ltp > 0) { _optionChain[key] = ltp; seen[key] = true; }
-      });
-    });
-    console.log(`[options] ${symbol}: ${Object.keys(seen).length} strikes updated`);
-  } catch(e) { console.error(`[options] fetchOptionChain(${symbol}) error:`, e.message); }
+    const r1 = await ft(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+      headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+    }, 10000);
+    if (!r1.ok) { console.error('[scrip] file-paths HTTP', r1.status); return; }
+    const d1 = await r1.json();
+    const paths = d1?.data?.filesPaths || [];
+    const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
+    if (!nfoCsvUrl) { console.error('[scrip] nse_fo CSV URL not found'); return; }
+
+    const r2 = await ft(nfoCsvUrl, {}, 60000);
+    if (!r2.ok) { console.error('[scrip] CSV download HTTP', r2.status); return; }
+    const csv = await r2.text();
+
+    const lines = csv.split('\n');
+    const hdrs  = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
+    const iName = hdrs.indexOf('pSymbolName');
+    const iType = hdrs.indexOf('pOptionType');
+    const iExp  = hdrs.indexOf('pExpiryDate');
+    const iStr  = hdrs.indexOf('pStrikePrice');
+    const iTok  = hdrs.indexOf('pSymbol');
+    if ([iName,iType,iExp,iStr,iTok].some(i => i < 0)) {
+      console.error('[scrip] Missing columns:', hdrs.slice(0,10)); return;
+    }
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const newMap = {};
+    for (let i = 1; i < lines.length; i++) {
+      const c = lines[i].split(',');
+      if (c.length <= Math.max(iName,iType,iExp,iStr,iTok)) continue;
+      const name   = c[iName]?.replace(/"/g,'').trim().toUpperCase();
+      const type   = c[iType]?.replace(/"/g,'').trim().toUpperCase();
+      const expRaw = parseInt(c[iExp]?.replace(/"/g,'').trim() || '0');
+      const strike = c[iStr]?.replace(/"/g,'').trim();
+      const token  = c[iTok]?.replace(/"/g,'').trim();
+      if (!name || !type || !expRaw || !strike || !token) continue;
+      // SDK adds 315511200s to the stored timestamp to get actual expiry
+      const expDate = new Date((expRaw + 315511200) * 1000);
+      const expStr  = String(expDate.getUTCDate()).padStart(2,'0') +
+                      MONTHS[expDate.getUTCMonth()] +
+                      expDate.getUTCFullYear();
+      newMap[`${name}-${strike}-${type}-${expStr}`] = token;
+    }
+    _scripMaster = newMap;
+    _scripMasterTs = Date.now();
+    console.log(`[scrip] Downloaded ${Object.keys(newMap).length} NFO contracts`);
+  } catch(e) { console.error('[scrip] downloadScripMaster error:', e.message); }
 }
 
-async function maybeRefreshOptionChain() {
-  if (Date.now() - _optionChainTs < 3 * 60 * 1000) return; // refresh every 3 min
-  _optionChainTs = Date.now();
-  await Promise.all(['NIFTY','BANKNIFTY'].map(s => fetchOptionChain(s)));
+// Look up Kotak numeric token for a specific option contract
+function getOptionToken(instrument, strike, type, expiry) {
+  // expiry from resolveExpiry() is already "DDMMMYYYY" e.g. "19JUN2025"
+  const key = `${instrument.toUpperCase()}-${strike}-${type.toUpperCase()}-${expiry.toUpperCase()}`;
+  return _scripMaster[key] || null;
+}
+
+// Parse active option contracts from recent Supabase trade_alert posts
+async function refreshActiveContracts() {
+  if (Date.now() - _activeContractsTs < 5 * 60 * 1000) return; // refresh every 5 min
+  _activeContractsTs = Date.now();
+  try {
+    const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const r = await ft(
+      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=content`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 8000
+    );
+    if (!r.ok) return;
+    const posts = await r.json();
+    const contracts = [];
+    posts.forEach(p => {
+      const t = (p.content || '').toUpperCase();
+      const instrM  = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
+      const strikeM = t.match(/\b(\d{4,6})\s*(CE|PE)\b/);
+      if (!instrM || !strikeM) return;
+      const instr  = instrM[1];
+      const strike = parseInt(strikeM[1]);
+      const type   = strikeM[2];
+      const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
+      const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
+      // Deduplicate
+      if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type && c.expiry===expiry))
+        contracts.push({ instrument: instr, strike, type, expiry });
+    });
+    _activeContracts = contracts;
+    console.log(`[contracts] Active: ${contracts.map(c=>`${c.instrument}${c.strike}${c.type}`).join(', ')}`);
+  } catch(e) { console.error('[contracts] refresh error:', e.message); }
+}
+
+// Fetch option LTPs from Kotak Neo for all active contracts (runs every 5s)
+async function fetchKotakOptionLTPs() {
+  if (!session.token || !session.baseUrl || !_activeContracts.length) return;
+  for (const c of _activeContracts) {
+    const token = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
+    if (!token) {
+      console.log(`[ltp] No token for ${c.instrument}-${c.strike}-${c.type}-${c.expiry}`);
+      continue;
+    }
+    try {
+      const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${token}/ltp`;
+      const r = await ft(url, {
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+      }, 3000);
+      if (!r.ok) continue;
+      const d = await r.json();
+      const ltp = parseFloat(Array.isArray(d) ? d[0]?.ltp : d?.ltp);
+      if (ltp > 0) {
+        const key = `${c.instrument}-${c.strike}-${c.type}`;
+        _optionChain[key] = ltp;
+        if (_latestMarketData) _latestMarketData.optionLTPs = { ..._optionChain };
+      }
+    } catch(e) { /* silent — stale data is fine */ }
+  }
+}
+
+// NSE option chain fallback — used when Kotak is not logged in
+async function fetchNSEOptionChainFallback(symbol) {
+  try {
+    if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+    const r = await ft(`https://www.nseindia.com/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`,
+      { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
+    if (!r.ok) return;
+    const data = await r.json();
+    const today = new Date(); today.setHours(0,0,0,0);
+    const sorted = [...(data?.records?.data || [])].sort((a,b) => new Date(a.expiryDate)-new Date(b.expiryDate));
+    const seen = {};
+    sorted.forEach(row => {
+      const exp = new Date(row.expiryDate); exp.setHours(0,0,0,0);
+      if (exp < today) return;
+      ['CE','PE'].forEach(type => {
+        const key = `${symbol}-${row.strikePrice}-${type}`;
+        if (seen[key]) return;
+        const ltp = row[type]?.lastPrice;
+        if (ltp > 0) { _optionChain[key] = ltp; seen[key] = true; }
+      });
+    });
+  } catch(e) { console.error(`[options-nse] ${symbol}:`, e.message); }
+}
+
+function startKotakLtpInterval() {
+  if (_kotakLtpInterval) return;
+  _kotakLtpInterval = setInterval(fetchKotakOptionLTPs, 5000);
+  fetchKotakOptionLTPs(); // immediate first run
+  console.log('[ltp] Kotak option LTP interval started (5s)');
+}
+
+function stopKotakLtpInterval() {
+  if (_kotakLtpInterval) { clearInterval(_kotakLtpInterval); _kotakLtpInterval = null; }
 }
 
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
@@ -546,9 +672,15 @@ async function runMarketScraper(force = false) {
     return;
   }
   try {
-    // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX; option chain every 3 min
+    // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX
     const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE(), fetchNSEMovers()]);
-    maybeRefreshOptionChain().catch(e => console.error('[options] bg refresh error:', e.message));
+    // Refresh active contracts from Supabase every 5 min (feeds the 5s Kotak LTP interval)
+    refreshActiveContracts().catch(e => console.error('[contracts] bg refresh error:', e.message));
+    // NSE option chain fallback — only when Kotak not logged in
+    if (!session.token) {
+      fetchNSEOptionChainFallback('NIFTY').catch(()=>{});
+      fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{});
+    }
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
@@ -589,11 +721,13 @@ function startMarketScraper() {
   if (marketScraperInterval) return false;
   marketScraperInterval = setInterval(runMarketScraper, 15_000);
   runMarketScraper();
+  startKotakLtpInterval(); // start 5s Kotak option LTP fetch (uses _activeContracts)
   return true;
 }
 
 function stopMarketScraper() {
   if (marketScraperInterval) { clearInterval(marketScraperInterval); marketScraperInterval = null; }
+  stopKotakLtpInterval();
 }
 
 // ── SL MONITOR ────────────────────────────────────────────────────────────────
