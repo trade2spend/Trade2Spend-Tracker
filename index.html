@@ -2449,24 +2449,31 @@
         }
 
         let _marketRefreshTimer = null;
-        function scheduleMarketRefresh() {
+        function scheduleMarketRefresh(lastData) {
             clearTimeout(_marketRefreshTimer);
+            // Outside trading hours — no live data needed
             if (isMarketClosedNow()) {
-                // No polling when market is closed — prices don't change after 3:35 PM
-                // Re-check every 10 min so the tab auto-activates when market opens next day
                 _marketRefreshTimer = setTimeout(async () => {
-                    await fetchMarketData();
-                    scheduleMarketRefresh();
+                    const d = await fetchMarketData();
+                    scheduleMarketRefresh(d);
                 }, 10 * 60 * 1000);
+                return;
+            }
+            // Inside trading hours but API says market closed (holiday / pre-open)
+            if (lastData && lastData.marketOpen === false) {
+                _marketRefreshTimer = setTimeout(async () => {
+                    const d = await fetchMarketData();
+                    scheduleMarketRefresh(d);
+                }, 15 * 60 * 1000);
                 return;
             }
             // Market open — refresh every 5 seconds
             _marketRefreshTimer = setTimeout(async () => {
-                await fetchMarketData();
-                scheduleMarketRefresh();
+                const d = await fetchMarketData();
+                scheduleMarketRefresh(d);
             }, 5000);
         }
-        fetchMarketData().then(() => scheduleMarketRefresh());
+        fetchMarketData().then(d => scheduleMarketRefresh(d));
     })();
 
     // ── PWA INSTALL PROMPT ──
