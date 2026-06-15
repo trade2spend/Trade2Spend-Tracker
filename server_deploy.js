@@ -411,27 +411,46 @@ async function fetchNSEBreadth() {
 
 async function fetchNSEMovers() {
   if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+
+  // Primary: equity-stockIndices gives ALL 50 stocks so count matches advance/decline bar
   try {
-    // Use all-stocks endpoint so gainers/losers count matches the advance/decline bar
     const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050', {
       headers: { ...NSE_HEADERS, 'Cookie': _nseCookies }
     }, 8000);
-    if (!r.ok) { _nseCookieTs = 0; return null; }
-    const d = await r.json();
-    const stocks = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
-    const mapStock = s => ({
-      symbol: s.symbol,
-      price:  parseFloat(parseFloat(s.lastPrice || 0).toFixed(2)),
-      change: parseFloat(parseFloat(s.pChange   || 0).toFixed(2))
-    });
-    const gainers = stocks.filter(s => parseFloat(s.pChange || 0) > 0)
-      .sort((a, b) => parseFloat(b.pChange) - parseFloat(a.pChange))
-      .map(mapStock);
-    const losers = stocks.filter(s => parseFloat(s.pChange || 0) < 0)
-      .sort((a, b) => parseFloat(a.pChange) - parseFloat(b.pChange))
-      .map(mapStock);
-    return { gainers, losers };
-  } catch(e) { console.error('fetchNSEMovers error:', e.message); return null; }
+    if (r.ok) {
+      const d = await r.json();
+      const stocks = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
+      if (stocks.length > 0) {
+        const mapStock = s => ({
+          symbol: s.symbol,
+          price:  parseFloat(parseFloat(s.lastPrice || s.ltp || 0).toFixed(2)),
+          change: parseFloat(parseFloat(s.pChange || s.perChange || 0).toFixed(2))
+        });
+        const pctField = s => parseFloat(s.pChange || s.perChange || 0);
+        return {
+          gainers: stocks.filter(s => pctField(s) > 0).sort((a,b) => pctField(b)-pctField(a)).map(mapStock),
+          losers:  stocks.filter(s => pctField(s) < 0).sort((a,b) => pctField(a)-pctField(b)).map(mapStock)
+        };
+      }
+    }
+    console.log('[movers] equity-stockIndices returned no data, trying fallback');
+  } catch(e) { console.error('[movers] equity-stockIndices failed:', e.message); }
+
+  // Fallback: significant movers — shows subset but works reliably
+  try {
+    const [gr, lr] = await Promise.all([
+      ft('https://www.nseindia.com/api/live-analysis-variations?index=gainers', { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000),
+      ft('https://www.nseindia.com/api/live-analysis-variations?index=loosers', { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000)
+    ]);
+    if (!gr.ok || !lr.ok) { _nseCookieTs = 0; return null; }
+    const [gd, ld] = await Promise.all([gr.json(), lr.json()]);
+    const mapStock = s => ({ symbol: s.symbol, price: parseFloat(parseFloat(s.ltp||0).toFixed(2)), change: parseFloat(parseFloat(s.perChange||0).toFixed(2)) });
+    console.log('[movers] fallback succeeded');
+    return {
+      gainers: (gd?.NIFTY?.data||[]).sort((a,b)=>(b.perChange||0)-(a.perChange||0)).map(mapStock),
+      losers:  (ld?.NIFTY?.data||[]).sort((a,b)=>(a.perChange||0)-(b.perChange||0)).map(mapStock)
+    };
+  } catch(e) { console.error('[movers] fallback also failed:', e.message); return null; }
 }
 
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
