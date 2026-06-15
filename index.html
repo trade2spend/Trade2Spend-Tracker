@@ -1769,7 +1769,7 @@
             </div>`;
         }
 
-        // ── 3. ADMIN / PAID / CLOSED TRADE → full card ───────────────────────
+        // ── 3. ADMIN / PAID MEMBER → same layout as free member, all fields visible ──
         const whyVisible = isAdmin || memberTier === 'paid' || whyOldEnough;
 
         let latestCmp = null;
@@ -1784,58 +1784,88 @@
             if ((fp.isFullExit || fp.type==='exit' || fp.exitPct) && fp.price) { exitPrice = fp.price; break; }
         }
 
-        let cardBodyHtml;
-        if (fields.instrument) {
-            const typeClass   = (fields.optType||'').toLowerCase();
-            const typeBoxHtml = fields.optType
-                ? `<div class="type-box ${typeClass}">${fields.optType}</div>`
-                : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);font-size:0.85rem;">🔒</div>`;
-            const actionBadge = isClosed ? `<span class="update-badge badge-closed-trade">✅ Closed</span>` :
-                fields.action==='SELL' ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>` :
-                `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-            const _audBadge = post.audience==='paid_only'
+        // Non-trade posts (general / market_update that appear in trade alert feed)
+        if (!fields.instrument) {
+            const _audBadgeNT = isAdmin ? (post.audience==='paid_only'
                 ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
-                : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`;
-            cardBodyHtml = `
-                <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
-                    <div class="trade-title-box">
-                        ${typeBoxHtml}
-                        <div>
-                            <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
-                            ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
-                        </div>
+                : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`) : '';
+            const _svgNT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+            const _shareNT = post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_svgNT}</button>` : '';
+            let repliesNT = '';
+            const visRepliesNT = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]'));
+            if (visRepliesNT.length > 0) {
+                const tid=`ta-replies-${post.id}`, n=visRepliesNT.length;
+                repliesNT=`<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button><div class="thread-replies" id="${tid}" style="display:none;">`;
+                visRepliesNT.forEach(r => {
+                    const ts2=formatPostTime(r.sent_at||r.created_at);
+                    const txt2=stripDisclaimerText(sanitizeHtml(r.content||'').replace(/\n/g,'<br>'));
+                    repliesNT+=`<div class="reply-card"><div class="reply-header"><span class="update-time">${ts2}</span></div><div class="reply-body">${txt2}</div></div>`;
+                });
+                repliesNT+=`</div>`;
+            }
+            const adminHtmlNT = isAdmin ? `
+                <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                <div class="admin-compose-box" id="compose-${post.id}">
+                    <div class="admin-audience-row">
+                        <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
+                        <button class="admin-aud-btn" id="aud-paid-${post.id}" onclick="selectReplyAud('${post.id}','paid_only')">Paid Only</button>
                     </div>
-                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        ${actionBadge}
-                        <span class="update-time">${dateTimeStr}</span>
-                        ${_audBadge}
+                    <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
+                    <div class="admin-compose-row">
+                        <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
+                        <button style="padding:9px 10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit;" onclick="forceUnlock('${post.id}')">🔓 Unlock</button>
+                        <button class="admin-compose-send" onclick="sendReply('${post.id}','trades')">Send →</button>
                     </div>
-                </div>
-                <div class="trade-metrics" style="padding:6px 12px 10px;">
-                    <div class="metric-col"><span class="metric-label">Entry</span>
-                        <span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div class="metric-col"><span class="metric-label">${isClosed?'Exit Price':'Latest CMP'}</span>
-                        <span class="metric-value ${isClosed&&exitPrice?'val-up':''}" style="font-size:0.88rem;">${isClosed?(exitPrice?`₹${exitPrice}`:(latestCmp?`₹${latestCmp}`:'—')):(latestCmp?`₹${latestCmp}`:'—')}</span></div>
-                    ${isClosed&&fields.entry&&exitPrice?`<div class="metric-col"><span class="metric-label">P&L / Lot</span><span class="metric-value ${exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice>fields.entry?'+':''}₹${((exitPrice-fields.entry)).toFixed(0)} pts</span></div>`:''}
-                </div>`;
-        } else {
-            const _audBadge2 = post.audience==='paid_only'
-                ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
-                : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`;
-            cardBodyHtml = `<div class="update-header"><span class="update-time">${dateTimeStr}</span>${_audBadge2}</div><div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>`;
+                </div>` : '';
+            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
+                <div class="update-header" style="justify-content:space-between;"><span class="update-time">${dateTimeStr}</span><div style="display:flex;align-items:center;gap:6px;">${_audBadgeNT}${_shareNT}</div></div>
+                <div class="update-body"><div class="update-content">${stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'))}</div></div>
+                ${repliesNT}
+            </div>
+            ${adminHtmlNT}`;
         }
+
+        // TRADE ALERT card for admin/paid — same structure as free member, all fields unlocked
+        const typeClass3   = (fields.optType||'').toLowerCase();
+        const typeBoxHtml3 = fields.optType
+            ? `<div class="type-box ${typeClass3}">${fields.optType}</div>`
+            : `<div class="type-box" style="background:#f3f4f6;color:#9ca3af;">—</div>`;
+
+        const tradeState3 = getTradeState(post, postReplies);
+        const cumExit3    = getCumulativeExit(postReplies);
+
+        // SL — same strikethrough logic as free member
+        const initSL3 = fields.sl;
+        const revSL3  = getCurrentSL(postReplies);
+        let slDisplay3;
+        if (revSL3) {
+            const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
+            if (initSL3 && initSL3 > 5000 && revNum3 < 5000) {
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s>&rarr;${revSL3}<span style="font-size:0.65rem;color:#6b7280;">&nbsp;(Adj)</span>`;
+            } else { slDisplay3 = revSL3; }
+        } else if (initSL3) {
+            slDisplay3 = `₹${initSL3}`;
+        } else { slDisplay3 = '—'; }
+
+        // Why — 📝 tap to open popup, else —
+        const whyBtn3 = (why && whyVisible)
+            ? `<button onclick="showWhyPopup('${post.id}')" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;" title="Why this trade">📝</button>`
+            : '—';
+
+        // Audience badge — shown to admin only
+        const _audBadge3 = isAdmin ? (post.audience==='paid_only'
+            ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
+            : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`) : '';
+
+        const _shareSvg3 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+        const shareBtn3  = post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_shareSvg3}</button>` : '';
 
         // Follow-ups
         let repliesHtml = '';
         if (postReplies.length > 0) {
-            let cumExit=0;
-            // Seed currentSL from initial post content so first SL revision shows old value struck through
-            let currentSL = fields.sl ? fields.sl : null;
-            const visibleReplies = postReplies.filter(r => {
-                if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
-                if (r.audience==='paid_only' && isFreeViewer) return false;
-                return true;
-            });
+            let cumExitR=0;
+            let currentSL = initSL3 || null;
+            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]'));
             if (visibleReplies.length > 0) {
                 const tid=`ta-replies-${post.id}`, n=visibleReplies.length;
                 repliesHtml=`<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
@@ -1844,33 +1874,14 @@
                     const parsed=parseFollowUpContent(reply.content||'');
                     const prevSL=currentSL;
                     if (parsed.slRevised) currentSL=parsed.slRevised;
-                    if (parsed.exitPct) cumExit+=parsed.exitPct;
-                    repliesHtml+=renderFollowUpCard(reply,parsed,cumExit,prevSL);
+                    if (parsed.exitPct) cumExitR+=parsed.exitPct;
+                    repliesHtml+=renderFollowUpCard(reply,parsed,cumExitR,prevSL);
                 });
                 repliesHtml+=`</div>`;
             }
         }
 
-        const cumExitFull = getCumulativeExit(postReplies);
-        let exitBar = '';
-        if (!isClosed && cumExitFull>0 && cumExitFull<100) exitBar=`<div class="exit-progress">Exited ${cumExitFull}% · Holding ${100-cumExitFull}%</div>`;
-
-        let closedBar = '';
-        if (isClosed && fields.entry) {
-            const mp = calculateMaxProfit(fields.entry, postReplies);
-            closedBar = `<div class="closed-trade-bar"><span class="update-badge badge-closed-trade">✅ Closed Trade</span>${mp?`<span class="max-profit-text">Max: ₹${mp.max} · +${mp.pts} pts</span>`:''}</div>`;
-        }
-
-        let whyHtml = '';
-        if (why) {
-            if (whyVisible) {
-                whyHtml = `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`;
-            } else {
-                whyHtml = `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`;
-            }
-        }
-
-        const adminHtml = isAdmin ? `
+        const adminHtml3 = isAdmin ? `
             <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
             <div class="admin-compose-box" id="compose-${post.id}">
                 <div class="admin-audience-row">
@@ -1885,13 +1896,92 @@
                 </div>
             </div>` : '';
 
-        return `
-            <div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
-                ${cardBodyHtml}${whyHtml}${exitBar}${closedBar}
-                ${post.allow_sharing?`<div class="update-footer"><button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>`:''}
+        // not_triggered: compact card (same as free member)
+        if (tradeState3 === 'not_triggered') {
+            return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
+                <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
+                    <div class="type-box ${typeClass3}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType||'—'}</div>
+                    <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${fields.instrument}${fields.strike?' '+fields.strike:''}</span>
+                    <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
+                    <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                </div>
+                <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
+            </div>`;
+        }
+
+        // CLOSED trade card — matches Section 2.5 layout
+        if (isClosed) {
+            const lotSize3 = getLotSize(fields.instrument);
+            let maxPnlPts3 = null, maxPnlRs3 = null;
+            if (fields.entry && exitPrice) {
+                maxPnlPts3 = Math.round(exitPrice - fields.entry);
+                maxPnlRs3  = Math.abs(maxPnlPts3) * lotSize3;
+            }
+            return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid #bbf7d0;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
+                    <div class="trade-title-box">
+                        ${typeBoxHtml3}
+                        <div>
+                            <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
+                            ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="update-time">${dateTimeStr}</div>
+                        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:3px;">
+                            <span class="update-badge badge-closed-trade">✅ Closed</span>
+                            ${_audBadge3}
+                        </div>
+                    </div>
+                </div>
+                <div class="trade-metrics" style="padding:4px 12px 8px;grid-template-columns:1fr 1fr;">
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                    <div class="metric-col"><span class="metric-label">Exit Price</span><span class="metric-value ${exitPrice&&exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
+                    <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisplay3}</span></div>
+                </div>
+                <div class="closed-trade-bar">
+                    <span class="update-badge badge-closed-trade">✅ Closed Trade</span>
+                    ${maxPnlPts3!==null?`<span class="max-profit-text ${maxPnlPts3>=0?'':'val-down'}">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts (₹${Math.abs(maxPnlRs3).toLocaleString()})</span>`:''}
+                </div>
+                ${repliesHtml}
+            </div>
+            ${adminHtml3}`;
+        }
+
+        // ACTIVE trade card (yet_to_trigger / triggered) — matches Section 2 layout
+        const actionBadge3 = fields.action==='SELL'
+            ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
+            : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
+        const statePill3 = tradeState3 === 'yet_to_trigger'
+            ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
+            : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
+
+        return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
+            <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+                <div class="trade-title-box">
+                    ${typeBoxHtml3}
+                    <div>
+                        <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
+                        <div class="trade-expiry">${fields.expiry||''}</div>
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                    ${actionBadge3}
+                    <span class="update-time">${dateTimeStr}</span>
+                    ${_audBadge3}
+                </div>
+            </div>
+            <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
+                <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
+                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+                <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${whyBtn3}</span></div>
             </div>
             ${repliesHtml}
-            ${adminHtml}`;
+            <div class="trigger-banner" style="justify-content:space-between;">${statePill3}${shareBtn3}</div>
+        </div>
+        ${adminHtml3}`;
     }
 
     async function fetchUpdates() {
