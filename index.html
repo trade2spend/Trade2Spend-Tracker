@@ -861,12 +861,19 @@
             const tradeData = closedTrades.map(p => {
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
+                // Find actual exit price from structured follow-ups first (works for both profit and loss)
+                let exitPricePerf = null;
+                for (const r of replies) {
+                    const fp = parseFollowUpContent(r.content || '');
+                    if ((fp.isFullExit || fp.type === 'exit' || fp.exitPct) && fp.price) { exitPricePerf = fp.price; break; }
+                }
                 const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
-                const maxPrice = mp ? mp.max : null;
+                const maxPrice = exitPricePerf || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
                 let pnlPts = null, pnlRs = null, isWin = false;
                 if (f.entry && maxPrice) {
-                    pnlPts = f.optType === 'PE' ? Math.round(f.entry - maxPrice) : Math.round(maxPrice - f.entry);
+                    // For buying options (CE or PE), P&L = exit_price - entry_price
+                    pnlPts = Math.round(maxPrice - f.entry);
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
                 }
@@ -1427,7 +1434,10 @@
             const tradesTabActive = document.querySelector('.tab.active[onclick*="\'trades\'"]');
             if (!tradesTabActive) setTabBadge('trades', todayCount);
         } catch(e) {
-            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
+            if (!_cLoad('t2s_alerts_html')) {
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
+            }
+            // If cache exists, cached content is already in the container — leave it intact
         }
     }
 
@@ -1822,13 +1832,14 @@
                         <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;${_badgeStyle25}">${_barLabel25}</span>
                     </div>
                 </div>
-                <div class="trade-metrics" style="padding:4px 12px 8px;grid-template-columns:1fr 1fr;">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div class="metric-col"><span class="metric-label">${displayPriceLabel25}</span><span class="metric-value ${displayPrice25&&displayPrice25>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
-                    <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisp25}</span></div>
+                <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
+                    <div style="flex:1;min-width:0;"><span class="metric-label">Why</span><span class="metric-value" style="display:block;font-size:0.72rem;">🔒</span></div>
                 </div>
                 <div class="closed-trade-bar" style="${_barStyle25}">
-                    <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">${_barLabel25}</span>
+                    <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
                     ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
                 </div>
             </div>`;
@@ -2003,13 +2014,14 @@
                         </div>
                     </div>
                 </div>
-                <div class="trade-metrics" style="padding:4px 12px 8px;grid-template-columns:1fr 1fr;">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.88rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div class="metric-col"><span class="metric-label">Exit Price</span><span class="metric-value ${exitPrice&&exitPrice>fields.entry?'val-up':'val-down'}" style="font-size:0.88rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
-                    <div class="metric-col" style="grid-column:1/-1;"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${slDisplay3}</span></div>
+                <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${exitPrice&&exitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
+                    <div style="flex:1;min-width:0;"><span class="metric-label">Why</span><span style="display:block;font-size:0.72rem;color:#555;line-height:1.3;margin-top:2px;">${(()=>{const _w=getWhyContent(post.content);return _w?_w.slice(0,35)+(_w.length>35?'…':''):'—';})()}</span></div>
                 </div>
                 <div class="closed-trade-bar" style="${_barStyle3}">
-                    <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">${_barLabel3}</span>
+                    <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
                     ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
                 </div>
                 ${repliesHtml}
