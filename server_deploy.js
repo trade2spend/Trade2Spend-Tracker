@@ -1612,7 +1612,7 @@ const server = http.createServer(async (req, res) => {
 
       let body;
       try { body = JSON.parse(rawBody); }
-      catch { console.error('Bad JSON from Telegram'); return; }
+      catch { console.log('Bad JSON from Telegram (ignored)'); return; }
 
       try {
         maybeDailyReset();
@@ -1647,6 +1647,17 @@ function isMarketHours() {
   const h = now.getHours(), m = now.getMinutes(), day = now.getDay();
   return day >= 1 && day <= 5 && (h > 9 || (h === 9 && m >= 15)) && (h < 15 || (h === 15 && m <= 35));
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message, err.stack);
+  tgAlert(`🆘 <b>Uncaught exception:</b> ${err.message}`).catch(() => {});
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  console.error('Unhandled rejection:', msg);
+  tgAlert(`🆘 <b>Unhandled rejection:</b> ${msg}`).catch(() => {});
+});
 
 loadState();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
