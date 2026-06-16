@@ -1792,6 +1792,23 @@
 
         // ── 2.5. FREE MEMBER + CLOSED TRADE → Image 3 design ────────────────
         if (isFreeViewer && isClosed) {
+            // Not-triggered: compact pill (same as paid/admin)
+            const _nt25state = getTradeState(post, postReplies);
+            if (_nt25state === 'not_triggered') {
+                const _ntOpt25 = (fields.optType||'').toLowerCase();
+                const _ntBox25 = fields.optType
+                    ? `<div class="type-box ${_ntOpt25}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType}</div>`
+                    : `<div class="type-box" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;background:#f3f4f6;color:#9ca3af;">—</div>`;
+                return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
+                    <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
+                        ${_ntBox25}
+                        <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${fields.instrument||'Trade'}${fields.strike?' '+fields.strike:''}</span>
+                        <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                    </div>
+                    <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
+                </div>`;
+            }
             const instrName25 = fields.instrument||'Trade';
             const strikeStr25 = fields.strike||'';
             const typeClass25 = (fields.optType||'').toLowerCase();
@@ -1850,9 +1867,9 @@
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
-                    <div style="flex:1;min-width:0;"><span class="metric-label">Why</span><span class="metric-value" style="display:block;font-size:0.72rem;">🔒</span></div>
+                    <div style="flex:1;min-width:0;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
                 </div>
+                ${why ? `<div class="why-locked"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 <div class="closed-trade-bar" style="${_barStyle25}">
                     <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
                     ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
