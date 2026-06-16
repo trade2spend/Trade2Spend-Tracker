@@ -1515,32 +1515,6 @@ async function handleMessage(text) {
     await tgSend('✅ Daily counters reset.'); await saveState(); return;
   }
 
-  if (cmd === '/debug_scrip') {
-    if (!session.token || !session.baseUrl) { await tgSend('❌ Not logged in — connect Kotak via PWA first.'); return; }
-    await tgSend('⏳ Fetching scrip master from Kotak…');
-    try {
-      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
-        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
-      }, 10000);
-      const text1 = await r1.text();
-      if (!r1.ok) { await tgSend(`❌ file-paths HTTP ${r1.status}`); return; }
-      const d1 = JSON.parse(text1);
-      const paths = d1?.data?.filesPaths || [];
-      // Mask signed URLs — show only count and whether nse_fo path exists
-      const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
-      await tgSend(`file-paths HTTP: <b>${r1.status}</b>\nPaths found: ${paths.length}\nnse_fo URL: ${nfoCsvUrl ? '✅ found' : '❌ not found'}`);
-      if (!nfoCsvUrl) return;
-      const r2 = await ftKotak(nfoCsvUrl, {}, 20000);
-      const csvChunk = await r2.text();
-      const lines = csvChunk.split('\n');
-      // Send only headers and one sample row — no URLs, no auth data
-      await tgSend(`CSV HTTP: <b>${r2.status}</b>\nLines in first chunk: ${lines.length}\n<b>Headers:</b>\n<code>${lines[0]?.slice(0,500)}</code>`);
-      if (lines[1]) await tgSend(`<b>Sample row 1:</b>\n<code>${lines[1].slice(0,400)}</code>`);
-      await tgSend(`<b>Scrip master loaded:</b> ${Object.keys(_scripMaster).length} contracts`);
-    } catch(e) { await tgSend(`❌ debug_scrip error: ${e.message}`); }
-    return;
-  }
-
   if (cmd === '/update') {
     await tgSend('⏳ Pulling latest server.js from GitHub…');
     try {
