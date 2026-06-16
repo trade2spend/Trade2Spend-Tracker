@@ -1799,6 +1799,11 @@ setTimeout(async () => {
     const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 8000);
     if (r.ok) _latestMarketData = await r.json();
   } catch(e) { console.log('Startup market.json fetch failed:', e.message); }
+  // If session was restored from state.json, re-download scrip master (it's in-memory only)
+  if (session.token && session.baseUrl) {
+    _scripMasterTs = 0;
+    downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
+  }
   // Start scraper if within market hours
   if (isMarketHours() && GH_TOKEN && !marketScraperInterval) startMarketScraper();
 }, 5000);
