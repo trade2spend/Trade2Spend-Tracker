@@ -1030,6 +1030,32 @@
     // --- SUPABASE CONFIG ---
     const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
+    const VAPID_PUBLIC_KEY = 'jyMeYNEtZyQ7qaJVeeroanUIn0TUhmRRdzVnVvlPYi2nvlGqLgG1m714pD02fF6gJmlwlpPwjBO8ZeJM_X4lyg';
+
+    function _urlB64ToUint8(b64) {
+      const pad = '='.repeat((4 - b64.length % 4) % 4);
+      const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+    }
+
+    async function subscribeToPush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') return;
+          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
+        }
+        const memberId = localStorage.getItem('t2s_member_id');
+        const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+        if (!memberId) return;
+        // Remove old subscription for this device then insert fresh one
+        await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+        await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
+      } catch (e) { console.log('Push subscribe failed:', e.message); }
+    }
 
     async function sbFetch(path, opts={}) {
         const ctrl = new AbortController();
@@ -2612,6 +2638,8 @@
             // Pre-load trade alerts in background so tab is instant when user switches
             fetchTradeAlerts();
         }
+        // Subscribe to push notifications silently after session confirmed
+        if (memberId) subscribeToPush().catch(() => {});
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
