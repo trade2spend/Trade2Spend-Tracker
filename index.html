@@ -918,12 +918,8 @@
             const tradeData = closedTrades.map(p => {
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
-                // Find actual exit price from structured follow-ups first (works for both profit and loss)
-                let exitPricePerf = null;
-                for (const r of replies) {
-                    const fp = parseFollowUpContent(r.content || '');
-                    if ((fp.isFullExit || fp.type === 'exit' || fp.exitPct) && fp.price) { exitPricePerf = fp.price; break; }
-                }
+                // Weighted average across all partial exits (50%@180 + 50%@158 → avg 169, not just 158)
+                const exitPricePerf = getWeightedExitPrice(replies);
                 const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
                 const maxPrice = exitPricePerf || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
@@ -1195,6 +1191,7 @@
         if (/\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(loNoFuture)) { r.isFullExit=true; r.type='exit'; }
         if (/fully\s+exit|full\s+exit|position\s+clos|clos.*position|booked?\s+full|100\s*%\s*exit|exiting\s+full|exit\s+all/.test(lo)) { r.isFullExit=true; r.type='exit'; }
         if (/\bfully\s+out\b|trade\s+(?:is\s+)?(?:done|over|closed?)\b|exit(?:ed|ing)\s+(?:all|full(?:y)?|everything)|position\s+(?:done|over|exited?)|\ball\s+(?:closed?|out|done|exited?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
+        if (/exit(?:ed|ing)\s+remaining|remaining\s+(?:exited?|booked?|clos(?:ed|ing)?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
         // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+")
         if (!r.price) {
             const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
@@ -1327,6 +1324,23 @@
             if (p.exitPct) cum = Math.min(100, cum + p.exitPct);
         }
         return cum;
+    }
+
+    // ── WEIGHTED AVERAGE EXIT PRICE ──────────────────────────────────────────
+    // Accounts for partial exits: "50% at 180, remaining at 158" → avg 169
+    function getWeightedExitPrice(replies) {
+        const sorted = [...(replies||[])].reverse(); // oldest first
+        let totalPct = 0, weightedSum = 0;
+        for (const r of sorted) {
+            const fp = parseFollowUpContent(r.content||'');
+            if (!fp.price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
+            if (pct <= 0) continue;
+            weightedSum += fp.price * pct;
+            totalPct += pct;
+            if (fp.isFullExit || totalPct >= 100) break;
+        }
+        return totalPct > 0 ? Math.round(weightedSum / totalPct * 100) / 100 : null;
     }
 
     // ── LATEST SL VALUE ───────────────────────────────────────────────────────
@@ -1876,12 +1890,8 @@
             // Max (Post trigger): highest option price seen in follow-ups
             const mp25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
             const maxPrice25 = mp25 ? mp25.max : null;
-            // Exit price: from structured exit follow-up (works for losers too)
-            let exitPrice25 = null;
-            for (const r of postReplies) {
-                const fp = parseFollowUpContent(r.content||'');
-                if ((fp.isFullExit || fp.type==='exit' || fp.exitPct) && fp.price) { exitPrice25 = fp.price; break; }
-            }
+            // Exit price: weighted average across all partial exits (e.g. 50%@180 + 50%@158 = avg 169)
+            const exitPrice25 = getWeightedExitPrice(postReplies);
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
@@ -1944,11 +1954,7 @@
             if (fp.cmp) { latestCmp=fp.cmp; break; }
             if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
         }
-        let exitPrice = null;
-        for (const r of postReplies) {
-            const fp = parseFollowUpContent(r.content||'');
-            if ((fp.isFullExit || fp.type==='exit' || fp.exitPct) && fp.price) { exitPrice = fp.price; break; }
-        }
+        const exitPrice = getWeightedExitPrice(postReplies);
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
         if (!fields.instrument) {
