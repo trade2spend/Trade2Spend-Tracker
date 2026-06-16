@@ -1379,6 +1379,37 @@ async function handleMessage(text) {
     ); return;
   }
   if (cmd === '/status') { await sendStatus(); return; }
+
+  if (cmd === '/debug_cmp') {
+    const scripCount = Object.keys(_scripMaster).length;
+    const chainCount = Object.keys(_optionChain).length;
+    // Sample scrip master keys for NIFTY
+    const sampleKeys = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 5);
+    let msg = `🔬 <b>CMP Debug</b>\n━━━━━━━━━━━━━━━━━━\n`;
+    msg += `<b>Kotak session:</b> ${session.token ? '✅ active' : '❌ not logged in'}\n`;
+    msg += `<b>Scrip master:</b> ${scripCount} contracts\n`;
+    msg += `<b>optionChain entries:</b> ${chainCount}\n`;
+    msg += `<b>Active contracts:</b> ${_activeContracts.length}\n`;
+    if (_activeContracts.length) {
+      msg += `\n<b>Contracts being tracked:</b>\n`;
+      for (const c of _activeContracts) {
+        const key = `${c.instrument}-${c.strike}-${c.type}-${c.expiry}`;
+        const token = _scripMaster[key] || null;
+        const ltp = _optionChain[`${c.instrument}-${c.strike}-${c.type}`] || null;
+        msg += `• ${c.instrument} ${c.strike} ${c.type} ${c.expiry}\n  key: <code>${key}</code>\n  token: ${token||'❌ NOT FOUND'} | LTP: ${ltp||'—'}\n`;
+      }
+    }
+    if (sampleKeys.length) {
+      msg += `\n<b>Sample NIFTY scrip keys:</b>\n`;
+      sampleKeys.forEach(k => { msg += `<code>${k}</code>\n`; });
+    }
+    if (chainCount > 0) {
+      msg += `\n<b>Sample optionChain:</b>\n`;
+      Object.entries(_optionChain).slice(0,5).forEach(([k,v]) => { msg += `${k}: ₹${v}\n`; });
+    }
+    await tgSend(msg); return;
+  }
+
   if (cmd === '/spot') {
     if (!session.token) { await tgSend('❌ Not logged in — open PWA Setup tab and enter TOTP to connect Kotak.'); return; }
     const [n, b] = await Promise.all([fetchSpot('NIFTY'), fetchSpot('BANKNIFTY')]);
