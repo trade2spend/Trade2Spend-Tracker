@@ -1206,7 +1206,7 @@
             if (exPriceM) { r.isFullExit=true; r.type='exit'; r.price=parseFloat(exPriceM[1]); }
         }
         // Leading option price
-        const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\s*(?:[,\n\r\s]|$)/);
+        const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\+?\s*(?:[,\n\r\s]|$)/);
         if (lm) { const n=parseFloat(lm[1]); if(n>5&&n<9999){ r.price=n; if(r.type==='status') r.type=r.exitPct?'exit':'cmp_update'; } }
         // Also extract price from "at ₹XX" or "₹XX" patterns (covers "triggered at ₹222", "exit at ₹300")
         if (!r.price) {
