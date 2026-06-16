@@ -367,15 +367,15 @@
     <!-- TRADE ALERT TAB -->
     <div id="trades" class="content-section">
         <!-- Admin quick-post compose — shown only to admin via fetchTrades() -->
-        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin-bottom:12px;">
+        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin-bottom:12px;position:sticky;top:var(--header-h,108px);z-index:99;overflow:hidden;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                 <span style="font-size:0.82rem;font-weight:700;color:var(--primary);">Quick Post</span>
                 <button onclick="toggleNewAlertBox()" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;">＋ New Alert</button>
             </div>
             <div id="new-alert-box" style="display:none;">
                 <!-- Row 1: Instrument + Strike + CE/PE -->
-                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin:6px 0 8px;">
-                    <select id="na-instrument" style="border:1px solid #c4b5fd;border-radius:8px;padding:8px 6px;font-size:0.82rem;font-family:inherit;color:var(--text-main);background:#fff;outline:none;">
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;margin:6px 0 8px;">
+                    <select id="na-instrument" style="border:1px solid #c4b5fd;border-radius:8px;padding:8px 6px;font-size:0.82rem;font-family:inherit;color:var(--text-main);background:#fff;outline:none;width:100%;min-width:0;box-sizing:border-box;">
                         <option value="NIFTY">NIFTY</option>
                         <option value="BANKNIFTY">BANKNIFTY</option>
                         <option value="SENSEX">SENSEX</option>
@@ -2640,6 +2640,13 @@
         }
         // Subscribe to push notifications silently after session confirmed
         if (memberId) subscribeToPush().catch(() => {});
+        // Keep --header-h in sync so admin Quick Post card sticks just below the header+tabs
+        const _hdrEl = document.getElementById('header-wrapper');
+        if (_hdrEl) {
+            const _setHdrH = () => document.documentElement.style.setProperty('--header-h', _hdrEl.offsetHeight + 'px');
+            _setHdrH();
+            new ResizeObserver(_setHdrH).observe(_hdrEl);
+        }
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
