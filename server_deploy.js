@@ -1425,6 +1425,22 @@ async function handleMessage(text) {
     state.dailyPnl = 0; state.orderCount = 0;
     await tgSend('✅ Daily counters reset.'); await saveState(); return;
   }
+
+  if (cmd === '/update') {
+    await tgSend('⏳ Pulling latest server.js from GitHub…');
+    try {
+      const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/server_deploy.js?t=${Date.now()}`, {}, 15000);
+      if (!r.ok) { await tgSend(`❌ GitHub fetch failed: HTTP ${r.status}`); return; }
+      const code = await r.text();
+      if (!code || code.length < 1000) { await tgSend('❌ Downloaded file looks empty — aborting.'); return; }
+      fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
+      await tgSend('✅ server.js updated. Restarting in 2s…');
+      setTimeout(() => process.exit(0), 2000); // PM2 auto-restarts
+    } catch(e) {
+      await tgSend(`❌ Update failed: ${e.message}`);
+    }
+    return;
+  }
 }
 
 // ── EXECUTE TRADE FROM PWA (no Telegram confirm step) ─────────────────────────
