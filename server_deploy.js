@@ -745,9 +745,12 @@ async function runMarketScraper(force = false) {
     // Refresh active contracts from Supabase every 5 min (feeds the 5s Kotak LTP interval)
     refreshActiveContracts().catch(e => console.error('[contracts] bg refresh error:', e.message));
     // NSE option chain fallback — only when Kotak not logged in
+    // Awaited so _optionChain is populated BEFORE _latestMarketData is set below
     if (!session.token) {
-      fetchNSEOptionChainFallback('NIFTY').catch(()=>{});
-      fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{});
+      await Promise.all([
+        fetchNSEOptionChainFallback('NIFTY').catch(()=>{}),
+        fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{})
+      ]);
     }
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
@@ -1705,7 +1708,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const ok = await loginKotak(totp);
         if (ok) {
-          if (isMarketHours() && GH_TOKEN && !marketScraperInterval) startMarketScraper();
+          if (isMarketHours() && !marketScraperInterval) startMarketScraper();
           res.writeHead(200);
           res.end(JSON.stringify({ ok: true, message: 'Kotak connected. Live CMP tracking started.' }));
         } else {
@@ -1804,15 +1807,15 @@ setTimeout(async () => {
     _scripMasterTs = 0;
     downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
   }
-  // Start scraper if within market hours
-  if (isMarketHours() && GH_TOKEN && !marketScraperInterval) startMarketScraper();
+  // Start scraper if within market hours (GH_TOKEN not required — pushMarketToGitHub handles missing token gracefully)
+  if (isMarketHours() && !marketScraperInterval) startMarketScraper();
 }, 5000);
 
 // Periodic check every 30s: SL monitor + market scraper auto-start/stop
 setInterval(() => {
   if (isMarketHours()) {
     checkSLs().catch(e => tgAlert(`⚠️ SL poll: ${e.message}`));
-    if (!marketScraperInterval && GH_TOKEN) startMarketScraper();
+    if (!marketScraperInterval) startMarketScraper();
   }
 }, 30_000);
 
