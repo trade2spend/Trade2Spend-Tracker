@@ -206,7 +206,8 @@ function resolveExpiry(expiryStr, instrument) {
   if (MONTHS.some(m => s.includes(m.toLowerCase()))) return expiryStr.toUpperCase();
   const now   = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const instr = (instrument || '').toUpperCase();
-  const targetDay = instr.includes('SENSEX') ? 5 : instr.includes('BANKNIFTY') ? 3 : 2;
+  // NSE NIFTY weekly expiry: Thursday (4). BANKNIFTY: Wednesday (3). SENSEX/BSE: Friday (5).
+  const targetDay = instr.includes('SENSEX') ? 5 : instr.includes('BANKNIFTY') ? 3 : 4;
   function fmt(d) { return String(d.getDate()).padStart(2,'0') + MONTHS[d.getMonth()] + d.getFullYear(); }
   function nextExp(from, mustBeAfter) {
     const d = new Date(from);
