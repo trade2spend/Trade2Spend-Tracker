@@ -1627,6 +1627,9 @@
         const whyOldEnough = daysSincePost(post) >= 7;
         const tradeKey     = (fields.instrument&&fields.optType&&fields.strike)
             ? `${fields.instrument}-${fields.optType}-${fields.strike}` : '';
+        // Server stores optionLTPs as INSTRUMENT-STRIKE-TYPE (e.g. "NIFTY-23850-PE")
+        const liveCmpKey   = (fields.instrument&&fields.optType&&fields.strike)
+            ? `${fields.instrument}-${fields.strike}-${fields.optType}` : '';
 
         if (why) _whyMap[post.id] = why;
 
@@ -2142,7 +2145,7 @@
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                 <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
-                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${tradeKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
             ${whyRow3}
             ${repliesHtml}
