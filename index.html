@@ -1265,7 +1265,10 @@
         const nowIST  = new Date(new Date().toLocaleString('en-US', tz));
         const postIST = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US', tz));
         if (postIST.toDateString() !== nowIST.toDateString()) return 'not_triggered';
-        return (nowIST.getHours()*60+nowIST.getMinutes()) < (15*60+30) ? 'yet_to_trigger' : 'not_triggered';
+        const _nowMins = nowIST.getHours()*60+nowIST.getMinutes();
+        // Before 9:15 AM or after 3:30 PM → market closed, nothing can trigger
+        if (_nowMins < 9*60+15 || _nowMins >= 15*60+30) return 'not_triggered';
+        return 'yet_to_trigger';
     }
 
     // ── PROGRESSIVE FIELD UNLOCK FOR FREE MEMBERS ────────────────────────────
@@ -1344,10 +1347,10 @@
             }
             // No replies + posted on a previous calendar day → expired (never triggered)
             if (reps.length === 0 && postIST.toDateString() !== td.toDateString()) return true;
-            // Intraday auto-close: trade posted today + market closed (after 3:30 PM) + no overnight hold
+            // Intraday auto-close: trade posted today + market closed (pre-market or post-market) + no overnight hold
             if (postIST.toDateString() === td.toDateString()) {
                 const nowMins = td.getHours() * 60 + td.getMinutes();
-                if (nowMins >= 15 * 60 + 30) return true;
+                if (nowMins < 9 * 60 + 15 || nowMins >= 15 * 60 + 30) return true;
             }
         }
         return false;
@@ -1796,12 +1799,12 @@
                         <span class="update-time">${dateTimeStr}</span>
                     </div>
                 </div>
-                <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(4,1fr);">
+                <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
                     <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">Why</span><span class="metric-value" style="font-size:0.82rem;">${lockBtn}</span></div>
                 </div>
+                ${why ? `<div class="why-locked"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
         }
