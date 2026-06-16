@@ -11,6 +11,7 @@
 import dotenv from 'dotenv';
 dotenv.config({ path: '/home/trade2spend/t2s-bot/.env' });
 import http from 'http';
+import https from 'https';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
@@ -108,6 +109,41 @@ async function ft(url, options = {}, ms = FETCH_TIMEOUT) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ── KOTAK FETCH (native https, forces IPv4 — Kotak rejects IPv6 from GCloud) ──
+function ftKotak(url, options = {}, ms = FETCH_TIMEOUT) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const lib = u.protocol === 'https:' ? https : http;
+    const body = options.body ? (Buffer.isBuffer(options.body) ? options.body : Buffer.from(String(options.body))) : null;
+    const reqOpts = {
+      hostname: u.hostname,
+      port:     u.port || (u.protocol === 'https:' ? 443 : 80),
+      path:     u.pathname + (u.search || ''),
+      method:   (options.method || 'GET').toUpperCase(),
+      headers:  { ...(options.headers || {}), ...(body ? { 'Content-Length': body.length } : {}) },
+      family:   4  // force IPv4 — Kotak servers don't respond on IPv6
+    };
+    const timer = setTimeout(() => { req.destroy(); reject(new Error(`Timed out after ${ms}ms`)); }, ms);
+    const req = lib.request(reqOpts, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        clearTimeout(timer);
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({
+          ok:     res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          text:   () => Promise.resolve(text),
+          json:   () => { try { return Promise.resolve(JSON.parse(text)); } catch(e) { return Promise.reject(e); } }
+        });
+      });
+    });
+    req.on('error', e => { clearTimeout(timer); reject(e); });
+    if (body) req.write(body);
+    req.end();
+  });
 }
 
 // ── TELEGRAM ──────────────────────────────────────────────────────────────────
@@ -272,7 +308,7 @@ async function loginKotak(totp) {
     await tgSend('🔐 Step 1/2: Validating TOTP...');
     let r1;
     try {
-      r1 = await ft('https://mis.kotaksecurities.com/login/1.0/tradeApiLogin', {
+      r1 = await ftKotak('https://mis.kotaksecurities.com/login/1.0/tradeApiLogin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': CONSUMER_KEY, 'neo-fin-key': 'neotradeapi' },
         body: JSON.stringify({ mobileNumber: MOBILE, ucc: UCC, totp })
@@ -290,7 +326,7 @@ async function loginKotak(totp) {
     await tgSend('🔐 Step 2/2: Validating MPIN...');
     let r2;
     try {
-      r2 = await ft('https://mis.kotaksecurities.com/login/1.0/tradeApiValidate', {
+      r2 = await ftKotak('https://mis.kotaksecurities.com/login/1.0/tradeApiValidate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': CONSUMER_KEY, 'neo-fin-key': 'neotradeapi', 'sid': d1.data.sid, 'Auth': d1.data.token },
         body: JSON.stringify({ mpin: MPIN })
@@ -344,7 +380,7 @@ async function fetchSpot(instrument = 'NIFTY') {
   if (!session.token || !session.baseUrl) return null;
   const tok = SPOT_TOKENS[instrument.toUpperCase()] || SPOT_TOKENS.NIFTY;
   try {
-    const r = await ft(`${session.baseUrl}/scriptdetails/1.0/quotes/`, {
+    const r = await ftKotak(`${session.baseUrl}/scriptdetails/1.0/quotes/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': session.token, 'neo-fin-key': 'neotradeapi', 'sid': session.sid },
       body: JSON.stringify({ instrument_tokens: [tok] })
@@ -469,7 +505,7 @@ async function downloadScripMaster() {
   if (!session.token || !session.baseUrl) return;
   if (Date.now() - _scripMasterTs < 22 * 60 * 60 * 1000) return; // once per 22h
   try {
-    const r1 = await ft(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+    const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 10000);
     if (!r1.ok) { console.error('[scrip] file-paths HTTP', r1.status); return; }
@@ -478,7 +514,7 @@ async function downloadScripMaster() {
     const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
     if (!nfoCsvUrl) { console.error('[scrip] nse_fo CSV URL not found'); return; }
 
-    const r2 = await ft(nfoCsvUrl, {}, 60000);
+    const r2 = await ftKotak(nfoCsvUrl, {}, 60000);
     if (!r2.ok) { console.error('[scrip] CSV download HTTP', r2.status); return; }
     const csv = await r2.text();
 
@@ -574,7 +610,7 @@ async function fetchKotakOptionLTPs() {
     }
     try {
       const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${token}/ltp`;
-      const r = await ft(url, {
+      const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
       if (!r.ok) continue;
@@ -809,7 +845,7 @@ async function placeOrder(trade) {
       pt:'L', qt:totalQty.toString(), rt:'DAY', tp:'0', ts:scripToken, tt:trans
     });
     const sId = session.hsServerId || session.rid || '';
-    const or  = await ft(`${session.baseUrl}/quick/order/rule/ms/place?sId=${sId}`, {
+    const or  = await ftKotak(`${session.baseUrl}/quick/order/rule/ms/place?sId=${sId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Sid': session.sid, 'Auth': session.token, 'neo-fin-key': 'neotradeapi' },
       body: `jData=${encodeURIComponent(jData)}`
@@ -824,7 +860,7 @@ async function placeOrder(trade) {
       await tgSend(fmtTrade(trade, '✅ <b>LIVE ORDER PLACED</b>', `<b>Order ID:</b> ${liveOid}\n<b>Exchange qty:</b> ${totalQty} units`));
       setTimeout(async () => {
         try {
-          const sr  = await ft(`${session.baseUrl}/quick/order/history`, { headers: neoHeaders(), method: 'GET' }, 5000);
+          const sr  = await ftKotak(`${session.baseUrl}/quick/order/history`, { headers: neoHeaders(), method: 'GET' }, 5000);
           const sd  = await sr.json();
           const ord = (sd.data || []).find(o => o.nOrdNo === liveOid || o.orderId === liveOid);
           if (ord?.status && !['complete','open','trigger pending'].includes(String(ord.status).toLowerCase()))
