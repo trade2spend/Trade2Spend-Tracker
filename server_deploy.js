@@ -371,7 +371,7 @@ function isSessionValid() {
   if (!session.token) return false;
   const age = Date.now() - (session.lastLogin || 0);
   if (age > SESSION_MAX_AGE_MS)
-    tgAlert(`⚠️ Session ${Math.round(age/3600000)}h old — re-login with TOTP.`);
+    tgAlert(`⚠️ Session ${Math.round(age/3600000)}h old — re-connect via PWA Setup tab.`);
   return true;
 }
 
@@ -1300,19 +1300,38 @@ async function handleMessage(text) {
     }
   }
 
-  // 6-digit TOTP or /login TOTP
-  if (/^\d{6}$/.test(text.trim()) || cmd.startsWith('/login')) {
-    const totp = cmd.startsWith('/login') ? text.trim().split(/\s+/)[1] : text.trim();
-    if (!totp || !/^\d{6}$/.test(totp)) { await tgSend('⚠️ Send your 6-digit TOTP, or type /login 123456'); return; }
-    await loginKotak(totp); return;
-  }
-
   if (text.includes('PAYLOAD:')) { await processTrade(text); return; }
+
+  if (cmd === '/debug_spot') {
+    const base = session.baseUrl;
+    const tok  = session.token;
+    if (!base || !tok) {
+      await tgSend(`🔬 <b>debug_spot</b>\n<b>loggedIn:</b> ${!!tok}\n<b>baseUrl:</b> ${base || 'NOT SET'}\n\n⚠️ Not logged in — connect via PWA Setup tab.`);
+      return;
+    }
+    await tgSend(`🔬 <b>debug_spot — testing Kotak LTP endpoint</b>\n<b>baseUrl:</b> <code>${base}</code>\n<b>token set:</b> yes (${tok.slice(0,8)}...)`);
+    const variants = [
+      { label: 'nse_cm|26000 + consumer_key',   exch: 'nse_cm', sym: '26000', hdrs: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } },
+      { label: 'nse_cm|26000 + session bearer',  exch: 'nse_cm', sym: '26000', hdrs: { 'Authorization': tok,          'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': tok } },
+      { label: 'nse_cm|Nifty 50 + consumer_key', exch: 'nse_cm', sym: 'Nifty 50', hdrs: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } },
+    ];
+    for (const v of variants) {
+      const url = `${base}/script-details/1.0/quotes/neosymbol/${v.exch}|${v.sym}/ltp`;
+      try {
+        const r = await ftKotak(url, { method: 'GET', headers: v.hdrs }, 5000);
+        const body = await r.text();
+        await tgSend(`<b>${v.label}</b>\nStatus: <b>${r.status}</b>\nBody: <code>${body.slice(0,400) || '(empty)'}</code>`);
+      } catch(e) {
+        await tgSend(`<b>${v.label}</b>\nException: <code>${e.message}</code>`);
+      }
+    }
+    return;
+  }
 
   if (cmd === '/start' || cmd === '/help') {
     await tgSend(
       '🤖 <b>Trade2Spend v5.0</b>\n━━━━━━━━━━━━━━━━━━\n' +
-      '<b>Daily login:</b> Send 6-digit TOTP from Kotak app\n\n' +
+      '<b>Kotak login:</b> Use PWA Setup tab → Connect Kotak\n\n' +
       '<b>Trading:</b>\n' +
       '/status — Open positions\n' +
       '/spot — Live NIFTY/BankNIFTY spot\n' +
@@ -1320,7 +1339,8 @@ async function handleMessage(text) {
       '/paper — Paper mode (safe testing)\n' +
       '/live — Live mode (real orders)\n' +
       '/kill — 🔴 Emergency exit ALL positions\n' +
-      '/reset — Reset daily counters\n\n' +
+      '/reset — Reset daily counters\n' +
+      '/debug_spot — Raw Kotak LTP API response\n\n' +
       '<b>Market Data:</b>\n' +
       '/market_on — Start live market scraper\n' +
       '/market_off — Stop market scraper\n' +
@@ -1332,7 +1352,7 @@ async function handleMessage(text) {
   }
   if (cmd === '/status') { await sendStatus(); return; }
   if (cmd === '/spot') {
-    if (!session.token) { await tgSend('❌ Login first — send your 6-digit TOTP.'); return; }
+    if (!session.token) { await tgSend('❌ Not logged in — open PWA Setup tab and enter TOTP to connect Kotak.'); return; }
     const [n, b] = await Promise.all([fetchSpot('NIFTY'), fetchSpot('BANKNIFTY')]);
     await tgSend(`📈 <b>Live Spot</b>\nNIFTY: <b>${n||'N/A'}</b>\nBANKNIFTY: <b>${b||'N/A'}</b>`); return;
   }
