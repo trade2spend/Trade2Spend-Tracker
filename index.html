@@ -1280,6 +1280,10 @@
     // Status-only messages don't count as "triggered" — only actual entry/exit signals do
     const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['’]?t\s+(?:take|enter))/i;
     function getTradeState(post, replies) {
+        // Admin saying "ignore this" in any follow-up = trade was never triggered, remove from active
+        const hasIgnore = (replies||[]).some(r => /\bignore\b/i.test(r.content||''));
+        if (hasIgnore) return 'not_triggered';
+
         const validReplies = (replies||[]).filter(r => {
             const c = (r.content||'').trim();
             if (c.includes('[T2S_UNLOCK]')) return false;
