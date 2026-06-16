@@ -1,9 +1,30 @@
 {
   "marketOpen": false,
-  "specialHours": false,
   "lastUpdated": "2026-06-16T15:30:00+05:30",
-  "indices": {},
-  "breadth": {},
+  "indices": {
+    "NIFTY": {
+      "price": 23989.15,
+      "change": 135.25,
+      "changePct": 0.57
+    },
+    "SENSEX": {
+      "price": 76808.48,
+      "change": 544.15,
+      "changePct": 0.71
+    },
+    "BANKNIFTY": {
+      "price": 57297.15,
+      "change": 98.35,
+      "changePct": 0.17
+    }
+  },
+  "breadth": {
+    "nifty50": {
+      "advancing": 30,
+      "declining": 20,
+      "unchanged": 0
+    }
+  },
   "gainers": [],
   "losers": []
 }
