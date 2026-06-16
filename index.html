@@ -504,13 +504,13 @@
     function refreshCurrentTab() {
         const btn = document.getElementById('refresh-btn');
         if (btn) { btn.style.transform = 'rotate(360deg)'; setTimeout(() => btn.style.transform = '', 300); }
-        const activeTab = document.querySelector('.tab.active');
-        if (!activeTab) return;
-        const tabId = activeTab.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-        if (tabId === 'trades') fetchTradeAlerts();
-        else if (tabId === 'markets') fetchMarketData();
-        else if (tabId === 'updates') fetchUpdates();
-        else if (tabId === 'performance') fetchPerformance();
+        // Hard refresh: clear SW cache then reload so latest deployed files are always served
+        const doReload = () => window.location.reload();
+        if ('caches' in window) {
+            caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(doReload).catch(doReload);
+        } else {
+            doReload();
+        }
     }
 
     function switchTab(tabId, el) {
