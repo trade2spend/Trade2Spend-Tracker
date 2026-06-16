@@ -707,17 +707,30 @@ async function refreshActiveContracts() {
   } catch(e) { console.error('[contracts] refresh error:', e.message); }
 }
 
+// Build Kotak trading symbol (no-year format: NIFTY19JUN24000CE) from contract fields
+// Kotak pTrdSymbol in their CSV uses DDMMMSTRIKECETYPE without year — same format accepted by LTP API
+function buildTradingSymbol(instrument, strike, type, expiry) {
+  // expiry is DDMMMYYYY e.g. "19JUN2026" — strip year to get "19JUN"
+  const m = (expiry||'').match(/^(\d{2})([A-Z]{3})\d{4}$/);
+  if (!m) return null;
+  return `${instrument.toUpperCase()}${m[1]}${m[2]}${strike}${type.toUpperCase()}`;
+}
+
 // Fetch option LTPs from Kotak Neo for all active contracts (runs every 5s)
+// Uses numeric token from scrip master if available; falls back to trading symbol string
 async function fetchKotakOptionLTPs() {
   if (!session.token || !session.baseUrl || !_activeContracts.length) return;
   for (const c of _activeContracts) {
-    const token = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
-    if (!token) {
-      console.log(`[ltp] No token for ${c.instrument}-${c.strike}-${c.type}-${c.expiry}`);
+    const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
+    // Fallback: trading symbol e.g. "NIFTY19JUN24000CE" — Kotak LTP API accepts both formats
+    const tradeSym = numToken ? null : buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
+    const identifier = numToken || tradeSym;
+    if (!identifier) {
+      console.log(`[ltp] Cannot build identifier for ${c.instrument}-${c.strike}-${c.type}-${c.expiry}`);
       continue;
     }
     try {
-      const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${token}/ltp`;
+      const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${identifier}/ltp`;
       const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
@@ -728,6 +741,12 @@ async function fetchKotakOptionLTPs() {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
         if (_latestMarketData) _latestMarketData.optionLTPs = { ..._optionChain };
+        if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
+        // Cache returned numeric token to avoid repeated symbol-based lookups
+        const respToken = String(d?.data?.[0]?.token || d?.data?.[0]?.scripToken || '').trim();
+        if (respToken && !numToken) {
+          _scripMaster[`${c.instrument}-${c.strike}-${c.type}-${c.expiry}`] = respToken;
+        }
       }
     } catch(e) { /* silent — stale data is fine */ }
   }
@@ -1497,6 +1516,47 @@ async function handleMessage(text) {
     const recentExpiries = niftyExpiries.slice(-5);
     msg += `\n<b>Most recent NIFTY expiries in scrip:</b>\n${recentExpiries.join(', ')}\n`;
     await tgSend(msg); return;
+  }
+
+  if (cmd === '/debug_ltp') {
+    if (!session.token || !session.baseUrl) { await tgSend('❌ Not logged in'); return; }
+    await tgSend('🔬 <b>LTP fetch debug</b> — testing trading symbol approach...');
+
+    // Test active contracts first; fall back to a hardcoded NIFTY weekly
+    const testContracts = _activeContracts.length ? _activeContracts.slice(0,3) : [];
+    if (!testContracts.length) {
+      // Use current NIFTY weekly as a test case
+      const expiry = resolveExpiry('weekly', 'NIFTY');
+      testContracts.push({ instrument: 'NIFTY', strike: 24000, type: 'CE', expiry });
+      testContracts.push({ instrument: 'NIFTY', strike: 24000, type: 'PE', expiry });
+    }
+
+    for (const c of testContracts) {
+      const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
+      const tradeSym = buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
+      await tgSend(`\n<b>${c.instrument} ${c.strike} ${c.type} ${c.expiry}</b>\nNumeric token: ${numToken||'❌ (none)'}\nTrading symbol: <code>${tradeSym||'❌'}</code>`);
+
+      // Test 1: numeric token (if available)
+      if (numToken) {
+        try {
+          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${numToken}/ltp`;
+          const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
+          const txt = await r.text();
+          await tgSend(`Token lookup (${numToken}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
+        } catch(e) { await tgSend(`Token lookup error: ${e.message}`); }
+      }
+
+      // Test 2: trading symbol (fallback path)
+      if (tradeSym) {
+        try {
+          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${tradeSym}/ltp`;
+          const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
+          const txt = await r.text();
+          await tgSend(`Symbol lookup (${tradeSym}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
+        } catch(e) { await tgSend(`Symbol lookup error: ${e.message}`); }
+      }
+    }
+    return;
   }
 
   if (cmd === '/debug_scrip') {
