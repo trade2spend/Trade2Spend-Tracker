@@ -878,6 +878,26 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <!-- SETUP TAB -->
 <div id="tab-setup" style="display:none;">
 <div class="page" style="margin-top:12px;">
+
+  <!-- Kotak Neo Connection -->
+  <div class="setup-card" id="kotak-card" style="border-color:rgba(5,150,105,0.4);background:rgba(5,150,105,0.05);">
+    <div class="setup-label" style="color:#34d399;">⚡ Kotak Neo — Live CMP</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <div id="kotak-dot" style="width:10px;height:10px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .3s;"></div>
+      <div id="kotak-status-text" style="font-size:13px;font-weight:500;color:var(--muted);">Checking…</div>
+    </div>
+    <div id="kotak-login-section">
+      <div class="info-text" style="margin-bottom:8px;">Open your Kotak Securities app → Profile → TOTP → enter the 6-digit code below.</div>
+      <input type="tel" inputmode="numeric" maxlength="6" class="setup-input" id="totp-input"
+             placeholder="6-digit TOTP" style="letter-spacing:6px;font-size:18px;text-align:center;"
+             oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
+             onkeydown="if(event.key==='Enter')connectKotak()">
+      <button class="setup-btn" id="kotak-connect-btn" onclick="connectKotak()"
+              style="border-color:rgba(5,150,105,0.4);color:#34d399;margin-top:8px;">Connect Kotak</button>
+      <div id="kotak-msg" style="font-size:12px;margin-top:6px;display:none;"></div>
+    </div>
+  </div>
+
   <div class="setup-card" style="border-color:var(--goldborder);background:var(--goldbg);">
     <div class="setup-label" style="color:var(--gold);">Telegram Bot Token</div>
     <div class="info-text" style="margin-bottom:8px;">Get from @BotFather → /newbot → add bot as Admin to @trade2spend channel</div>
@@ -1300,6 +1320,7 @@ function showTab(t){
   if(t==='history') renderHistory();
   if(t==='trade') loadFollowUpData();
   if(t==='algo') refreshAlgoTab();
+  if(t==='setup') checkKotakStatus();
   if(t==='campaign'){if(typeof updateCanvas==='function')updateCanvas();if(typeof updateCaption==='function')updateCaption();}
   if(t==='campaign') updateCampaignPreview();
   if(t==='manage') loadMembers();
@@ -2585,6 +2606,66 @@ function copyMsg(type){
   const msg=type==='trade'?lastTradeMsg:lastGenMsg;
   if(!msg){showToast('Generate a message first.');return;}
   navigator.clipboard.writeText(msg).then(()=>showToast('Copied to clipboard!')).catch(()=>showToast('Copy failed.'));
+}
+
+// ── KOTAK CONNECTION ──
+let _kotakConnected = false;
+
+async function checkKotakStatus() {
+  const dot = document.getElementById('kotak-dot');
+  const txt = document.getElementById('kotak-status-text');
+  const sec = document.getElementById('kotak-login-section');
+  if (!dot) return;
+  try {
+    const r = await fetch('https://api.trade2spend.com/', { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    _kotakConnected = !!d.loggedIn;
+  } catch { _kotakConnected = false; }
+  if (_kotakConnected) {
+    dot.style.background = '#059669';
+    txt.textContent = '✓ Connected — Live CMP tracking active';
+    txt.style.color = '#059669';
+    if (sec) sec.style.display = 'none';
+  } else {
+    dot.style.background = '#dc2626';
+    txt.textContent = 'Not connected — using NSE data until you connect';
+    txt.style.color = '#dc2626';
+    if (sec) sec.style.display = '';
+  }
+}
+
+async function connectKotak() {
+  const inp = document.getElementById('totp-input');
+  const btn = document.getElementById('kotak-connect-btn');
+  const msg = document.getElementById('kotak-msg');
+  const totp = (inp?.value || '').trim();
+  if (!/^\d{6}$/.test(totp)) { showToast('Enter your 6-digit TOTP from Kotak app'); return; }
+  btn.disabled = true; btn.textContent = 'Connecting…';
+  msg.style.display = 'none';
+  try {
+    const r = await fetch('https://api.trade2spend.com/totp-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ totp })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      inp.value = '';
+      msg.style.color = '#059669';
+      msg.textContent = '✓ ' + (d.message || 'Connected');
+      msg.style.display = '';
+      await checkKotakStatus();
+    } else {
+      msg.style.color = '#dc2626';
+      msg.textContent = d.error || 'Login failed — wait for a fresh TOTP and try again';
+      msg.style.display = '';
+    }
+  } catch(e) {
+    msg.style.color = '#dc2626';
+    msg.textContent = 'Network error: ' + e.message;
+    msg.style.display = '';
+  }
+  btn.disabled = false; btn.textContent = 'Connect Kotak';
 }
 
 // ── SETUP ──
@@ -4226,6 +4307,12 @@ async function confirmPushToMembers(){
     if (whyEl) whyEl.value = '';
     closePushModal();
     showToast('✓ Pushed to members! Visible in Updates tab now.');
+    // Nudge to connect Kotak if trade alert posted during market hours without live CMP
+    if (pushMsgType === 'trade' && !_kotakConnected) {
+      const h = new Date().getHours(), m = new Date().getMinutes();
+      const inMkt = h > 9 || (h === 9 && m >= 15) ? (h < 15 || (h === 15 && m <= 35)) : false;
+      if (inMkt) setTimeout(() => showToast('💡 Connect Kotak in Setup tab for live option CMPs'), 1500);
+    }
   } catch(e){
     showToast('Failed: ' + (e.message || 'Check connection'));
   }
