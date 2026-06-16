@@ -60,18 +60,70 @@ async function sbFetch(path, opts = {}) {
   return text ? JSON.parse(text) : [];
 }
 
-// ── WEB PUSH (VAPID) ─────────────────────────────────────────────────────────
+// ── WEB PUSH — native implementation (RFC 8291 + RFC 8292, no npm dep) ───────
+import crypto from 'crypto';
+const { subtle } = crypto.webcrypto;
 const VAPID_PUB  = process.env.VAPID_PUBLIC_KEY  || 'jyMeYNEtZyQ7qaJVeeroanUIn0TUhmRRdzVnVvlPYi2nvlGqLgG1m714pD02fF6gJmlwlpPwjBO8ZeJM_X4lyg';
 const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || '7aRPkRJKJT5RlkA4_XAhFy2nZwi2HdRmzp8HBkppGOo';
-let webpush = null;
-try {
-  const { default: wp } = await import('web-push');
-  wp.setVapidDetails('mailto:tusharsood.2010@gmail.com', VAPID_PUB, VAPID_PRIV);
-  webpush = wp;
-  console.log('web-push loaded ✓');
-} catch (e) {
-  console.log('web-push not installed — push notifications disabled. Run /http-update to install.');
+
+function b64uDec(s) { const p='='.repeat((4-s.length%4)%4); return Buffer.from((s+p).replace(/-/g,'+').replace(/_/g,'/'),'base64'); }
+function b64uEnc(b) { return Buffer.from(b).toString('base64url'); }
+
+async function hmacSha256(key, data) {
+  const k = await subtle.importKey('raw', key, {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+  return Buffer.from(await subtle.sign('HMAC', k, data));
 }
+async function hkdfExpand(prk, info, len) {
+  let prev = Buffer.alloc(0), out = [];
+  for (let i = 1; i <= Math.ceil(len/32); i++) {
+    prev = await hmacSha256(prk, Buffer.concat([prev, Buffer.from(info,'binary'), Buffer.from([i])]));
+    out.push(prev);
+  }
+  return Buffer.concat(out).slice(0, len);
+}
+
+async function vapidJwt(audience) {
+  const hdr  = b64uEnc(JSON.stringify({typ:'JWT',alg:'ES256'}));
+  const pay  = b64uEnc(JSON.stringify({aud:audience, exp:Math.floor(Date.now()/1000)+43200, sub:'mailto:tusharsood.2010@gmail.com'}));
+  const tbs  = `${hdr}.${pay}`;
+  const pub  = b64uDec(VAPID_PUB);
+  const key  = await subtle.importKey('jwk',{kty:'EC',crv:'P-256',x:b64uEnc(pub.slice(1,33)),y:b64uEnc(pub.slice(33,65)),d:b64uEnc(b64uDec(VAPID_PRIV))},{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
+  const sig  = Buffer.from(await subtle.sign({name:'ECDSA',hash:'SHA-256'}, key, Buffer.from(tbs)));
+  return `${tbs}.${b64uEnc(sig)}`;
+}
+
+async function encryptPush(subKeys, plaintext) {
+  const recvPub = b64uDec(subKeys.p256dh), authSec = b64uDec(subKeys.auth);
+  const sKP = await subtle.generateKey({name:'ECDH',namedCurve:'P-256'}, true, ['deriveBits']);
+  const sPub = Buffer.from(await subtle.exportKey('raw', sKP.publicKey));
+  const rKey = await subtle.importKey('raw', recvPub, {name:'ECDH',namedCurve:'P-256'}, false, []);
+  const ss   = Buffer.from(await subtle.deriveBits({name:'ECDH',public:rKey}, sKP.privateKey, 256));
+  const prk1 = await hmacSha256(authSec, ss);
+  const ikm  = await hkdfExpand(prk1, 'WebPush: info\x00' + recvPub.toString('binary') + sPub.toString('binary'), 32);
+  const salt = crypto.randomBytes(16);
+  const prk2 = await hmacSha256(salt, ikm);
+  const cek  = await hkdfExpand(prk2, 'Content-Encoding: aes128gcm\x00', 16);
+  const iv   = await hkdfExpand(prk2, 'Content-Encoding: nonce\x00', 12);
+  const aKey = await subtle.importKey('raw', cek, {name:'AES-GCM'}, false, ['encrypt']);
+  const ct   = Buffer.from(await subtle.encrypt({name:'AES-GCM',iv}, aKey, Buffer.concat([Buffer.from(plaintext), Buffer.from([0x02])])));
+  const rs   = Buffer.alloc(4); rs.writeUInt32BE(4096);
+  return Buffer.concat([salt, rs, Buffer.from([sPub.length]), sPub, ct]);
+}
+
+async function sendWebPush(subJson, payload) {
+  const sub  = typeof subJson === 'string' ? JSON.parse(subJson) : subJson;
+  const ep   = new URL(sub.endpoint);
+  const jwt  = await vapidJwt(`${ep.protocol}//${ep.host}`);
+  const body = await encryptPush(sub.keys, payload);
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname:ep.hostname, port:ep.port||443, path:ep.pathname+ep.search, method:'POST', family:4,
+      headers:{'Authorization':`vapid t=${jwt},k=${VAPID_PUB}`,'Content-Type':'application/octet-stream','Content-Encoding':'aes128gcm','Content-Length':body.length,'TTL':'86400'}
+    }, r => { r.resume(); resolve(r.statusCode); });
+    req.on('error', reject);
+    req.write(body); req.end();
+  });
+}
+console.log('Web push ready (native) ✓');
 const VALID_EXPIRIES     = ['weekly','next weekly','monthly'];
 const SPOT_TOKENS = {
   NIFTY:     { exchange_segment: 'nse_cm', instrument_token: '26000' },
@@ -1923,11 +1975,8 @@ const server = http.createServer(async (req, res) => {
       if (!code || code.length < 1000) { tgAlert('❌ HTTP update: downloaded file too small').catch(()=>{}); return; }
       fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
       _scripMasterTs = 0; _scripMasterAttemptTs = 0;
-      tgAlert('✅ <b>HTTP update complete.</b> Installing deps + restarting…').catch(()=>{});
-      exec(`npm install web-push --prefix ${__dirname}`, (err) => {
-        if (err) console.error('npm install web-push failed:', err.message);
-        setTimeout(() => process.exit(0), 1000);
-      });
+      tgAlert('✅ <b>HTTP update complete.</b> Restarting in 3s…').catch(()=>{});
+      setTimeout(() => process.exit(0), 3000);
     } catch(e) { tgAlert(`❌ HTTP update error: ${e.message}`).catch(()=>{}); }
     return;
   }
@@ -2110,11 +2159,6 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
     }
-    if (!webpush) {
-      res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ ok: false, error: 'web-push not installed — trigger /http-update to install' }));
-      return;
-    }
     let rawBody = '';
     req.on('data', c => { rawBody += c; });
     req.on('end', async () => {
@@ -2129,12 +2173,9 @@ const server = http.createServer(async (req, res) => {
         const toDelete = [];
         for (const sub of subs) {
           try {
-            await webpush.sendNotification(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
-            sent++;
-          } catch (e) {
-            if (e.statusCode === 410 || e.statusCode === 404) toDelete.push(sub.id);
-            failed++;
-          }
+            const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
+            if (sc === 410 || sc === 404) toDelete.push(sub.id); else sent++;
+          } catch (e) { failed++; }
         }
         for (const id of toDelete) {
           await sbFetch(`push_subscriptions?id=eq.${id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
