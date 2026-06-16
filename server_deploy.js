@@ -16,6 +16,7 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { inflateRawSync } from 'zlib';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(__dirname, 'state.json');
@@ -511,6 +512,121 @@ function _findCol(hdrs, ...candidates) {
   return -1;
 }
 
+// ── NSE FO BHAVCOPY TOKEN LOOKUP ─────────────────────────────────────────────
+// NSE publishes daily FO bhavcopy with FinInstrmId = NSE exchange token.
+// That token is the SAME as Kotak's pSymbol — no Kotak scrip master needed.
+
+function _unzipFirstFile(buf) {
+  if (!buf || buf.length < 30 || buf.readUInt32LE(0) !== 0x04034b50) return null;
+  const compression  = buf.readUInt16LE(8);
+  const nameLen      = buf.readUInt16LE(26);
+  const extraLen     = buf.readUInt16LE(28);
+  let   compressedSz = buf.readUInt32LE(18);
+  const dataStart    = 30 + nameLen + extraLen;
+  // Streaming ZIPs have compressedSize=0; scan for central directory to find end
+  if (!compressedSz) {
+    const cdSig = buf.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])); // central dir signature
+    if (cdSig > dataStart + 16) compressedSz = cdSig - dataStart - 16; // subtract data descriptor
+    else return null;
+  }
+  const data = buf.slice(dataStart, dataStart + compressedSz);
+  try {
+    if (compression === 0) return data.toString('utf-8');
+    if (compression === 8) return inflateRawSync(data).toString('utf-8');
+  } catch (e) { console.log('[unzip] error:', e.message); }
+  return null;
+}
+
+// Fetch NSE bhavcopy ZIP and return Buffer; handles simple redirect
+async function _fetchNSEBinary(url, ms = 30000) {
+  if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+  return new Promise((resolve, reject) => {
+    const doReq = (target) => {
+      let u;
+      try { u = new URL(target); } catch(e) { return reject(e); }
+      const opts = {
+        hostname: u.hostname, port: 443, path: u.pathname + (u.search || ''),
+        method: 'GET', family: 4,
+        headers: { ...NSE_HEADERS, 'Cookie': _nseCookies, 'Accept': '*/*' }
+      };
+      const timer = setTimeout(() => { req.destroy(); reject(new Error('Timeout')); }, ms);
+      const req = https.request(opts, res => {
+        if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+          clearTimeout(timer); doReq(res.headers.location); return;
+        }
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => { clearTimeout(timer); resolve({ status: res.statusCode, buf: Buffer.concat(chunks) }); });
+      });
+      req.on('error', e => { clearTimeout(timer); reject(e); });
+      req.end();
+    };
+    doReq(url);
+  });
+}
+
+async function downloadNSEBhavTokens() {
+  const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const IST     = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const tryDates = [];
+  for (let i = 0; tryDates.length < 4 && i < 10; i++) {
+    const d = new Date(IST.getTime() - i * 86400000);
+    if (d.getDay() !== 0 && d.getDay() !== 6)
+      tryDates.push(`${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}${d.getFullYear()}`);
+  }
+  for (const dateStr of tryDates) {
+    const url = `https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_${dateStr}_F_0000.csv.zip`;
+    try {
+      const { status, buf } = await _fetchNSEBinary(url);
+      if (status !== 200 || buf.length < 1000) { console.log(`[nse-bhav] ${dateStr}: HTTP ${status} / ${buf.length}b`); continue; }
+      const csv = _unzipFirstFile(buf);
+      if (!csv || csv.length < 1000) { console.log(`[nse-bhav] ${dateStr}: unzip failed or too short`); continue; }
+      const lines = csv.split('\n').filter(l => l.trim());
+      const hdrs  = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toUpperCase());
+      const col   = (...ns) => { for (const n of ns) { const i = hdrs.indexOf(n); if (i >= 0) return i; } return -1; };
+      const iToken  = col('FININSTRMID', 'TOKEN', 'INSTRUMENT_TOKEN');
+      const iOptTyp = col('OPTNTP', 'OPTION_TYP', 'OPTIONTYPE');
+      const iExpiry = col('EXPRDT', 'EXPIRY_DT', 'EXPIRYDATE');
+      const iStrike = col('STRKPRIC', 'STRIKE_PR', 'STRIKEPRICE');
+      const iTicker = col('TCKRSYMB', 'SYMBOL', 'TRADINGSYMBOL');
+      const iUndly  = col('UNDRLYG', 'UNDERLYING', 'UNDLYING');
+      if (iToken < 0) { console.log(`[nse-bhav] ${dateStr}: no token col. Hdrs: ${hdrs.join(',').slice(0,300)}`); continue; }
+      const map = {};
+      for (let i = 1; i < lines.length; i++) {
+        const c = lines[i].split(',').map(s => s.trim().replace(/"/g, ''));
+        if (c.length <= iToken) continue;
+        const token = c[iToken]?.trim();
+        if (!token || !/^\d+$/.test(token)) continue;
+        let name = '';
+        if (iUndly >= 0) name = (c[iUndly] || '').trim().toUpperCase();
+        if (!name && iTicker >= 0) { const m = (c[iTicker] || '').match(/^(NIFTY|BANKNIFTY|SENSEX)/i); name = m ? m[1].toUpperCase() : ''; }
+        if (!['NIFTY', 'BANKNIFTY', 'SENSEX'].includes(name)) continue;
+        const optRaw = iOptTyp >= 0 ? (c[iOptTyp] || '').trim().toUpperCase() : '';
+        const optType = (optRaw === 'CA' || optRaw === 'CE') ? 'CE' : (optRaw === 'PA' || optRaw === 'PE') ? 'PE' : '';
+        if (!optType) continue;
+        const strike = iStrike >= 0 ? String(Math.round(parseFloat(c[iStrike] || '0'))) : '';
+        if (!strike || strike === '0' || isNaN(parseInt(strike))) continue;
+        const expRaw = iExpiry >= 0 ? (c[iExpiry] || '').trim() : '';
+        let expiry = '';
+        const m1 = expRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const m2 = expRaw.match(/^(\d{1,2})[/-]([A-Z]{3})[/-](\d{4})$/i);
+        if (m1) { const d = new Date(`${m1[1]}-${m1[2]}-${m1[3]}`); expiry = String(d.getUTCDate()).padStart(2,'0') + MONTHS[d.getUTCMonth()] + d.getUTCFullYear(); }
+        else if (m2) expiry = m2[1].padStart(2,'0') + m2[2].toUpperCase() + m2[3];
+        if (!expiry) continue;
+        map[`${name}-${strike}-${optType}-${expiry}`] = token;
+      }
+      const count = Object.keys(map).length;
+      if (count > 100) {
+        const sample = Object.keys(map).filter(k => k.startsWith('NIFTY-')).slice(0, 3);
+        console.log(`[nse-bhav] ${dateStr}: ${count} tokens. Sample: ${sample.join(', ')}`);
+        return { map, dateStr, headers: hdrs };
+      }
+      console.log(`[nse-bhav] ${dateStr}: parsed ${count} tokens — too few, skipping. Hdrs: ${hdrs.join(',').slice(0,300)}`);
+    } catch (e) { console.log(`[nse-bhav] ${dateStr}: ${e.message}`); }
+  }
+  return null;
+}
+
 async function downloadScripMaster() {
   if (!session.token || !session.baseUrl) return;
   // 22h cache if we have current data; 10-min retry rate-limit if stale/failed
@@ -650,9 +766,32 @@ async function downloadScripMaster() {
     } catch(e) { console.log('[scrip] file-paths consumer error:', e.message); }
   }
 
+  // Approach 6: NSE FO Bhavcopy — FinInstrmId = NSE exchange token = Kotak pSymbol
   if (!csvText) {
-    console.error('[scrip] All download approaches failed');
-    tgAlert('⚠️ Scrip master: all download approaches failed. Check VM connectivity.').catch(()=>{});
+    try {
+      const bhav = await downloadNSEBhavTokens();
+      if (bhav?.map) {
+        const count = Object.keys(bhav.map).length;
+        const currentYear = new Date().getFullYear();
+        const hasCurrentData = Object.keys(bhav.map).some(k => parseInt(k.slice(-4)) >= currentYear);
+        if (hasCurrentData && count > 100) {
+          _scripMaster   = bhav.map;
+          _scripMasterTs = Date.now();
+          const sample = Object.keys(bhav.map).filter(k => k.startsWith('NIFTY-') && k.includes(String(currentYear))).slice(0, 3);
+          console.log(`[scrip] NSE bhavcopy (${bhav.dateStr}): ${count} tokens. Sample: ${sample.join(', ')}`);
+          tgAlert(`✅ Scrip master via NSE bhavcopy (${bhav.dateStr}): ${count} tokens\nSample: ${sample.join(', ')}`).catch(() => {});
+          return;
+        }
+        const latestKey = Object.keys(bhav.map).sort().pop();
+        console.log(`[nse-bhav] ${count} tokens but no ${currentYear}+ data. Latest: ${latestKey}`);
+        tgAlert(`⚠️ NSE bhavcopy (${bhav.dateStr}): ${count} tokens but no ${currentYear}+ data. Latest: ${latestKey}`).catch(() => {});
+      }
+    } catch (e) { console.log('[scrip] NSE bhavcopy error:', e.message); }
+  }
+
+  if (!csvText) {
+    console.error('[scrip] All 6 approaches failed');
+    tgAlert('⚠️ Scrip master: all 6 approaches failed (Kotak CDN stale + NSE bhavcopy failed).').catch(() => {});
     return;
   }
 
@@ -660,11 +799,11 @@ async function downloadScripMaster() {
   const count = Object.keys(newMap).length;
 
   if (err) {
-    tgAlert(`⚠️ Scrip master parse error (${sourceLabel}):\n${err.slice(0,400)}`).catch(()=>{});
+    console.error('[scrip] Parse error:', err.slice(0, 200));
     return;
   }
   if (count === 0) {
-    tgAlert(`⚠️ Scrip master: 0 contracts parsed from ${sourceLabel}.`).catch(()=>{});
+    console.error('[scrip] 0 contracts parsed from', sourceLabel);
     return;
   }
 
@@ -673,16 +812,14 @@ async function downloadScripMaster() {
   const hasCurrentData = Object.keys(newMap).some(k => parseInt(k.slice(-4)) >= currentYear);
   if (!hasCurrentData) {
     const latestKey = Object.keys(newMap).sort().pop();
-    console.error(`[scrip] Stale data from ${sourceLabel}: ${count} contracts, no ${currentYear}+ expiries`);
-    tgAlert(`⚠️ Scrip master stale (${sourceLabel}): ${count} contracts, no ${currentYear}+ data.\nLatest: ${latestKey}\nAll 5 approaches tried — retrying in 10 min.`).catch(()=>{});
+    console.error(`[scrip] Stale data from ${sourceLabel}: ${count} contracts, no ${currentYear}+ expiries. Latest: ${latestKey}`);
     return; // _scripMasterTs not updated → 10-min retry via _scripMasterAttemptTs
   }
 
   _scripMaster   = newMap;
   _scripMasterTs = Date.now();
   const sample = Object.keys(newMap).filter(k=>k.startsWith('NIFTY-')&&k.includes(String(currentYear))).slice(0,3);
-  console.log(`[scrip] ${count} contracts from ${sourceLabel}. Sample: ${sample.join(', ')}`);
-  tgAlert(`✅ Scrip master: ${count} contracts from ${sourceLabel}\nSample: ${sample.join(', ')}`).catch(()=>{});
+  console.log(`[scrip] ✅ ${count} contracts from ${sourceLabel}. Sample: ${sample.join(', ')}`);
 }
 
 // Look up Kotak numeric token for a specific option contract
@@ -1493,7 +1630,11 @@ async function handleMessage(text) {
       '/live — Live mode (real orders)\n' +
       '/kill — 🔴 Emergency exit ALL positions\n' +
       '/reset — Reset daily counters\n' +
-      '/debug_spot — Raw Kotak LTP API response\n\n' +
+      '/debug_spot — Raw Kotak LTP API response\n' +
+      '/debug_ltp — Test option LTP fetch\n' +
+      '/debug_cmp — Scrip master + option chain status\n' +
+      '/debug_nse_bhav — Test NSE bhavcopy token download\n' +
+      '/reload_scrip — Force re-download scrip master\n\n' +
       '<b>Market Data:</b>\n' +
       '/market_on — Start live market scraper\n' +
       '/market_off — Stop market scraper\n' +
@@ -1581,6 +1722,49 @@ async function handleMessage(text) {
         } catch(e) { await tgSend(`Symbol lookup error: ${e.message}`); }
       }
     }
+    return;
+  }
+
+  if (cmd === '/reload_scrip') {
+    _scripMasterTs = 0; _scripMasterAttemptTs = 0;
+    await tgSend('🔄 Scrip master reset. Downloading now (tries Kotak CDN + NSE bhavcopy)...');
+    await downloadScripMaster();
+    const count = Object.keys(_scripMaster).length;
+    await tgSend(`Reload done. Scrip master: <b>${count}</b> contracts.`);
+    return;
+  }
+
+  if (cmd === '/debug_nse_bhav') {
+    await tgSend('🔬 <b>NSE FO Bhavcopy test</b> — checking if FinInstrmId = Kotak pSymbol...');
+    try {
+      const IST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const tryDates = [];
+      for (let i = 0; tryDates.length < 4 && i < 10; i++) {
+        const d = new Date(IST.getTime() - i * 86400000);
+        if (d.getDay() !== 0 && d.getDay() !== 6)
+          tryDates.push(`${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}${d.getFullYear()}`);
+      }
+      for (const dateStr of tryDates) {
+        const url = `https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_${dateStr}_F_0000.csv.zip`;
+        await tgSend(`Trying ${dateStr}...`);
+        try {
+          const { status, buf } = await _fetchNSEBinary(url);
+          await tgSend(`HTTP ${status}, ${buf.length} bytes`);
+          if (status !== 200 || buf.length < 1000) continue;
+          const csv = _unzipFirstFile(buf);
+          if (!csv) { await tgSend('❌ Unzip failed'); continue; }
+          const lines = csv.split('\n').filter(l => l.trim());
+          const hdrs = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          await tgSend(`${lines.length} rows\n<b>Headers:</b>\n<code>${hdrs.join(',').slice(0, 500)}</code>`);
+          const niftyRows = lines.slice(1).filter(l => /NIFTY/i.test(l)).slice(0, 5);
+          if (niftyRows.length)
+            await tgSend(`<b>NIFTY sample rows (first 5):</b>\n<code>${niftyRows.join('\n').slice(0, 1000)}</code>`);
+          else
+            await tgSend('⚠️ No NIFTY rows found');
+          break;
+        } catch(e) { await tgSend(`Error: ${e.message}`); }
+      }
+    } catch(e) { await tgSend(`❌ ${e.message}`); }
     return;
   }
 
