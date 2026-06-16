@@ -386,7 +386,7 @@ async function fetchSpot(instrument = 'NIFTY') {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     });
     const d   = await r.json();
-    const ltp = parseFloat(Array.isArray(d) ? d[0]?.ltp : d?.ltp);
+    const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp);
     return ltp > 0 ? ltp : null;
   } catch (e) { console.error('fetchSpot error:', e.message); return null; }
 }
@@ -614,7 +614,7 @@ async function fetchKotakOptionLTPs() {
       }, 3000);
       if (!r.ok) continue;
       const d = await r.json();
-      const ltp = parseFloat(Array.isArray(d) ? d[0]?.ltp : d?.ltp);
+      const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp);
       if (ltp > 0) {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
