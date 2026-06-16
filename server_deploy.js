@@ -16,6 +16,7 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { exec } from 'child_process';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(__dirname, 'state.json');
@@ -47,6 +48,30 @@ const MAX_ORDERS         = 10;
 const FETCH_TIMEOUT      = 7000;
 const SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 const VALID_INSTRUMENTS  = ['NIFTY','BANKNIFTY','SENSEX','FINNIFTY','BANKEX'];
+
+// ── SUPABASE HELPER ───────────────────────────────────────────────────────────
+async function sbFetch(path, opts = {}) {
+  const { headers: extraHdrs, ...rest } = opts;
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    ...rest,
+    headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...(extraHdrs || {}) }
+  });
+  const text = await r.text();
+  return text ? JSON.parse(text) : [];
+}
+
+// ── WEB PUSH (VAPID) ─────────────────────────────────────────────────────────
+const VAPID_PUB  = process.env.VAPID_PUBLIC_KEY  || 'jyMeYNEtZyQ7qaJVeeroanUIn0TUhmRRdzVnVvlPYi2nvlGqLgG1m714pD02fF6gJmlwlpPwjBO8ZeJM_X4lyg';
+const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || '7aRPkRJKJT5RlkA4_XAhFy2nZwi2HdRmzp8HBkppGOo';
+let webpush = null;
+try {
+  const { default: wp } = await import('web-push');
+  wp.setVapidDetails('mailto:tusharsood.2010@gmail.com', VAPID_PUB, VAPID_PRIV);
+  webpush = wp;
+  console.log('web-push loaded ✓');
+} catch (e) {
+  console.log('web-push not installed — push notifications disabled. Run /http-update to install.');
+}
 const VALID_EXPIRIES     = ['weekly','next weekly','monthly'];
 const SPOT_TOKENS = {
   NIFTY:     { exchange_segment: 'nse_cm', instrument_token: '26000' },
@@ -1898,8 +1923,11 @@ const server = http.createServer(async (req, res) => {
       if (!code || code.length < 1000) { tgAlert('❌ HTTP update: downloaded file too small').catch(()=>{}); return; }
       fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
       _scripMasterTs = 0; _scripMasterAttemptTs = 0;
-      tgAlert('✅ <b>HTTP update complete.</b> Restarting in 3s…').catch(()=>{});
-      setTimeout(() => process.exit(0), 3000);
+      tgAlert('✅ <b>HTTP update complete.</b> Installing deps + restarting…').catch(()=>{});
+      exec(`npm install web-push --prefix ${__dirname}`, (err) => {
+        if (err) console.error('npm install web-push failed:', err.message);
+        setTimeout(() => process.exit(0), 1000);
+      });
     } catch(e) { tgAlert(`❌ HTTP update error: ${e.message}`).catch(()=>{}); }
     return;
   }
@@ -2069,6 +2097,55 @@ const server = http.createServer(async (req, res) => {
         kvUnlock(`totp_ip_${ip}`);
         res.writeHead(500);
         res.end(JSON.stringify({ ok: false, error: 'Server error: ' + e.message }));
+      }
+    });
+    return;
+  }
+
+  // Send push notifications — POST /send-push
+  if (req.method === 'POST' && urlPath === '/send-push') {
+    const secret = req.headers['x-t2s-secret'];
+    if (secret !== 'T2SMonitor2026' && secret !== process.env.EXECUTE_SECRET) {
+      res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
+      return;
+    }
+    if (!webpush) {
+      res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ ok: false, error: 'web-push not installed — trigger /http-update to install' }));
+      return;
+    }
+    let rawBody = '';
+    req.on('data', c => { rawBody += c; });
+    req.on('end', async () => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'application/json');
+      let payload = {};
+      try { payload = JSON.parse(rawBody); } catch {}
+      const { title = 'Trade2Spend', body: msgBody = 'New update', tag = 't2s-notif', url = 'https://app.trade2spend.com/#updates' } = payload;
+      try {
+        const subs = await sbFetch('push_subscriptions?select=id,subscription_json');
+        let sent = 0, failed = 0;
+        const toDelete = [];
+        for (const sub of subs) {
+          try {
+            await webpush.sendNotification(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
+            sent++;
+          } catch (e) {
+            if (e.statusCode === 410 || e.statusCode === 404) toDelete.push(sub.id);
+            failed++;
+          }
+        }
+        for (const id of toDelete) {
+          await sbFetch(`push_subscriptions?id=eq.${id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
+        }
+        console.log(`Push: ${sent} sent, ${failed} failed, ${toDelete.length} expired cleaned`);
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true, sent, failed, cleaned: toDelete.length, total: subs.length }));
+      } catch (e) {
+        console.error('/send-push error:', e.message);
+        res.writeHead(500);
+        res.end(JSON.stringify({ ok: false, error: e.message }));
       }
     });
     return;
