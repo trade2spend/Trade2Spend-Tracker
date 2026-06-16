@@ -72,7 +72,8 @@ let marketScraperInterval = null;
 let _latestMarketData    = null;
 let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, NSE fallback)
 let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
-let _scripMasterTs       = 0;  // last scrip master download timestamp
+let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
+let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min when stale
 let _activeContracts     = []; // [{instrument,strike,type,expiry}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
@@ -511,69 +512,152 @@ function _findCol(hdrs, ...candidates) {
 
 async function downloadScripMaster() {
   if (!session.token || !session.baseUrl) return;
-  if (Date.now() - _scripMasterTs < 22 * 60 * 60 * 1000) return; // once per 22h
-  try {
-    const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
-      headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
-    }, 10000);
-    if (!r1.ok) { console.error('[scrip] file-paths HTTP', r1.status); return; }
-    const d1 = await r1.json();
-    const paths = d1?.data?.filesPaths || [];
-    const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
-    if (!nfoCsvUrl) { console.error('[scrip] nse_fo CSV URL not found'); return; }
+  // 22h cache if we have current data; 10-min retry rate-limit if stale/failed
+  if (Date.now() - _scripMasterTs < 22 * 60 * 60 * 1000) return;
+  if (Date.now() - _scripMasterAttemptTs < 10 * 60 * 1000) return;
+  _scripMasterAttemptTs = Date.now();
 
-    const r2 = await ftKotak(nfoCsvUrl, {}, 60000);
-    if (!r2.ok) { console.error('[scrip] CSV download HTTP', r2.status); return; }
-    const csv = await r2.text();
+  const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
-    const lines = csv.split('\n');
-    // Strip quotes AND semicolons from headers — Kotak CSV has e.g. "dStrikePrice;"
-    const hdrs  = lines[0].split(',').map(h => h.trim().replace(/[";]/g, ''));
-    console.log('[scrip] CSV columns:', hdrs.join(', '));
-
-    // Try all known column name variants across Kotak API versions
-    const iName = _findCol(hdrs, 'pSymbolName', 'symbolName', 'pScrip');
-    const iType = _findCol(hdrs, 'pOptionType', 'optionType', 'pOptType', 'pInstrumentType');
-    const iExp  = _findCol(hdrs, 'lExpiryDate', 'pExpiryDate', 'pExpDt', 'expiryDate', 'pExpiry', 'expiry');
-    const iStr  = _findCol(hdrs, 'dStrikePrice', 'pStrikePrice', 'strikePrice', 'pStrikePrc', 'pStrike', 'strike');
-    const iTok  = _findCol(hdrs, 'pSymbol', 'token', 'pToken', 'instrumentToken');
-
-    if ([iName,iType,iExp,iStr,iTok].some(i => i < 0)) {
-      console.error(`[scrip] Missing columns — iName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok}`);
-      console.error('[scrip] All headers:', hdrs.join(', '));
-      tgAlert(`⚠️ Scrip master column mismatch.\niName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok}`).catch(()=>{});
-      return;
+  // Parse expiry from unix timestamp (seconds) OR multiple date string formats → DDMMMYYYY
+  function parseExp(raw) {
+    const s = (raw||'').replace(/"/g,'').trim().toUpperCase();
+    if (/^\d{9,11}$/.test(s)) {
+      const d = new Date(parseInt(s)*1000);
+      return String(d.getUTCDate()).padStart(2,'0') + MONTHS[d.getUTCMonth()] + d.getUTCFullYear();
     }
+    const m1 = s.match(/^(\d{1,2})([A-Z]{3})(\d{4})$/);       // DDMMMYYYY / DMMMYYYY
+    if (m1) return m1[1].padStart(2,'0') + m1[2] + m1[3];
+    const m2 = s.match(/^(\d{1,2})-([A-Z]{3})-(\d{4})$/);      // DD-MMM-YYYY
+    if (m2) return m2[1].padStart(2,'0') + m2[2] + m2[3];
+    const m3 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);           // YYYY-MM-DD
+    if (m3) { const d=new Date(s); if(!isNaN(d.getTime())) return String(d.getUTCDate()).padStart(2,'0')+MONTHS[d.getUTCMonth()]+d.getUTCFullYear(); }
+    return s;
+  }
 
-    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    const newMap = {};
+  // Parse CSV → token map. Handles:
+  //   old format: lExpiryDate (unix seconds), dStrikePrice (×100), headers may have semicolons
+  //   new format: pExpDt (DDMMMYYYY string), pStrikePrc (actual value), clean headers
+  function parseCsv(csv) {
+    const lines = csv.split('\n');
+    const hdrs  = lines[0].split(',').map(h => h.trim().replace(/[";]/g,''));
+    const iName = _findCol(hdrs,'pSymbolName','symbolName','pScrip');
+    const iType = _findCol(hdrs,'pOptionType','optionType','pOptType','pInstrumentType');
+    const iExp  = _findCol(hdrs,'lExpiryDate','pExpiryDate','pExpDt','expiryDate','pExpiry','expiry');
+    const iStr  = _findCol(hdrs,'dStrikePrice','pStrikePrice','strikePrice','pStrikePrc','pStrike','strike');
+    const iTok  = _findCol(hdrs,'pSymbol','token','pToken','instrumentToken');
+    if ([iName,iType,iExp,iStr,iTok].some(i=>i<0)) {
+      return { map:{}, err:`Col missing — iName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok} | Hdrs: ${hdrs.join(',')}` };
+    }
+    // Auto-detect if strike is stored ×100 (old: 2400000) or actual value (new: 24000)
+    const firstStrike = parseFloat(lines[1]?.split(',')?.[iStr]?.replace(/[";]/g,'').trim()||'0');
+    const strikeDiv   = firstStrike > 100000 ? 100 : 1;
+    const map = {};
     for (let i = 1; i < lines.length; i++) {
       const c = lines[i].split(',');
       if (c.length <= Math.max(iName,iType,iExp,iStr,iTok)) continue;
-      const name    = c[iName]?.replace(/"/g,'').trim().toUpperCase();
-      const type    = c[iType]?.replace(/"/g,'').trim().toUpperCase();
-      const expRaw  = parseInt(c[iExp]?.replace(/"/g,'').trim() || '0');
-      // Strike is stored ×100 in the CSV (e.g. 2300000 = NIFTY 23000)
-      const strikeRaw = parseFloat(c[iStr]?.replace(/[";]/g,'').trim() || '0');
-      const strike  = String(Math.round(strikeRaw / 100));
-      const token   = c[iTok]?.replace(/"/g,'').trim();
-      if (!name || !type || !expRaw || strikeRaw === 0 || !token) continue;
-      // lExpiryDate is a raw unix timestamp in seconds (no offset needed)
-      const expDate = new Date(expRaw * 1000);
-      const expStr  = String(expDate.getUTCDate()).padStart(2,'0') +
-                      MONTHS[expDate.getUTCMonth()] +
-                      expDate.getUTCFullYear();
-      newMap[`${name}-${strike}-${type}-${expStr}`] = token;
+      const name   = c[iName]?.replace(/"/g,'').trim().toUpperCase();
+      const type   = c[iType]?.replace(/"/g,'').trim().toUpperCase();
+      const exp    = parseExp(c[iExp]);
+      const strRaw = parseFloat(c[iStr]?.replace(/[";]/g,'').trim()||'0');
+      const strike = String(Math.round(strRaw/strikeDiv));
+      const token  = c[iTok]?.replace(/"/g,'').trim();
+      if (!name||!type||!exp||strRaw===0||!token||!['CE','PE'].includes(type)) continue;
+      map[`${name}-${strike}-${type}-${exp}`] = token;
     }
-    _scripMaster = newMap;
-    _scripMasterTs = Date.now();
-    const count = Object.keys(newMap).length;
-    console.log(`[scrip] Downloaded ${count} NFO contracts`);
-    if (count === 0) {
-      console.error('[scrip] Zero contracts parsed — check expiry/strike columns');
-      tgAlert(`⚠️ Scrip master parsed 0 contracts. Sample row: <code>${lines[1]?.slice(0,200)}</code>`).catch(()=>{});
-    }
-  } catch(e) { console.error('[scrip] downloadScripMaster error:', e.message); }
+    return { map, err:null };
+  }
+
+  const d2s = d => `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;
+  const cdnBase = 'https://lapi.kotaksecurities.com/wso2-scripmaster/1.0/prod/prod/v1';
+  const dates = [new Date(), new Date(Date.now()-86400000), new Date(Date.now()-172800000)].map(d2s);
+
+  let csvText = null, sourceLabel = '';
+
+  // Approach 1-3: Kotak public CDN — date-stamped URL, no auth needed, always has current contracts
+  for (const dateStr of dates) {
+    try {
+      const r = await ftKotak(`${cdnBase}/${dateStr}/nfo/transformed/scrip_master.csv`, {}, 30000);
+      if (r.ok) {
+        const t = await r.text();
+        if (t && t.length > 5000) { csvText = t; sourceLabel = `CDN-${dateStr}`; break; }
+        else console.log(`[scrip] CDN ${dateStr} → too short (${t?.length} bytes)`);
+      } else { console.log(`[scrip] CDN ${dateStr} → HTTP ${r.status}`); }
+    } catch(e) { console.log(`[scrip] CDN ${dateStr}: ${e.message}`); }
+  }
+
+  // Approach 4: file-paths API with session bearer token (may return different/current file)
+  if (!csvText) {
+    try {
+      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+        headers: { 'Authorization': session.token, 'Content-Type':'application/json','neo-fin-key':'neotradeapi','sid':session.sid,'Auth':session.token }
+      }, 10000);
+      if (r1.ok) {
+        const d1 = await r1.json();
+        const allPaths = d1?.data?.filesPaths || [];
+        console.log('[scrip] file-paths(session) filenames:', JSON.stringify(allPaths.map(p=>{try{return new URL(p).pathname.split('/').pop();}catch{return String(p).slice(0,60);}})));
+        const nfoPaths = allPaths.filter(p=>typeof p==='string'&&p.toLowerCase().includes('nse_fo'));
+        for (const url of [...nfoPaths].reverse()) { // try last URL first (most likely most recent)
+          try {
+            const r2 = await ftKotak(url, {}, 60000);
+            if (r2.ok) { const t = await r2.text(); if (t&&t.length>5000) { csvText=t; sourceLabel='file-paths-session'; break; } }
+          } catch {}
+        }
+      }
+    } catch(e) { console.log('[scrip] file-paths session error:', e.message); }
+  }
+
+  // Approach 5: file-paths API with consumer key (original — known to return stale archive)
+  if (!csvText) {
+    try {
+      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+        headers: { 'Authorization': CONSUMER_KEY,'Content-Type':'application/json','neo-fin-key':'neotradeapi' }
+      }, 10000);
+      if (r1.ok) {
+        const d1 = await r1.json();
+        const paths = d1?.data?.filesPaths || [];
+        const nfoCsvUrl = paths.find(p=>typeof p==='string'&&p.toLowerCase().includes('nse_fo'));
+        if (nfoCsvUrl) {
+          const r2 = await ftKotak(nfoCsvUrl, {}, 60000);
+          if (r2.ok) { const t = await r2.text(); if (t&&t.length>5000) { csvText=t; sourceLabel='file-paths-consumer-key'; } }
+        }
+      }
+    } catch(e) { console.log('[scrip] file-paths consumer error:', e.message); }
+  }
+
+  if (!csvText) {
+    console.error('[scrip] All download approaches failed');
+    tgAlert('⚠️ Scrip master: all download approaches failed. Check VM connectivity.').catch(()=>{});
+    return;
+  }
+
+  const { map: newMap, err } = parseCsv(csvText);
+  const count = Object.keys(newMap).length;
+
+  if (err) {
+    tgAlert(`⚠️ Scrip master parse error (${sourceLabel}):\n${err.slice(0,400)}`).catch(()=>{});
+    return;
+  }
+  if (count === 0) {
+    tgAlert(`⚠️ Scrip master: 0 contracts parsed from ${sourceLabel}.`).catch(()=>{});
+    return;
+  }
+
+  // Verify data is current — at least some contracts must expire this calendar year or later
+  const currentYear = new Date().getFullYear();
+  const hasCurrentData = Object.keys(newMap).some(k => parseInt(k.slice(-4)) >= currentYear);
+  if (!hasCurrentData) {
+    const latestKey = Object.keys(newMap).sort().pop();
+    console.error(`[scrip] Stale data from ${sourceLabel}: ${count} contracts, no ${currentYear}+ expiries`);
+    tgAlert(`⚠️ Scrip master stale (${sourceLabel}): ${count} contracts, no ${currentYear}+ data.\nLatest: ${latestKey}\nAll 5 approaches tried — retrying in 10 min.`).catch(()=>{});
+    return; // _scripMasterTs not updated → 10-min retry via _scripMasterAttemptTs
+  }
+
+  _scripMaster   = newMap;
+  _scripMasterTs = Date.now();
+  const sample = Object.keys(newMap).filter(k=>k.startsWith('NIFTY-')&&k.includes(String(currentYear))).slice(0,3);
+  console.log(`[scrip] ${count} contracts from ${sourceLabel}. Sample: ${sample.join(', ')}`);
+  tgAlert(`✅ Scrip master: ${count} contracts from ${sourceLabel}\nSample: ${sample.join(', ')}`).catch(()=>{});
 }
 
 // Look up Kotak numeric token for a specific option contract
@@ -1417,7 +1501,27 @@ async function handleMessage(text) {
 
   if (cmd === '/debug_scrip') {
     if (!session.token || !session.baseUrl) { await tgSend('❌ Not logged in'); return; }
-    await tgSend('🔍 Fetching file-paths from Kotak...');
+    const d2s = d => `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;
+    const todayStr = d2s(new Date());
+    const cdnUrl = `https://lapi.kotaksecurities.com/wso2-scripmaster/1.0/prod/prod/v1/${todayStr}/nfo/transformed/scrip_master.csv`;
+
+    await tgSend(`🔍 <b>Scrip master debug</b>\n1️⃣ Testing CDN (${todayStr})…\n2️⃣ Will test file-paths API`);
+
+    // Test 1: date-stamped CDN URL (primary approach in new code)
+    try {
+      const r = await ftKotak(cdnUrl, {}, 30000);
+      const txt = await r.text();
+      const lines = txt.split('\n');
+      await tgSend(
+        `<b>CDN status:</b> ${r.status} | ${txt.length} bytes | ${lines.length} lines\n` +
+        `<b>Headers:</b> <code>${lines[0]?.slice(0,400)}</code>\n` +
+        `<b>Row 1:</b> <code>${lines[1]?.slice(0,300)}</code>\n` +
+        `<b>Row 2:</b> <code>${lines[2]?.slice(0,300)}</code>`
+      );
+    } catch(e) { await tgSend(`CDN error: <code>${e.message}</code>`); }
+
+    // Test 2: file-paths API (original approach, known to return stale archive)
+    await tgSend('🔍 Fetching file-paths API from Kotak...');
     try {
       const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
@@ -1523,7 +1627,7 @@ async function handleMessage(text) {
       const code = await r.text();
       if (!code || code.length < 1000) { await tgSend('❌ Downloaded file looks empty — aborting.'); return; }
       fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
-      _scripMasterTs = 0; // force scrip master re-download after restart
+      _scripMasterTs = 0; _scripMasterAttemptTs = 0; // force scrip master re-download after restart
       await tgSend('✅ server.js updated. Restarting in 2s…');
       setTimeout(() => process.exit(0), 2000); // PM2 auto-restarts
     } catch(e) {
@@ -1679,7 +1783,7 @@ const server = http.createServer(async (req, res) => {
       const code = await r.text();
       if (!code || code.length < 1000) { tgAlert('❌ HTTP update: downloaded file too small').catch(()=>{}); return; }
       fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
-      _scripMasterTs = 0;
+      _scripMasterTs = 0; _scripMasterAttemptTs = 0;
       tgAlert('✅ <b>HTTP update complete.</b> Restarting in 3s…').catch(()=>{});
       setTimeout(() => process.exit(0), 3000);
     } catch(e) { tgAlert(`❌ HTTP update error: ${e.message}`).catch(()=>{}); }
@@ -1936,7 +2040,7 @@ setTimeout(async () => {
   } catch(e) { console.log('Startup market.json fetch failed:', e.message); }
   // If session was restored from state.json, re-download scrip master (it's in-memory only)
   if (session.token && session.baseUrl) {
-    _scripMasterTs = 0;
+    _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
   }
   // Start scraper if within market hours (GH_TOKEN not required — pushMarketToGitHub handles missing token gracefully)
