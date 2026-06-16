@@ -744,14 +744,11 @@ async function runMarketScraper(force = false) {
     const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE(), fetchNSEMovers()]);
     // Refresh active contracts from Supabase every 5 min (feeds the 5s Kotak LTP interval)
     refreshActiveContracts().catch(e => console.error('[contracts] bg refresh error:', e.message));
-    // NSE option chain fallback — only when Kotak not logged in
-    // Awaited so _optionChain is populated BEFORE _latestMarketData is set below
-    if (!session.token) {
-      await Promise.all([
-        fetchNSEOptionChainFallback('NIFTY').catch(()=>{}),
-        fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{})
-      ]);
-    }
+    // NSE option chain — always fetch as baseline; Kotak 5s interval overrides per-contract if scrip master works
+    await Promise.all([
+      fetchNSEOptionChainFallback('NIFTY').catch(()=>{}),
+      fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{})
+    ]);
     const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
@@ -1416,6 +1413,31 @@ async function handleMessage(text) {
     const recentExpiries = niftyExpiries.slice(-5);
     msg += `\n<b>Most recent NIFTY expiries in scrip:</b>\n${recentExpiries.join(', ')}\n`;
     await tgSend(msg); return;
+  }
+
+  if (cmd === '/debug_scrip') {
+    if (!session.token || !session.baseUrl) { await tgSend('❌ Not logged in'); return; }
+    await tgSend('🔍 Fetching file-paths from Kotak...');
+    try {
+      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+      }, 10000);
+      const text1 = await r1.text();
+      let msg = `<b>file-paths status:</b> ${r1.status}\n<b>Raw response:</b>\n<code>${text1.slice(0,600)}</code>`;
+      await tgSend(msg);
+      try {
+        const d1 = JSON.parse(text1);
+        const paths = d1?.data?.filesPaths || [];
+        await tgSend(`<b>Paths array (${paths.length} items):</b>\n${JSON.stringify(paths).slice(0,800)}`);
+        const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
+        if (!nfoCsvUrl) { await tgSend('❌ No nse_fo URL found in paths'); return; }
+        await tgSend(`✅ nse_fo URL: <code>${nfoCsvUrl}</code>\nDownloading first 2KB...`);
+        const r2 = await ftKotak(nfoCsvUrl, {}, 15000);
+        const csvSample = (await r2.text()).slice(0, 1500);
+        await tgSend(`<b>CSV sample (first rows):</b>\n<code>${csvSample}</code>`);
+      } catch(e) { await tgSend(`Parse error: ${e.message}`); }
+    } catch(e) { await tgSend(`Error: ${e.message}`); }
+    return;
   }
 
   if (cmd === '/spot') {
