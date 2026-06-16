@@ -572,7 +572,7 @@ async function downloadNSEBhavTokens() {
   for (let i = 0; tryDates.length < 4 && i < 10; i++) {
     const d = new Date(IST.getTime() - i * 86400000);
     if (d.getDay() !== 0 && d.getDay() !== 6)
-      tryDates.push(`${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}${d.getFullYear()}`);
+      tryDates.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`);
   }
   for (const dateStr of tryDates) {
     const url = `https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_${dateStr}_F_0000.csv.zip`;
@@ -625,6 +625,59 @@ async function downloadNSEBhavTokens() {
     } catch (e) { console.log(`[nse-bhav] ${dateStr}: ${e.message}`); }
   }
   return null;
+}
+
+// Zerodha publishes a free public NFO instrument CSV — exchange_token column = NSE token = Kotak pSymbol
+async function downloadZerodhaTokens() {
+  try {
+    const r = await ft('https://api.kite.trade/instruments/NFO', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    }, 30000);
+    if (!r.ok) { console.log(`[zerodha] HTTP ${r.status}`); return null; }
+    const csv = await r.text();
+    if (!csv || csv.length < 5000) { console.log('[zerodha] too short'); return null; }
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const lines = csv.split('\n').filter(l => l.trim());
+    const hdrs  = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const iTok  = hdrs.indexOf('exchange_token');
+    const iName = hdrs.indexOf('name');
+    const iExp  = hdrs.indexOf('expiry');
+    const iStr  = hdrs.indexOf('strike');
+    const iType = hdrs.indexOf('instrument_type');
+    const iSeg  = hdrs.indexOf('segment');
+    if (iTok < 0 || iName < 0 || iExp < 0 || iStr < 0 || iType < 0) {
+      console.log('[zerodha] missing cols:', hdrs.join(',').slice(0,200)); return null;
+    }
+    const map = {};
+    for (let i = 1; i < lines.length; i++) {
+      const c = lines[i].split(',');
+      if (c.length <= Math.max(iTok, iName, iExp, iStr, iType)) continue;
+      const seg = iSeg >= 0 ? c[iSeg]?.trim() : 'NFO';
+      if (!seg || !seg.startsWith('NFO')) continue;
+      const type = c[iType]?.trim().toUpperCase();
+      if (!['CE','PE'].includes(type)) continue;
+      const name = c[iName]?.trim().toUpperCase();
+      if (!['NIFTY','BANKNIFTY','SENSEX'].includes(name)) continue;
+      const token = c[iTok]?.trim();
+      if (!token || !/^\d+$/.test(token)) continue;
+      const strike = String(Math.round(parseFloat(c[iStr]?.trim() || '0')));
+      if (!strike || strike === '0') continue;
+      const expRaw = c[iExp]?.trim();
+      const dm = expRaw?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!dm) continue;
+      const d = new Date(`${dm[1]}-${dm[2]}-${dm[3]}`);
+      const expiry = String(d.getUTCDate()).padStart(2,'0') + MONTHS[d.getUTCMonth()] + d.getUTCFullYear();
+      map[`${name}-${strike}-${type}-${expiry}`] = token;
+    }
+    const count = Object.keys(map).length;
+    if (count > 100) {
+      const sample = Object.keys(map).filter(k => k.startsWith('NIFTY-')).slice(0, 3);
+      console.log(`[zerodha] ${count} tokens. Sample: ${sample.join(', ')}`);
+      return { map, source: 'zerodha' };
+    }
+    console.log(`[zerodha] only ${count} tokens — skipping`);
+    return null;
+  } catch (e) { console.log('[zerodha] error:', e.message); return null; }
 }
 
 async function downloadScripMaster() {
@@ -789,9 +842,29 @@ async function downloadScripMaster() {
     } catch (e) { console.log('[scrip] NSE bhavcopy error:', e.message); }
   }
 
+  // Approach 7: Zerodha public NFO instruments — exchange_token = NSE token = Kotak pSymbol
   if (!csvText) {
-    console.error('[scrip] All 6 approaches failed');
-    tgAlert('⚠️ Scrip master: all 6 approaches failed (Kotak CDN stale + NSE bhavcopy failed).').catch(() => {});
+    try {
+      const zr = await downloadZerodhaTokens();
+      if (zr?.map) {
+        const count = Object.keys(zr.map).length;
+        const currentYear = new Date().getFullYear();
+        const hasCurrentData = Object.keys(zr.map).some(k => parseInt(k.slice(-4)) >= currentYear);
+        if (hasCurrentData && count > 100) {
+          _scripMaster   = zr.map;
+          _scripMasterTs = Date.now();
+          const sample = Object.keys(zr.map).filter(k => k.startsWith('NIFTY-') && k.includes(String(currentYear))).slice(0, 3);
+          console.log(`[scrip] Zerodha: ${count} tokens. Sample: ${sample.join(', ')}`);
+          tgAlert(`✅ Scrip master via Zerodha NFO: ${count} tokens\nSample: ${sample.join(', ')}`).catch(() => {});
+          return;
+        }
+      }
+    } catch (e) { console.log('[scrip] Zerodha error:', e.message); }
+  }
+
+  if (!csvText) {
+    console.error('[scrip] All 7 approaches failed');
+    tgAlert('⚠️ Scrip master: all 7 approaches failed. CMP from NSE option chain only.').catch(() => {});
     return;
   }
 
@@ -1742,7 +1815,7 @@ async function handleMessage(text) {
       for (let i = 0; tryDates.length < 4 && i < 10; i++) {
         const d = new Date(IST.getTime() - i * 86400000);
         if (d.getDay() !== 0 && d.getDay() !== 6)
-          tryDates.push(`${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}${d.getFullYear()}`);
+          tryDates.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`);
       }
       for (const dateStr of tryDates) {
         const url = `https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_${dateStr}_F_0000.csv.zip`;
