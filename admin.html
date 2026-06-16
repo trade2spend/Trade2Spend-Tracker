@@ -1946,16 +1946,9 @@ function refreshAlgoTab() {
   document.getElementById('algo-sl-display').textContent = g('sllvl') ? g('sllvl') + ' (' + selectedSLDir + ')' : '—';
 
   // Update status
-  const botToken = localStorage.getItem('t2s_algo_bot_token');
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
-
-  if (botToken) {
-    document.getElementById('algo-status-text').textContent = '🟢 Bot Connected';
-    document.getElementById('algo-status-sub').textContent = paperMode ? 'Paper Trading Mode — safe to test' : '⚠️ LIVE Mode — real orders';
-  } else {
-    document.getElementById('algo-status-text').textContent = '⚪ Not Configured';
-    document.getElementById('algo-status-sub').textContent = 'Add bot token in Setup tab';
-  }
+  document.getElementById('algo-status-text').textContent = '🟢 Bot Ready';
+  document.getElementById('algo-status-sub').textContent = paperMode ? 'Paper Trading Mode — safe to test' : '⚠️ LIVE Mode — real orders';
 
   const paperIndicator = document.getElementById('algo-paper-indicator');
   if (!paperMode) {
@@ -2040,14 +2033,7 @@ async function sendAlgoBotMessage(qty, slDuration) {
   if (now - _lastAlgoSend < 2000) { showToast('Please wait before sending again.'); return; }
   _lastAlgoSend = now;
 
-  const botToken = localStorage.getItem('t2s_algo_bot_token');
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
-
-  if (!botToken) {
-    showToast('Configure Trading Bot in Setup tab first.');
-    showTab('setup');
-    return;
-  }
 
   const instrLabels = {nifty:'NIFTY', banknifty:'BANKNIFTY', sensex:'SENSEX', stock:g('symbol').toUpperCase()||'STOCK', futures:'NIFTYFUT'};
   const instr = g('instr');
@@ -2084,7 +2070,7 @@ async function sendAlgoBotMessage(qty, slDuration) {
 
     // Open Telegram with payload pre-filled — user taps Send
     // This ensures message comes from USER side so bot can read it
-    const botUsername = localStorage.getItem('t2s_algo_bot_username') || 'Trade2SpendTradeBot';
+    const botUsername = localStorage.getItem('t2s_algo_bot_username') || 'Trade2Spend_Algo_Bot';
     window.open(`https://t.me/${botUsername}?text=${encoded}`, '_blank');
 
     showToast('📱 Telegram opening — tap Send to place order!');
@@ -2173,11 +2159,6 @@ function exportAlgoHistory() {
 // LOAD SAVED SETUP VALUES ON INIT
 // ═══════════════════════════════════════
 window.addEventListener('DOMContentLoaded', () => {
-  // Load algo setup values
-  const algoBotToken = localStorage.getItem('t2s_algo_bot_token');
-  if (algoBotToken) document.getElementById('algo-bot-token-input').value = algoBotToken;
-  const algoBotUsername = localStorage.getItem('t2s_algo_bot_username');
-  if (algoBotUsername) document.getElementById('algo-bot-username-input').value = algoBotUsername;
   // Paper mode toggle
   const paperMode = localStorage.getItem('t2s_paper_mode') !== '0';
   document.getElementById('paper-mode-toggle').checked = paperMode;
