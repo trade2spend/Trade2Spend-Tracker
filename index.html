@@ -646,17 +646,33 @@
 
     async function fetchMarketData() {
         // Step 1: Always render from cache first — instant, no "Fetching..." state ever
+        // When market is closed, use any cached data regardless of age (last session data is still valid)
         let cachedData = null;
         try {
             const raw = localStorage.getItem('t2s_market_cache');
             if (raw) {
                 const { data, ts } = JSON.parse(raw);
-                if (Date.now() - ts < 24 * 60 * 60 * 1000) { cachedData = data; renderMarketUI(data); }
+                const maxAge = isMarketClosedNow() ? Infinity : 24 * 60 * 60 * 1000;
+                if (Date.now() - ts < maxAge) { cachedData = data; renderMarketUI(data); }
             }
         } catch {}
 
-        // Step 2: Market closed — no network call needed, data won't change
+        // Step 2: Market closed — fetch from VM once to get last session data, then stop
         if (isMarketClosedNow()) {
+            if (!cachedData) {
+                // No cache at all — fetch from VM (loads market.json at startup)
+                try {
+                    const ctrl = new AbortController();
+                    setTimeout(() => ctrl.abort(), 5000);
+                    const res = await fetch(DB_URLS.market, { signal: ctrl.signal });
+                    if (res.ok) {
+                        const data = await res.json();
+                        renderMarketUI(data);
+                        localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
+                        cachedData = data;
+                    }
+                } catch {}
+            }
             if (!cachedData) {
                 document.getElementById('market-grid-container').innerHTML =
                     '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market closed · Open 9:15 AM IST</div>';
