@@ -500,6 +500,15 @@ async function fetchNSEMovers() {
 
 // Download NFO scrip master CSV from Kotak → build token lookup map
 // Called once after TOTP login (and refreshed daily)
+// Column name variants Kotak uses across API versions
+function _findCol(hdrs, ...candidates) {
+  for (const c of candidates) {
+    const i = hdrs.indexOf(c);
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
 async function downloadScripMaster() {
   if (!session.token || !session.baseUrl) return;
   if (Date.now() - _scripMasterTs < 22 * 60 * 60 * 1000) return; // once per 22h
@@ -519,14 +528,22 @@ async function downloadScripMaster() {
 
     const lines = csv.split('\n');
     const hdrs  = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
-    const iName = hdrs.indexOf('pSymbolName');
-    const iType = hdrs.indexOf('pOptionType');
-    const iExp  = hdrs.indexOf('pExpiryDate');
-    const iStr  = hdrs.indexOf('pStrikePrice');
-    const iTok  = hdrs.indexOf('pSymbol');
+    console.log('[scrip] CSV columns:', hdrs.join(', '));
+
+    // Try all known column name variants
+    const iName = _findCol(hdrs, 'pSymbolName', 'symbolName', 'pScrip');
+    const iType = _findCol(hdrs, 'pOptionType', 'optionType', 'pOptType', 'pInstrumentType');
+    const iExp  = _findCol(hdrs, 'pExpiryDate', 'pExpDt', 'expiryDate', 'pExpiry', 'expiry');
+    const iStr  = _findCol(hdrs, 'pStrikePrice', 'strikePrice', 'pStrikePrc', 'pStrike', 'strike');
+    const iTok  = _findCol(hdrs, 'pSymbol', 'token', 'pToken', 'instrumentToken');
+
     if ([iName,iType,iExp,iStr,iTok].some(i => i < 0)) {
-      console.error('[scrip] Missing columns:', hdrs.slice(0,10)); return;
+      console.error(`[scrip] Missing columns — iName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok}`);
+      console.error('[scrip] All headers:', hdrs.join(', '));
+      tgAlert(`⚠️ Scrip master column mismatch.\nAll headers: <code>${hdrs.join(', ')}</code>`).catch(()=>{});
+      return;
     }
+
     const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const newMap = {};
     for (let i = 1; i < lines.length; i++) {
@@ -538,7 +555,7 @@ async function downloadScripMaster() {
       const strike = c[iStr]?.replace(/"/g,'').trim();
       const token  = c[iTok]?.replace(/"/g,'').trim();
       if (!name || !type || !expRaw || !strike || !token) continue;
-      // SDK adds 315511200s to the stored timestamp to get actual expiry
+      // Kotak stores expiry as epoch seconds offset by 315511200
       const expDate = new Date((expRaw + 315511200) * 1000);
       const expStr  = String(expDate.getUTCDate()).padStart(2,'0') +
                       MONTHS[expDate.getUTCMonth()] +
@@ -547,7 +564,12 @@ async function downloadScripMaster() {
     }
     _scripMaster = newMap;
     _scripMasterTs = Date.now();
-    console.log(`[scrip] Downloaded ${Object.keys(newMap).length} NFO contracts`);
+    const count = Object.keys(newMap).length;
+    console.log(`[scrip] Downloaded ${count} NFO contracts`);
+    if (count === 0) {
+      console.error('[scrip] Zero contracts parsed — check expiry/strike columns');
+      tgAlert(`⚠️ Scrip master parsed 0 contracts. Sample row: <code>${lines[1]?.slice(0,200)}</code>`).catch(()=>{});
+    }
   } catch(e) { console.error('[scrip] downloadScripMaster error:', e.message); }
 }
 
@@ -1426,6 +1448,31 @@ async function handleMessage(text) {
     await tgSend('✅ Daily counters reset.'); await saveState(); return;
   }
 
+  if (cmd === '/debug_scrip') {
+    if (!session.token || !session.baseUrl) { await tgSend('❌ Not logged in — connect Kotak via PWA first.'); return; }
+    await tgSend('⏳ Fetching scrip master file-paths from Kotak…');
+    try {
+      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+      }, 10000);
+      const text1 = await r1.text();
+      await tgSend(`file-paths HTTP: <b>${r1.status}</b>\nBody: <code>${text1.slice(0,400)}</code>`);
+      if (!r1.ok) return;
+      const d1 = JSON.parse(text1);
+      const paths = d1?.data?.filesPaths || [];
+      const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
+      if (!nfoCsvUrl) { await tgSend(`❌ No nse_fo URL found.\nAll paths: <code>${JSON.stringify(paths).slice(0,300)}</code>`); return; }
+      await tgSend(`✅ NSE FO CSV URL found\n<code>${nfoCsvUrl}</code>\n\nDownloading first 3KB…`);
+      const r2 = await ftKotak(nfoCsvUrl, {}, 20000);
+      const csvChunk = await r2.text();
+      const lines = csvChunk.split('\n');
+      await tgSend(`CSV HTTP: <b>${r2.status}</b>\nTotal lines (first 3KB): ${lines.length}\n<b>Headers:</b> <code>${lines[0]?.slice(0,500)}</code>`);
+      if (lines[1]) await tgSend(`<b>Row 1:</b> <code>${lines[1].slice(0,400)}</code>`);
+      await tgSend(`<b>Scrip master map size:</b> ${Object.keys(_scripMaster).length} contracts\n<i>Use /debug_scrip again after /update to force re-download</i>`);
+    } catch(e) { await tgSend(`❌ debug_scrip error: ${e.message}`); }
+    return;
+  }
+
   if (cmd === '/update') {
     await tgSend('⏳ Pulling latest server.js from GitHub…');
     try {
@@ -1434,6 +1481,7 @@ async function handleMessage(text) {
       const code = await r.text();
       if (!code || code.length < 1000) { await tgSend('❌ Downloaded file looks empty — aborting.'); return; }
       fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
+      _scripMasterTs = 0; // force scrip master re-download after restart
       await tgSend('✅ server.js updated. Restarting in 2s…');
       setTimeout(() => process.exit(0), 2000); // PM2 auto-restarts
     } catch(e) {
