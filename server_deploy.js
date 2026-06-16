@@ -527,20 +527,21 @@ async function downloadScripMaster() {
     const csv = await r2.text();
 
     const lines = csv.split('\n');
-    const hdrs  = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
+    // Strip quotes AND semicolons from headers — Kotak CSV has e.g. "dStrikePrice;"
+    const hdrs  = lines[0].split(',').map(h => h.trim().replace(/[";]/g, ''));
     console.log('[scrip] CSV columns:', hdrs.join(', '));
 
-    // Try all known column name variants
+    // Try all known column name variants across Kotak API versions
     const iName = _findCol(hdrs, 'pSymbolName', 'symbolName', 'pScrip');
     const iType = _findCol(hdrs, 'pOptionType', 'optionType', 'pOptType', 'pInstrumentType');
-    const iExp  = _findCol(hdrs, 'pExpiryDate', 'pExpDt', 'expiryDate', 'pExpiry', 'expiry');
-    const iStr  = _findCol(hdrs, 'pStrikePrice', 'strikePrice', 'pStrikePrc', 'pStrike', 'strike');
+    const iExp  = _findCol(hdrs, 'lExpiryDate', 'pExpiryDate', 'pExpDt', 'expiryDate', 'pExpiry', 'expiry');
+    const iStr  = _findCol(hdrs, 'dStrikePrice', 'pStrikePrice', 'strikePrice', 'pStrikePrc', 'pStrike', 'strike');
     const iTok  = _findCol(hdrs, 'pSymbol', 'token', 'pToken', 'instrumentToken');
 
     if ([iName,iType,iExp,iStr,iTok].some(i => i < 0)) {
       console.error(`[scrip] Missing columns — iName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok}`);
       console.error('[scrip] All headers:', hdrs.join(', '));
-      tgAlert(`⚠️ Scrip master column mismatch.\nAll headers: <code>${hdrs.join(', ')}</code>`).catch(()=>{});
+      tgAlert(`⚠️ Scrip master column mismatch.\niName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok}`).catch(()=>{});
       return;
     }
 
@@ -549,14 +550,16 @@ async function downloadScripMaster() {
     for (let i = 1; i < lines.length; i++) {
       const c = lines[i].split(',');
       if (c.length <= Math.max(iName,iType,iExp,iStr,iTok)) continue;
-      const name   = c[iName]?.replace(/"/g,'').trim().toUpperCase();
-      const type   = c[iType]?.replace(/"/g,'').trim().toUpperCase();
-      const expRaw = parseInt(c[iExp]?.replace(/"/g,'').trim() || '0');
-      const strike = c[iStr]?.replace(/"/g,'').trim();
-      const token  = c[iTok]?.replace(/"/g,'').trim();
-      if (!name || !type || !expRaw || !strike || !token) continue;
-      // Kotak stores expiry as epoch seconds offset by 315511200
-      const expDate = new Date((expRaw + 315511200) * 1000);
+      const name    = c[iName]?.replace(/"/g,'').trim().toUpperCase();
+      const type    = c[iType]?.replace(/"/g,'').trim().toUpperCase();
+      const expRaw  = parseInt(c[iExp]?.replace(/"/g,'').trim() || '0');
+      // Strike is stored ×100 in the CSV (e.g. 2300000 = NIFTY 23000)
+      const strikeRaw = parseFloat(c[iStr]?.replace(/[";]/g,'').trim() || '0');
+      const strike  = String(Math.round(strikeRaw / 100));
+      const token   = c[iTok]?.replace(/"/g,'').trim();
+      if (!name || !type || !expRaw || strikeRaw === 0 || !token) continue;
+      // lExpiryDate is a raw unix timestamp in seconds (no offset needed)
+      const expDate = new Date(expRaw * 1000);
       const expStr  = String(expDate.getUTCDate()).padStart(2,'0') +
                       MONTHS[expDate.getUTCMonth()] +
                       expDate.getUTCFullYear();
