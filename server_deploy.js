@@ -538,12 +538,20 @@ async function refreshActiveContracts() {
     const contracts = [];
     posts.forEach(p => {
       const t = (p.content || '').toUpperCase();
-      const instrM  = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
-      const strikeM = t.match(/\b(\d{4,6})\s*(CE|PE)\b/);
-      if (!instrM || !strikeM) return;
-      const instr  = instrM[1];
-      const strike = parseInt(strikeM[1]);
-      const type   = strikeM[2];
+      // Instrument
+      const instrM = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
+      if (!instrM) return;
+      const instr = instrM[1];
+      // Strike: first 4-6 digit number after the instrument name
+      // (handles "Nifty 23850 Next Weekly CE at 120" — CE is not adjacent to the number)
+      const afterInstr = t.slice(t.indexOf(instr) + instr.length);
+      const strikeMatch = afterInstr.match(/\b(\d{4,6})\b/);
+      if (!strikeMatch) return;
+      const strike = parseInt(strikeMatch[1]);
+      // Type: CE or PE anywhere in the content
+      const typeMatch = t.match(/\b(CE|PE)\b/);
+      if (!typeMatch) return;
+      const type = typeMatch[1];
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
       const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
       // Deduplicate
