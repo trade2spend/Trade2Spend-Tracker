@@ -656,7 +656,8 @@
             }
         }
         // Update live option CMPs on trade cards in-place
-        if (data.optionLTPs && isOpen) updateTradeCMPs(data.optionLTPs);
+        // Use client-side clock only — don't depend on server's marketOpen flag (can lag on restart)
+        if (data.optionLTPs && !isMarketClosedNow()) updateTradeCMPs(data.optionLTPs);
     }
 
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
@@ -2632,15 +2633,8 @@
                 }, 10 * 60 * 1000);
                 return;
             }
-            // Inside trading hours but API says market closed (holiday / pre-open)
-            if (lastData && lastData.marketOpen === false) {
-                _marketRefreshTimer = setTimeout(async () => {
-                    const d = await fetchMarketData();
-                    scheduleMarketRefresh(d);
-                }, 15 * 60 * 1000);
-                return;
-            }
-            // Market open — refresh every 5 seconds
+            // Market hours (client clock) — always refresh every 5s
+            // Don't slow down based on server's marketOpen flag (it lags ~5s after VM restart)
             _marketRefreshTimer = setTimeout(async () => {
                 const d = await fetchMarketData();
                 scheduleMarketRefresh(d);
