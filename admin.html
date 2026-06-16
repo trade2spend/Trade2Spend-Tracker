@@ -1295,7 +1295,8 @@ window.onload=()=>{
   const api=localStorage.getItem('tm_api_key');
   if(api) document.getElementById('api-key-input').value=api;
   const gh=localStorage.getItem('tm_gh_token');
-  if(gh) document.getElementById('gh-token-input').value=gh;
+  const ghEl=document.getElementById('gh-token-input');
+  if(gh && ghEl) ghEl.value=gh;
   updatePreview();
   // membership defaults
   const d=window.__memDefaults||{};
@@ -2560,7 +2561,7 @@ function recallHistory(i){
 async function shareTG(type){
   const msg=type==='trade'?lastTradeMsg:lastGenMsg;
   if(!msg){showToast('Generate a message first.');return;}
-  const botToken=localStorage.getItem('tm_tg_token')||'';
+  const botToken=localStorage.getItem('tm_tg_token')||localStorage.getItem('t2s_algo_bot_token')||'';
   if(!botToken){
     navigator.clipboard.writeText(msg).catch(()=>{});
     showToast('No bot token. Message copied — paste in Telegram.');
@@ -3028,7 +3029,7 @@ function roundRect(ctx,x,y,w,h,r,fill,stroke,strokeColor,strokeWidth){
 }
 
 async function postCampaignToTelegram(){
-  const botToken=localStorage.getItem('tm_tg_token')||'';
+  const botToken=localStorage.getItem('tm_tg_token')||localStorage.getItem('t2s_algo_bot_token')||'';
   if(!botToken){showToast('Add Telegram bot token in Setup first.');return;}
   const canvas=document.getElementById('camp-canvas');
   const caption=document.getElementById('camp-caption').textContent;
@@ -3365,7 +3366,7 @@ function drawT5(ctx,W,H,date,time,urgency){
 
 // ── POST ──
 async function postNow(){
-  const botToken=localStorage.getItem('tm_tg_token')||'';
+  const botToken=localStorage.getItem('tm_tg_token')||localStorage.getItem('t2s_algo_bot_token')||'';
   if(!botToken){showToast('Add bot token in Setup first.');return;}
   if(!closingDate){showToast('Please enter a closing date.');return;}
   const caption=document.getElementById('caption-text').textContent;
@@ -3858,7 +3859,7 @@ function buildCaption(){
 
 // ── TELEGRAM POST ──
 async function postResultToTelegram(){
-  const token = localStorage.getItem('tm_tg_token')||'';
+  const token = localStorage.getItem('tm_tg_token')||localStorage.getItem('t2s_algo_bot_token')||'';
   if(!token){ showToast('Add bot token in Setup tab first.'); return; }
   if(!uploadedImage){ showToast('Upload a screenshot first.'); return; }
   if(!document.getElementById('line1').value.trim()){ showToast('Add at least Line 1 text.'); return; }
