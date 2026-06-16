@@ -575,19 +575,43 @@ async function downloadScripMaster() {
 
   let csvText = null, sourceLabel = '';
 
-  // Approach 1-3: Kotak public CDN — date-stamped URL, no auth needed, always has current contracts
-  for (const dateStr of dates) {
-    try {
-      const r = await ftKotak(`${cdnBase}/${dateStr}/nfo/transformed/scrip_master.csv`, {}, 30000);
-      if (r.ok) {
-        const t = await r.text();
-        if (t && t.length > 5000) { csvText = t; sourceLabel = `CDN-${dateStr}`; break; }
-        else console.log(`[scrip] CDN ${dateStr} → too short (${t?.length} bytes)`);
-      } else { console.log(`[scrip] CDN ${dateStr} → HTTP ${r.status}`); }
-    } catch(e) { console.log(`[scrip] CDN ${dateStr}: ${e.message}`); }
+  // Approach 1: gw-napi Dist/master — Kotak Neo SDK's own endpoint, Bearer session token, has current data
+  const gwNapiUrls = [
+    'https://gw-napi.kotaksecurities.com/Dist/master/nse_fo.csv',
+    `${session.baseUrl}/Dist/master/nse_fo.csv`
+  ];
+  for (const url of gwNapiUrls) {
+    for (const authHdr of [`Bearer ${session.token}`, session.token]) {
+      try {
+        const r = await ftKotak(url, {
+          headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' }
+        }, 60000);
+        if (r.ok) {
+          const t = await r.text();
+          if (t && t.length > 5000 && t.includes(',')) { csvText = t; sourceLabel = `gw-napi(${authHdr.slice(0,12)})`; break; }
+          else console.log(`[scrip] gw-napi ${url.slice(-20)} → too short or not CSV (${t?.length}b)`);
+        } else { console.log(`[scrip] gw-napi ${url.slice(-20)} HTTP ${r.status}`); }
+      } catch(e) { console.log(`[scrip] gw-napi ${url.slice(-20)}: ${e.message}`); }
+      if (csvText) break;
+    }
+    if (csvText) break;
   }
 
-  // Approach 4: file-paths API with session bearer token (may return different/current file)
+  // Approach 2-4: Kotak public CDN — date-stamped URL, no auth needed
+  if (!csvText) {
+    for (const dateStr of dates) {
+      try {
+        const r = await ftKotak(`${cdnBase}/${dateStr}/nfo/transformed/scrip_master.csv`, {}, 30000);
+        if (r.ok) {
+          const t = await r.text();
+          if (t && t.length > 5000) { csvText = t; sourceLabel = `CDN-${dateStr}`; break; }
+          else console.log(`[scrip] CDN ${dateStr} → too short (${t?.length} bytes)`);
+        } else { console.log(`[scrip] CDN ${dateStr} → HTTP ${r.status}`); }
+      } catch(e) { console.log(`[scrip] CDN ${dateStr}: ${e.message}`); }
+    }
+  }
+
+  // Approach 5: file-paths API with session bearer token (may return different/current file)
   if (!csvText) {
     try {
       const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
@@ -1562,26 +1586,39 @@ async function handleMessage(text) {
 
   if (cmd === '/debug_scrip') {
     if (!session.token || !session.baseUrl) { await tgSend('❌ Not logged in'); return; }
+    await tgSend(`🔍 <b>Scrip master debug</b>\n1️⃣ gw-napi (Bearer)\n2️⃣ CDN\n3️⃣ file-paths API`);
+
+    // Test 1: gw-napi Dist/master — the Kotak Neo SDK's own scrip master endpoint
+    const gwUrl = 'https://gw-napi.kotaksecurities.com/Dist/master/nse_fo.csv';
+    try {
+      const r = await ftKotak(gwUrl, {
+        headers: { 'Authorization': `Bearer ${session.token}`, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi' }
+      }, 60000);
+      const txt = await r.text();
+      const lines = txt.split('\n');
+      await tgSend(
+        `<b>gw-napi status:</b> ${r.status} | ${txt.length} bytes | ${lines.length} lines\n` +
+        `<b>Headers:</b> <code>${lines[0]?.slice(0,400)}</code>\n` +
+        `<b>Row 1:</b> <code>${lines[1]?.slice(0,300)}</code>\n` +
+        `<b>Row 2:</b> <code>${lines[2]?.slice(0,300)}</code>`
+      );
+    } catch(e) { await tgSend(`gw-napi error: <code>${e.message}</code>`); }
+
+    // Test 2: date-stamped CDN URL
     const d2s = d => `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;
     const todayStr = d2s(new Date());
     const cdnUrl = `https://lapi.kotaksecurities.com/wso2-scripmaster/1.0/prod/prod/v1/${todayStr}/nfo/transformed/scrip_master.csv`;
-
-    await tgSend(`🔍 <b>Scrip master debug</b>\n1️⃣ Testing CDN (${todayStr})…\n2️⃣ Will test file-paths API`);
-
-    // Test 1: date-stamped CDN URL (primary approach in new code)
     try {
       const r = await ftKotak(cdnUrl, {}, 30000);
       const txt = await r.text();
       const lines = txt.split('\n');
       await tgSend(
-        `<b>CDN status:</b> ${r.status} | ${txt.length} bytes | ${lines.length} lines\n` +
-        `<b>Headers:</b> <code>${lines[0]?.slice(0,400)}</code>\n` +
-        `<b>Row 1:</b> <code>${lines[1]?.slice(0,300)}</code>\n` +
-        `<b>Row 2:</b> <code>${lines[2]?.slice(0,300)}</code>`
+        `<b>CDN (${todayStr}) status:</b> ${r.status} | ${txt.length} bytes | ${lines.length} lines\n` +
+        `<b>Row 1:</b> <code>${lines[1]?.slice(0,300)}</code>`
       );
     } catch(e) { await tgSend(`CDN error: <code>${e.message}</code>`); }
 
-    // Test 2: file-paths API (original approach, known to return stale archive)
+    // Test 3: file-paths API (original approach, confirmed stale)
     await tgSend('🔍 Fetching file-paths API from Kotak...');
     try {
       const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
