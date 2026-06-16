@@ -380,15 +380,14 @@ async function fetchSpot(instrument = 'NIFTY') {
   if (!session.token || !session.baseUrl) return null;
   const tok = SPOT_TOKENS[instrument.toUpperCase()] || SPOT_TOKENS.NIFTY;
   try {
-    const r = await ftKotak(`${session.baseUrl}/scriptdetails/1.0/quotes/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': session.token, 'neo-fin-key': 'neotradeapi', 'sid': session.sid },
-      body: JSON.stringify({ instrument_tokens: [tok] })
+    const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${tok.instrument_token}/ltp`;
+    const r = await ftKotak(url, {
+      method: 'GET',
+      headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     });
     const d   = await r.json();
-    const q   = d.data?.[0] || d[0];
-    const ltp = q?.ltp || q?.last_traded_price || q?.lastTradedPrice || q?.c;
-    return ltp ? parseFloat(ltp) : null;
+    const ltp = parseFloat(Array.isArray(d) ? d[0]?.ltp : d?.ltp);
+    return ltp > 0 ? ltp : null;
   } catch (e) { console.error('fetchSpot error:', e.message); return null; }
 }
 
