@@ -1381,10 +1381,9 @@ async function handleMessage(text) {
   if (cmd === '/status') { await sendStatus(); return; }
 
   if (cmd === '/debug_cmp') {
-    const scripCount = Object.keys(_scripMaster).length;
+    const allKeys = Object.keys(_scripMaster);
+    const scripCount = allKeys.length;
     const chainCount = Object.keys(_optionChain).length;
-    // Sample scrip master keys for NIFTY
-    const sampleKeys = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 5);
     let msg = `🔬 <b>CMP Debug</b>\n━━━━━━━━━━━━━━━━━━\n`;
     msg += `<b>Kotak session:</b> ${session.token ? '✅ active' : '❌ not logged in'}\n`;
     msg += `<b>Scrip master:</b> ${scripCount} contracts\n`;
@@ -1396,17 +1395,26 @@ async function handleMessage(text) {
         const key = `${c.instrument}-${c.strike}-${c.type}-${c.expiry}`;
         const token = _scripMaster[key] || null;
         const ltp = _optionChain[`${c.instrument}-${c.strike}-${c.type}`] || null;
-        msg += `• ${c.instrument} ${c.strike} ${c.type} ${c.expiry}\n  key: <code>${key}</code>\n  token: ${token||'❌ NOT FOUND'} | LTP: ${ltp||'—'}\n`;
+        msg += `• ${c.instrument} ${c.strike} ${c.type} ${c.expiry}\n  token: ${token||'❌ NOT FOUND'} | LTP: ${ltp||'—'}\n`;
       }
     }
-    if (sampleKeys.length) {
-      msg += `\n<b>Sample NIFTY scrip keys:</b>\n`;
-      sampleKeys.forEach(k => { msg += `<code>${k}</code>\n`; });
+    // Search for any 2026 NIFTY keys in scrip master
+    const nifty2026 = allKeys.filter(k => k.startsWith('NIFTY-') && k.includes('2026')).slice(0,5);
+    msg += `\n<b>Sample NIFTY 2026 keys in scrip:</b>\n`;
+    if (nifty2026.length) {
+      nifty2026.forEach(k => { msg += `<code>${k}</code>\n`; });
+    } else {
+      msg += `⚠️ NONE FOUND — scrip master has NO 2026 NIFTY contracts!\n`;
     }
-    if (chainCount > 0) {
-      msg += `\n<b>Sample optionChain:</b>\n`;
-      Object.entries(_optionChain).slice(0,5).forEach(([k,v]) => { msg += `${k}: ₹${v}\n`; });
-    }
+    // Show most recent 3 NIFTY expiry dates
+    const niftyExpiries = [...new Set(allKeys.filter(k=>k.startsWith('NIFTY-')).map(k=>k.split('-').slice(3).join('-')))];
+    niftyExpiries.sort((a,b) => {
+      const M={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+      const parse = s => { const m=s.match(/(\d+)([A-Z]+)(\d+)/); return m?new Date(+m[3],M[m[2]],+m[1]).getTime():0; };
+      return parse(a)-parse(b);
+    });
+    const recentExpiries = niftyExpiries.slice(-5);
+    msg += `\n<b>Most recent NIFTY expiries in scrip:</b>\n${recentExpiries.join(', ')}\n`;
     await tgSend(msg); return;
   }
 
