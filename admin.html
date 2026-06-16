@@ -4289,6 +4289,14 @@ async function confirmPushToMembers(){
     if (whyEl) whyEl.value = '';
     closePushModal();
     showToast('✓ Pushed to members! Visible in Updates tab now.');
+    // Fire push notification to all subscribed devices (non-blocking)
+    const _pushTitle = pushMsgType === 'trade' ? '🚨 Trade Alert — Trade2Spend' : '📢 Trade2Spend Update';
+    const _pushBody  = msg.replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi, '').split('\n').find(l => l.trim() && !/^only for|^educational/i.test(l.trim()))?.trim().slice(0, 100) || 'New update';
+    fetch('https://api.trade2spend.com/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates' })
+    }).catch(() => {});
     // Nudge to connect Kotak if trade alert posted during market hours without live CMP
     if (pushMsgType === 'trade' && !_kotakConnected) {
       const h = new Date().getHours(), m = new Date().getMinutes();
