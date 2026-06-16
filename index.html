@@ -373,11 +373,36 @@
                 <button onclick="toggleNewAlertBox()" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;">＋ New Alert</button>
             </div>
             <div id="new-alert-box" style="display:none;">
-                <div class="admin-audience-row" style="margin-top:6px;">
+                <!-- Row 1: Instrument + Strike + CE/PE -->
+                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin:6px 0 8px;">
+                    <select id="na-instrument" style="border:1px solid #c4b5fd;border-radius:8px;padding:8px 6px;font-size:0.82rem;font-family:inherit;color:var(--text-main);background:#fff;outline:none;">
+                        <option value="NIFTY">NIFTY</option>
+                        <option value="BANKNIFTY">BANKNIFTY</option>
+                        <option value="SENSEX">SENSEX</option>
+                    </select>
+                    <input type="number" id="na-strike" placeholder="Strike" style="border:1px solid #c4b5fd;border-radius:8px;padding:8px;font-size:0.88rem;font-family:inherit;outline:none;width:100%;min-width:0;box-sizing:border-box;">
+                    <div style="display:flex;gap:4px;flex-shrink:0;">
+                        <button id="na-ce-btn" onclick="selectNaType('CE')" style="padding:8px 10px;border-radius:8px;border:1px solid #c4b5fd;background:#dcfce7;color:#15803d;font-weight:700;font-size:0.82rem;cursor:pointer;font-family:inherit;">CE</button>
+                        <button id="na-pe-btn" onclick="selectNaType('PE')" style="padding:8px 10px;border-radius:8px;border:1px solid #c4b5fd;background:#fff;color:#6b7280;font-weight:700;font-size:0.82rem;cursor:pointer;font-family:inherit;">PE</button>
+                    </div>
+                </div>
+                <!-- Row 2: Entry + CMP -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+                    <div><div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">Entry ₹</div><input type="number" id="na-entry" step="0.05" placeholder="e.g. 100" style="width:100%;border:1px solid #c4b5fd;border-radius:8px;padding:8px;font-size:0.88rem;font-family:inherit;outline:none;box-sizing:border-box;"></div>
+                    <div><div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">CMP ₹ (opt)</div><input type="number" id="na-cmp" step="0.05" placeholder="e.g. 98" style="width:100%;border:1px solid #c4b5fd;border-radius:8px;padding:8px;font-size:0.88rem;font-family:inherit;outline:none;box-sizing:border-box;"></div>
+                </div>
+                <!-- Row 3: Spot SL + Expiry -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+                    <div><div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">Spot SL (opt)</div><input type="number" id="na-sl" step="1" placeholder="e.g. 23100" style="width:100%;border:1px solid #c4b5fd;border-radius:8px;padding:8px;font-size:0.88rem;font-family:inherit;outline:none;box-sizing:border-box;"></div>
+                    <div><div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">Expiry</div><select id="na-expiry" style="width:100%;border:1px solid #c4b5fd;border-radius:8px;padding:8px;font-size:0.82rem;font-family:inherit;color:var(--text-main);background:#fff;outline:none;box-sizing:border-box;"><option value="">Current Week</option><option value="Next Weekly">Next Weekly</option><option value="Monthly">Monthly</option><option value="Today's Expiry">Today's Expiry</option></select></div>
+                </div>
+                <!-- Row 4: WHY -->
+                <textarea class="admin-compose-textarea" id="na-why" placeholder="Why this trade? (optional — shown to premium members only)" style="min-height:55px;margin-bottom:8px;"></textarea>
+                <!-- Row 5: Audience + Buttons -->
+                <div class="admin-audience-row">
                     <button class="admin-aud-btn selected" id="na-aud-all" onclick="selectNewAlertAud('all')">All Members</button>
                     <button class="admin-aud-btn" id="na-aud-paid" onclick="selectNewAlertAud('paid_only')">Paid Only</button>
                 </div>
-                <textarea class="admin-compose-textarea" id="new-alert-text" placeholder="Type trade alert... e.g. Buying Nifty 23500 CE at 142, CMP 139, SL below 23450"></textarea>
                 <div class="admin-compose-row">
                     <button class="admin-compose-cancel" onclick="toggleNewAlertBox()">Cancel</button>
                     <button class="admin-compose-send" id="new-alert-send-btn" onclick="sendNewAlert()">Post Alert →</button>
@@ -2354,10 +2379,26 @@
 
     // ── ADMIN NEW TRADE ALERT (from Trade Alert tab) ─────────────────────────
     let _newAlertAud = 'all';
+    let _naType = 'CE';
+
+    function selectNaType(type) {
+        _naType = type;
+        const cebtn = document.getElementById('na-ce-btn');
+        const pebtn = document.getElementById('na-pe-btn');
+        if (type === 'CE') {
+            if(cebtn){cebtn.style.background='#dcfce7';cebtn.style.color='#15803d';}
+            if(pebtn){pebtn.style.background='#fff';pebtn.style.color='#6b7280';}
+        } else {
+            if(pebtn){pebtn.style.background='#fee2e2';pebtn.style.color='#b91c1c';}
+            if(cebtn){cebtn.style.background='#fff';cebtn.style.color='#6b7280';}
+        }
+    }
+
     function toggleNewAlertBox() {
         const box = document.getElementById('new-alert-box');
         if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
     }
+
     function selectNewAlertAud(val) {
         _newAlertAud = val;
         const allBtn  = document.getElementById('na-aud-all');
@@ -2365,24 +2406,44 @@
         if(allBtn)  allBtn.classList.toggle('selected', val === 'all');
         if(paidBtn) paidBtn.classList.toggle('selected', val === 'paid_only');
     }
+
     async function sendNewAlert() {
-        const text = (document.getElementById('new-alert-text').value || '').trim();
-        if (!text || text.length < 5) { alert('Type a message first.'); return; }
+        const instrument = (document.getElementById('na-instrument').value || 'NIFTY').trim();
+        const strike     = (document.getElementById('na-strike').value || '').trim();
+        const entry      = (document.getElementById('na-entry').value || '').trim();
+        const cmp        = (document.getElementById('na-cmp').value || '').trim();
+        const sl         = (document.getElementById('na-sl').value || '').trim();
+        const expiry     = document.getElementById('na-expiry').value;
+        const why        = (document.getElementById('na-why').value || '').trim();
+        if (!strike) { alert('Enter a strike price.'); return; }
+        if (!entry)  { alert('Enter an entry price.'); return; }
+        // Build structured content that extractTradeAlertFields can parse
+        let content = `Buying ${instrument} ${strike} ${_naType} at ${entry}`;
+        if (cmp)    content += `, CMP ${cmp}`;
+        if (sl)     content += `, SL if spot sustains ${_naType === 'PE' ? 'above' : 'below'} ${sl}`;
+        if (expiry) content += `, ${expiry} expiry`;
+        if (why)    content += `\n[WHY]${why}[/WHY]`;
         const btn = document.getElementById('new-alert-send-btn');
         btn.disabled = true; btn.textContent = 'Posting...';
         try {
             await sbFetch('posts', {
                 method: 'POST',
                 body: JSON.stringify({
-                    content: text, post_type: 'trade_alert', audience: _newAlertAud,
+                    content, post_type: 'trade_alert', audience: _newAlertAud,
                     allow_sharing: true, is_deleted: false, sent_at: new Date().toISOString()
                 })
             });
-            document.getElementById('new-alert-text').value = '';
+            document.getElementById('na-strike').value = '';
+            document.getElementById('na-entry').value  = '';
+            document.getElementById('na-cmp').value    = '';
+            document.getElementById('na-sl').value     = '';
+            document.getElementById('na-expiry').value = '';
+            document.getElementById('na-why').value    = '';
+            selectNaType('CE');
             toggleNewAlertBox();
             btn.disabled = false; btn.textContent = 'Post Alert →';
             fetchTradeAlerts();
-            checkAndPromptTotp(); // ask for TOTP if Kotak not yet connected today
+            checkAndPromptTotp();
         } catch(e) {
             alert('Failed to post. Check connection.');
             btn.disabled = false; btn.textContent = 'Post Alert →';
