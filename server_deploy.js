@@ -1589,6 +1589,103 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // HTTP debug endpoint — GET /debug-scrip?key=T2SMonitor2026
+  // Runs scrip master debug without needing Telegram webhook
+  if (req.method === 'GET' && urlPath === '/debug-scrip') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    const out = { ok: true, loggedIn: !!session.token, baseUrl: session.baseUrl || null };
+    if (!session.token || !session.baseUrl) {
+      out.error = 'Not logged in — send TOTP via PWA Setup tab first';
+      res.end(JSON.stringify(out, null, 2));
+      return;
+    }
+    try {
+      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+      }, 10000);
+      const text1 = await r1.text();
+      out.filePathsStatus = r1.status;
+      let paths = [];
+      try {
+        const d1 = JSON.parse(text1);
+        paths = d1?.data?.filesPaths || [];
+        out.pathsCount = paths.length;
+        // Show path filenames only (strip auth query params for security)
+        out.pathFilenames = paths.map(p => { try { return new URL(p).pathname; } catch { return String(p).slice(0,80); } });
+        const nfoCsvUrl = paths.find(p => typeof p === 'string' && p.toLowerCase().includes('nse_fo'));
+        out.nfoUrlFound = !!nfoCsvUrl;
+        if (nfoCsvUrl) {
+          const r2 = await ftKotak(nfoCsvUrl, {}, 30000);
+          out.csvStatus = r2.status;
+          const csvText = await r2.text();
+          const lines = csvText.split('\n');
+          out.csvLinesInChunk = lines.length;
+          out.csvHeaders = lines[0]?.slice(0, 500);
+          out.csvRow1 = lines[1]?.slice(0, 400);
+          out.csvRow2 = lines[2]?.slice(0, 400);
+          // Show most recent expiry dates
+          const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+          const hdrs = lines[0].split(',').map(h => h.trim().replace(/[";]/g, ''));
+          const iExp = hdrs.indexOf('lExpiryDate');
+          if (iExp >= 0) {
+            const expiries = new Set();
+            for (let i = lines.length - 1; i > 0 && expiries.size < 10; i--) {
+              const c = lines[i].split(',');
+              const raw = parseInt(c[iExp]?.replace(/"/g,'').trim() || '0');
+              if (raw > 0) {
+                const d = new Date(raw * 1000);
+                expiries.add(String(d.getUTCDate()).padStart(2,'0') + MONTHS[d.getUTCMonth()] + d.getUTCFullYear());
+              }
+            }
+            out.latestExpiries = [...expiries];
+          }
+          out.scripMasterCount = Object.keys(_scripMaster).length;
+          // Send to Telegram too
+          tgAlert(
+            `🔬 <b>/debug-scrip via HTTP</b>\n` +
+            `Paths: ${out.pathsCount} | nse_fo: ${out.nfoUrlFound ? '✅' : '❌'}\n` +
+            `CSV status: ${out.csvStatus} | lines: ${out.csvLinesInChunk}\n` +
+            `<b>Headers:</b> <code>${out.csvHeaders?.slice(0,300)}</code>\n` +
+            `<b>Row 1:</b> <code>${out.csvRow1?.slice(0,200)}</code>\n` +
+            `<b>Latest expiries:</b> ${(out.latestExpiries||[]).join(', ')}`
+          ).catch(() => {});
+        }
+      } catch(e) { out.parseError = e.message; }
+    } catch(e) { out.fetchError = e.message; }
+    res.end(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  // HTTP update trigger — GET /http-update?key=T2SMonitor2026
+  // Deploys latest server_deploy.js from GitHub without needing Telegram webhook
+  if (req.method === 'GET' && urlPath === '/http-update') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ ok: true, message: 'Downloading and restarting in 3s…' }));
+    try {
+      const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/server_deploy.js?t=${Date.now()}`, {}, 15000);
+      if (!r.ok) { tgAlert(`❌ HTTP update failed: GitHub ${r.status}`).catch(()=>{}); return; }
+      const code = await r.text();
+      if (!code || code.length < 1000) { tgAlert('❌ HTTP update: downloaded file too small').catch(()=>{}); return; }
+      fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
+      _scripMasterTs = 0;
+      tgAlert('✅ <b>HTTP update complete.</b> Restarting in 3s…').catch(()=>{});
+      setTimeout(() => process.exit(0), 3000);
+    } catch(e) { tgAlert(`❌ HTTP update error: ${e.message}`).catch(()=>{}); }
+    return;
+  }
+
   // Health check — GET /
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
