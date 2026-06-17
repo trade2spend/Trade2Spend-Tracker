@@ -151,6 +151,7 @@ let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, 
 let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
 let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
 let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min when stale
+let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...}, ... } from scrip master
 let _activeContracts     = []; // [{instrument,strike,type,expiry}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
@@ -762,6 +763,7 @@ async function downloadScripMaster() {
 
   _scripMaster   = newMap;
   _scripMasterTs = Date.now();
+  buildExpiryDates();
   const sample = Object.keys(newMap).filter(k=>k.startsWith('NIFTY-')&&k.includes(String(currentYear))).slice(0,3);
   console.log(`[scrip] ✅ ${count} contracts from ${sourceLabel}. Sample: ${sample.join(', ')}`);
 }
@@ -771,6 +773,38 @@ function getOptionToken(instrument, strike, type, expiry) {
   // expiry from resolveExpiry() is already "DDMMMYYYY" e.g. "19JUN2025"
   const key = `${instrument.toUpperCase()}-${strike}-${type.toUpperCase()}-${expiry.toUpperCase()}`;
   return _scripMaster[key] || null;
+}
+
+// Build expiry date map from scrip master — actual dates from Kotak, no guessing
+function buildExpiryDates() {
+  const MONS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const nowIST = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+  nowIST.setHours(0,0,0,0);
+  const result = {};
+  for (const instr of ['NIFTY','BANKNIFTY','SENSEX','FINNIFTY','BANKEX']) {
+    const prefix = instr + '-';
+    const expSet = new Set();
+    for (const key of Object.keys(_scripMaster)) {
+      if (!key.startsWith(prefix)) continue;
+      const parts = key.split('-');
+      expSet.add(parts[parts.length - 1]); // DDMMMYYYY
+    }
+    const sorted = [...expSet].map(s => ({
+      str: s,
+      ts: Date.UTC(parseInt(s.slice(5)), MONS.indexOf(s.slice(2,5)), parseInt(s.slice(0,2)))
+    })).filter(x => x.ts >= nowIST.getTime()).sort((a,b) => a.ts - b.ts);
+    if (!sorted.length) continue;
+    // "24 Jun 2025" display format
+    const fmt = s => `${parseInt(s.slice(0,2))} ${s.slice(2,5).charAt(0)+s.slice(3,5).toLowerCase()} ${s.slice(5)}`;
+    const curMon = nowIST.getMonth(), curYr = nowIST.getFullYear();
+    const thisMonExps = sorted.filter(x => { const d=new Date(x.ts); return d.getUTCMonth()===curMon&&d.getUTCFullYear()===curYr; });
+    const nextMonExps = sorted.filter(x => { const d=new Date(x.ts); return d.getUTCMonth()===(curMon+1)%12; });
+    const monthly = (thisMonExps.length ? thisMonExps[thisMonExps.length-1] : nextMonExps.length ? nextMonExps[nextMonExps.length-1] : null);
+    result[instr] = { current: fmt(sorted[0].str), next: sorted[1]?fmt(sorted[1].str):null, monthly: monthly?fmt(monthly.str):null };
+  }
+  _expiryDates = result;
+  if (_latestMarketData) _latestMarketData.expiry = _expiryDates;
+  console.log('[expiry]', JSON.stringify(result));
 }
 
 // Parse active option contracts from recent Supabase trade_alert posts
@@ -988,7 +1022,7 @@ async function runMarketScraper(force = false) {
       losers:  movers?.losers  || existing.losers  || []
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
-    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain } };
+    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, expiry: _expiryDates };
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensex?.price} BANKNIFTY:${banknifty?.price}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
