@@ -155,6 +155,9 @@ let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...
 let _activeContracts     = []; // [{instrument,strike,type,expiry}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
+let _sbAlertDate         = null; // date string of last daily reset for SL alerts
+let _sbSlAlertedToday    = new Set(); // post IDs where SL auto-follow-up already posted today
+let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was sent
 
 function loadState() {
   try {
@@ -2317,12 +2320,143 @@ setTimeout(async () => {
   if (isMarketHours() && !marketScraperInterval) startMarketScraper();
 }, 5000);
 
+// ── SUPABASE TRADE SL MONITOR ─────────────────────────────────────────────────
+// Extract option-price SL (< 5000) from reply text — ignores spot-level SLs
+function extractOptSL(text) {
+  const pats = [
+    /(?:revised?|modif|moved?|shifted?|new|updated?)\s+sl\s+(?:to\s+)?(?:₹\s*)?(\d+(?:\.\d+)?)/i,
+    /sl\s+(?:to|at|now|=)\s*(?:₹\s*)?(\d+(?:\.\d+)?)/i,
+    /(?:sl|stop[\s-]?loss).{0,20}(?:revised?|changed|updated|moved)\s*(?:to\s*)?(?:₹\s*)?(\d+(?:\.\d+)?)/i
+  ];
+  for (const p of pats) {
+    const m = text.match(p);
+    if (m) { const v = parseFloat(m[1]); if (v > 0 && v < 5000) return v; }
+  }
+  return null;
+}
+
+function sbTradeFullyExited(replies) {
+  let cum = 0;
+  for (const r of [...replies].reverse()) { // oldest first
+    const t = (r.content || '').toLowerCase();
+    if (/\bsl\b.{0,20}(?:hit|triggered|gone)|stop[\s-]?loss.{0,10}(?:hit|triggered)|fully\s+exit|full\s+exit|exiting\s+full|exit\s+all|\bfully\s+out\b/.test(t)) return true;
+    const pm = t.match(/exiting\s+(\d+)\s*%/); if (pm) { cum += parseInt(pm[1]); if (cum >= 100) return true; }
+  }
+  return false;
+}
+
+// Check Supabase trade posts against live Kotak option CMPs; auto-post SL hit follow-up
+async function checkSupabaseSLs() {
+  if (!isMarketHours() || !session.token) return;
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const today = ist.toDateString();
+  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; }
+  try {
+    const since = new Date(ist); since.setHours(0, 0, 0, 0);
+    const posts = await sbFetch(
+      `posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&select=id,content`,
+      { method: 'GET' }
+    );
+    if (!posts.length) return;
+    const reps = await sbFetch(
+      `posts?is_deleted=eq.false&parent_id=in.(${posts.map(p => `"${p.id}"`).join(',')})&order=sent_at.desc&select=id,parent_id,content`,
+      { method: 'GET' }
+    );
+    const rMap = {};
+    reps.forEach(r => { (rMap[r.parent_id] = rMap[r.parent_id] || []).push(r); });
+
+    for (const post of posts) {
+      if (_sbSlAlertedToday.has(post.id)) continue;
+      const pr = rMap[post.id] || [];
+      if (sbTradeFullyExited(pr)) continue;
+      let sl = null;
+      for (const r of pr) { const v = extractOptSL(r.content || ''); if (v) { sl = v; break; } }
+      if (!sl) continue;
+      const t = (post.content || '').toUpperCase();
+      const im = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/); if (!im) continue;
+      const am = t.slice(t.indexOf(im[1]) + im[1].length).match(/\b(\d{4,6})\b/); if (!am) continue;
+      const tm = t.match(/\b(CE|PE)\b/); if (!tm) continue;
+      const key = `${im[1]}-${am[1]}-${tm[1]}`;
+      const cmp = _optionChain[key];
+      if (!cmp) continue;
+      if (cmp <= sl) {
+        _sbSlAlertedToday.add(post.id);
+        const ep = Math.round(cmp * 100) / 100;
+        await sbFetch('posts', {
+          method: 'POST',
+          body: JSON.stringify({
+            content: `🔴 SL hit\nExiting at ₹${ep}\nCMP ₹${ep}`,
+            post_type: 'follow_up', audience: 'all',
+            allow_sharing: false, is_deleted: false,
+            parent_id: post.id, sent_at: new Date().toISOString()
+          })
+        });
+        await tgSend(`🔴 <b>SL HIT (auto)</b>\n<b>${key}</b>\nCMP ₹${cmp} ≤ SL ₹${sl}\nFollow-up posted to PWA.`);
+      }
+    }
+  } catch(e) { console.error('[sb-sl]', e.message); }
+}
+
+// 3:20 PM alert: unresolved positions where SL was not auto-triggered
+async function checkResolveAlert() {
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const mins = ist.getHours() * 60 + ist.getMinutes();
+  if (mins < 15 * 60 + 20 || mins > 15 * 60 + 30) return;
+  const todayStr = ist.toDateString();
+  if (_resolveAlertSentDate === todayStr) return;
+  _resolveAlertSentDate = todayStr;
+  try {
+    const since = new Date(ist); since.setHours(0, 0, 0, 0);
+    const posts = await sbFetch(
+      `posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&select=id,content`,
+      { method: 'GET' }
+    );
+    if (!posts.length) return;
+    const reps = await sbFetch(
+      `posts?is_deleted=eq.false&parent_id=in.(${posts.map(p => `"${p.id}"`).join(',')})&order=sent_at.desc&select=id,parent_id,content`,
+      { method: 'GET' }
+    );
+    const rMap = {};
+    reps.forEach(r => { (rMap[r.parent_id] = rMap[r.parent_id] || []).push(r); });
+    const unresolved = [];
+    for (const post of posts) {
+      const pr = rMap[post.id] || [];
+      if (sbTradeFullyExited(pr)) continue;
+      let cum = 0;
+      for (const r of [...pr].reverse()) { const pm = (r.content || '').match(/exiting\s+(\d+)\s*%/i); if (pm) cum += parseInt(pm[1]); }
+      let sl = null;
+      for (const r of pr) { const v = extractOptSL(r.content || ''); if (v) { sl = v; break; } }
+      const t = (post.content || '').toUpperCase();
+      const im = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
+      const am = im ? t.slice(t.indexOf(im[1]) + im[1].length).match(/\b(\d{4,6})\b/) : null;
+      const tm = t.match(/\b(CE|PE)\b/);
+      const key = (im && am && tm) ? `${im[1]}-${am[1]}-${tm[1]}` : null;
+      const cmp = key ? (_optionChain[key] || null) : null;
+      unresolved.push({ label: key || 'Trade', cum, sl, cmp });
+    }
+    if (!unresolved.length) return;
+    let msg = `⏰ <b>3:20 PM — Unresolved Positions</b>\n\n`;
+    for (const u of unresolved) {
+      msg += `• <b>${u.label}</b>`;
+      if (u.cum > 0) msg += ` — ${u.cum}% exited, ${100 - u.cum}% remaining`;
+      else msg += ` — full position open`;
+      if (u.sl) msg += ` | SL ₹${u.sl}`;
+      if (u.cmp) msg += ` | CMP ₹${u.cmp}`;
+      msg += '\n';
+    }
+    msg += `\n❓ SL not hit yet. Did you exit? Please update the PWA.`;
+    await tgSend(msg);
+  } catch(e) { console.error('[resolve-alert]', e.message); }
+}
+
 // Periodic check every 30s: SL monitor + market scraper auto-start/stop
 setInterval(() => {
   if (isMarketHours()) {
     checkSLs().catch(e => tgAlert(`⚠️ SL poll: ${e.message}`));
+    checkSupabaseSLs().catch(e => console.error('[sb-sl]', e.message));
     if (!marketScraperInterval) startMarketScraper();
   }
+  checkResolveAlert().catch(e => console.error('[resolve-alert]', e.message));
 }, 30_000);
 
 tgAlert(`🟢 <b>Trade2Spend Bot v5.0 started</b>\nServer: api.trade2spend.com\nLoaded: ${Object.keys(state.trades).length} trades`).catch(() => {});
