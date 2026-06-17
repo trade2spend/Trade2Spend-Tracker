@@ -40,7 +40,9 @@
         
         /* --- STICKY HEADER & ANIMATION --- */
         .sticky-header {
-            position: sticky; top: 0; background: var(--bg-color);
+            position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+            width: 100%; max-width: 600px;
+            background: var(--bg-color);
             z-index: 100; padding: 14px 16px 0;
             transition: padding .25s ease, box-shadow .25s ease;
             will-change: padding; overflow: hidden;
@@ -343,6 +345,8 @@
             <div class="tab" onclick="switchTab('about', this)">About</div>
         </div>
     </div>
+    <!-- Spacer: pushes content below the fixed header; height set by syncHeaderSpacer() -->
+    <div id="header-spacer"></div>
 
     <!-- MARKETS TAB -->
     <div id="markets" class="content-section active" style="padding-top:10px;">
@@ -537,6 +541,7 @@
         if (_compose && _compose.dataset.isAdmin === 'true') {
             _compose.style.display = tabId === 'trades' ? 'block' : 'none';
         }
+        syncHeaderSpacer();
     }
 
     function goToSpecificTrade(instr, type, strike) {
@@ -549,6 +554,13 @@
     function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
+    // Sync spacer height to match fixed header so content isn't hidden underneath
+    function syncHeaderSpacer() {
+        const h = document.getElementById('header-wrapper');
+        const s = document.getElementById('header-spacer');
+        if (h && s) s.style.height = h.offsetHeight + 'px';
+    }
+
     // --- SCROLL ANIMATION ---
     window.addEventListener('scroll', () => {
         const header = document.getElementById('header-wrapper');
@@ -557,7 +569,10 @@
         } else {
             header.classList.remove('scrolled');
         }
+        syncHeaderSpacer();
     });
+
+    window.addEventListener('resize', syncHeaderSpacer);
 
     // --- CLOCK (forced IST) ---
     setInterval(() => {
@@ -2795,7 +2810,7 @@ async function triggerA2HS() {
     _a2hsPrompt = null;
   } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
 }
-document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); });
+document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); syncHeaderSpacer(); });
 
     // ── TOTP MODAL ───────────────────────────────────────────────────────────
     const VM_BASE = 'https://api.trade2spend.com';
