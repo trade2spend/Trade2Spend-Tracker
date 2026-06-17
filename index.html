@@ -2458,9 +2458,26 @@
         }
     }
 
+    let _naScrollY = 0;
     function toggleNewAlertBox() {
         const box = document.getElementById('new-alert-box');
-        if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+        if (!box) return;
+        const opening = box.style.display === 'none';
+        box.style.display = opening ? 'block' : 'none';
+        // Lock page scroll while form is open so sticky header stays frozen on iOS/Android
+        if (opening) {
+            _naScrollY = window.scrollY || 0;
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${_naScrollY}px`;
+            document.body.style.width = '100%';
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            document.body.style.overflow = '';
+            window.scrollTo(0, _naScrollY);
+        }
     }
 
     function selectNewAlertAud(val) {
