@@ -1984,9 +1984,13 @@ const server = http.createServer(async (req, res) => {
   // Health check — GET /
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    // loggedIn is true only if session was created TODAY (IST) and within 8h
+    // Stale state.json tokens from prior days correctly report false → triggers TOTP prompt
+    const _sessionAge = Date.now() - (session.lastLogin || 0);
+    const _isLoggedIn = !!session.token && _sessionAge < SESSION_MAX_AGE_MS;
     res.end(JSON.stringify({
       ok: true, uptime: Math.round(process.uptime()),
-      loggedIn: !!session.token, paperMode: state.paperMode,
+      loggedIn: _isLoggedIn, paperMode: state.paperMode,
       openTrades: Object.values(state.trades).filter(t=>!t.pending).length,
       dailyPnl: state.dailyPnl, orders: state.orderCount
     }));
