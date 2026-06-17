@@ -529,7 +529,16 @@
         localStorage.setItem('t2s_last_tab', tabId);
         if (_tradeRefreshTimer) { clearInterval(_tradeRefreshTimer); _tradeRefreshTimer = null; }
         if (tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => setTabBadge('updates', 0), 2500); fetchUpdates(); }
-        if (tabId === 'trades') { setTabBadge('trades', 0); fetchTradeAlerts(); _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000); }
+        if (tabId === 'trades') {
+            setTabBadge('trades', 0);
+            fetchTradeAlerts();
+            // Auto-refresh every 30s only during market hours; after 4 PM just the one fetch above
+            const _tNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
+            const _tMins = _tNow.getHours() * 60 + _tNow.getMinutes();
+            if (_tMins >= 9*60+15 && _tMins < 16*60) {
+                _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
+            }
+        }
         if (tabId === 'performance') fetchPerformance();
         if (tabId === 'markets') fetchMarketData();
         // Show compose card only on Trade Alert tab (if admin)
@@ -1239,9 +1248,20 @@
         const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
         if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
         // "Exiting with/at [price]" or "Exiting [price]" (number present, no %) = full exit
+        // Exception: "Exiting with 130 as SL" = SL level update, not an actual exit
         if (!r.isFullExit && !r.exitPct) {
             const exPriceM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
-            if (exPriceM) { r.isFullExit=true; r.type='exit'; r.price=parseFloat(exPriceM[1]); }
+            if (exPriceM) {
+                const afterIdx = lo.indexOf(exPriceM[0]) + exPriceM[0].length;
+                const afterStr = lo.slice(afterIdx, afterIdx + 25);
+                if (/\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/.test(afterStr)) {
+                    // "Exiting with 130 as SL" → treat as SL update, not exit
+                    r.slRevised = parseFloat(exPriceM[1]);
+                    if (!r.exitPct) r.type = 'sl_update';
+                } else {
+                    r.isFullExit = true; r.type = 'exit'; r.price = parseFloat(exPriceM[1]);
+                }
+            }
         }
         // Leading option price
         const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\+?\s*(?:[,\n\r\s]|$)/);
