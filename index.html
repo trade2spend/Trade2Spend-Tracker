@@ -536,7 +536,7 @@
             const _tNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
             const _tMins = _tNow.getHours() * 60 + _tNow.getMinutes();
             if (_tMins >= 9*60+15 && _tMins < 16*60) {
-                _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
+                _tradeRefreshTimer = setInterval(fetchTradeAlerts, 5000);
             }
         }
         if (tabId === 'performance') fetchPerformance();
