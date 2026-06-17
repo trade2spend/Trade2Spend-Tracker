@@ -943,7 +943,7 @@
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
                 // Weighted average across all partial exits (50%@180 + 50%@158 → avg 169, not just 158)
-                const exitPricePerf = getWeightedExitPrice(replies);
+                const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies) });
                 const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
                 const maxPrice = exitPricePerf || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
@@ -1394,7 +1394,7 @@
 
     // ── WEIGHTED AVERAGE EXIT PRICE ──────────────────────────────────────────
     // Accounts for partial exits: "50% at 180, remaining at 158" → avg 169
-    function getWeightedExitPrice(replies) {
+    function getWeightedExitPrice(replies, opts) {
         const sorted = [...(replies||[])].reverse(); // oldest first
         let totalPct = 0, weightedSum = 0;
         for (const r of sorted) {
@@ -1406,7 +1406,21 @@
             totalPct += pct;
             if (fp.isFullExit || totalPct >= 100) break;
         }
+        // For auto-closed trades with remaining position, fill remaining % with last known SL
+        if (totalPct < 100 && opts && opts.sl) {
+            weightedSum += opts.sl * (100 - totalPct);
+            totalPct = 100;
+        }
         return totalPct > 0 ? Math.round(weightedSum / totalPct * 100) / 100 : null;
+    }
+
+    // Returns numeric option-price SL from most recent SL update reply (replies are newest-first)
+    function getLastSLNumeric(replies) {
+        for (const r of (replies||[])) {
+            const p = parseFollowUpContent(r.content||'');
+            if (p.slRevised && p.slRevised !== 'cost') return parseFloat(p.slRevised);
+        }
+        return null;
     }
 
     // ── LATEST SL VALUE ───────────────────────────────────────────────────────
@@ -1960,7 +1974,7 @@
             const mp25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
             const maxPrice25 = mp25 ? mp25.max : null;
             // Exit price: weighted average across all partial exits (e.g. 50%@180 + 50%@158 = avg 169)
-            const exitPrice25 = getWeightedExitPrice(postReplies);
+            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: getLastSLNumeric(postReplies) });
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
@@ -2023,7 +2037,7 @@
             if (fp.cmp) { latestCmp=fp.cmp; break; }
             if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
         }
-        const exitPrice = getWeightedExitPrice(postReplies);
+        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies) } : null);
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
         if (!fields.instrument) {
@@ -2760,6 +2774,69 @@
     if('serviceWorker' in navigator){
       navigator.serviceWorker.register('sw.js').catch(()=>{});
     }
+
+    // ── 3:20 PM admin resolve alert ──────────────────────────────────────────
+    let _pwaResolveShown = null;
+    async function checkPwaResolveAlert() {
+        if (!_cachedIsAdmin) return;
+        const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const mins = ist.getHours() * 60 + ist.getMinutes();
+        if (mins < 15 * 60 + 20 || mins > 15 * 60 + 30) return;
+        const today = ist.toDateString();
+        if (_pwaResolveShown === today) return;
+        _pwaResolveShown = today;
+        try {
+            const since = new Date(ist); since.setHours(0, 0, 0, 0);
+            const [posts, reps] = await Promise.all([
+                sbFetch(`posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&select=id,content`, { method: 'GET' }),
+                sbFetch(`posts?is_deleted=eq.false&parent_id=not.is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&order=sent_at.desc&select=id,parent_id,content`, { method: 'GET' })
+            ]);
+            const rMap = {};
+            reps.forEach(r => { (rMap[r.parent_id] = rMap[r.parent_id] || []).push(r); });
+            const unresolved = [];
+            for (const post of posts) {
+                const pr = rMap[post.id] || [];
+                let cum = 0, hasFullExit = false;
+                for (const r of [...pr].reverse()) {
+                    const p = parseFollowUpContent(r.content || '');
+                    if (p.isFullExit) { hasFullExit = true; break; }
+                    if (p.exitPct) cum += p.exitPct;
+                }
+                if (hasFullExit || cum >= 100) continue;
+                const sl = getLastSLNumeric(pr);
+                const f = extractTradeAlertFields(post.content);
+                if (f.instrument) unresolved.push({
+                    label: `${f.instrument} ${f.strike || ''} ${f.optType || ''}`.trim(),
+                    cum, sl
+                });
+            }
+            if (!unresolved.length) return;
+            let html = `<div style="padding:16px 0 8px;"><div style="font-weight:700;font-size:1rem;color:#dc2626;margin-bottom:10px;">⏰ 3:20 PM — Unresolved Positions</div>`;
+            unresolved.forEach(u => {
+                html += `<div style="margin-bottom:6px;font-size:0.85rem;">• <b>${u.label}</b>`;
+                if (u.cum > 0) html += ` — ${u.cum}% exited, ${100 - u.cum}% remaining`;
+                else html += ` — full position open`;
+                if (u.sl) html += `, SL ₹${u.sl}`;
+                html += `</div>`;
+            });
+            html += `<div style="font-size:0.78rem;color:#6b7280;margin-top:8px;">SL not auto-triggered yet. Did you exit? Please post a follow-up.</div>`;
+            html += `<div style="display:flex;gap:8px;margin-top:14px;">
+                <button onclick="switchTab('updates');document.getElementById('resolve-modal').style.display='none';" style="flex:1;padding:10px;background:#4a2a78;color:#fff;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer;">Go to Updates ↗</button>
+                <button onclick="document.getElementById('resolve-modal').style.display='none';" style="flex:1;padding:10px;background:#f3f0f8;color:#4a2a78;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer;">Dismiss</button>
+            </div></div>`;
+            let modal = document.getElementById('resolve-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'resolve-modal';
+                modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+                modal.innerHTML = `<div style="background:#fff;border-radius:16px;padding:16px 20px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.2);" id="resolve-modal-inner"></div>`;
+                document.body.appendChild(modal);
+            }
+            document.getElementById('resolve-modal-inner').innerHTML = html;
+            modal.style.display = 'flex';
+        } catch(e) { console.error('[resolve-pwa]', e.message); }
+    }
+    setInterval(checkPwaResolveAlert, 30_000);
 </script>
 
 <!-- WHY POPUP (for posts older than T-7 days) -->
