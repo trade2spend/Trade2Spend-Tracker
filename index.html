@@ -335,39 +335,8 @@
             <div class="tab" onclick="switchTab('updates', this)">Updates</div>
             <div class="tab" onclick="switchTab('about', this)">About</div>
         </div>
-    </div>
-
-    <!-- MARKETS TAB -->
-    <div id="markets" class="content-section active" style="padding-top:10px;">
-        <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:0 2px 4px;"></div>
-        <div class="market-grid" id="market-grid-container"></div>
-        <!-- Gainers / Losers -->
-        <div class="movers-section" id="movers-section" style="display:none;">
-            <div class="movers-grid">
-                <div class="movers-card">
-                    <div class="movers-card-title g">▲ Top Gainers</div>
-                    <div id="gainers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
-                </div>
-                <div class="movers-card">
-                    <div class="movers-card-title l">▼ Top Losers</div>
-                    <div id="losers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
-                </div>
-            </div>
-        </div>
-        <!-- Advance / Decline bar — NSE data, updated every 3 min during market hours -->
-        <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
-            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▲ 32 Advancing</span>
-            <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▼ 18 Declining</span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">NSE · every 3 min</span>
-        </div>
-    </div>
-
-    <!-- TRADE ALERT TAB -->
-    <div id="trades" class="content-section">
-        <!-- Admin quick-post compose — shown only to admin via fetchTrades() -->
-        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin-bottom:12px;position:sticky;top:var(--header-h,108px);z-index:99;overflow:hidden;">
+        <!-- Admin quick-post compose — part of sticky header, shown only on Trade Alert tab for admin -->
+        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin:8px 0 0;overflow:hidden;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                 <span style="font-size:0.82rem;font-weight:700;color:var(--primary);">Quick Post</span>
                 <button onclick="toggleNewAlertBox()" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;">＋ New Alert</button>
@@ -409,6 +378,37 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- MARKETS TAB -->
+    <div id="markets" class="content-section active" style="padding-top:10px;">
+        <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:0 2px 4px;"></div>
+        <div class="market-grid" id="market-grid-container"></div>
+        <!-- Gainers / Losers -->
+        <div class="movers-section" id="movers-section" style="display:none;">
+            <div class="movers-grid">
+                <div class="movers-card">
+                    <div class="movers-card-title g">▲ Top Gainers</div>
+                    <div id="gainers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
+                </div>
+                <div class="movers-card">
+                    <div class="movers-card-title l">▼ Top Losers</div>
+                    <div id="losers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
+                </div>
+            </div>
+        </div>
+        <!-- Advance / Decline bar — NSE data, updated every 3 min during market hours -->
+        <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
+            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▲ 32 Advancing</span>
+            <span style="color:var(--border);">|</span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▼ 18 Declining</span>
+            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">NSE · every 3 min</span>
+        </div>
+    </div>
+
+    <!-- TRADE ALERT TAB -->
+    <div id="trades" class="content-section">
         <div id="trade-alert-container">
             <div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading trade alerts...</div>
         </div>
@@ -525,6 +525,11 @@
         if (tabId === 'trades') { setTabBadge('trades', 0); fetchTradeAlerts(); _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000); }
         if (tabId === 'performance') fetchPerformance();
         if (tabId === 'markets') fetchMarketData();
+        // Show compose card in header only on Trade Alert tab (if admin)
+        const _compose = document.getElementById('admin-trade-compose');
+        if (_compose && _compose.dataset.isAdmin === 'true') {
+            _compose.style.display = tabId === 'trades' ? 'block' : 'none';
+        }
     }
 
     function goToSpecificTrade(instr, type, strike) {
@@ -759,9 +764,12 @@
             container.innerHTML = '';
             if(closedContainer) closedContainer.innerHTML = '';
 
-            // Show admin compose / free member premium banner
+            // Show admin compose card in sticky header (only on Trade Alert tab)
             const composeDiv = document.getElementById('admin-trade-compose');
-            if (composeDiv) composeDiv.style.display = isAdmin ? 'block' : 'none';
+            if (composeDiv) {
+                composeDiv.dataset.isAdmin = isAdmin ? 'true' : 'false';
+                composeDiv.style.display = isAdmin ? 'block' : 'none';
+            }
 
             const allTrades = (data.trades || []).filter(t => !t.isDeleted);
             const activeTrades = allTrades.filter(t => t.status === 'ACTIVE');
@@ -1517,7 +1525,10 @@
         }
 
         const composeDiv = document.getElementById('admin-trade-compose');
-        if (composeDiv) composeDiv.style.display = isAdmin ? 'block' : 'none';
+        if (composeDiv) {
+            composeDiv.dataset.isAdmin = isAdmin ? 'true' : 'false';
+            composeDiv.style.display = isAdmin ? 'block' : 'none';
+        }
 
         try {
             const [tradeParents, allFollowUps] = await Promise.all([
@@ -2640,13 +2651,6 @@
         }
         // Subscribe to push notifications silently after session confirmed
         if (memberId) subscribeToPush().catch(() => {});
-        // Keep --header-h in sync so admin Quick Post card sticks just below the header+tabs
-        const _hdrEl = document.getElementById('header-wrapper');
-        if (_hdrEl) {
-            const _setHdrH = () => document.documentElement.style.setProperty('--header-h', _hdrEl.offsetHeight + 'px');
-            _setHdrH();
-            new ResizeObserver(_setHdrH).observe(_hdrEl);
-        }
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
