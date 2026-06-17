@@ -1248,18 +1248,21 @@
         const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
         if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
         // "Exiting with/at [price]" or "Exiting [price]" (number present, no %) = full exit
-        // Exception: "Exiting with 130 as SL" = SL level update, not an actual exit
+        // SL context exceptions: "as SL" suffix, OR CMP mentioned and differs from exit price by >3 pts
         if (!r.isFullExit && !r.exitPct) {
             const exPriceM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
             if (exPriceM) {
+                const exitVal = parseFloat(exPriceM[1]);
                 const afterIdx = lo.indexOf(exPriceM[0]) + exPriceM[0].length;
                 const afterStr = lo.slice(afterIdx, afterIdx + 25);
-                if (/\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/.test(afterStr)) {
-                    // "Exiting with 130 as SL" → treat as SL update, not exit
-                    r.slRevised = parseFloat(exPriceM[1]);
+                const isSLPhrasing = /\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/.test(afterStr);
+                const cmpM = lo.match(/\bcmp\s*[=:]?\s*(?:₹\s*)?(\d{2,6}(?:\.\d+)?)/);
+                const cmpDiffers = cmpM && Math.abs(parseFloat(cmpM[1]) - exitVal) > 3;
+                if (isSLPhrasing || cmpDiffers) {
+                    r.slRevised = exitVal;
                     if (!r.exitPct) r.type = 'sl_update';
                 } else {
-                    r.isFullExit = true; r.type = 'exit'; r.price = parseFloat(exPriceM[1]);
+                    r.isFullExit = true; r.type = 'exit'; r.price = exitVal;
                 }
             }
         }
