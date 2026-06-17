@@ -1260,7 +1260,7 @@
                 const afterStr = lo.slice(afterIdx, afterIdx + 25);
                 const isSLPhrasing = /\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/.test(afterStr);
                 const cmpM = lo.match(/\bcmp\s*[=:]?\s*(?:₹\s*)?(\d{2,6}(?:\.\d+)?)/);
-                const cmpDiffers = cmpM && Math.abs(parseFloat(cmpM[1]) - exitVal) > 3;
+                const cmpDiffers = cmpM && Math.abs(parseFloat(cmpM[1]) - exitVal) > 0.5;
                 if (isSLPhrasing || cmpDiffers) {
                     r.slRevised = exitVal;
                     if (!r.exitPct) r.type = 'sl_update';
