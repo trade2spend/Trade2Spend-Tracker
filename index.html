@@ -495,6 +495,7 @@
 <script>
     // --- UI LOGIC ---
     let _tradeRefreshTimer = null;
+    let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', about:'About' };
     function setTabBadge(tabKey, count) {
         const tabEl = document.querySelector(`.tab[onclick*="'${tabKey}'"]`);
@@ -711,6 +712,7 @@
                     const res = await fetch(DB_URLS.market, { signal: ctrl.signal });
                     if (res.ok) {
                         const data = await res.json();
+                        if (data.expiry) _marketExpiry = data.expiry;
                         renderMarketUI(data);
                         localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
                         cachedData = data;
@@ -732,6 +734,7 @@
             clearTimeout(tid);
             if(!res.ok) throw new Error('Network error');
             const data = await res.json();
+            if (data.expiry) _marketExpiry = data.expiry;
             renderMarketUI(data);
             localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
             return data;
@@ -1314,6 +1317,8 @@
         else if (/monthly/i.test(lo)) f.expiry='Monthly';
         else if (/weekly/i.test(lo)) f.expiry='Weekly';
         else if (/today.s?\s+expiry|expiry\s+today/i.test(lo)) f.expiry="Today's Expiry";
+        // Actual date stored by sendNewAlert e.g. "24 Jun 2025 expiry"
+        if (!f.expiry) { const dm=content.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i); if(dm) f.expiry=`${dm[1]} ${dm[2].charAt(0).toUpperCase()+dm[2].slice(1).toLowerCase()} ${dm[3]}`; }
         const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
         const slm = content.match(/(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
@@ -2502,11 +2507,20 @@
         const why        = (document.getElementById('na-why').value || '').trim();
         if (!strike) { alert('Enter a strike price.'); return; }
         if (!entry)  { alert('Enter an entry price.'); return; }
+        // Resolve expiry label → actual date from Kotak scrip master (via VM /market)
+        let resolvedExpiry = expiry;
+        if (expiry && _marketExpiry[instrument]) {
+            const ed = _marketExpiry[instrument];
+            const lo = expiry.toLowerCase();
+            if (lo.includes('current') || lo === 'weekly') resolvedExpiry = ed.current || expiry;
+            else if (lo.includes('next'))                  resolvedExpiry = ed.next    || expiry;
+            else if (lo.includes('month'))                 resolvedExpiry = ed.monthly || expiry;
+        }
         // Build structured content that extractTradeAlertFields can parse
         let content = `Buying ${instrument} ${strike} ${_naType} at ${entry}`;
-        if (cmp)    content += `, CMP ${cmp}`;
-        if (sl)     content += `, SL if spot sustains ${_naType === 'PE' ? 'above' : 'below'} ${sl}`;
-        if (expiry) content += `, ${expiry} expiry`;
+        if (cmp)              content += `, CMP ${cmp}`;
+        if (sl)               content += `, SL if spot sustains ${_naType === 'PE' ? 'above' : 'below'} ${sl}`;
+        if (resolvedExpiry)   content += `, ${resolvedExpiry} expiry`;
         if (why)    content += `\n[WHY]${why}[/WHY]`;
         const btn = document.getElementById('new-alert-send-btn');
         btn.disabled = true; btn.textContent = 'Posting...';
