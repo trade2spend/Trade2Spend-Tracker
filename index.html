@@ -43,7 +43,7 @@
             position: sticky; top: 0; background: var(--bg-color);
             z-index: 100; padding: 14px 16px 0;
             transition: padding .25s ease, box-shadow .25s ease;
-            will-change: padding;
+            will-change: padding; overflow: hidden;
         }
         .header-top { display: flex; justify-content: space-between; align-items: center; }
         .header-brand { display: flex; align-items: center; gap: 10px; transition: transform .25s ease; transform-origin: left center; will-change: transform; }
@@ -336,7 +336,7 @@
             <div class="tab" onclick="switchTab('about', this)">About</div>
         </div>
         <!-- Admin quick-post compose — part of sticky header, shown only on Trade Alert tab for admin -->
-        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin:8px 0 0;overflow:hidden;">
+        <div id="admin-trade-compose" style="display:none;background:var(--primary-light);border:1px solid #c4b5fd;border-radius:10px;padding:12px;margin:8px 0 0;overflow:hidden;box-sizing:border-box;width:100%;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                 <span style="font-size:0.82rem;font-weight:700;color:var(--primary);">Quick Post</span>
                 <button onclick="toggleNewAlertBox()" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;">＋ New Alert</button>
