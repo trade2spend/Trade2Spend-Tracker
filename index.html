@@ -228,6 +228,11 @@
             .trade-metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
         }
 
+        /* Prevent iOS Safari auto-zoom on input focus (triggers when font-size < 16px) */
+        #new-alert-box input,
+        #new-alert-box select,
+        #new-alert-box textarea { font-size: 16px !important; }
+
         /* --- FOOTER DISCLAIMER --- */
         .footer-disclaimer { padding: 20px; text-align: center; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; font-style: italic; }
 
