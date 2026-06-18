@@ -5,155 +5,128 @@
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
 <title>UAT — Study Progression Bar · Trade2Spend</title>
-
 <style>
-/* ══════════════════════════════════════════════════
-   EXACT DESIGN TOKENS FROM LIVE PWA
-══════════════════════════════════════════════════ */
+/* ══ EXACT LIVE PWA TOKENS ══════════════════════════ */
 :root {
-  --bg-color:      #fdfbf7;
-  --card-bg:       #ffffff;
-  --text-main:     #2d2a32;
-  --text-muted:    #888380;
-  --primary:       #4a2a78;
-  --primary-light: #ede9fe;
-  --green:         #22c55e;
-  --green-light:   #dcfce7;
-  --red:           #ef4444;
-  --red-light:     #fee2e2;
-  --border:        #e5e5e5;
-  --bar-bg:        #ede9fe;   /* track for Study Progression */
+  --bg:        #fdfbf7;
+  --card:      #ffffff;
+  --text:      #2d2a32;
+  --muted:     #888380;
+  --primary:   #4a2a78;
+  --pri-lt:    #ede9fe;
+  --green:     #22c55e;
+  --grn-lt:    #dcfce7;
+  --red:       #ef4444;
+  --red-lt:    #fee2e2;
+  --border:    #e5e5e5;
+  --bar-bg:    #ede9fe;
 }
 
 * { box-sizing:border-box; margin:0; padding:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     -webkit-tap-highlight-color:transparent; }
+html,body { background:var(--bg); color:var(--text); min-height:100vh; }
 
-html, body {
-  background:var(--bg-color);
-  color:var(--text-main);
-  min-height:100vh;
-}
+.shell { max-width:480px; margin:0 auto; padding-bottom:40px; }
 
-.shell {
-  max-width:480px; margin:0 auto;
-  min-height:100vh;
-  padding-bottom:40px;
-}
-
-/* ── UAT STRIP ── */
+/* UAT banner */
 .uat-strip {
   background:#1a2030; color:#f0c040;
   font-size:0.62rem; font-weight:700; letter-spacing:0.07em;
   text-align:center; padding:6px 16px;
   position:sticky; top:0; z-index:200;
 }
-
-/* ── PAGE PADDING ── */
 .page { padding:0 14px; }
 
-/* ── SECTION DIVIDER ── */
-.sec-divider {
-  display:flex; align-items:center; gap:8px;
-  margin:18px 0 10px;
+/* section dividers */
+.sec-div {
+  display:flex; align-items:center; gap:8px; margin:18px 0 10px;
 }
-.sec-divider-line { flex:1; height:1px; background:var(--border); }
-.sec-divider-text {
+.sec-div-line { flex:1; height:1px; background:var(--border); }
+.sec-div-tag {
   font-size:0.6rem; font-weight:800; text-transform:uppercase;
-  letter-spacing:0.1em; white-space:nowrap; padding:3px 10px;
-  border-radius:20px;
+  letter-spacing:0.09em; white-space:nowrap; padding:3px 10px; border-radius:20px;
 }
-.sec-divider-text.current  { background:#f3f4f6; color:#6b7280; }
-.sec-divider-text.proposed { background:var(--primary-light); color:var(--primary); }
+.tag-current  { background:#f3f4f6; color:#6b7280; }
+.tag-proposed { background:var(--pri-lt); color:var(--primary); }
 
-/* ══════════════════════════════════════════════════
-   EXACT LIVE PWA CARD STYLES — NOT MODIFIED
-══════════════════════════════════════════════════ */
+/* note text */
+.note { font-size:0.64rem; color:var(--muted); margin-bottom:6px; padding:0 2px; line-height:1.5; }
+
+/* ══ EXACT LIVE PWA CARD STYLES ═════════════════════ */
 .trade-card {
-  background:var(--card-bg);
-  border:1px solid var(--border);
-  border-radius:10px;
-  margin-bottom:8px;
-  overflow:hidden;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:10px; margin-bottom:8px; overflow:hidden;
   box-shadow:0 1px 3px rgba(0,0,0,0.02);
 }
 .trade-header {
-  padding:10px 14px;
-  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 14px; display:flex;
+  justify-content:space-between; align-items:center;
   border-bottom:1px dashed var(--border);
 }
 .trade-title-box { display:flex; gap:8px; align-items:center; }
 .type-box {
-  width:30px; height:30px;
+  width:30px; height:30px; border-radius:6px;
   display:flex; align-items:center; justify-content:center;
-  border-radius:6px; font-weight:700; font-size:0.8rem;
+  font-weight:700; font-size:0.8rem;
 }
-.type-box.ce { background:var(--green-light); color:var(--green); }
-.type-box.pe { background:var(--red-light);   color:var(--red);   }
-.type-box.lock { background:var(--primary-light); color:var(--primary); font-size:0.85rem; }
-.trade-name   { font-weight:700; font-size:0.95rem; color:var(--text-main); margin-bottom:1px; }
-.trade-expiry { font-size:0.72rem; color:var(--text-muted); }
+.type-box.ce   { background:var(--grn-lt); color:var(--green); }
+.type-box.pe   { background:var(--red-lt); color:var(--red); }
+.type-box.lock { background:var(--pri-lt); color:var(--primary); font-size:0.85rem; }
+.trade-name    { font-weight:700; font-size:0.95rem; color:var(--text); margin-bottom:1px; }
+.trade-expiry  { font-size:0.72rem; color:var(--muted); }
 
 .badge { padding:3px 8px; border-radius:6px; font-size:0.68rem; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; }
-.badge.watching { background:var(--primary-light); color:var(--primary); }
-.badge.profit   { background:var(--green-light);   color:var(--green);   }
-.badge.loss     { background:var(--red-light);      color:var(--red);     }
+.badge.watching { background:var(--pri-lt); color:var(--primary); }
+.badge.profit   { background:var(--grn-lt); color:var(--green); }
+.badge.loss     { background:var(--red-lt); color:var(--red); }
 .badge.prebuy   { background:#fef9c3; color:#854d0e; border:1px solid #fde68a; }
 
-/* 2×2 metrics grid — exact match to live PWA */
-.trade-metrics {
-  display:grid; grid-template-columns:1fr 1fr;
-  gap:8px; padding:10px 14px;
-}
-.metric-col { display:flex; flex-direction:column; gap:3px; }
-.metric-label { font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:0.3px; }
-.metric-value { font-size:0.92rem; font-weight:700; }
+/* 2×2 metrics grid — exact live PWA layout */
+.trade-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px; }
+.metric-col    { display:flex; flex-direction:column; gap:3px; }
+.metric-label  { font-size:0.65rem; color:var(--muted); text-transform:uppercase; font-weight:600; letter-spacing:0.3px; }
+.metric-value  { font-size:0.92rem; font-weight:700; }
 .val-up  { color:var(--green); }
-.val-down{ color:var(--red);   }
+.val-down{ color:var(--red); }
 
 .premium-pill {
-  background:var(--primary); color:white;
-  padding:5px 9px; border-radius:6px;
-  font-size:0.75rem; font-weight:600;
+  background:var(--primary); color:white; padding:5px 9px;
+  border-radius:6px; font-size:0.75rem; font-weight:600;
   cursor:pointer; display:inline-flex; align-items:center; gap:4px;
 }
 .rationale-box {
-  margin:0 14px 10px; padding:8px 12px;
-  background:#fafaf9; border:1px solid var(--border); border-radius:7px;
+  padding:8px 12px; background:#fafaf9;
+  border:1px solid var(--border); border-radius:7px;
   display:flex; justify-content:space-between; align-items:center; cursor:pointer;
 }
-.rationale-text { font-size:0.8rem; color:var(--text-muted); font-weight:600; }
-.rationale-lock { color:var(--primary); font-weight:600; font-size:0.78rem; display:flex; align-items:center; gap:4px; }
+.rationale-text { font-size:0.7rem; color:var(--muted); font-weight:600; }
+.rationale-lock { color:var(--primary); font-weight:600; font-size:0.68rem; display:flex; align-items:center; gap:4px; }
 
-/* trade footer disclaimer */
 .trade-footer {
-  padding:5px 14px 6px;
-  background:#fdfdfc;
-  border-top:1px solid var(--border);
-  font-size:0.6rem; color:#b5bec9;
-  font-style:italic; text-align:center;
-  letter-spacing:0.01em;
+  padding:5px 14px 6px; background:#fdfdfc; border-top:1px solid var(--border);
+  font-size:0.6rem; color:#b5bec9; font-style:italic; text-align:center;
 }
 
-/* locked card blur */
+/* locked blur */
 .locked-blur { padding:8px 14px 10px; display:flex; flex-direction:column; gap:6px; }
 .blur-row    { display:flex; gap:8px; }
 .blur-pill   { height:8px; border-radius:4px; background:#e8e0f5; }
 
-/* ══════════════════════════════════════════════════
-   STUDY PROGRESSION BAR — NEW COMPONENT
-   Inserts between .trade-header and .trade-metrics
-   SEBI-safe: no SL or Target prices shown.
-   Entry anchored at 50%. CMP trails green/red.
-   Labels: "◀ In Loss" | "▲ Current State" | "In Profit →"
-══════════════════════════════════════════════════ */
+/* ══ STUDY PROGRESSION BAR ══════════════════════════
+   Inserted between trade-header and trade-metrics.
+   Two modes:
+   MODE 1 — SPOT SL: No fixed left boundary.
+             Left zone = warning (striped). Open-ended right.
+   MODE 2 — OPTION SL: Fixed left boundary at SL price.
+             Left zone = clear red. Open-ended right.
+═══════════════════════════════════════════════════ */
 .sp-section {
-  padding:10px 14px 8px;
+  padding:10px 14px 9px;
   border-bottom:1px dashed var(--border);
 }
-.sp-title-row {
-  display:flex; justify-content:space-between; align-items:center;
-  margin-bottom:7px;
+.sp-top-row {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
 }
 .sp-title {
   font-size:0.58rem; font-weight:800; text-transform:uppercase;
@@ -164,81 +137,123 @@ html, body {
   border-radius:20px; transition:background .3s, color .3s;
 }
 
-/* Track container — enough height for dot overflow */
-.sp-outer { position:relative; height:38px; }
-
+/* track container */
+.sp-outer { position:relative; height:40px; }
 .sp-track {
   position:absolute; top:50%; transform:translateY(-50%);
   left:0; right:0; height:5px;
-  background:var(--bar-bg); border-radius:3px;
+  background:var(--bar-bg); border-radius:3px; overflow:visible;
 }
-/* Muted background zones — always visible */
-.sp-zone-loss {
+
+/* ── MODE 1: SPOT SL — no fixed left boundary ──
+   Diagonal stripe pattern on left half = "warning / uncertain" zone  */
+.sp-spot-warning {
   position:absolute; top:0; left:0; height:100%;
-  width:50%; background:#fca5a5; opacity:0.5;
-  border-radius:3px 0 0 3px;
+  width:50%; border-radius:3px 0 0 3px;
+  background:repeating-linear-gradient(
+    -45deg,
+    rgba(239,68,68,0.25),
+    rgba(239,68,68,0.25) 3px,
+    rgba(239,68,68,0.08) 3px,
+    rgba(239,68,68,0.08) 7px
+  );
+  opacity:0; transition:opacity .3s;
 }
-.sp-zone-profit {
+/* ── MODE 2: OPTION SL — solid red left zone ── */
+.sp-sl-zone {
+  position:absolute; top:0; left:0; height:100%;
+  background:#fca5a5; border-radius:3px 0 0 3px;
+  opacity:0; transition:opacity .3s, width .35s ease;
+}
+/* SL anchor dot (mode 2 only) */
+.sp-sl-dot {
+  position:absolute; top:50%; transform:translateY(-50%);
+  width:10px; height:10px; border-radius:50%;
+  background:#dc2626; border:2px solid #fff;
+  box-shadow:0 1px 4px rgba(220,38,38,0.5);
+  z-index:4; left:0; opacity:0; transition:opacity .3s, left .35s ease;
+}
+
+/* Right side — always fades to transparent (no target/limit) */
+.sp-profit-fade {
   position:absolute; top:0; right:0; height:100%;
-  width:50%;
-  /* fade to transparent — no target implied */
-  background:linear-gradient(to right, #86efac 20%, rgba(134,239,172,0) 100%);
-  opacity:0.6;
+  background:linear-gradient(to right, #86efac 10%, rgba(134,239,172,0) 100%);
   border-radius:0 3px 3px 0;
+  opacity:0.55;
 }
-/* Active fill — CMP progress from entry */
-.sp-fill {
+/* Active profit fill (CMP above entry — green trail) */
+.sp-profit-fill {
   position:absolute; top:0; height:100%;
-  transition:left .35s ease, width .35s ease, background .3s;
+  background:#22c55e; opacity:0.9; border-radius:0;
+  transition:left .35s ease, width .35s ease;
 }
-/* Entry tick — always at 50% */
-.sp-entry {
-  position:absolute; top:50%; left:50%;
-  transform:translate(-50%,-50%);
-  width:2px; height:16px;
-  background:var(--primary); border-radius:1px; z-index:3;
+/* Active loss fill — CMP below entry, within tracked zone */
+.sp-loss-fill {
+  position:absolute; top:0; height:100%;
+  background:#ef4444; opacity:0.85;
+  transition:left .35s ease, width .35s ease;
 }
-/* Moving CMP dot */
-.sp-dot {
-  position:absolute; top:50%;
-  transform:translate(-50%,-50%);
+
+/* Entry tick */
+.sp-entry-tick {
+  position:absolute; top:50%; transform:translate(-50%,-50%);
+  width:2px; height:18px; background:var(--primary);
+  border-radius:1px; z-index:3;
+  transition:left .35s ease;
+}
+/* CMP dot */
+.sp-cmp-dot {
+  position:absolute; top:50%; transform:translate(-50%,-50%);
   width:14px; height:14px; border-radius:50%;
   border:2.5px solid #fff;
-  box-shadow:0 2px 7px rgba(0,0,0,0.18);
-  z-index:5; background:var(--text-muted);
+  box-shadow:0 2px 8px rgba(0,0,0,0.2);
+  z-index:5; background:var(--muted);
   transition:left .35s ease, background .3s;
 }
-/* "▲ Current State" label — floats above dot */
+/* Floating "▲ Current State" label */
 .sp-cmp-lbl {
-  position:absolute; top:-20px;
-  transform:translateX(-50%);
-  font-size:0.6rem; font-weight:700;
-  white-space:nowrap; pointer-events:none;
+  position:absolute; top:-20px; transform:translateX(-50%);
+  font-size:0.6rem; font-weight:700; white-space:nowrap;
+  pointer-events:none; z-index:6;
   transition:left .35s ease, color .3s;
 }
 
-/* Bottom labels row */
-.sp-labels {
-  display:flex; justify-content:space-between;
-  align-items:center; margin-top:3px;
-  position:relative;
-}
-.sp-lbl-l  { font-size:0.58rem; font-weight:700; color:#dc2626; }
-.sp-lbl-c  {
-  position:absolute; left:50%; transform:translateX(-50%);
-  font-size:0.58rem; font-weight:600; color:var(--primary); opacity:0.7;
-}
-.sp-lbl-r  { font-size:0.58rem; font-weight:700; color:#16a34a; opacity:0.7; }
+/* Labels row */
+.sp-labels { display:flex; justify-content:space-between; margin-top:4px; position:relative; }
+.sp-lbl-sl { font-size:0.6rem; font-weight:700; color:#dc2626; transition:opacity .3s; }
+.sp-lbl-entry { font-size:0.58rem; color:var(--primary); font-weight:600; opacity:0.7; }
+.sp-lbl-r  { font-size:0.58rem; font-weight:700; color:#16a34a; opacity:0.65; }
 
-/* ── CMP SIMULATOR ── */
+/* SL mode toggle */
+.sl-toggle {
+  display:flex; gap:0; margin-bottom:10px;
+  border:1px solid var(--border); border-radius:8px; overflow:hidden;
+}
+.sl-toggle-btn {
+  flex:1; padding:7px 10px; font-size:0.7rem; font-weight:600;
+  border:none; background:var(--card); color:var(--muted);
+  cursor:pointer; font-family:inherit; transition:background .18s, color .18s;
+  text-align:center; line-height:1.3;
+}
+.sl-toggle-btn.active { background:var(--primary); color:#fff; }
+.sl-toggle-btn:first-child { border-right:1px solid var(--border); }
+
+/* mode indicator badge */
+.sl-mode-badge {
+  display:inline-block; font-size:0.6rem; font-weight:700; padding:2px 7px;
+  border-radius:20px; margin-left:6px; vertical-align:middle;
+}
+.sl-mode-badge.spot   { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+.sl-mode-badge.option { background:#fee2e2; color:#b91c1c; }
+
+/* ══ CMP SIMULATOR ══════════════════════════════════ */
 .sim-panel {
-  background:#1a2030; border-radius:10px;
-  padding:11px 14px; margin-bottom:4px;
+  background:#1a2030; border-radius:10px; padding:11px 14px; margin-bottom:6px;
 }
 .sim-head { font-size:0.6rem; font-weight:700; text-transform:uppercase;
             letter-spacing:0.08em; color:#7c6fa0; margin-bottom:7px; }
 .sim-row  { display:flex; align-items:center; gap:10px; }
-.sim-panel input[type=range] { flex:1; accent-color:#7c3aed; cursor:pointer; height:4px; }
+.sim-panel input[type=range] { flex:1; accent-color:#7c3aed; cursor:pointer; }
 .sim-val  { font-size:0.8rem; font-weight:800; color:#c4b5fd; min-width:48px; text-align:right; }
 .sim-btn  { font-size:0.68rem; font-weight:700; padding:5px 12px;
             border:1px solid #4a2a78; border-radius:20px;
@@ -246,44 +261,57 @@ html, body {
 </style>
 </head>
 <body>
-
 <div class="shell">
 
-  <div class="uat-strip">🧪 UAT · STUDY PROGRESSION BAR · ADMIN ONLY — NOT VISIBLE TO MEMBERS</div>
+  <div class="uat-strip">🧪 UAT · STUDY PROGRESSION BAR · ADMIN ONLY</div>
 
   <div class="page" style="padding-top:14px;">
 
-    <!-- ══ CMP SIMULATOR ══ -->
+    <!-- ══ SL MODE TOGGLE ════════════════════════════ -->
+    <div class="note" style="margin-bottom:8px;">
+      Toggle to see how the bar looks in each SL phase:
+    </div>
+    <div class="sl-toggle">
+      <button class="sl-toggle-btn active" id="btn-spot" onclick="setMode('spot')">
+        Phase 1 — Spot SL<br>
+        <span style="font-size:0.6rem;font-weight:500;opacity:0.8;">SL basis Nifty index price</span>
+      </button>
+      <button class="sl-toggle-btn" id="btn-option" onclick="setMode('option')">
+        Phase 2 — Option SL<br>
+        <span style="font-size:0.6rem;font-weight:500;opacity:0.8;">SL basis option CMP</span>
+      </button>
+    </div>
+
+    <!-- ══ CMP SIMULATOR ═════════════════════════════ -->
     <div class="sim-panel">
-      <div class="sim-head">🎛️ Simulate Live CMP — both cards update together</div>
+      <div class="sim-head">🎛️ Simulate Live CMP — all cards update together</div>
       <div class="sim-row">
         <input type="range" id="slider" min="60" max="230" step="0.5" value="148">
-        <div class="sim-val">₹<span id="cmp-display">148</span></div>
+        <div class="sim-val">₹<span id="cmp-disp">148</span></div>
         <button class="sim-btn" onclick="togglePlay()">▶ Play</button>
       </div>
     </div>
 
-    <!-- entry price label row -->
-    <div style="text-align:center;font-size:0.65rem;color:var(--text-muted);margin:6px 0 2px;">
-      Entry price for demo: <strong style="color:var(--primary);">₹128.00</strong> &nbsp;|&nbsp; NIFTY lot size: <strong style="color:var(--primary);">65</strong>
+    <div style="text-align:center;font-size:0.63rem;color:var(--muted);margin:4px 0 14px;">
+      Entry: <strong style="color:var(--primary);">₹128</strong> &nbsp;·&nbsp;
+      Option SL: <strong style="color:#dc2626;">₹80</strong> &nbsp;·&nbsp;
+      Upside: <strong style="color:var(--green);">Unlimited →</strong> &nbsp;·&nbsp;
+      Lot: <strong style="color:var(--primary);">65</strong>
     </div>
 
 
-    <!-- ══════════════════════════════════════════
+    <!-- ══════════════════════════════════════════════
          SECTION A — CURRENT PWA (exact replica)
-    ══════════════════════════════════════════ -->
-
-    <div class="sec-divider">
-      <div class="sec-divider-line"></div>
-      <span class="sec-divider-text current">Current PWA · Unchanged</span>
-      <div class="sec-divider-line"></div>
+    ══════════════════════════════════════════════ -->
+    <div class="sec-div">
+      <div class="sec-div-line"></div>
+      <span class="sec-div-tag tag-current">Current PWA · Unchanged</span>
+      <div class="sec-div-line"></div>
     </div>
+    <div class="note">This is what your members see today.</div>
 
-    <!-- A1: Paid member — post buy — CE in market -->
-    <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:5px;">
-      Paid member / post-buy view
-    </div>
-    <div class="trade-card" id="card-a-paid">
+    <!-- Paid member card -->
+    <div class="trade-card">
       <div class="trade-header">
         <div class="trade-title-box">
           <div class="type-box ce">CE</div>
@@ -292,9 +320,8 @@ html, body {
             <div class="trade-expiry">30 Jun 2026</div>
           </div>
         </div>
-        <span class="badge" id="a-paid-badge">IN PROFIT</span>
+        <span class="badge" id="a-badge">IN PROFIT</span>
       </div>
-
       <div class="trade-metrics">
         <div class="metric-col">
           <span class="metric-label">Entry Price</span>
@@ -302,102 +329,43 @@ html, body {
         </div>
         <div class="metric-col">
           <span class="metric-label">Current Price</span>
-          <span class="metric-value" id="a-paid-cmp">₹ 148.00</span>
+          <span class="metric-value" id="a-cmp">₹ 148.00</span>
         </div>
         <div class="metric-col">
           <span class="metric-label">P&amp;L (Per Lot)</span>
-          <span class="metric-value" id="a-paid-pnl">—</span>
+          <span class="metric-value" id="a-pnl">—</span>
         </div>
         <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-          <div class="rationale-box" style="margin:0;">
-            <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
-            <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
+          <div class="rationale-box">
+            <span class="rationale-text">Why?</span>
+            <span class="rationale-lock">🔒 Premium Only</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- A2: Free member — post buy -->
-    <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:5px;margin-top:10px;">
-      Free member / post-buy view
-    </div>
-    <div class="trade-card" id="card-a-free">
-      <div class="trade-header">
-        <div class="trade-title-box">
-          <div class="type-box ce">CE</div>
-          <div>
-            <div class="trade-name">NIFTY <span style="font-weight:700;color:#888;font-size:0.9em;">24000</span></div>
-            <div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>
-          </div>
-        </div>
-        <span class="badge" id="a-free-badge">IN PROFIT</span>
-      </div>
 
-      <div class="trade-metrics">
-        <div class="metric-col">
-          <span class="metric-label">Entry Price</span>
-          <span class="metric-value">₹ 128.00</span>
-        </div>
-        <div class="metric-col">
-          <span class="metric-label">Current Price</span>
-          <span class="metric-value" id="a-free-cmp">₹ 148.00</span>
-        </div>
-        <div class="metric-col">
-          <span class="metric-label">P&amp;L (Per Lot)</span>
-          <span class="metric-value" id="a-free-pnl">—</span>
-        </div>
-        <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-          <div class="rationale-box" style="margin:0;">
-            <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
-            <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- A3: Pre-buy / locked -->
-    <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:5px;margin-top:10px;">
-      Pre-buy · entry not yet confirmed
-    </div>
-    <div class="trade-card" style="border-color:#fde68a;">
-      <div class="trade-header">
-        <div class="trade-title-box">
-          <div class="type-box lock">🔒</div>
-          <div>
-            <div class="trade-name">NIFTY</div>
-            <div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>
-          </div>
-        </div>
-        <span class="badge prebuy">WATCHING</span>
-      </div>
-      <div class="locked-blur">
-        <div class="blur-row">
-          <div class="blur-pill" style="width:40%;"></div>
-          <div class="blur-pill" style="width:25%;opacity:0.6;"></div>
-          <div class="blur-pill" style="width:18%;opacity:0.4;"></div>
-        </div>
-        <div style="text-align:center;padding:4px 0 2px;font-size:0.72rem;color:var(--primary);font-weight:600;">
-          Entry visible once buy is confirmed
-        </div>
-      </div>
-    </div>
-
-
-    <!-- ══════════════════════════════════════════
+    <!-- ══════════════════════════════════════════════
          SECTION B — PROPOSED: + STUDY PROGRESSION
-    ══════════════════════════════════════════ -->
-
-    <div class="sec-divider" style="margin-top:22px;">
-      <div class="sec-divider-line"></div>
-      <span class="sec-divider-text proposed">Proposed · + Study Progression</span>
-      <div class="sec-divider-line"></div>
+    ══════════════════════════════════════════════ -->
+    <div class="sec-div" style="margin-top:20px;">
+      <div class="sec-div-line"></div>
+      <span class="sec-div-tag tag-proposed">Proposed · + Study Progression</span>
+      <div class="sec-div-line"></div>
     </div>
 
-    <!-- B1: Paid member — with bar -->
-    <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:5px;">
-      Paid member / post-buy view
+    <!-- Mode explanation -->
+    <div class="note" id="mode-note-spot">
+      <strong style="color:#92400e;">Phase 1 — Spot SL active.</strong>
+      SL is defined as "exit if Nifty crosses X level." We don't have an option price equivalent yet — so the bar shows a <em>warning zone</em> on the left (diagonal stripes) rather than a hard SL boundary. Entry and CMP are tracked accurately. Right side is open (unlimited upside).
     </div>
-    <div class="trade-card" id="card-b-paid">
+    <div class="note" id="mode-note-option" style="display:none;">
+      <strong style="color:#b91c1c;">Phase 2 — Option SL active.</strong>
+      SL has been defined as an option price. The left boundary is now a real anchor (red dot = SL position, price not revealed to members). Bar spans from SL to unlimited right. Entry sits between SL and the open right.
+    </div>
+
+    <!-- Paid member card with bar -->
+    <div class="trade-card">
       <div class="trade-header">
         <div class="trade-title-box">
           <div class="type-box ce">CE</div>
@@ -411,25 +379,36 @@ html, body {
 
       <!-- ── STUDY PROGRESSION BAR ── -->
       <div class="sp-section">
-        <div class="sp-title-row">
-          <span class="sp-title">Study Progression</span>
-          <span class="sp-pill" id="b-paid-pill" style="background:var(--primary-light);color:var(--primary);">Tracking CMP</span>
+        <div class="sp-top-row">
+          <span class="sp-title">
+            Study Progression
+            <span class="sl-mode-badge spot" id="b-paid-mode-badge">Spot SL</span>
+          </span>
+          <span class="sp-pill" id="b-paid-pill">Tracking</span>
         </div>
 
         <div class="sp-outer">
-          <div class="sp-track">
-            <div class="sp-zone-loss"></div>
-            <div class="sp-zone-profit"></div>
-            <div class="sp-fill"  id="b-paid-fill"></div>
-            <div class="sp-entry"></div>
-            <div class="sp-dot"   id="b-paid-dot"></div>
-            <div class="sp-cmp-lbl" id="b-paid-cmp-lbl">▲ Current State</div>
+          <div class="sp-track" id="b-paid-track">
+            <!-- Spot SL: striped warning zone (mode 1) -->
+            <div class="sp-spot-warning" id="b-paid-spot-warning"></div>
+            <!-- Option SL: solid zone + anchor dot (mode 2) -->
+            <div class="sp-sl-zone"      id="b-paid-sl-zone"></div>
+            <div class="sp-sl-dot"       id="b-paid-sl-dot"></div>
+            <!-- Right: unlimited fade, always visible -->
+            <div class="sp-profit-fade"></div>
+            <!-- Active fills -->
+            <div class="sp-profit-fill"  id="b-paid-profit-fill"></div>
+            <div class="sp-loss-fill"    id="b-paid-loss-fill"></div>
+            <!-- Anchors -->
+            <div class="sp-entry-tick"   id="b-paid-entry-tick"></div>
+            <div class="sp-cmp-dot"      id="b-paid-dot"></div>
+            <div class="sp-cmp-lbl"      id="b-paid-cmp-lbl">▲ Current State</div>
           </div>
         </div>
 
         <div class="sp-labels">
-          <span class="sp-lbl-l">◀ In Loss</span>
-          <span class="sp-lbl-c">Entry</span>
+          <span class="sp-lbl-sl" id="b-paid-sl-lbl">◀ Spot SL</span>
+          <span class="sp-lbl-entry">Entry</span>
           <span class="sp-lbl-r">In Profit →</span>
         </div>
       </div>
@@ -448,9 +427,9 @@ html, body {
           <span class="metric-value" id="b-paid-pnl">—</span>
         </div>
         <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-          <div class="rationale-box" style="margin:0;">
-            <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
-            <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
+          <div class="rationale-box">
+            <span class="rationale-text">Why?</span>
+            <span class="rationale-lock">🔒 Premium Only</span>
           </div>
         </div>
       </div>
@@ -458,11 +437,8 @@ html, body {
       <div class="trade-footer">Educational purposes only. Not investment advice.</div>
     </div>
 
-    <!-- B2: Free member — with bar -->
-    <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:5px;margin-top:10px;">
-      Free member / post-buy view
-    </div>
-    <div class="trade-card" id="card-b-free">
+    <!-- Free member card with bar -->
+    <div class="trade-card" style="margin-top:2px;">
       <div class="trade-header">
         <div class="trade-title-box">
           <div class="type-box ce">CE</div>
@@ -474,27 +450,32 @@ html, body {
         <span class="badge" id="b-free-badge">IN PROFIT</span>
       </div>
 
-      <!-- Bar shown to free members too — no prices revealed -->
       <div class="sp-section">
-        <div class="sp-title-row">
-          <span class="sp-title">Study Progression</span>
-          <span class="sp-pill" id="b-free-pill" style="background:var(--primary-light);color:var(--primary);">Tracking CMP</span>
+        <div class="sp-top-row">
+          <span class="sp-title">
+            Study Progression
+            <span class="sl-mode-badge spot" id="b-free-mode-badge">Spot SL</span>
+          </span>
+          <span class="sp-pill" id="b-free-pill">Tracking</span>
         </div>
 
         <div class="sp-outer">
-          <div class="sp-track">
-            <div class="sp-zone-loss"></div>
-            <div class="sp-zone-profit"></div>
-            <div class="sp-fill"  id="b-free-fill"></div>
-            <div class="sp-entry"></div>
-            <div class="sp-dot"   id="b-free-dot"></div>
-            <div class="sp-cmp-lbl" id="b-free-cmp-lbl">▲ Current State</div>
+          <div class="sp-track" id="b-free-track">
+            <div class="sp-spot-warning" id="b-free-spot-warning"></div>
+            <div class="sp-sl-zone"      id="b-free-sl-zone"></div>
+            <div class="sp-sl-dot"       id="b-free-sl-dot"></div>
+            <div class="sp-profit-fade"></div>
+            <div class="sp-profit-fill"  id="b-free-profit-fill"></div>
+            <div class="sp-loss-fill"    id="b-free-loss-fill"></div>
+            <div class="sp-entry-tick"   id="b-free-entry-tick"></div>
+            <div class="sp-cmp-dot"      id="b-free-dot"></div>
+            <div class="sp-cmp-lbl"      id="b-free-cmp-lbl">▲ Current State</div>
           </div>
         </div>
 
         <div class="sp-labels">
-          <span class="sp-lbl-l">◀ In Loss</span>
-          <span class="sp-lbl-c">Entry</span>
+          <span class="sp-lbl-sl" id="b-free-sl-lbl">◀ Spot SL</span>
+          <span class="sp-lbl-entry">Entry</span>
           <span class="sp-lbl-r">In Profit →</span>
         </div>
       </div>
@@ -513,9 +494,9 @@ html, body {
           <span class="metric-value" id="b-free-pnl">—</span>
         </div>
         <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-          <div class="rationale-box" style="margin:0;">
-            <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
-            <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
+          <div class="rationale-box">
+            <span class="rationale-text">Why?</span>
+            <span class="rationale-lock">🔒 Premium Only</span>
           </div>
         </div>
       </div>
@@ -523,10 +504,8 @@ html, body {
       <div class="trade-footer">Educational purposes only. Not investment advice.</div>
     </div>
 
-    <!-- B3: Pre-buy — bar NOT shown (nothing to track yet) -->
-    <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:5px;margin-top:10px;">
-      Pre-buy · no bar shown (entry not confirmed)
-    </div>
+    <!-- Pre-buy: no bar at all -->
+    <div class="note" style="margin-top:10px;">Pre-buy state — Study Progression not shown (no entry yet)</div>
     <div class="trade-card" style="border-color:#fde68a;">
       <div class="trade-header">
         <div class="trade-title-box">
@@ -541,8 +520,8 @@ html, body {
       <div class="locked-blur">
         <div class="blur-row">
           <div class="blur-pill" style="width:40%;"></div>
-          <div class="blur-pill" style="width:25%;opacity:0.6;"></div>
-          <div class="blur-pill" style="width:18%;opacity:0.4;"></div>
+          <div class="blur-pill" style="width:25%;opacity:0.5;"></div>
+          <div class="blur-pill" style="width:18%;opacity:0.3;"></div>
         </div>
         <div style="text-align:center;padding:4px 0 2px;font-size:0.72rem;color:var(--primary);font-weight:600;">
           Entry visible once buy is confirmed
@@ -556,144 +535,201 @@ html, body {
 
 <script>
 /* ════════════════════════════════════════════════
-   TRADE CONFIG
+   TRADE DATA
 ════════════════════════════════════════════════ */
-const ENTRY   = 128;
-const LOT     = 65;
-const SCALE   = 0.60; /* bar shows ±60% of entry — no SL/Target implied */
+const ENTRY    = 128;   /* option entry price */
+const SL_OPT   = 80;   /* option SL price (Phase 2 only) */
+const LOT      = 65;
 
-/* ── P&L calc ── */
-function calcPnl(cmp) {
-  const diff   = cmp - ENTRY;          /* CE: profit if CMP > Entry */
-  const pnl    = diff * LOT;
-  const pct    = (diff / ENTRY * 100).toFixed(1);
-  const cls    = pnl >= 0 ? 'val-up' : 'val-down';
-  const sign   = pnl >= 0 ? '+' : '';
-  const html   = `${sign}₹ ${Math.abs(pnl).toLocaleString('en-IN',{maximumFractionDigits:0})} <span style="font-size:0.7rem;opacity:0.85;">(${sign}${pct}%)</span>`;
-  return { pnl, pct, cls, html };
+let slMode = 'spot'; /* 'spot' or 'option' */
+
+/* ══ SL MODE TOGGLE ═════════════════════════════ */
+function setMode(mode) {
+  slMode = mode;
+  document.getElementById('btn-spot').classList.toggle('active', mode === 'spot');
+  document.getElementById('btn-option').classList.toggle('active', mode === 'option');
+  document.getElementById('mode-note-spot').style.display   = mode === 'spot'   ? '' : 'none';
+  document.getElementById('mode-note-option').style.display = mode === 'option' ? '' : 'none';
+  updateAll(parseFloat(document.getElementById('slider').value));
 }
 
-/* ── Badge class ── */
-function badgeCls(cmp) {
-  return cmp >= ENTRY ? 'badge profit' : 'badge loss';
-}
-function badgeTxt(cmp) {
-  return cmp >= ENTRY ? 'IN PROFIT' : 'IN LOSS';
+/* ══ BAR POSITIONING ════════════════════════════
+   SPOT SL (Phase 1):
+     - Left half = warning stripe zone (50% wide, no price anchor)
+     - Entry fixed at 50% of bar
+     - CMP tracks from entry outward
+     - Right open/faded
+
+   OPTION SL (Phase 2):
+     - Bar spans: SL (left anchor) to unlimited right
+     - Entry at its proportional position: entryPct = (Entry-SL)/(range) × 60%
+       (we use 60% of bar for the [SL→Entry] risk zone, 40% for profit zone+fade)
+     - CMP dot tracks accurately within this scale
+     - Right open/faded
+════════════════════════════════════════════════ */
+
+function calcBar(cmp) {
+  if (slMode === 'spot') {
+    /* Phase 1: entry at 50%, CMP relative to entry within ±50% of entry price */
+    const SCALE  = 0.55;
+    const entryP = 50;
+    const rawCmp = 0.5 + ((cmp - ENTRY) / (ENTRY * SCALE)) * 0.5;
+    const cmpP   = Math.max(3, Math.min(96, rawCmp * 100));
+    return { mode:'spot', entryP, cmpP, slP: null };
+  } else {
+    /* Phase 2: SL is left anchor, entry proportional
+       Scale: risk zone [SL→Entry] occupies 45% of bar width.
+       Everything to the right of entry is profit zone (open). */
+    const RISK_ZONE_PCT = 45; /* % of bar for SL→Entry */
+    const riskRange = ENTRY - SL_OPT;
+    const entryP = RISK_ZONE_PCT;
+    const slP    = 0;
+    /* CMP position: within [SL, SL + (bar_range)] */
+    /* 1 point in option price = RISK_ZONE_PCT / riskRange % of bar */
+    const ptsPerPct = riskRange / RISK_ZONE_PCT;
+    const rawCmp = (cmp - SL_OPT) / ptsPerPct;
+    const cmpP   = Math.max(2, Math.min(96, rawCmp));
+    return { mode:'option', entryP, cmpP, slP };
+  }
 }
 
-/* ── Study Progression bar update ── */
 function updateBar(prefix, cmp) {
-  const pct      = barPct(cmp);
-  const inProfit = cmp >= ENTRY;
+  const { mode, entryP, cmpP, slP } = calcBar(cmp);
+  const inProfit = cmp > ENTRY;
+  const hitSL    = mode === 'option' && cmp <= SL_OPT;
 
-  /* fill */
-  const fill = document.getElementById(prefix + '-fill');
+  /* ── Spot warning zone ── */
+  const spotWarn = document.getElementById(prefix + '-spot-warning');
+  spotWarn.style.opacity = mode === 'spot' ? '1' : '0';
+  /* width: covers left half (loss side) */
+  spotWarn.style.width = entryP + '%';
+
+  /* ── Option SL zone & dot ── */
+  const slZone = document.getElementById(prefix + '-sl-zone');
+  const slDot  = document.getElementById(prefix + '-sl-dot');
+  slZone.style.opacity = mode === 'option' ? '0.5' : '0';
+  slZone.style.width   = entryP + '%';
+  slDot.style.opacity  = mode === 'option' ? '1'   : '0';
+  slDot.style.left     = '0%';
+
+  /* ── Entry tick ── */
+  document.getElementById(prefix + '-entry-tick').style.left = entryP + '%';
+
+  /* ── Active fills ── */
+  const pFill = document.getElementById(prefix + '-profit-fill');
+  const lFill = document.getElementById(prefix + '-loss-fill');
   if (inProfit) {
-    fill.style.left       = '50%';
-    fill.style.width      = (pct - 50) + '%';
-    fill.style.background = '#22c55e';
-    fill.style.borderRadius = '0';
-    fill.style.opacity    = '0.9';
+    pFill.style.left = entryP + '%'; pFill.style.width = (cmpP - entryP) + '%'; pFill.style.opacity = '0.9';
+    lFill.style.width = '0';
   } else {
-    fill.style.left       = pct + '%';
-    fill.style.width      = (50 - pct) + '%';
-    fill.style.background = '#ef4444';
-    fill.style.borderRadius = '3px 0 0 3px';
-    fill.style.opacity    = '0.9';
+    lFill.style.left  = cmpP + '%'; lFill.style.width = (entryP - cmpP) + '%'; lFill.style.opacity = '0.9';
+    pFill.style.width = '0';
   }
 
-  /* dot */
+  /* ── CMP dot ── */
   const dot = document.getElementById(prefix + '-dot');
-  dot.style.left       = pct + '%';
-  dot.style.background = inProfit ? '#16a34a' : '#dc2626';
+  dot.style.left       = cmpP + '%';
+  dot.style.background = hitSL ? '#7f1d1d' : inProfit ? '#16a34a' : '#dc2626';
+  dot.style.boxShadow  = hitSL
+    ? '0 2px 8px rgba(127,29,29,0.5)'
+    : inProfit ? '0 2px 8px rgba(22,163,74,0.4)' : '0 2px 8px rgba(220,38,38,0.4)';
 
-  /* floating label — nudge away from edges */
+  /* ── CMP floating label ── */
   const lbl = document.getElementById(prefix + '-cmp-lbl');
-  const nudged = Math.max(13, Math.min(87, pct));
-  lbl.style.left  = nudged + '%';
-  lbl.style.color = inProfit ? '#16a34a' : '#dc2626';
-  lbl.textContent = (inProfit ? '▲' : '▼') + ' Current State';
+  const nudge = Math.max(14, Math.min(85, cmpP));
+  lbl.style.left  = nudge + '%';
+  lbl.style.color = hitSL ? '#7f1d1d' : inProfit ? '#15803d' : '#dc2626';
+  lbl.textContent = hitSL ? '⚠ SL Hit' : (inProfit ? '▲ Current State' : '▼ Current State');
 
-  /* pill */
+  /* ── State pill ── */
   const pill = document.getElementById(prefix + '-pill');
-  if (inProfit) {
-    pill.style.background = '#dcfce7'; pill.style.color = '#15803d';
-    pill.textContent = 'Above Entry';
+  if (hitSL) {
+    pill.style.background = '#7f1d1d'; pill.style.color = '#fff'; pill.textContent = '⚠ SL Triggered';
+  } else if (inProfit) {
+    pill.style.background = '#dcfce7'; pill.style.color = '#15803d'; pill.textContent = 'Above Entry';
   } else {
-    pill.style.background = '#fee2e2'; pill.style.color = '#b91c1c';
-    pill.textContent = 'Below Entry';
+    pill.style.background = '#fee2e2'; pill.style.color = '#b91c1c'; pill.textContent = 'Below Entry';
+  }
+
+  /* ── SL label ── */
+  const slLbl = document.getElementById(prefix + '-sl-lbl');
+  const modeBadge = document.getElementById(prefix + '-mode-badge');
+  if (mode === 'spot') {
+    slLbl.textContent = '⚠ Spot SL';
+    slLbl.style.color = '#92400e';
+    modeBadge.textContent = 'Spot SL';
+    modeBadge.className = 'sl-mode-badge spot';
+  } else {
+    slLbl.textContent = '◀ SL';
+    slLbl.style.color = '#dc2626';
+    modeBadge.textContent = 'Option SL';
+    modeBadge.className = 'sl-mode-badge option';
   }
 }
 
-function barPct(cmp) {
-  const raw = 0.5 + ((cmp - ENTRY) / (ENTRY * SCALE)) * 0.5;
-  return Math.max(2, Math.min(97, raw * 100));
-}
-
-/* ── Master update — all cards ── */
+/* ══ MASTER UPDATE ══════════════════════════════ */
 function updateAll(cmp) {
-  const { pnl, cls, html } = calcPnl(cmp);
-  const bCls = badgeCls(cmp);
-  const bTxt = badgeTxt(cmp);
+  /* P&L */
+  const diff = cmp - ENTRY;
+  const pnl  = diff * LOT;
+  const pct  = (diff / ENTRY * 100).toFixed(1);
+  const cls  = pnl >= 0 ? 'val-up' : 'val-down';
+  const sign = pnl >= 0 ? '+' : '';
+  const pnlHtml = `${sign}₹ ${Math.abs(pnl).toLocaleString('en-IN',{maximumFractionDigits:0})} <span style="font-size:0.7rem;opacity:0.85;">(${sign}${pct}%)</span>`;
+
+  const inProfit = cmp > ENTRY;
+  const hitSL    = slMode === 'option' && cmp <= SL_OPT;
+  const bCls = hitSL ? 'badge loss' : inProfit ? 'badge profit' : 'badge loss';
+  const bTxt = hitSL ? 'SL HIT' : inProfit ? 'IN PROFIT' : 'IN LOSS';
   const cmpStr = '₹ ' + cmp.toFixed(2);
 
-  /* Section A — current PWA cards */
-  ['a-paid','a-free'].forEach(id => {
-    document.getElementById(id + '-badge').className = bCls;
-    document.getElementById(id + '-badge').textContent = bTxt;
-    document.getElementById(id + '-cmp').textContent = cmpStr;
-    const pnlEl = document.getElementById(id + '-pnl');
-    pnlEl.className = 'metric-value ' + cls;
-    pnlEl.innerHTML = html;
-  });
+  /* Section A — current PWA */
+  document.getElementById('a-badge').className = bCls;
+  document.getElementById('a-badge').textContent = bTxt;
+  document.getElementById('a-cmp').textContent = cmpStr;
+  const aPnl = document.getElementById('a-pnl');
+  aPnl.className = 'metric-value ' + cls; aPnl.innerHTML = pnlHtml;
 
-  /* Section B — proposed cards */
-  ['b-paid','b-free'].forEach(id => {
+  /* Section B — proposed */
+  ['b-paid', 'b-free'].forEach(id => {
     document.getElementById(id + '-badge').className = bCls;
     document.getElementById(id + '-badge').textContent = bTxt;
     document.getElementById(id + '-cmp').textContent = cmpStr;
-    const pnlEl = document.getElementById(id + '-pnl');
-    pnlEl.className = 'metric-value ' + cls;
-    pnlEl.innerHTML = html;
+    const el = document.getElementById(id + '-pnl');
+    el.className = 'metric-value ' + cls; el.innerHTML = pnlHtml;
     updateBar(id, cmp);
   });
 }
 
-/* ── Slider ── */
-const slider  = document.getElementById('slider');
-const display = document.getElementById('cmp-display');
+/* ══ SLIDER ═════════════════════════════════════ */
+const slider = document.getElementById('slider');
+const disp   = document.getElementById('cmp-disp');
 slider.addEventListener('input', () => {
   const v = parseFloat(slider.value);
-  display.textContent = v.toFixed(0);
+  disp.textContent = Math.round(v);
   updateAll(v);
 });
 
-/* ── Play / Pause ── */
+/* ══ PLAY / PAUSE ═══════════════════════════════ */
 let animId = null, dir = 1;
 function togglePlay() {
   const btn = document.querySelector('.sim-btn');
-  if (animId) {
-    cancelAnimationFrame(animId); animId = null;
-    btn.textContent = '▶ Play'; return;
-  }
+  if (animId) { cancelAnimationFrame(animId); animId = null; btn.textContent = '▶ Play'; return; }
   btn.textContent = '⏸ Pause';
   let last = 0;
   function step(ts) {
     if (ts - last > 38) {
-      let v = parseFloat(slider.value) + dir * 1.1;
+      let v = parseFloat(slider.value) + dir * 1.2;
       if (v >= parseFloat(slider.max)) { v = parseFloat(slider.max); dir = -1; }
-      if (v <= parseFloat(slider.min)) { v = parseFloat(slider.min); dir =  1; }
-      slider.value = v;
-      display.textContent = Math.round(v);
-      updateAll(v);
-      last = ts;
+      if (v <= parseFloat(slider.min)) { v = parseFloat(slider.min); dir = 1; }
+      slider.value = v; disp.textContent = Math.round(v); updateAll(v); last = ts;
     }
     animId = requestAnimationFrame(step);
   }
   animId = requestAnimationFrame(step);
 }
 
-/* ── Init ── */
+/* ══ INIT ═══════════════════════════════════════ */
 updateAll(parseFloat(slider.value));
 </script>
 </body>
