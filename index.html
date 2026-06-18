@@ -497,6 +497,32 @@
     // --- UI LOGIC ---
     let _tradeRefreshTimer = null;
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
+    function formatExpiryDisplay(expiry, instrument) {
+        if (!expiry) return expiry;
+        const fullM = expiry.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i);
+        if (fullM) return `${parseInt(fullM[1])} ${fullM[2].charAt(0).toUpperCase()+fullM[2].slice(1).toLowerCase()}`;
+        if (/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/i.test(expiry)) return expiry;
+        const lo = expiry.toLowerCase();
+        const ed = _marketExpiry && (_marketExpiry[instrument] || _marketExpiry['NIFTY']);
+        if (!ed) return expiry;
+        let rawDate = null, label = expiry;
+        if      (lo === 'weekly' || lo === 'current week' || lo.includes('current')) { rawDate = ed.current;  label = 'Weekly'; }
+        else if (lo.includes('next'))   { rawDate = ed.next;    label = 'Next Weekly'; }
+        else if (lo.includes('month'))  { rawDate = ed.monthly; label = 'Monthly'; }
+        else if (lo.includes('today'))  { rawDate = ed.current; label = "Today's"; }
+        if (!rawDate) return expiry;
+        const dm = rawDate.match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
+        if (dm) return `${label} (${parseInt(dm[1])} ${dm[2].charAt(0).toUpperCase()+dm[2].slice(1).toLowerCase()})`;
+        const d = new Date(rawDate + (rawDate.length === 10 ? 'T12:00:00' : ''));
+        if (isNaN(d.getTime())) return expiry;
+        const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+        return `${label} (${d.getDate()} ${mon})`;
+    }
+    function withSpotSLNote(slStr) {
+        const n = parseFloat(String(slStr || '').replace(/[^0-9.]/g, ''));
+        if (n > 5000) return slStr + '<br><span style="font-size:0.6rem;color:#6b7280;font-weight:500;letter-spacing:0.02em;">15-Min Candle</span>';
+        return slStr;
+    }
     const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', about:'About' };
     function setTabBadge(tabKey, count) {
         const tabEl = document.querySelector(`.tab[onclick*="'${tabKey}'"]`);
@@ -851,7 +877,7 @@
                                 <div>
                                     <div class="trade-name">${t.instrument} <span style="font-weight:700;color:#888;font-size:0.9em;">${t.strike || ''}</span></div>
                                     ${canSeePremium
-                                        ? `<div class="trade-expiry">${t.expiry || 'Current Week'}</div>`
+                                        ? `<div class="trade-expiry">${formatExpiryDisplay(t.expiry || 'Current Week', t.instrument)}</div>`
                                         : `<div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>`
                                     }
                                 </div>
@@ -1805,13 +1831,15 @@
                 });
                 s1RepliesHtml += `</div>`;
             }
+            const _slS1Val = getCurrentSL(pubReplies_s1);
+            const _slS1Html = showSL1 ? (_slS1Val ? withSpotSLNote(_slS1Val) : '—') : lockBtn;
             return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
                         ${typeBoxS1}
                         <div>
                             <div class="trade-name">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</div>
-                            <div class="trade-expiry">${showEx1&&fields.expiry?fields.expiry:'Expiry 🔓'}</div>
+                            <div class="trade-expiry">${showEx1&&fields.expiry?formatExpiryDisplay(fields.expiry, fields.instrument):'Expiry 🔓'}</div>
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
@@ -1821,7 +1849,7 @@
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${showSL1?(getCurrentSL(pubReplies_s1)||'—'):lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
                 </div>
                 ${why ? `<div class="why-locked"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -1877,12 +1905,12 @@
             } else if (revisedSL2) {
                 const revNum2 = parseFloat(String(revisedSL2).replace(/[^0-9.]/g,''));
                 if (initialSL2 && initialSL2 > 5000 && revNum2 < 5000) {
-                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s>&rarr;${revisedSL2}<span style="font-size:0.65rem;color:#6b7280;">&nbsp;(Adj)</span>`;
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s>&rarr;${revisedSL2}<span style="font-size:0.65rem;color:#6b7280;">&nbsp;(Adjusting)</span>`;
                 } else {
-                    slDisplay2 = revisedSL2;
+                    slDisplay2 = withSpotSLNote(revisedSL2);
                 }
             } else if (initialSL2) {
-                slDisplay2 = `₹${initialSL2}`;
+                slDisplay2 = withSpotSLNote(`₹${initialSL2}`);
             } else {
                 slDisplay2 = '—';
             }
@@ -1932,7 +1960,7 @@
                         ${typeBoxHtml2}
                         <div>
                             <div class="trade-name">${instrName}${strikeStr?` <span style="font-weight:700;color:#888;font-size:0.9em;">${strikeStr}</span>`:''}</div>
-                            <div class="trade-expiry">${showExpiry&&fields.expiry?fields.expiry:'Expiry 🔓'}</div>
+                            <div class="trade-expiry">${showExpiry&&fields.expiry?formatExpiryDisplay(fields.expiry, fields.instrument):'Expiry 🔓'}</div>
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
@@ -1998,9 +2026,22 @@
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
                     slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> &rarr; ${revSL25} <span style="font-size:0.68rem;color:#6b7280;">(Adjusting)</span>`;
-                } else { slDisp25 = revSL25; }
+                } else { slDisp25 = withSpotSLNote(revSL25); }
             } else if (initSL25) {
-                slDisp25 = `₹${initSL25}`;
+                slDisp25 = withSpotSLNote(`₹${initSL25}`);
+            }
+            // follow-ups visible to free members on closed trades
+            let _cf25Html = '';
+            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && r.audience !== 'paid_only');
+            if (_cf25Vis.length > 0) {
+                const _cf25id = `cf25-replies-${post.id}`, _cf25n = _cf25Vis.length;
+                _cf25Html = `<button class="replies-toggle" id="btn-${_cf25id}" data-count="${_cf25n}" onclick="toggleReplies('${_cf25id}')">↳ ${_cf25n} update${_cf25n>1?'s':''} — tap to view</button><div class="thread-replies" id="${_cf25id}" style="display:none;">`;
+                _cf25Vis.forEach(r => {
+                    const _ts25 = formatPostTime(r.sent_at||r.created_at);
+                    const _txt25 = stripDisclaimerText(sanitizeHtml(r.content||'').replace(/\n/g,'<br>'));
+                    _cf25Html += `<div class="reply-card"><div class="reply-header"><span class="update-time">${_ts25}</span></div><div class="reply-body">${_txt25}</div></div>`;
+                });
+                _cf25Html += `</div>`;
             }
             const _loss25 = maxPnlPts25 !== null && maxPnlPts25 < 0;
             const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
@@ -2012,7 +2053,7 @@
                         ${typeBox25}
                         <div>
                             <div class="trade-name">${instrName25}${strikeStr25?` <span style="font-weight:700;color:#888;font-size:0.9em;">${strikeStr25}</span>`:''}</div>
-                            ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                            ${fields.expiry?`<div class="trade-expiry">${formatExpiryDisplay(fields.expiry, fields.instrument)}</div>`:''}
                         </div>
                     </div>
                     <div style="text-align:right;">
@@ -2026,6 +2067,7 @@
                     <div style="flex:1;min-width:0;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
                 </div>
                 ${why ? `<div class="why-locked"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
+                ${_cf25Html}
                 <div class="closed-trade-bar" style="${_barStyle25}">
                     <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
                     ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
@@ -2101,10 +2143,10 @@
         if (revSL3) {
             const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             if (initSL3 && initSL3 > 5000 && revNum3 < 5000) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s>&rarr;${revSL3}<span style="font-size:0.65rem;color:#6b7280;">&nbsp;(Adj)</span>`;
-            } else { slDisplay3 = revSL3; }
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s>&rarr;${revSL3}<span style="font-size:0.65rem;color:#6b7280;">&nbsp;(Adjusting)</span>`;
+            } else { slDisplay3 = withSpotSLNote(revSL3); }
         } else if (initSL3) {
-            slDisplay3 = `₹${initSL3}`;
+            slDisplay3 = withSpotSLNote(`₹${initSL3}`);
         } else { slDisplay3 = '—'; }
 
         // Why — separate row below metrics, only if why exists
@@ -2188,7 +2230,7 @@
                         ${typeBoxHtml3}
                         <div>
                             <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
-                            ${fields.expiry?`<div class="trade-expiry">${fields.expiry}</div>`:''}
+                            ${fields.expiry?`<div class="trade-expiry">${formatExpiryDisplay(fields.expiry, fields.instrument)}</div>`:''}
                         </div>
                     </div>
                     <div style="text-align:right;">
@@ -2232,7 +2274,7 @@
                     ${typeBoxHtml3}
                     <div>
                         <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
-                        <div class="trade-expiry">${fields.expiry||''}</div>
+                        <div class="trade-expiry">${formatExpiryDisplay(fields.expiry||'', fields.instrument)}</div>
                     </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
