@@ -2021,6 +2021,22 @@ const server = http.createServer(async (req, res) => {
   // Debug — GET /debug
   if (req.method === 'GET' && urlPath === '/debug') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    // Try one live LTP fetch to expose the actual Kotak API response
+    let ltpTest = null;
+    if (session.token && session.baseUrl && _activeContracts.length) {
+      const c = _activeContracts[0];
+      const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
+      const tradeSym = numToken ? null : buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
+      const identifier = numToken || tradeSym;
+      if (identifier) {
+        try {
+          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${identifier}/ltp`;
+          const r = await fetch(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token }, signal: AbortSignal.timeout(4000) });
+          const txt = await r.text();
+          ltpTest = { url, status: r.status, body: txt.slice(0, 400), identifier };
+        } catch(e) { ltpTest = { error: e.message }; }
+      }
+    }
     res.end(JSON.stringify({
       hasToken: !!session.token,
       sessionAgeMins: Math.round((Date.now() - (session.lastLogin||0)) / 60000),
@@ -2030,7 +2046,8 @@ const server = http.createServer(async (req, res) => {
       activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
       scripMasterSize: Object.keys(_scripMaster).length,
       marketScraperRunning: !!marketScraperInterval,
-      kotakLtpRunning: !!_kotakLtpInterval
+      kotakLtpRunning: !!_kotakLtpInterval,
+      ltpTest
     }));
     return;
   }
