@@ -550,10 +550,9 @@
         }
         return expiry;
     }
-    function withSpotSLNote(slStr) {
-        const n = parseFloat(String(slStr || '').replace(/[^0-9.]/g, ''));
-        if (n > 5000) return slStr + '<br><span style="font-size:0.6rem;color:#6b7280;font-weight:500;letter-spacing:0.02em;">15-Min Candle</span>';
-        return slStr;
+    function slLabelFor(val) {
+        const n = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
+        return n > 5000 ? 'SL (15 Min Candle)' : 'SL';
     }
     const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', about:'About' };
     function setTabBadge(tabKey, count) {
@@ -1864,7 +1863,8 @@
                 s1RepliesHtml += `</div>`;
             }
             const _slS1Val = getCurrentSL(pubReplies_s1);
-            const _slS1Html = showSL1 ? (_slS1Val ? withSpotSLNote(_slS1Val) : '—') : lockBtn;
+            const _slS1Html = showSL1 ? (_slS1Val || '—') : lockBtn;
+            const _slS1Label = (showSL1 && _slS1Val) ? slLabelFor(_slS1Val) : 'SL';
             return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
@@ -1881,7 +1881,7 @@
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
+                    <div class="metric-col"><span class="metric-label">${_slS1Label}</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -1931,7 +1931,7 @@
             // SL display: spot-based → option-price-based with strikethrough
             const initialSL2 = fields.sl;
             const revisedSL2 = getCurrentSL(postReplies);
-            let slDisplay2;
+            let slDisplay2, slLabel2 = 'SL';
             if (!showSL && !showCP) {
                 slDisplay2 = lockBtn;
             } else if (revisedSL2) {
@@ -1939,10 +1939,12 @@
                 if (initialSL2 && initialSL2 > 5000 && revNum2 < 5000) {
                     slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
                 } else {
-                    slDisplay2 = withSpotSLNote(revisedSL2);
+                    slDisplay2 = revisedSL2;
+                    slLabel2 = slLabelFor(revisedSL2);
                 }
             } else if (initialSL2) {
-                slDisplay2 = withSpotSLNote(`₹${initialSL2}`);
+                slDisplay2 = `₹${initialSL2}`;
+                slLabel2 = slLabelFor(initialSL2);
             } else {
                 slDisplay2 = '—';
             }
@@ -2002,7 +2004,7 @@
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
-                    <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
+                    <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -2053,14 +2055,15 @@
             // SL display with strikethrough
             const initSL25 = fields.sl;
             const revSL25  = getCurrentSL(postReplies);
-            let slDisp25 = '—';
+            let slDisp25 = '—', slLabel25 = 'SL';
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
                     slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
-                } else { slDisp25 = withSpotSLNote(revSL25); }
+                } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
             } else if (initSL25) {
-                slDisp25 = withSpotSLNote(`₹${initSL25}`);
+                slDisp25 = `₹${initSL25}`;
+                slLabel25 = slLabelFor(initSL25);
             }
             // follow-ups visible to free members on closed trades
             let _cf25Html = '';
@@ -2096,7 +2099,7 @@
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
+                    <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel25}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${_cf25Html}
@@ -2171,14 +2174,15 @@
         // SL — same strikethrough logic as free member
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
-        let slDisplay3;
+        let slDisplay3, slLabel3 = 'SL';
         if (revSL3) {
             const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             if (initSL3 && initSL3 > 5000 && revNum3 < 5000) {
                 slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
-            } else { slDisplay3 = withSpotSLNote(revSL3); }
+            } else { slDisplay3 = revSL3; slLabel3 = slLabelFor(revSL3); }
         } else if (initSL3) {
-            slDisplay3 = withSpotSLNote(`₹${initSL3}`);
+            slDisplay3 = `₹${initSL3}`;
+            slLabel3 = slLabelFor(initSL3);
         } else { slDisplay3 = '—'; }
 
         // Why — separate row below metrics, only if why exists
@@ -2276,7 +2280,7 @@
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${exitPrice&&exitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;"><span class="metric-label">SL</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
+                    <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
                 ${why ? (whyVisible
                     ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
@@ -2317,7 +2321,7 @@
             </div>
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                <div class="metric-col"><span class="metric-label">SL</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
+                <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
             ${whyRow3}
