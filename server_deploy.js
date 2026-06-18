@@ -164,6 +164,7 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       if (data.session) session = { ...session, ...data.session };
+      session.baseUrl = 'https://gw-napi.kotaksecurities.com'; // always override — assigned URLs unreachable from VM
       if (data.state)   state   = { ...state,   ...data.state };
       console.log(`State loaded: ${Object.keys(state.trades).length} trades`);
     }
