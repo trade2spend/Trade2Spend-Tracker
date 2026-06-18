@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>UAT — Risk/Reward Bar · Trade2Spend</title>
+<style>
+:root {
+  --bg:       #fdfbf7;
+  --card:     #ffffff;
+  --text:     #2d2a32;
+  --muted:    #888380;
+  --primary:  #4a2a78;
+  --pri-lt:   #ede9fe;
+  --green:    #22c55e;
+  --grn-lt:   #dcfce7;
+  --red:      #ef4444;
+  --red-lt:   #fee2e2;
+  --border:   #e8e4f0;
+  --gold:     #d97706;
+}
+* { box-sizing: border-box; margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent; }
+body { background: var(--bg); padding: 0 0 60px; }
+
+/* ── UAT BANNER ── */
+.uat-strip {
+  background: #1a2030; color: #f0c040;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-align: center; padding: 8px 16px;
+  position: sticky; top: 0; z-index: 100;
+}
+
+.wrap { max-width: 480px; margin: 0 auto; padding: 16px 14px; }
+
+/* ── SECTION LABELS ── */
+.sec-label {
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--muted); margin: 20px 0 8px;
+}
+
+/* ── TRADE CARD ── */
+.trade-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; margin-bottom: 8px;
+  overflow: hidden; box-shadow: 0 1px 4px rgba(74,42,120,0.06);
+}
+.trade-header {
+  padding: 11px 14px; display: flex;
+  justify-content: space-between; align-items: center;
+  border-bottom: 1px dashed var(--border);
+}
+.title-row { display: flex; align-items: center; gap: 10px; }
+.type-pill {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 0.75rem; letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.type-pill.ce { background: var(--grn-lt); color: #15803d; }
+.type-pill.pe { background: var(--red-lt); color: #b91c1c; }
+.trade-name  { font-size: 0.96rem; font-weight: 700; color: var(--text); }
+.trade-sub   { font-size: 0.65rem; color: var(--muted); margin-top: 1px; }
+.badge {
+  font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.07em; border-radius: 20px; padding: 3px 10px;
+}
+.badge.profit   { background: var(--grn-lt); color: #15803d; }
+.badge.loss     { background: var(--red-lt); color: #b91c1c; }
+.badge.watching { background: var(--pri-lt);  color: var(--primary); }
+
+/* ── RR BAR SECTION ── */
+.rr-wrap {
+  padding: 12px 14px 14px;
+  border-bottom: 1px dashed var(--border);
+}
+.rr-title {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--muted); margin-bottom: 10px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.rr-rr-text { font-size: 0.68rem; font-weight: 800; }
+
+/* The bar itself */
+.rr-bar-outer {
+  position: relative; height: 44px; /* enough room for dot overflow */
+}
+.rr-track {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  left: 8px; right: 8px; /* inset so endpoint dots don't clip */
+  height: 5px; border-radius: 3px; background: #ede8f5;
+}
+
+/* Static zone fills — always visible */
+.rr-zone-loss {
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: #fca5a5; border-radius: 3px 0 0 3px;
+  transition: width .35s ease;
+}
+.rr-zone-profit {
+  position: absolute; top: 0; right: 0; height: 100%;
+  background: #86efac; border-radius: 0 3px 3px 0;
+  transition: width .35s ease;
+}
+/* Highlight fill — CMP portion in the active zone */
+.rr-active-fill {
+  position: absolute; top: 0; height: 100%;
+  transition: left .35s ease, width .35s ease, background .35s ease;
+}
+
+/* Entry tick */
+.rr-entry-tick {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 3px; height: 18px; background: var(--primary);
+  border-radius: 2px; z-index: 3;
+  transition: left .35s ease;
+}
+/* Endpoint dots */
+.rr-sl-dot, .rr-tgt-dot {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 9px; height: 9px; border-radius: 50%; z-index: 2;
+}
+.rr-sl-dot  { left: 0;  background: var(--red); }
+.rr-tgt-dot { right: 0; background: var(--green); }
+
+/* CMP dot */
+.rr-cmp-dot {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2.5px solid white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+  z-index: 5; transition: left .35s ease, background .35s ease;
+}
+
+/* Price labels row */
+.rr-labels {
+  position: relative; height: 22px; margin-top: 3px;
+  /* inset matches the track inset */
+  left: 8px; right: 8px; width: calc(100% - 16px);
+}
+.rr-lbl {
+  position: absolute; font-size: 0.6rem; font-weight: 700;
+  white-space: nowrap; transform: translateX(-50%);
+  transition: left .35s ease, color .35s ease;
+  top: 0;
+}
+.rr-lbl.sl  { color: #dc2626; left: 0;    transform: none; }
+.rr-lbl.tgt { color: #16a34a; right: 0;   left: auto; transform: none; }
+.rr-lbl.entry { color: var(--primary); }
+.rr-lbl.cmp   { font-size: 0.65rem; transition: left .35s ease, color .35s ease; }
+
+/* Distance tag */
+.rr-delta {
+  font-size: 0.68rem; font-weight: 700; margin-top: 10px;
+  text-align: center; letter-spacing: 0.02em;
+  transition: color .35s ease;
+}
+
+/* ── METRICS STRIP ── */
+.metrics-strip {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  padding: 10px 14px 12px; gap: 0;
+}
+.m-col { display: flex; flex-direction: column; gap: 3px; }
+.m-col:not(:last-child) {
+  border-right: 1px solid var(--border);
+  padding-right: 12px; margin-right: 12px;
+}
+.m-lbl { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.04em; }
+.m-val { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+.up { color: var(--green); }
+.dn { color: var(--red); }
+
+/* ── SIMULATOR CONTROL ── */
+.sim-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px; margin-bottom: 4px;
+}
+.sim-head {
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--muted); margin-bottom: 10px;
+}
+.sim-row { display: flex; gap: 10px; align-items: center; }
+.sim-card input[type=range] {
+  flex: 1; accent-color: var(--primary); height: 4px;
+  cursor: pointer;
+}
+.sim-val {
+  font-size: 0.82rem; font-weight: 800; color: var(--primary);
+  min-width: 52px; text-align: right;
+}
+.sim-btn {
+  font-size: 0.7rem; font-weight: 700; padding: 5px 12px;
+  border: 1px solid var(--primary); border-radius: 20px;
+  color: var(--primary); background: var(--pri-lt);
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s;
+}
+.sim-btn:active { background: #d9c9f7; }
+
+/* ── LEGEND ── */
+.legend {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 8px; font-size: 0.62rem; color: var(--muted);
+}
+.legend span { display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── COMPLIANCE NOTE ── */
+.note {
+  margin-top: 20px; padding: 10px 14px;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+  font-size: 0.68rem; color: #92400e; line-height: 1.5;
+}
+.note strong { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="uat-strip">🧪 UAT PREVIEW — ADMIN ONLY · NOT VISIBLE TO MEMBERS</div>
+
+<div class="wrap">
+
+  <!-- ── SIMULATOR ─────────────────────────────── -->
+  <div class="sec-label">🎛️ CMP Simulator — drag to test</div>
+
+  <div class="sim-card" id="sim-ce-card">
+    <div class="sim-head">CE Trade · Option Price (₹80 SL → ₹128 Entry → ₹220 Target)</div>
+    <div class="sim-row">
+      <input type="range" id="sl-ce" min="60" max="240" step="1" value="140">
+      <div class="sim-val" id="sv-ce">₹140</div>
+      <button class="sim-btn" onclick="toggleAnim('ce')">▶ Play</button>
+    </div>
+  </div>
+
+  <div class="sim-card" style="margin-top:6px;" id="sim-pe-card">
+    <div class="sim-head">PE Trade · Option Price (₹62 SL → ₹95 Entry → ₹180 Target)</div>
+    <div class="sim-row">
+      <input type="range" id="sl-pe" min="40" max="200" step="1" value="82">
+      <div class="sim-val" id="sv-pe">₹82</div>
+      <button class="sim-btn" onclick="toggleAnim('pe')">▶ Play</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#fca5a5"></span>Risk zone</span>
+    <span><span class="dot" style="background:#86efac"></span>Reward zone</span>
+    <span><span class="dot" style="background:var(--primary)"></span>Entry marker</span>
+    <span><span class="dot" style="background:#888"></span>CMP dot</span>
+  </div>
+
+  <!-- ── CE CARD ───────────────────────────────── -->
+  <div class="sec-label" style="margin-top:22px;">Scenario A — CE (Buy Call) · In Profit</div>
+
+  <div class="trade-card">
+    <div class="trade-header">
+      <div class="title-row">
+        <div class="type-pill ce">CE</div>
+        <div>
+          <div class="trade-name">NIFTY <span style="color:#aaa;font-size:0.88em;">24000</span></div>
+          <div class="trade-sub">30 Jun 2026 · Weekly</div>
+        </div>
+      </div>
+      <span class="badge" id="ce-badge">ACTIVE</span>
+    </div>
+
+    <!-- RR BAR -->
+    <div class="rr-wrap">
+      <div class="rr-title">
+        <span>Risk / Reward · Option Price</span>
+        <span class="rr-rr-text" id="ce-rr-ratio" style="color:var(--primary);">—</span>
+      </div>
+
+      <div class="rr-bar-outer">
+        <div class="rr-track" id="ce-track">
+          <div class="rr-zone-loss"  id="ce-zone-loss"></div>
+          <div class="rr-zone-profit" id="ce-zone-profit"></div>
+          <div class="rr-active-fill" id="ce-active-fill"></div>
+          <div class="rr-sl-dot"></div>
+          <div class="rr-tgt-dot"></div>
+          <div class="rr-entry-tick" id="ce-entry-tick"></div>
+          <div class="rr-cmp-dot"   id="ce-cmp-dot"></div>
+        </div>
+      </div>
+
+      <div class="rr-labels" id="ce-labels">
+        <span class="rr-lbl sl">SL ₹80</span>
+        <span class="rr-lbl entry" id="ce-entry-lbl">Entry ₹128</span>
+        <span class="rr-lbl cmp"   id="ce-cmp-lbl">▲ ₹140</span>
+        <span class="rr-lbl tgt">Tgt ₹220</span>
+      </div>
+
+      <div class="rr-delta" id="ce-delta">—</div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="metrics-strip">
+      <div class="m-col">
+        <span class="m-lbl">Entry</span>
+        <span class="m-val">₹128.00</span>
+      </div>
+      <div class="m-col">
+        <span class="m-lbl">CMP</span>
+        <span class="m-val" id="ce-cmp-metric">₹140.00</span>
+      </div>
+      <div class="m-col">
+        <span class="m-lbl">P&L / Lot</span>
+        <span class="m-val" id="ce-pnl-metric">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PE CARD ───────────────────────────────── -->
+  <div class="sec-label" style="margin-top:8px;">Scenario B — PE (Buy Put) · In Loss</div>
+
+  <div class="trade-card">
+    <div class="trade-header">
+      <div class="title-row">
+        <div class="type-pill pe">PE</div>
+        <div>
+          <div class="trade-name">NIFTY <span style="color:#aaa;font-size:0.88em;">23500</span></div>
+          <div class="trade-sub">30 Jun 2026 · Weekly</div>
+        </div>
+      </div>
+      <span class="badge" id="pe-badge">ACTIVE</span>
+    </div>
+
+    <div class="rr-wrap">
+      <div class="rr-title">
+        <span>Risk / Reward · Option Price</span>
+        <span class="rr-rr-text" id="pe-rr-ratio" style="color:var(--primary);">—</span>
+      </div>
+
+      <div class="rr-bar-outer">
+        <div class="rr-track" id="pe-track">
+          <div class="rr-zone-loss"   id="pe-zone-loss"></div>
+          <div class="rr-zone-profit" id="pe-zone-profit"></div>
+          <div class="rr-active-fill" id="pe-active-fill"></div>
+          <div class="rr-sl-dot"></div>
+          <div class="rr-tgt-dot"></div>
+          <div class="rr-entry-tick" id="pe-entry-tick"></div>
+          <div class="rr-cmp-dot"    id="pe-cmp-dot"></div>
+        </div>
+      </div>
+
+      <div class="rr-labels" id="pe-labels">
+        <span class="rr-lbl sl">SL ₹62</span>
+        <span class="rr-lbl entry" id="pe-entry-lbl">Entry ₹95</span>
+        <span class="rr-lbl cmp"   id="pe-cmp-lbl">▲ ₹82</span>
+        <span class="rr-lbl tgt">Tgt ₹180</span>
+      </div>
+
+      <div class="rr-delta" id="pe-delta">—</div>
+    </div>
+
+    <div class="metrics-strip">
+      <div class="m-col">
+        <span class="m-lbl">Entry</span>
+        <span class="m-val">₹95.00</span>
+      </div>
+      <div class="m-col">
+        <span class="m-lbl">CMP</span>
+        <span class="m-val" id="pe-cmp-metric">₹82.00</span>
+      </div>
+      <div class="m-col">
+        <span class="m-lbl">P&L / Lot</span>
+        <span class="m-val" id="pe-pnl-metric">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── COMPLIANCE NOTE ── -->
+  <div class="note">
+    <strong>⚠️ SEBI Note:</strong> In the live PWA, SL and Target prices are <strong>never shown</strong> to members per policy — shared via Telegram only. This UAT uses mock data. Before going live, decide: show visual zones without price labels, or admin-view only.
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+// ── TRADE CONFIG ─────────────────────────────────────────
+const TRADES = {
+  ce: { sl: 80,  entry: 128, target: 220, lotSize: 65 },
+  pe: { sl: 62,  entry: 95,  target: 180, lotSize: 65 }
+};
+
+// ── CORE RENDER FUNCTION ─────────────────────────────────
+function renderBar(id, cmp) {
+  const t  = TRADES[id];
+  const sl = t.sl, entry = t.entry, tgt = t.target;
+  const range = tgt - sl;
+
+  // Clamp CMP to bar range
+  const cmpClamped = Math.max(sl, Math.min(tgt, cmp));
+
+  // Percentage positions (0–100%) within the track's inner area
+  const entryPct = ((entry - sl) / range) * 100;
+  const cmpPct   = ((cmpClamped - sl) / range) * 100;
+
+  const inProfit = cmp >= entry;
+  const aboveSL  = cmp > sl;
+
+  // ── ZONE FILLS (always visible, static width) ──────────
+  const zoneLoss   = document.getElementById(id + '-zone-loss');
+  const zoneProfit = document.getElementById(id + '-zone-profit');
+  zoneLoss.style.width  = entryPct + '%';
+  zoneProfit.style.width = (100 - entryPct) + '%';
+
+  // ── ACTIVE FILL (highlights the CMP progress) ──────────
+  const activeFill = document.getElementById(id + '-active-fill');
+  if (inProfit) {
+    // Green fill from entry → CMP
+    activeFill.style.left       = entryPct + '%';
+    activeFill.style.width      = (cmpPct - entryPct) + '%';
+    activeFill.style.background = '#16a34a';
+    activeFill.style.opacity    = '0.9';
+    activeFill.style.borderRadius = '0 3px 3px 0';
+  } else {
+    // Darker red fill from CMP → entry (showing the "used-up" loss zone)
+    activeFill.style.left       = cmpPct + '%';
+    activeFill.style.width      = (entryPct - cmpPct) + '%';
+    activeFill.style.background = '#dc2626';
+    activeFill.style.opacity    = '0.85';
+    activeFill.style.borderRadius = '0';
+  }
+
+  // ── ENTRY TICK ─────────────────────────────────────────
+  document.getElementById(id + '-entry-tick').style.left = entryPct + '%';
+
+  // ── CMP DOT ────────────────────────────────────────────
+  const dot = document.getElementById(id + '-cmp-dot');
+  dot.style.left       = cmpPct + '%';
+  dot.style.background = inProfit ? '#16a34a' : '#dc2626';
+
+  // ── CMP LABEL ──────────────────────────────────────────
+  const cmpLbl = document.getElementById(id + '-cmp-lbl');
+  cmpLbl.style.left  = 'calc(' + cmpPct + '% - 0px)';
+  cmpLbl.style.color = inProfit ? '#15803d' : '#b91c1c';
+  cmpLbl.textContent = (inProfit ? '▲' : '▼') + ' ₹' + cmp.toFixed(0);
+
+  // Entry label — nudge away from SL/Target if too close
+  const entryLbl = document.getElementById(id + '-entry-lbl');
+  entryLbl.style.left = entryPct + '%';
+
+  // ── BADGE ──────────────────────────────────────────────
+  const badge = document.getElementById(id + '-badge');
+  if (!aboveSL) {
+    badge.className = 'badge loss'; badge.textContent = 'SL HIT';
+  } else if (inProfit) {
+    badge.className = 'badge profit'; badge.textContent = 'IN PROFIT';
+  } else {
+    badge.className = 'badge watching'; badge.textContent = 'IN LOSS';
+  }
+
+  // ── P&L ────────────────────────────────────────────────
+  const pnl    = (cmp - entry) * t.lotSize;
+  const pnlPct = ((cmp - entry) / entry * 100);
+  const pnlEl  = document.getElementById(id + '-pnl-metric');
+  pnlEl.className = 'm-val ' + (pnl >= 0 ? 'up' : 'dn');
+  pnlEl.innerHTML = (pnl >= 0 ? '+' : '') +
+    '₹' + Math.abs(pnl).toLocaleString('en-IN', {maximumFractionDigits:0}) +
+    ' <span style="font-size:0.65rem;opacity:0.85;">(' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(1) + '%)</span>';
+
+  document.getElementById(id + '-cmp-metric').textContent = '₹' + cmp.toFixed(2);
+
+  // ── DELTA LINE ─────────────────────────────────────────
+  const deltaEl = document.getElementById(id + '-delta');
+  const diff    = cmp - entry;
+  const riskPts = entry - sl;
+  const rRatio  = diff > 0 ? (diff / riskPts).toFixed(1) + 'R' : '—';
+  deltaEl.style.color = inProfit ? '#15803d' : '#b91c1c';
+  deltaEl.textContent = inProfit
+    ? `▲ ₹${diff.toFixed(0)} above entry · R:R achieved ${rRatio}`
+    : `▼ ₹${Math.abs(diff).toFixed(0)} below entry · ${(Math.abs(diff)/riskPts*100).toFixed(0)}% of SL distance used`;
+
+  // ── RR RATIO LABEL ─────────────────────────────────────
+  const riskRange   = entry - sl;
+  const rewardRange = tgt   - entry;
+  const rrEl = document.getElementById(id + '-rr-ratio');
+  rrEl.textContent = '1 : ' + (rewardRange / riskRange).toFixed(1) + ' R:R';
+}
+
+// ── SLIDER WIRING ────────────────────────────────────────
+function wireSlider(id) {
+  const slider = document.getElementById('sl-' + id);
+  const valEl  = document.getElementById('sv-' + id);
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value);
+    valEl.textContent = '₹' + v;
+    renderBar(id, v);
+  });
+}
+wireSlider('ce');
+wireSlider('pe');
+
+// ── PLAY / ANIMATE ───────────────────────────────────────
+const animState = { ce: null, pe: null, dir: { ce: 1, pe: 1 } };
+
+function toggleAnim(id) {
+  const btn = document.querySelector('#sim-' + id + '-card .sim-btn');
+  if (animState[id]) {
+    clearInterval(animState[id]);
+    animState[id] = null;
+    btn.textContent = '▶ Play';
+    return;
+  }
+  btn.textContent = '⏸ Pause';
+  const slider = document.getElementById('sl-' + id);
+  const valEl  = document.getElementById('sv-' + id);
+  animState[id] = setInterval(() => {
+    let v = parseFloat(slider.value) + animState.dir[id] * 1.5;
+    if (v >= parseFloat(slider.max)) { v = parseFloat(slider.max); animState.dir[id] = -1; }
+    if (v <= parseFloat(slider.min)) { v = parseFloat(slider.min); animState.dir[id] =  1; }
+    slider.value = v;
+    valEl.textContent = '₹' + Math.round(v);
+    renderBar(id, v);
+  }, 60);
+}
+
+// ── INITIAL RENDER ───────────────────────────────────────
+renderBar('ce', parseFloat(document.getElementById('sl-ce').value));
+renderBar('pe', parseFloat(document.getElementById('sl-pe').value));
+</script>
+</body>
+</html>
