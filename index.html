@@ -552,7 +552,7 @@
     }
     function slLabelFor(val) {
         const n = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
-        return n > 5000 ? 'SL (15 Min Candle)' : 'SL';
+        return n > 5000 ? '<span style="font-size:0.56rem;white-space:nowrap;letter-spacing:0;">SL (15 Min Candle)</span>' : 'SL';
     }
     const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', about:'About' };
     function setTabBadge(tabKey, count) {
