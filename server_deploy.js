@@ -429,7 +429,15 @@ async function loginKotak(totp) {
     session.rid        = d2.data.rid        || '';
     session.auth       = d2.data.auth       || '';
     session.hsServerId = d2.data.hsServerId || d2.data.serverId || d2.data.rid || '';
-    session.baseUrl    = d2.data.baseUrl    || 'https://gw-napi.kotaksecurities.com';
+    // Validate assigned baseUrl is reachable; fall back to known-good default if not
+    const assignedBase = d2.data.baseUrl || 'https://gw-napi.kotaksecurities.com';
+    try {
+      const probe = await fetch(`${assignedBase}/`, { signal: AbortSignal.timeout(3000) });
+      session.baseUrl = assignedBase;
+    } catch(e) {
+      console.log(`[login] baseUrl ${assignedBase} unreachable (${e.message}), using fallback`);
+      session.baseUrl = 'https://gw-napi.kotaksecurities.com';
+    }
     session.lastLogin  = Date.now();
     state.paperMode    = false;
 
