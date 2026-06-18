@@ -2018,6 +2018,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Debug — GET /debug
+  if (req.method === 'GET' && urlPath === '/debug') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({
+      hasToken: !!session.token,
+      sessionAgeMins: Math.round((Date.now() - (session.lastLogin||0)) / 60000),
+      activeContracts: _activeContracts.map(c => `${c.instrument}-${c.strike}-${c.type}-${c.expiry}`),
+      optionLTPsCount: Object.keys(_optionChain).length,
+      optionLTPsSample: Object.entries(_optionChain).slice(0,5),
+      activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
+      scripMasterSize: Object.keys(_scripMaster).length,
+      marketScraperRunning: !!marketScraperInterval,
+      kotakLtpRunning: !!_kotakLtpInterval
+    }));
+    return;
+  }
+
   // Health check — GET /
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
