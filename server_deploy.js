@@ -2046,6 +2046,8 @@ const server = http.createServer(async (req, res) => {
       }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
+    const smAnySample = Object.keys(_scripMaster).slice(0, 6);
+    const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length };
     res.end(JSON.stringify({
       hasToken: !!session.token,
       sessionAgeMins: Math.round((Date.now() - (session.lastLogin||0)) / 60000),
@@ -2055,6 +2057,8 @@ const server = http.createServer(async (req, res) => {
       activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
       scripMasterSize: Object.keys(_scripMaster).length,
       scripMasterNiftySample: smNiftySample,
+      scripMasterAnySample: smAnySample,
+      debugVars,
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest
