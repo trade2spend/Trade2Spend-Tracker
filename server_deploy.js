@@ -286,8 +286,16 @@ function resolveExpiry(expiryStr, instrument) {
   const s = (expiryStr || '').toLowerCase().trim();
   const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   if (MONTHS.some(m => s.includes(m.toLowerCase()))) return expiryStr.toUpperCase();
-  const now   = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const instr = (instrument || '').toUpperCase();
+  // Use actual expiry dates from Kotak scrip master when available
+  const ed = _expiryDates && _expiryDates[instr];
+  if (ed) {
+    if (s === 'weekly' || s === 'current weekly') return ed.currentRaw;
+    if (s === 'next weekly') return ed.nextRaw || ed.currentRaw;
+    if (s === 'monthly') return ed.monthlyRaw || ed.currentRaw;
+  }
+  // Fallback: compute from day-of-week when scrip master not yet loaded
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   // NSE NIFTY weekly expiry: Tuesday (2). SENSEX: Thursday (4). BANKNIFTY: monthly only.
   const targetDay = instr.includes('SENSEX') ? 4 : 2;
   function fmt(d) { return String(d.getDate()).padStart(2,'0') + MONTHS[d.getMonth()] + d.getFullYear(); }
@@ -301,7 +309,6 @@ function resolveExpiry(expiryStr, instrument) {
   if (s === 'weekly' || s === 'current weekly') return fmt(nextExp(now, false));
   if (s === 'next weekly') { const c = nextExp(now, false); c.setDate(c.getDate() + 7); return fmt(c); }
   if (s === 'monthly') {
-    // Monthly expiry: last Thursday of the month for all instruments
     const d = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     while (d.getDay() !== 4) d.setDate(d.getDate() - 1);
     return fmt(d);
@@ -806,7 +813,7 @@ function buildExpiryDates() {
     const thisMonExps = sorted.filter(x => { const d=new Date(x.ts); return d.getUTCMonth()===curMon&&d.getUTCFullYear()===curYr; });
     const nextMonExps = sorted.filter(x => { const d=new Date(x.ts); return d.getUTCMonth()===(curMon+1)%12; });
     const monthly = (thisMonExps.length ? thisMonExps[thisMonExps.length-1] : nextMonExps.length ? nextMonExps[nextMonExps.length-1] : null);
-    result[instr] = { current: fmt(sorted[0].str), next: sorted[1]?fmt(sorted[1].str):null, monthly: monthly?fmt(monthly.str):null };
+    result[instr] = { current: fmt(sorted[0].str), next: sorted[1]?fmt(sorted[1].str):null, monthly: monthly?fmt(monthly.str):null, currentRaw: sorted[0].str, nextRaw: sorted[1]?sorted[1].str:null, monthlyRaw: monthly?monthly.str:null };
   }
   _expiryDates = result;
   if (_latestMarketData) _latestMarketData.expiry = _expiryDates;
