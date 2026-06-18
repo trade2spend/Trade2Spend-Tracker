@@ -2046,8 +2046,15 @@ const server = http.createServer(async (req, res) => {
       }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
-    const smAnySample = Object.keys(_scripMaster).slice(0, 6);
-    const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length };
+    const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
+    // Quick NSE option chain test
+    let nseTest = null;
+    try {
+      if (!_nseCookies) await refreshNSECookies();
+      const nr = await ft('https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY', { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 6000);
+      const ntxt = await nr.text();
+      nseTest = { status: nr.status, bodyLen: ntxt.length, sample: ntxt.slice(0, 150) };
+    } catch(e) { nseTest = { error: e.message }; }
     res.end(JSON.stringify({
       hasToken: !!session.token,
       sessionAgeMins: Math.round((Date.now() - (session.lastLogin||0)) / 60000),
@@ -2057,8 +2064,8 @@ const server = http.createServer(async (req, res) => {
       activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
       scripMasterSize: Object.keys(_scripMaster).length,
       scripMasterNiftySample: smNiftySample,
-      scripMasterAnySample: smAnySample,
       debugVars,
+      nseTest,
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest
