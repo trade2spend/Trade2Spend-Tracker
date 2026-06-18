@@ -388,7 +388,7 @@ async function findScripToken(trade) {
 
 async function loginKotak(totp) {
   try {
-    await tgSend('🔐 Step 1/2: Validating TOTP...');
+    tgSend('🔐 Step 1/2: Validating TOTP...').catch(()=>{});
     let r1;
     try {
       r1 = await ftKotak('https://mis.kotaksecurities.com/login/1.0/tradeApiLogin', {
@@ -396,17 +396,17 @@ async function loginKotak(totp) {
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': CONSUMER_KEY, 'neo-fin-key': 'neotradeapi' },
         body: JSON.stringify({ mobileNumber: MOBILE, ucc: UCC, totp })
       });
-    } catch (e) { await tgSend(`❌ TOTP network error: ${e.message}`); return false; }
+    } catch (e) { tgSend(`❌ TOTP network error: ${e.message}`).catch(()=>{}); return false; }
 
     const text1 = await r1.text();
     console.log('TOTP status:', r1.status);
-    if (!r1.ok) { await tgSend(`❌ TOTP HTTP ${r1.status}\n<code>${text1.slice(0,200)}</code>`); return false; }
+    if (!r1.ok) { tgSend(`❌ TOTP HTTP ${r1.status}\n<code>${text1.slice(0,200)}</code>`).catch(()=>{}); return false; }
 
     let d1;
-    try { d1 = JSON.parse(text1); } catch { await tgSend(`❌ TOTP non-JSON response`); return false; }
-    if (!d1.data?.token) { await tgSend(`❌ TOTP failed: ${d1.message || d1.error || 'Unknown'}`); return false; }
+    try { d1 = JSON.parse(text1); } catch { tgSend(`❌ TOTP non-JSON response`).catch(()=>{}); return false; }
+    if (!d1.data?.token) { tgSend(`❌ TOTP failed: ${d1.message || d1.error || 'Unknown'}`).catch(()=>{}); return false; }
 
-    await tgSend('🔐 Step 2/2: Validating MPIN...');
+    tgSend('🔐 Step 2/2: Validating MPIN...').catch(()=>{});
     let r2;
     try {
       r2 = await ftKotak('https://mis.kotaksecurities.com/login/1.0/tradeApiValidate', {
@@ -414,15 +414,15 @@ async function loginKotak(totp) {
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': CONSUMER_KEY, 'neo-fin-key': 'neotradeapi', 'sid': d1.data.sid, 'Auth': d1.data.token },
         body: JSON.stringify({ mpin: MPIN })
       });
-    } catch (e) { await tgSend(`❌ MPIN network error: ${e.message}`); return false; }
+    } catch (e) { tgSend(`❌ MPIN network error: ${e.message}`).catch(()=>{}); return false; }
 
     const text2 = await r2.text();
     console.log('MPIN status:', r2.status);
-    if (!r2.ok) { await tgSend(`❌ MPIN HTTP ${r2.status}\n<code>${text2.slice(0,200)}</code>`); return false; }
+    if (!r2.ok) { tgSend(`❌ MPIN HTTP ${r2.status}\n<code>${text2.slice(0,200)}</code>`).catch(()=>{}); return false; }
 
     let d2;
-    try { d2 = JSON.parse(text2); } catch { await tgSend(`❌ MPIN non-JSON response`); return false; }
-    if (!d2.data?.token) { await tgSend(`❌ MPIN failed: ${d2.message || d2.error || 'Unknown'}`); return false; }
+    try { d2 = JSON.parse(text2); } catch { tgSend(`❌ MPIN non-JSON response`).catch(()=>{}); return false; }
+    if (!d2.data?.token) { tgSend(`❌ MPIN failed: ${d2.message || d2.error || 'Unknown'}`).catch(()=>{}); return false; }
 
     session.token      = d2.data.token;
     session.sid        = d2.data.sid;
@@ -433,19 +433,19 @@ async function loginKotak(totp) {
     session.lastLogin  = Date.now();
     state.paperMode    = false;
 
-    await tgSend(
+    tgSend(
       `✅ <b>Logged into Kotak Neo!</b>\n` +
       `Mode: 🔴 Live (auto-switched)\n` +
       `Base URL: <code>${session.baseUrl}</code>\n\n` +
       `Ready. Send trades from PWA or use /status.\n` +
       `<i>Market scraper runs automatically 9:15–3:35 IST (no TOTP needed)</i>`
-    );
+    ).catch(()=>{});
     await saveState();
     // Download scrip master in background after login so option tokens are ready
     downloadScripMaster().catch(e => console.error('[scrip] post-login download error:', e.message));
     return true;
   } catch (e) {
-    await tgSend(`❌ Login error: ${e.message}`);
+    tgSend(`❌ Login error: ${e.message}`).catch(()=>{});
     return false;
   }
 }
