@@ -755,7 +755,10 @@
             const raw = localStorage.getItem('t2s_market_cache');
             if (raw) {
                 const { data, ts } = JSON.parse(raw);
-                const maxAge = isMarketClosedNow() ? Infinity : 24 * 60 * 60 * 1000;
+                const istNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                const istMidnight = new Date(istNow); istMidnight.setHours(0, 0, 0, 0);
+                const cacheFromToday = ts >= istMidnight.getTime();
+                const maxAge = isMarketClosedNow() && cacheFromToday ? Infinity : 24 * 60 * 60 * 1000;
                 if (Date.now() - ts < maxAge) { cachedData = data; renderMarketUI(data); }
             }
         } catch {}
