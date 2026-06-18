@@ -288,8 +288,8 @@ function resolveExpiry(expiryStr, instrument) {
   if (MONTHS.some(m => s.includes(m.toLowerCase()))) return expiryStr.toUpperCase();
   const now   = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const instr = (instrument || '').toUpperCase();
-  // NSE NIFTY weekly expiry: Thursday (4). BANKNIFTY: Wednesday (3). SENSEX/BSE: Friday (5).
-  const targetDay = instr.includes('SENSEX') ? 5 : instr.includes('BANKNIFTY') ? 3 : 4;
+  // NSE NIFTY weekly expiry: Tuesday (2). SENSEX: Thursday (4). BANKNIFTY: monthly only.
+  const targetDay = instr.includes('SENSEX') ? 4 : 2;
   function fmt(d) { return String(d.getDate()).padStart(2,'0') + MONTHS[d.getMonth()] + d.getFullYear(); }
   function nextExp(from, mustBeAfter) {
     const d = new Date(from);
@@ -301,8 +301,9 @@ function resolveExpiry(expiryStr, instrument) {
   if (s === 'weekly' || s === 'current weekly') return fmt(nextExp(now, false));
   if (s === 'next weekly') { const c = nextExp(now, false); c.setDate(c.getDate() + 7); return fmt(c); }
   if (s === 'monthly') {
+    // Monthly expiry: last Thursday of the month for all instruments
     const d = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    while (d.getDay() !== targetDay) d.setDate(d.getDate() - 1);
+    while (d.getDay() !== 4) d.setDate(d.getDate() - 1);
     return fmt(d);
   }
   return expiryStr;
