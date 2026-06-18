@@ -321,6 +321,7 @@
                         <span class="status-indicator closed" id="global-market-dot"></span>
                         <span id="global-market-text">Closed</span>
                     </div>
+                    <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -786,6 +787,8 @@
                 composeDiv.dataset.isAdmin = isAdmin ? 'true' : 'false';
                 composeDiv.style.display = isAdmin ? 'block' : 'none';
             }
+            const reauthBtn2 = document.getElementById('admin-reauth-btn');
+            if (reauthBtn2) reauthBtn2.style.display = isAdmin ? 'inline-block' : 'none';
 
             const allTrades = (data.trades || []).filter(t => !t.isDeleted);
             const activeTrades = allTrades.filter(t => t.status === 'ACTIVE');
@@ -1575,6 +1578,8 @@
             composeDiv.dataset.isAdmin = isAdmin ? 'true' : 'false';
             composeDiv.style.display = isAdmin ? 'block' : 'none';
         }
+        const reauthBtn = document.getElementById('admin-reauth-btn');
+        if (reauthBtn) reauthBtn.style.display = isAdmin ? 'inline-block' : 'none';
 
         try {
             const [tradeParents, allFollowUps] = await Promise.all([
