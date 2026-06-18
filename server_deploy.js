@@ -853,13 +853,14 @@ async function refreshActiveContracts() {
   } catch(e) { console.error('[contracts] refresh error:', e.message); }
 }
 
-// Build Kotak trading symbol (no-year format: NIFTY19JUN24000CE) from contract fields
-// Kotak pTrdSymbol in their CSV uses DDMMMSTRIKECETYPE without year — same format accepted by LTP API
+// Build Kotak trading symbol from contract fields
+// Format: NIFTY25JUN2623850CE (DDMMMYY + STRIKE + TYPE — 2-digit year, no-year rejected by API)
 function buildTradingSymbol(instrument, strike, type, expiry) {
-  // expiry is DDMMMYYYY e.g. "19JUN2026" — strip year to get "19JUN"
-  const m = (expiry||'').match(/^(\d{2})([A-Z]{3})\d{4}$/);
+  // expiry is DDMMMYYYY e.g. "25JUN2026" → NIFTY25JUN2623850CE
+  const m = (expiry||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/);
   if (!m) return null;
-  return `${instrument.toUpperCase()}${m[1]}${m[2]}${strike}${type.toUpperCase()}`;
+  const yy = m[3].slice(2); // "2026" → "26"
+  return `${instrument.toUpperCase()}${m[1]}${m[2]}${yy}${strike}${type.toUpperCase()}`;
 }
 
 // Fetch option LTPs from Kotak Neo for all active contracts (runs every 5s)
@@ -1997,6 +1998,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Force scrip master re-download — GET /reload-scrip?key=T2SMonitor2026
+  if (req.method === 'GET' && urlPath === '/reload-scrip') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    _scripMasterTs = 0; _scripMasterAttemptTs = 0;
+    await downloadScripMaster();
+    const count = Object.keys(_scripMaster).length;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ ok: true, scripMasterSize: count, sample: Object.keys(_scripMaster).filter(k=>k.startsWith('NIFTY-')).slice(0,5) }));
+    return;
+  }
+
   // HTTP update trigger — GET /http-update?key=T2SMonitor2026
   // Deploys latest server_deploy.js from GitHub without needing Telegram webhook
   if (req.method === 'GET' && urlPath === '/http-update') {
@@ -2039,7 +2052,20 @@ const server = http.createServer(async (req, res) => {
           const txt = await r.text();
           ltpTest = { url, status: r.status, body: txt.slice(0, 400), key: testKey, token: testToken };
         } catch(e) { ltpTest = { error: e.message, key: testKey, token: testToken }; }
-      } else { ltpTest = { note: 'no scrip master token available yet' }; }
+      } else if (_activeContracts.length > 0) {
+        // No scrip master — test LTP using trading symbol on a non-expired contract
+        const c = _activeContracts.find(x => x.expiry !== '18JUN2026') || _activeContracts[0];
+        const tradeSym = buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
+        ltpTest = { note: 'no scrip master — testing trading symbol', sym: tradeSym };
+        if (tradeSym) {
+          try {
+            const url = `${gwBase}/script-details/1.0/quotes/neosymbol/nse_fo|${tradeSym}/ltp`;
+            const r = await fetch(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token }, signal: AbortSignal.timeout(4000) });
+            const txt = await r.text();
+            ltpTest.status = r.status; ltpTest.body = txt.slice(0, 400);
+          } catch(e) { ltpTest.error = e.message; }
+        }
+      } else { ltpTest = { note: 'no scrip master, no active contracts' }; }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
