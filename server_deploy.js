@@ -2045,6 +2045,7 @@ const server = http.createServer(async (req, res) => {
         } catch(e) { ltpTest = { error: e.message }; }
       }
     }
+    const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     res.end(JSON.stringify({
       hasToken: !!session.token,
       sessionAgeMins: Math.round((Date.now() - (session.lastLogin||0)) / 60000),
@@ -2053,6 +2054,7 @@ const server = http.createServer(async (req, res) => {
       optionLTPsSample: Object.entries(_optionChain).slice(0,5),
       activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
       scripMasterSize: Object.keys(_scripMaster).length,
+      scripMasterNiftySample: smNiftySample,
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest
