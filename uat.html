@@ -240,8 +240,11 @@ html,body { height:100%; background:var(--bg); color:var(--text); }
 }
 .sp-zone-profit {
   position:absolute; top:0; right:0; height:100%;
-  width:50%; background:#86efac; border-radius:0 3px 3px 0;
-  opacity:0.6;
+  width:50%;
+  /* Fade to transparent on the right — no target, open-ended */
+  background:linear-gradient(to right, #86efac 30%, rgba(134,239,172,0) 100%);
+  border-radius:0 3px 3px 0;
+  opacity:0.7;
 }
 /* Active fill — highlights CMP progress from entry */
 .sp-fill {
@@ -468,7 +471,7 @@ html,body { height:100%; background:var(--bg); color:var(--text); }
           <div class="sp-labels">
             <span class="sp-lbl-l">◀ Less Favorable</span>
             <span class="sp-lbl-center">Entry</span>
-            <span class="sp-lbl-r">More Favorable ▶</span>
+            <span class="sp-lbl-r" style="opacity:0.55;">More Favorable →</span>
           </div>
         </div>
 
@@ -772,7 +775,7 @@ function updateSP(cmp) {
     fill.style.left       = entryPct + '%';
     fill.style.width      = (pct - entryPct) + '%';
     fill.style.background = '#16a34a';
-    fill.style.borderRadius = '0 3px 3px 0';
+    fill.style.borderRadius = '0';
     fill.style.opacity = '1';
   } else {
     fill.style.left       = pct + '%';
