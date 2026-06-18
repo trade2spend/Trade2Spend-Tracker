@@ -1307,6 +1307,8 @@ window.onload=()=>{
   memRenderWelcome();
   // Auto-load follow-up post list since Trade tab is the default
   loadFollowUpData();
+  // Check Kotak status on load so header shows correct state immediately
+  checkKotakStatus();
 };
 
 // ── TABS ──
@@ -2599,7 +2601,7 @@ async function checkKotakStatus() {
   const sec = document.getElementById('kotak-login-section');
   if (!dot) return;
   try {
-    const r = await fetch('https://api.trade2spend.com/', { signal: AbortSignal.timeout(5000) });
+    const r = await fetch('https://api.trade2spend.com/?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
     _kotakConnected = !!d.loggedIn;
   } catch { _kotakConnected = false; }
