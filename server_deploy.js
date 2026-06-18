@@ -429,15 +429,8 @@ async function loginKotak(totp) {
     session.rid        = d2.data.rid        || '';
     session.auth       = d2.data.auth       || '';
     session.hsServerId = d2.data.hsServerId || d2.data.serverId || d2.data.rid || '';
-    // Validate assigned baseUrl is reachable; fall back to known-good default if not
-    const assignedBase = d2.data.baseUrl || 'https://gw-napi.kotaksecurities.com';
-    try {
-      const probe = await fetch(`${assignedBase}/`, { signal: AbortSignal.timeout(3000) });
-      session.baseUrl = assignedBase;
-    } catch(e) {
-      console.log(`[login] baseUrl ${assignedBase} unreachable (${e.message}), using fallback`);
-      session.baseUrl = 'https://gw-napi.kotaksecurities.com';
-    }
+    // Always use gw-napi — Kotak-assigned URLs (e.g. e21.*) may be unreachable from this VM
+    session.baseUrl    = 'https://gw-napi.kotaksecurities.com';
     session.lastLogin  = Date.now();
     state.paperMode    = false;
 
@@ -2031,19 +2024,20 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     // Try one live LTP fetch to expose the actual Kotak API response
     let ltpTest = null;
-    if (session.token && session.baseUrl && _activeContracts.length) {
-      const c = _activeContracts[0];
-      const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
-      const tradeSym = numToken ? null : buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
-      const identifier = numToken || tradeSym;
-      if (identifier) {
+    if (session.token) {
+      // Try gw-napi with first available scrip master token
+      const firstToken = Object.entries(_scripMaster).find(([k,v]) => k.startsWith('NIFTY-'));
+      const testKey = firstToken ? firstToken[0] : null;
+      const testToken = firstToken ? firstToken[1] : null;
+      const gwBase = 'https://gw-napi.kotaksecurities.com';
+      if (testToken) {
         try {
-          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${identifier}/ltp`;
+          const url = `${gwBase}/script-details/1.0/quotes/neosymbol/nse_fo|${testToken}/ltp`;
           const r = await fetch(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token }, signal: AbortSignal.timeout(4000) });
           const txt = await r.text();
-          ltpTest = { url, status: r.status, body: txt.slice(0, 400), identifier };
-        } catch(e) { ltpTest = { error: e.message }; }
-      }
+          ltpTest = { url, status: r.status, body: txt.slice(0, 400), key: testKey, token: testToken };
+        } catch(e) { ltpTest = { error: e.message, key: testKey, token: testToken }; }
+      } else { ltpTest = { note: 'no scrip master token available yet' }; }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
