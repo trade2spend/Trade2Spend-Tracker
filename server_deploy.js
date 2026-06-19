@@ -932,15 +932,22 @@ async function fetchNSEOptionChainFallback(symbol) {
   } catch(e) { console.error(`[options-nse] ${symbol}:`, e.message); }
 }
 
+let _kotakEquityInterval = null;
 function startKotakLtpInterval() {
   if (_kotakLtpInterval) return;
   _kotakLtpInterval = setInterval(fetchKotakOptionLTPs, 5000);
   fetchKotakOptionLTPs(); // immediate first run
-  console.log('[ltp] Kotak option LTP interval started (5s)');
+  // Equity LTP for Nifty50 gainers/losers — every 2 minutes
+  if (!_kotakEquityInterval) {
+    _kotakEquityInterval = setInterval(() => fetchKotakNifty50LTPs().catch(() => {}), 2 * 60 * 1000);
+    fetchKotakNifty50LTPs().catch(() => {}); // immediate first run
+  }
+  console.log('[ltp] Kotak option LTP interval started (5s), equity movers (2min)');
 }
 
 function stopKotakLtpInterval() {
   if (_kotakLtpInterval) { clearInterval(_kotakLtpInterval); _kotakLtpInterval = null; }
+  if (_kotakEquityInterval) { clearInterval(_kotakEquityInterval); _kotakEquityInterval = null; }
 }
 
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
@@ -1050,6 +1057,58 @@ async function fetchYahooNifty50Movers() {
   return result;
 }
 
+// Kotak Nifty50 equity LTPs — used during market hours when NSE movers are blocked
+// Uses nse_cm exchange with trading symbol (same pattern as nse_fo option LTPs)
+const NIFTY50_NSE_SYMBOLS = [
+  'ADANIENT','ADANIPORTS','APOLLOHOSP','ASIANPAINT','AXISBANK',
+  'BAJAJ-AUTO','BAJFINANCE','BAJAJFINSV','BEL','BHARTIARTL',
+  'BPCL','BRITANNIA','CIPLA','COALINDIA','DRREDDY',
+  'EICHERMOT','ETERNAL','GRASIM','HCLTECH','HDFCBANK',
+  'HDFCLIFE','HEROMOTOCO','HINDALCO','HINDUNILVR','ICICIBANK',
+  'INDUSINDBK','INFY','ITC','JSWSTEEL','KOTAKBANK',
+  'LT','M&M','MARUTI','NESTLEIND','NTPC',
+  'ONGC','POWERGRID','RELIANCE','SBIN','SHRIRAMFIN',
+  'SUNPHARMA','TATAMOTORS','TATASTEEL','TATACONSUM','TCS',
+  'TECHM','TITAN','ULTRACEMCO','WIPRO'
+];
+let _kotakMoversCache = null, _kotakMoversCacheTs = 0;
+async function fetchKotakNifty50LTPs() {
+  if (!session.token) return null;
+  if (_kotakMoversCache && Date.now() - _kotakMoversCacheTs < 2 * 60 * 1000) return _kotakMoversCache;
+  const results = await Promise.all(
+    NIFTY50_NSE_SYMBOLS.map(sym => {
+      const symUrl = sym.replace('&', '%26'); // M&M → M%26M in URL
+      const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${symUrl}/ltp`;
+      return ftKotak(url, {
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+      }, 4000)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d?.data || d);
+          const price = parseFloat(item?.ltp || 0);
+          if (!price) return null;
+          const prev = parseFloat(item?.close || item?.prevClose || item?.prev_close || 0);
+          if (!prev) return null;
+          const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
+          return { symbol: sym, price, change };
+        })
+        .catch(() => null);
+    })
+  );
+  const stocks = results.filter(Boolean);
+  if (stocks.length < 5) {
+    console.log(`[kotak50] only ${stocks.length} stocks returned — symbol-based nse_cm lookup may not work`);
+    return null;
+  }
+  _kotakMoversCache = {
+    gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
+    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
+  };
+  _kotakMoversCacheTs = Date.now();
+  console.log(`[kotak50] ${stocks.length} stocks — top gainer: ${_kotakMoversCache.gainers[0]?.symbol} ${_kotakMoversCache.gainers[0]?.change}%`);
+  return _kotakMoversCache;
+}
+
 // Yahoo Finance fallback — used when NSE India API is blocked/down AND Kotak not logged in
 const YAHOO_SYMBOLS = { NIFTY: '%5ENSEI', BANKNIFTY: '%5ENSEBANK', SENSEX: '%5EBSESN' };
 async function fetchYahooIndex(instrument) {
@@ -1153,8 +1212,9 @@ async function runMarketScraper(force = false) {
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      gainers: movers?.gainers || existing.gainers || [],
-      losers:  movers?.losers  || existing.losers  || []
+      // NSE primary → Kotak equity LTPs (populated by 2-min interval) → keep existing
+      gainers: movers?.gainers || _kotakMoversCache?.gainers || existing.gainers || [],
+      losers:  movers?.losers  || _kotakMoversCache?.losers  || existing.losers  || []
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, expiry: _expiryDates };
