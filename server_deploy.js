@@ -2510,8 +2510,21 @@ setTimeout(async () => {
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
   }
-  // Start scraper if within market hours (GH_TOKEN not required — pushMarketToGitHub handles missing token gracefully)
-  if (isMarketHours() && !marketScraperInterval) startMarketScraper();
+  if (isMarketHours() && !marketScraperInterval) {
+    startMarketScraper();
+  } else if (!isMarketHours()) {
+    // Market closed at startup — fetch Yahoo closing movers to update stale gainers/losers
+    fetchYahooNifty50Movers().then(movers => {
+      if (movers?.gainers?.length > 0 && _latestMarketData) {
+        _latestMarketData.gainers = movers.gainers;
+        _latestMarketData.losers  = movers.losers;
+        console.log('[startup] Yahoo closing movers applied:', movers.gainers.length, 'gainers');
+        const snapshot = { ..._latestMarketData };
+        delete snapshot.optionLTPs; delete snapshot.expiry;
+        pushMarketToGitHub(snapshot).catch(e => console.error('[startup] push movers failed:', e.message));
+      }
+    }).catch(() => {});
+  }
 }, 5000);
 
 // ── SUPABASE TRADE SL MONITOR ─────────────────────────────────────────────────
