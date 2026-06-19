@@ -1008,39 +1008,46 @@ const NIFTY50_YF_SYMBOLS = [
   'SUNPHARMA.NS','TATAMOTORS.NS','TATASTEEL.NS','TATACONSUM.NS','TCS.NS',
   'TECHM.NS','TITAN.NS','ULTRACEMCO.NS','WIPRO.NS','ZOMATO.NS'
 ];
-let _yahooMoversCache = null, _yahooMoversCacheTs = 0;
+let _yahooMoversCache = null, _yahooMoversCacheTs = 0, _yahooMoversStatus = 'never';
 async function fetchYahooNifty50Movers() {
   // 5-minute cache
   if (_yahooMoversCache && Date.now() - _yahooMoversCacheTs < 5 * 60 * 1000) return _yahooMoversCache;
-  // Use v8 chart API (same endpoint that works for indices) — parallel individual calls
-  const YF_HEADERS = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
-  try {
-    const results = await Promise.all(
-      NIFTY50_YF_SYMBOLS.map(sym =>
-        ft(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`, { headers: YF_HEADERS }, 8000)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => {
-            const meta = d?.chart?.result?.[0]?.meta;
-            if (!meta?.regularMarketPrice) return null;
-            const price = parseFloat(meta.regularMarketPrice);
-            const prev  = parseFloat(meta.chartPreviousClose || 0);
-            if (!price || !prev) return null;
-            const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
-            return { symbol: sym.replace('.NS','').replace('ZOMATO','ETERNAL'), price, change };
-          })
-          .catch(() => null)
-      )
-    );
-    const stocks = results.filter(Boolean);
-    if (stocks.length < 5) { console.log('[Yahoo50] too few results:', stocks.length); return null; }
-    const result = {
-      gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
-      losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
-    };
-    _yahooMoversCache = result; _yahooMoversCacheTs = Date.now();
-    console.log(`[Yahoo50] ${stocks.length} stocks — g:${result.gainers.length} l:${result.losers.length} top:${result.gainers[0]?.symbol}(${result.gainers[0]?.change}%)`);
-    return result;
-  } catch(e) { console.error('[Yahoo50] error:', e.message); return null; }
+  // Fetch in batches of 5 with 300ms gap — avoids rate-limiting 50 parallel calls
+  const YF_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' };
+  const stocks = [];
+  const BATCH = 5;
+  for (let i = 0; i < NIFTY50_YF_SYMBOLS.length; i += BATCH) {
+    const slice = NIFTY50_YF_SYMBOLS.slice(i, i + BATCH);
+    const batch = await Promise.all(slice.map(sym =>
+      ft(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`, { headers: YF_HEADERS }, 8000)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          const meta = d?.chart?.result?.[0]?.meta;
+          if (!meta?.regularMarketPrice) return null;
+          const price = parseFloat(meta.regularMarketPrice);
+          const prev  = parseFloat(meta.chartPreviousClose || 0);
+          if (!price || !prev) return null;
+          const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
+          return { symbol: sym.replace('.NS','').replace('ZOMATO','ETERNAL'), price, change };
+        })
+        .catch(() => null)
+    ));
+    stocks.push(...batch.filter(Boolean));
+    if (i + BATCH < NIFTY50_YF_SYMBOLS.length) await new Promise(r => setTimeout(r, 300));
+  }
+  if (stocks.length < 5) {
+    _yahooMoversStatus = `failed — only ${stocks.length} stocks returned`;
+    console.log('[Yahoo50]', _yahooMoversStatus);
+    return null;
+  }
+  const result = {
+    gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
+    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
+  };
+  _yahooMoversCache = result; _yahooMoversCacheTs = Date.now();
+  _yahooMoversStatus = `ok — ${stocks.length} stocks, top gainer: ${result.gainers[0]?.symbol} ${result.gainers[0]?.change}%`;
+  console.log('[Yahoo50]', _yahooMoversStatus);
+  return result;
 }
 
 // Yahoo Finance fallback — used when NSE India API is blocked/down AND Kotak not logged in
@@ -2211,7 +2218,8 @@ const server = http.createServer(async (req, res) => {
       nseTest,
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
-      ltpTest
+      ltpTest,
+      yahooMoversStatus: _yahooMoversStatus
     }));
     return;
   }
