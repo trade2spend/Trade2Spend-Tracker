@@ -1084,15 +1084,22 @@ async function runMarketScraper(force = false) {
   const mins = now.getHours() * 60 + now.getMinutes();
   if (!force && !isMarketHours()) {
     stopMarketScraper();
-    // push marketOpen:false
+    // Push final closing snapshot — fetch Yahoo Nifty50 for closing gainers/losers
     try {
       const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
       const existing = await r.json();
       existing.marketOpen = false;
       existing.lastUpdated = new Date().toISOString();
+      // Fetch closing gainers/losers from Yahoo (NSE is blocked; Kotak session expired at close)
+      const closingMovers = await fetchYahooNifty50Movers();
+      if (closingMovers?.gainers?.length > 0) {
+        existing.gainers = closingMovers.gainers;
+        existing.losers  = closingMovers.losers;
+        console.log('[close] Yahoo closing movers fetched:', closingMovers.gainers.length, 'gainers');
+      }
       await pushMarketToGitHub(existing);
     } catch {}
-    await tgAlert('🔴 <b>Market scraper auto-stopped</b> (3:35 PM IST). market.json marked closed.');
+    await tgAlert('🔴 <b>Market scraper auto-stopped</b> (3:35 PM IST). market.json marked closed.').catch(()=>{});
     return;
   }
   try {
@@ -1126,8 +1133,6 @@ async function runMarketScraper(force = false) {
     const day = now.getDay(); // 0=Sun, 6=Sat
     const isWeekday = day >= 1 && day <= 5;
     const isMarketOpen = isWeekday && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
-    // Gainers/losers: NSE primary → Yahoo Nifty50 fallback → persist existing
-    const yahooMovers = movers ? null : await fetchYahooNifty50Movers();
     const marketData = {
       marketOpen:  isMarketOpen,
       lastUpdated: new Date().toISOString(),
@@ -1137,8 +1142,8 @@ async function runMarketScraper(force = false) {
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      gainers: movers?.gainers || yahooMovers?.gainers || existing.gainers || [],
-      losers:  movers?.losers  || yahooMovers?.losers  || existing.losers  || []
+      gainers: movers?.gainers || existing.gainers || [],
+      losers:  movers?.losers  || existing.losers  || []
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, expiry: _expiryDates };
