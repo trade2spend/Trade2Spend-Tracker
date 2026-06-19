@@ -184,6 +184,8 @@
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 5px 6px; display:flex;align-items:center; border-radius:6px; }
         .update-share:hover { color: var(--primary); background: var(--primary-light); }
+        .admin-delete-btn { background:none; border:1px solid #fca5a5; color:#dc2626; border-radius:6px; font-size:0.72rem; font-weight:600; padding:5px 10px; cursor:pointer; font-family:inherit; }
+        .admin-delete-btn:hover { background:#fee2e2; }
         /* Updates sub-tabs */
         .updates-sub-tab { flex:1; padding:7px 10px; border:1.5px solid #ede8f5; border-radius:20px; background:#fff; color:#888; font-size:0.78rem; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.18s; }
         .updates-sub-tab.active { background:#4a2a78; color:#fff; border-color:#4a2a78; }
@@ -1228,6 +1230,20 @@
         }
     }
 
+    async function deletePost(postId) {
+        if (!confirm('Delete this post? Members will no longer see it.')) return;
+        try {
+            await sbFetch(`posts?id=eq.${postId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ is_deleted: true })
+            });
+            const activeTab = document.querySelector('.tab.active');
+            const tabId = (activeTab?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
+            if (tabId === 'updates') fetchUpdates();
+            else fetchTradeAlerts();
+        } catch(e) { alert('Failed to delete. Try again.'); }
+    }
+
     async function markPostRead(postId) {
         const memberId = localStorage.getItem('t2s_member_id');
         if(!memberId) return;
@@ -2110,8 +2126,11 @@
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${_cf25Html}
                 <div class="closed-trade-bar" style="${_barStyle25}">
-                    <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
-                    ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
+                        ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
+                    </div>
+                    <button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>
                 </div>
             </div>`;
         }
@@ -2147,7 +2166,10 @@
                 repliesNT+=`</div>`;
             }
             const adminHtmlNT = isAdmin ? `
-                <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                    <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                    <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
+                </div>
                 <div class="admin-compose-box" id="compose-${post.id}">
                     <div class="admin-audience-row">
                         <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
@@ -2227,7 +2249,10 @@
         }
 
         const adminHtml3 = isAdmin ? `
-            <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
+            </div>
             <div class="admin-compose-box" id="compose-${post.id}">
                 <div class="admin-audience-row">
                     <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
@@ -2293,8 +2318,11 @@
                     : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
                 ) : ''}
                 <div class="closed-trade-bar" style="${_barStyle3}">
-                    <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
-                    ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
+                        ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
+                    </div>
+                    ${shareBtn3}
                 </div>
                 ${repliesHtml}
             </div>
@@ -2503,7 +2531,10 @@
 
                 // Admin compose
                 const adminHtml = isAdmin ? `
-                    <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                    <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                        <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
+                        <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
+                    </div>
                     <div class="admin-compose-box" id="compose-${post.id}">
                         <div class="admin-audience-row">
                             <button class="admin-aud-btn selected" id="aud-all-${post.id}" onclick="selectReplyAud('${post.id}','all')">All Members</button>
