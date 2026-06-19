@@ -1010,31 +1010,35 @@ const NIFTY50_YF_SYMBOLS = [
 ];
 let _yahooMoversCache = null, _yahooMoversCacheTs = 0;
 async function fetchYahooNifty50Movers() {
-  // 3-minute cache to avoid rate-limiting
-  if (_yahooMoversCache && Date.now() - _yahooMoversCacheTs < 3 * 60 * 1000) return _yahooMoversCache;
+  // 5-minute cache
+  if (_yahooMoversCache && Date.now() - _yahooMoversCacheTs < 5 * 60 * 1000) return _yahooMoversCache;
+  // Use v8 chart API (same endpoint that works for indices) — parallel individual calls
+  const YF_HEADERS = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
   try {
-    const syms = NIFTY50_YF_SYMBOLS.join(',');
-    const r = await ft(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`,
-      { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' } },
-      10000
+    const results = await Promise.all(
+      NIFTY50_YF_SYMBOLS.map(sym =>
+        ft(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`, { headers: YF_HEADERS }, 8000)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            const meta = d?.chart?.result?.[0]?.meta;
+            if (!meta?.regularMarketPrice) return null;
+            const price = parseFloat(meta.regularMarketPrice);
+            const prev  = parseFloat(meta.chartPreviousClose || 0);
+            if (!price || !prev) return null;
+            const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
+            return { symbol: sym.replace('.NS','').replace('ZOMATO','ETERNAL'), price, change };
+          })
+          .catch(() => null)
+      )
     );
-    if (!r.ok) { console.log(`[Yahoo50] HTTP ${r.status}`); return null; }
-    const d = await r.json();
-    const stocks = (d?.quoteResponse?.result || [])
-      .filter(s => s.regularMarketPrice && s.regularMarketChangePercent !== undefined)
-      .map(s => ({
-        symbol: s.symbol.replace('.NS', '').replace('ZOMATO', 'ETERNAL'),
-        price:  parseFloat(parseFloat(s.regularMarketPrice).toFixed(2)),
-        change: parseFloat(parseFloat(s.regularMarketChangePercent).toFixed(2))
-      }));
-    if (stocks.length < 5) return null; // too few results — probably blocked
+    const stocks = results.filter(Boolean);
+    if (stocks.length < 5) { console.log('[Yahoo50] too few results:', stocks.length); return null; }
     const result = {
       gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
       losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
     };
     _yahooMoversCache = result; _yahooMoversCacheTs = Date.now();
-    console.log(`[Yahoo50] fetched ${stocks.length} stocks, gainers:${result.gainers.length} losers:${result.losers.length}`);
+    console.log(`[Yahoo50] ${stocks.length} stocks — g:${result.gainers.length} l:${result.losers.length} top:${result.gainers[0]?.symbol}(${result.gainers[0]?.change}%)`);
     return result;
   } catch(e) { console.error('[Yahoo50] error:', e.message); return null; }
 }
