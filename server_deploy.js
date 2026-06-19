@@ -41,6 +41,8 @@ if (!BOT_TOKEN || !CHAT_ID) {
 console.log(`Starting with CHAT_ID=${CHAT_ID}, token=${BOT_TOKEN.slice(0,8)}...`);
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
+// gw-napi returns 502 — mis.kotaksecurities.com handles scrip-master + LTP correctly
+const DATA_URL           = 'https://mis.kotaksecurities.com';
 const LOT_SIZES          = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 10 };
 const MAX_DAILY_LOSS     = 15000;
 const MAX_QTY            = 100;
@@ -473,7 +475,7 @@ async function fetchSpot(instrument = 'NIFTY') {
   if (!session.token || !session.baseUrl) return null;
   const tok = SPOT_TOKENS[instrument.toUpperCase()] || SPOT_TOKENS.NIFTY;
   try {
-    const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${tok.instrument_token}/ltp`;
+    const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${tok.instrument_token}/ltp`;
     const r = await ftKotak(url, {
       method: 'GET',
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
@@ -672,10 +674,10 @@ async function downloadScripMaster() {
 
   let csvText = null, sourceLabel = '';
 
-  // Approach 1: gw-napi Dist/master — Kotak Neo SDK's own endpoint, Bearer session token, has current data
+  // Approach 1: mis.kotaksecurities.com Dist/master — Bearer session token
   const gwNapiUrls = [
-    'https://gw-napi.kotaksecurities.com/Dist/master/nse_fo.csv',
-    `${session.baseUrl}/Dist/master/nse_fo.csv`
+    `${DATA_URL}/Dist/master/nse_fo.csv`,
+    'https://gw-napi.kotaksecurities.com/Dist/master/nse_fo.csv'
   ];
   for (const url of gwNapiUrls) {
     for (const authHdr of [`Bearer ${session.token}`, session.token]) {
@@ -711,7 +713,7 @@ async function downloadScripMaster() {
   // Approach 5: file-paths API with session bearer token (may return different/current file)
   if (!csvText) {
     try {
-      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+      const r1 = await ftKotak(`${DATA_URL}/script-details/1.0/masterscrip/file-paths`, {
         headers: { 'Authorization': session.token, 'Content-Type':'application/json','neo-fin-key':'neotradeapi','sid':session.sid,'Auth':session.token }
       }, 10000);
       if (r1.ok) {
@@ -732,7 +734,7 @@ async function downloadScripMaster() {
   // Approach 5: file-paths API with consumer key (original — known to return stale archive)
   if (!csvText) {
     try {
-      const r1 = await ftKotak(`${session.baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+      const r1 = await ftKotak(`${DATA_URL}/script-details/1.0/masterscrip/file-paths`, {
         headers: { 'Authorization': CONSUMER_KEY,'Content-Type':'application/json','neo-fin-key':'neotradeapi' }
       }, 10000);
       if (r1.ok) {
@@ -884,7 +886,7 @@ async function fetchKotakOptionLTPs() {
       continue;
     }
     try {
-      const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${identifier}/ltp`;
+      const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/nse_fo|${identifier}/ltp`;
       const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
@@ -2079,7 +2081,7 @@ const server = http.createServer(async (req, res) => {
       const firstToken = Object.entries(_scripMaster).find(([k,v]) => k.startsWith('NIFTY-'));
       const testKey = firstToken ? firstToken[0] : null;
       const testToken = firstToken ? firstToken[1] : null;
-      const gwBase = 'https://gw-napi.kotaksecurities.com';
+      const gwBase = DATA_URL;
       if (testToken) {
         try {
           const url = `${gwBase}/script-details/1.0/quotes/neosymbol/nse_fo|${testToken}/ltp`;
