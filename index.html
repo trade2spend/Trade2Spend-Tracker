@@ -593,10 +593,11 @@
             setTabBadge('trades', 0);
             fetchTradeAlerts();
             // Auto-refresh every 30s only during market hours; after 4 PM just the one fetch above
+            // CMP updates every 5s in-place via updateTradeCMPs — no need to rebuild cards that often
             const _tNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
             const _tMins = _tNow.getHours() * 60 + _tNow.getMinutes();
             if (_tMins >= 9*60+15 && _tMins < 16*60) {
-                _tradeRefreshTimer = setInterval(fetchTradeAlerts, 5000);
+                _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
             }
         }
         if (tabId === 'performance') fetchPerformance();
