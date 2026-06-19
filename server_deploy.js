@@ -994,6 +994,51 @@ async function fetchKotakIndexLTP(instrument) {
   } catch(e) { console.error(`[KotakIdx] ${instrument}: ${e.message}`); return null; }
 }
 
+// Nifty 50 Yahoo Finance symbols — fallback for gainers/losers when NSE is blocked
+// M&M encoded as M%26M to avoid URL param conflict; ETERNAL covers Zomato rebrand
+const NIFTY50_YF_SYMBOLS = [
+  'ADANIENT.NS','ADANIPORTS.NS','APOLLOHOSP.NS','ASIANPAINT.NS','AXISBANK.NS',
+  'BAJAJ-AUTO.NS','BAJFINANCE.NS','BAJAJFINSV.NS','BEL.NS','BHARTIARTL.NS',
+  'BPCL.NS','BRITANNIA.NS','CIPLA.NS','COALINDIA.NS','DRREDDY.NS',
+  'EICHERMOT.NS','ETERNAL.NS','GRASIM.NS','HCLTECH.NS','HDFCBANK.NS',
+  'HDFCLIFE.NS','HEROMOTOCO.NS','HINDALCO.NS','HINDUNILVR.NS','ICICIBANK.NS',
+  'INDUSINDBK.NS','INFY.NS','ITC.NS','JSWSTEEL.NS','KOTAKBANK.NS',
+  'LT.NS','M%26M.NS','MARUTI.NS','NESTLEIND.NS','NTPC.NS',
+  'ONGC.NS','POWERGRID.NS','RELIANCE.NS','SBIN.NS','SHRIRAMFIN.NS',
+  'SUNPHARMA.NS','TATAMOTORS.NS','TATASTEEL.NS','TATACONSUM.NS','TCS.NS',
+  'TECHM.NS','TITAN.NS','ULTRACEMCO.NS','WIPRO.NS','ZOMATO.NS'
+];
+let _yahooMoversCache = null, _yahooMoversCacheTs = 0;
+async function fetchYahooNifty50Movers() {
+  // 3-minute cache to avoid rate-limiting
+  if (_yahooMoversCache && Date.now() - _yahooMoversCacheTs < 3 * 60 * 1000) return _yahooMoversCache;
+  try {
+    const syms = NIFTY50_YF_SYMBOLS.join(',');
+    const r = await ft(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' } },
+      10000
+    );
+    if (!r.ok) { console.log(`[Yahoo50] HTTP ${r.status}`); return null; }
+    const d = await r.json();
+    const stocks = (d?.quoteResponse?.result || [])
+      .filter(s => s.regularMarketPrice && s.regularMarketChangePercent !== undefined)
+      .map(s => ({
+        symbol: s.symbol.replace('.NS', '').replace('ZOMATO', 'ETERNAL'),
+        price:  parseFloat(parseFloat(s.regularMarketPrice).toFixed(2)),
+        change: parseFloat(parseFloat(s.regularMarketChangePercent).toFixed(2))
+      }));
+    if (stocks.length < 5) return null; // too few results — probably blocked
+    const result = {
+      gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
+      losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
+    };
+    _yahooMoversCache = result; _yahooMoversCacheTs = Date.now();
+    console.log(`[Yahoo50] fetched ${stocks.length} stocks, gainers:${result.gainers.length} losers:${result.losers.length}`);
+    return result;
+  } catch(e) { console.error('[Yahoo50] error:', e.message); return null; }
+}
+
 // Yahoo Finance fallback — used when NSE India API is blocked/down AND Kotak not logged in
 const YAHOO_SYMBOLS = { NIFTY: '%5ENSEI', BANKNIFTY: '%5ENSEBANK', SENSEX: '%5EBSESN' };
 async function fetchYahooIndex(instrument) {
@@ -1081,6 +1126,8 @@ async function runMarketScraper(force = false) {
     const day = now.getDay(); // 0=Sun, 6=Sat
     const isWeekday = day >= 1 && day <= 5;
     const isMarketOpen = isWeekday && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
+    // Gainers/losers: NSE primary → Yahoo Nifty50 fallback → persist existing
+    const yahooMovers = movers ? null : await fetchYahooNifty50Movers();
     const marketData = {
       marketOpen:  isMarketOpen,
       lastUpdated: new Date().toISOString(),
@@ -1090,8 +1137,8 @@ async function runMarketScraper(force = false) {
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      gainers: movers?.gainers || existing.gainers || [],
-      losers:  movers?.losers  || existing.losers  || []
+      gainers: movers?.gainers || yahooMovers?.gainers || existing.gainers || [],
+      losers:  movers?.losers  || yahooMovers?.losers  || existing.losers  || []
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, expiry: _expiryDates };
