@@ -964,6 +964,30 @@ async function fetchSensexBSE() {
   } catch(e) { console.log(`[BSE] error: ${e.message}`); return null; }
 }
 
+// Yahoo Finance fallback — used when NSE India API is blocked/down
+const YAHOO_SYMBOLS = { NIFTY: '%5ENSEI', BANKNIFTY: '%5ENSEBANK', SENSEX: '%5EBSESN' };
+async function fetchYahooIndex(instrument) {
+  const sym = YAHOO_SYMBOLS[instrument.toUpperCase()];
+  if (!sym) return null;
+  try {
+    const r = await ft(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`,
+      { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+      8000
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    const meta = d?.chart?.result?.[0]?.meta;
+    if (!meta || !meta.regularMarketPrice) return null;
+    const price = parseFloat(meta.regularMarketPrice);
+    const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
+    const change    = prev ? parseFloat((price - prev).toFixed(2)) : 0;
+    const changePct = prev ? parseFloat(((change / prev) * 100).toFixed(2)) : 0;
+    console.log(`[Yahoo] ${instrument}: ${price} (${changePct}%)`);
+    return { price, change, changePct };
+  } catch(e) { console.error(`[Yahoo] ${instrument} error: ${e.message}`); return null; }
+}
+
 async function pushMarketToGitHub(marketData) {
   if (!GH_TOKEN) { console.error('GH_TOKEN not set — cannot push market.json'); return false; }
   const api = `https://api.github.com/repos/${GH_REPO}/contents/market.json`;
@@ -1006,7 +1030,7 @@ async function runMarketScraper(force = false) {
       fetchNSEOptionChainFallback('NIFTY').catch(()=>{}),
       fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{})
     ]);
-    const [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
+    let [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
       if (!nseData) return null;
       const name = NSE_INDEX_NAMES[inst];
       const idx  = nseData.data?.find(x => x.indexSymbol === name || x.index === name);
@@ -1017,6 +1041,10 @@ async function runMarketScraper(force = false) {
         changePct: parseFloat((parseFloat(idx.percentChange || idx.pChange || 0)).toFixed(2))
       };
     });
+    // Yahoo Finance fallback when NSE India is blocked
+    if (!nifty)     nifty     = await fetchYahooIndex('NIFTY');
+    if (!banknifty) banknifty = await fetchYahooIndex('BANKNIFTY');
+    const sensexFinal = sensex || await fetchYahooIndex('SENSEX');
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     const breadth = n50 ? { advancing: parseInt(n50.advances)||0, declining: parseInt(n50.declines)||0, unchanged: parseInt(n50.unchanged)||0 } : null;
     const existing = _latestMarketData || { gainers: [], losers: [], breadth: { nifty50: { advancing: 0, declining: 0, unchanged: 0 } } };
@@ -1028,7 +1056,7 @@ async function runMarketScraper(force = false) {
       lastUpdated: new Date().toISOString(),
       indices: {
         NIFTY:     nifty     || existing.indices?.NIFTY     || { price: 0, change: 0, changePct: 0 },
-        SENSEX:    sensex    || existing.indices?.SENSEX    || { price: 0, change: 0, changePct: 0 },
+        SENSEX:    sensexFinal || existing.indices?.SENSEX    || { price: 0, change: 0, changePct: 0 },
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
@@ -1038,7 +1066,7 @@ async function runMarketScraper(force = false) {
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, expiry: _expiryDates };
     await pushMarketToGitHub(marketData);
-    console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensex?.price} BANKNIFTY:${banknifty?.price}`);
+    console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
 }
 
