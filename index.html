@@ -648,7 +648,7 @@
         return d === 0 || d === 6 || mins < 9 * 60 + 15 || mins >= 15 * 60 + 35;
     }
 
-    function renderMarketUI(data) {
+    function renderMarketUI(data, opts = {}) {
         const isOpen = data.marketOpen === true && !isMarketClosedNow();
 
         const dotEl = document.getElementById('global-market-dot');
@@ -734,9 +734,8 @@
                     : `<span style="color:#9ca3af;">Closing prices · ${dateStr}</span>`;
             }
         }
-        // Update live option CMPs on trade cards in-place
-        // Use client-side clock only — don't depend on server's marketOpen flag (can lag on restart)
-        if (data.optionLTPs && !isMarketClosedNow()) updateTradeCMPs(data.optionLTPs);
+        // Update live option CMPs on trade cards in-place — skip on cache renders to avoid stale flicker
+        if (data.optionLTPs && !isMarketClosedNow() && !opts.skipLTPs) updateTradeCMPs(data.optionLTPs);
     }
 
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
@@ -762,7 +761,7 @@
                 const istMidnight = new Date(istNow); istMidnight.setHours(0, 0, 0, 0);
                 const cacheFromToday = ts >= istMidnight.getTime();
                 const maxAge = isMarketClosedNow() && cacheFromToday ? Infinity : 24 * 60 * 60 * 1000;
-                if (Date.now() - ts < maxAge) { cachedData = data; renderMarketUI(data); }
+                if (Date.now() - ts < maxAge) { cachedData = data; renderMarketUI(data, { skipLTPs: true }); }
             }
         } catch {}
 
