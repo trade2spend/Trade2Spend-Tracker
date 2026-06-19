@@ -966,7 +966,35 @@ async function fetchSensexBSE() {
   } catch(e) { console.log(`[BSE] error: ${e.message}`); return null; }
 }
 
-// Yahoo Finance fallback — used when NSE India API is blocked/down
+// Kotak Neo index LTP — primary source for NIFTY/BANKNIFTY/SENSEX spot prices
+const INDEX_TOKENS = {
+  NIFTY:     { exchange: 'nse_cm', token: '26000' },
+  BANKNIFTY: { exchange: 'nse_cm', token: '26009' },
+  SENSEX:    { exchange: 'bse_cm', token: '1' }
+};
+async function fetchKotakIndexLTP(instrument) {
+  if (!session.token) return null;
+  const cfg = INDEX_TOKENS[instrument.toUpperCase()];
+  if (!cfg) return null;
+  try {
+    const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${cfg.token}/ltp`;
+    const r = await ftKotak(url, {
+      headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+    }, 5000);
+    if (!r.ok) { console.log(`[KotakIdx] ${instrument} HTTP ${r.status}`); return null; }
+    const d = await r.json();
+    const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d);
+    const price = parseFloat(item?.ltp || 0);
+    if (!price) return null;
+    const prevClose = parseFloat(item?.close || item?.prevClose || item?.prev_close || 0);
+    const change    = prevClose ? parseFloat((price - prevClose).toFixed(2)) : parseFloat((item?.netChng || item?.change || 0));
+    const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : parseFloat((item?.pChange || item?.pctChng || 0));
+    console.log(`[KotakIdx] ${instrument}: ₹${price} (${changePct}%)`);
+    return { price, change, changePct };
+  } catch(e) { console.error(`[KotakIdx] ${instrument}: ${e.message}`); return null; }
+}
+
+// Yahoo Finance fallback — used when NSE India API is blocked/down AND Kotak not logged in
 const YAHOO_SYMBOLS = { NIFTY: '%5ENSEI', BANKNIFTY: '%5ENSEBANK', SENSEX: '%5EBSESN' };
 async function fetchYahooIndex(instrument) {
   const sym = YAHOO_SYMBOLS[instrument.toUpperCase()];
@@ -1043,10 +1071,10 @@ async function runMarketScraper(force = false) {
         changePct: parseFloat((parseFloat(idx.percentChange || idx.pChange || 0)).toFixed(2))
       };
     });
-    // Yahoo Finance fallback when NSE India is blocked
-    if (!nifty)     nifty     = await fetchYahooIndex('NIFTY');
-    if (!banknifty) banknifty = await fetchYahooIndex('BANKNIFTY');
-    const sensexFinal = sensex || await fetchYahooIndex('SENSEX');
+    // Kotak Neo primary (TOTP logged in) → Yahoo Finance fallback when not logged in
+    if (!nifty)     nifty     = await fetchKotakIndexLTP('NIFTY')     || await fetchYahooIndex('NIFTY');
+    if (!banknifty) banknifty = await fetchKotakIndexLTP('BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
+    const sensexFinal = sensex || await fetchKotakIndexLTP('SENSEX')  || await fetchYahooIndex('SENSEX');
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     const breadth = n50 ? { advancing: parseInt(n50.advances)||0, declining: parseInt(n50.declines)||0, unchanged: parseInt(n50.unchanged)||0 } : null;
     const existing = _latestMarketData || { gainers: [], losers: [], breadth: { nifty50: { advancing: 0, declining: 0, unchanged: 0 } } };
