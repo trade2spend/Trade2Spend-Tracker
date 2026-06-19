@@ -497,6 +497,7 @@
     // --- UI LOGIC ---
     let _tradeRefreshTimer = null;
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
+    let _lastOptionLTPs = null; // latest option LTPs — re-applied after trade card rebuilds
     function formatExpiryDisplay(expiry, instrument, postDate) {
         if (!expiry) return expiry;
         const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -740,6 +741,7 @@
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
+        _lastOptionLTPs = optionLTPs;
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
             const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-PE"
             const ltp = optionLTPs[key];
@@ -1740,6 +1742,7 @@
         }
 
         container.innerHTML = html;
+        if (_lastOptionLTPs && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
