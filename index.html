@@ -750,8 +750,7 @@
     }
 
     async function fetchMarketData() {
-        // Step 1: Always render from cache first — instant, no "Fetching..." state ever
-        // When market is closed, use any cached data regardless of age (last session data is still valid)
+        // Step 1: Render from cache immediately — instant display, no loading state
         let cachedData = null;
         try {
             const raw = localStorage.getItem('t2s_market_cache');
@@ -760,28 +759,29 @@
                 const istNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
                 const istMidnight = new Date(istNow); istMidnight.setHours(0, 0, 0, 0);
                 const cacheFromToday = ts >= istMidnight.getTime();
-                const maxAge = isMarketClosedNow() && cacheFromToday ? Infinity : 24 * 60 * 60 * 1000;
-                if (Date.now() - ts < maxAge) { cachedData = data; renderMarketUI(data, { skipLTPs: true }); }
+                // Show cache for instant display: today's cache always, or yesterday's if < 24h
+                if (cacheFromToday || Date.now() - ts < 24 * 60 * 60 * 1000) {
+                    cachedData = data;
+                    renderMarketUI(data, { skipLTPs: true });
+                }
             }
         } catch {}
 
-        // Step 2: Market closed — fetch from VM once to get last session data, then stop
+        // Step 2: Market closed — always fetch fresh closing data from VM once
+        // (cache may be stale intraday snapshot; VM has the actual 3:35 PM close)
         if (isMarketClosedNow()) {
-            if (!cachedData) {
-                // No cache at all — fetch from VM (loads market.json at startup)
-                try {
-                    const ctrl = new AbortController();
-                    setTimeout(() => ctrl.abort(), 5000);
-                    const res = await fetch(DB_URLS.market, { signal: ctrl.signal });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.expiry) _marketExpiry = data.expiry;
-                        renderMarketUI(data);
-                        localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
-                        cachedData = data;
-                    }
-                } catch {}
-            }
+            try {
+                const ctrl = new AbortController();
+                setTimeout(() => ctrl.abort(), 5000);
+                const res = await fetch(DB_URLS.market, { signal: ctrl.signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.expiry) _marketExpiry = data.expiry;
+                    renderMarketUI(data);
+                    localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
+                    return data;
+                }
+            } catch {}
             if (!cachedData) {
                 document.getElementById('market-grid-container').innerHTML =
                     '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market closed · Open 9:15 AM IST</div>';
