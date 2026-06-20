@@ -173,16 +173,11 @@ html,body { background:#1a1a2e; min-height:100vh; }
 .btn-view  { flex:1; padding:13px; border-radius:11px; border:none; background:var(--primary); color:#fff; font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
 .btn-later { padding:13px 18px; border-radius:11px; border:1.5px solid var(--border); background:transparent; color:var(--muted); font-size:0.84rem; font-weight:600; cursor:pointer; font-family:inherit; }
 
-/* UAT controls */
-.uat-controls {
-  background:#1a2030; border-radius:10px; padding:11px 13px; margin-bottom:14px;
+/* UAT re-trigger (hidden at bottom, reload alternative) */
+.uat-retrigger {
+  text-align:center; padding:24px 0 4px;
+  font-size:0.6rem; color:var(--muted); cursor:pointer;
 }
-.uat-ctrl-head { font-size:0.58rem; font-weight:800; text-transform:uppercase; letter-spacing:0.09em; color:#7c6fa0; margin-bottom:8px; }
-.uat-ctrl-row  { display:flex; gap:7px; }
-.uat-btn { flex:1; padding:9px 6px; border-radius:8px; border:none; font-size:0.72rem; font-weight:700; cursor:pointer; font-family:inherit; }
-.uat-btn-trade  { background:#4a2a78; color:#fff; }
-.uat-btn-update { background:#2a4a78; color:#fff; }
-.uat-ctrl-note  { font-size:0.6rem; color:#7c6fa0; margin-top:7px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -201,18 +196,6 @@ html,body { background:#1a1a2e; min-height:100vh; }
 
   <!-- ── MARKETS TAB ── -->
   <div class="tab-page active" id="tab-markets">
-
-    <div class="uat-controls">
-      <div class="uat-ctrl-head">🎛️ UAT — Simulate Incoming Alert</div>
-      <div class="uat-ctrl-row">
-        <button class="uat-btn uat-btn-trade"  onclick="fireAlert('trade')">🚨 Trade Alert</button>
-        <button class="uat-btn uat-btn-update" onclick="fireAlert('update')">📢 General Update</button>
-      </div>
-      <div class="uat-ctrl-note">
-        Switch tabs first, then fire — popup is suppressed when already on the destination tab.<br>
-        Trade alert → My Trades tab &nbsp;·&nbsp; General update → Updates tab
-      </div>
-    </div>
 
     <div class="sec-head">Live Markets</div>
     <div class="index-row">
@@ -248,7 +231,7 @@ html,body { background:#1a1a2e; min-height:100vh; }
       </div>
     </div>
 
-    <!-- Alert banner — below gainers/losers on Markets tab -->
+    <!-- Alert banner — below gainers/losers -->
     <div id="alert-banner-section">
       <div class="sec-div">
         <div class="sec-div-line"></div>
@@ -264,6 +247,8 @@ html,body { background:#1a1a2e; min-height:100vh; }
         <button class="alert-banner-btn" onclick="event.stopPropagation();goTo()">View →</button>
       </div>
     </div>
+
+    <div class="uat-retrigger" onclick="fireAlert('trade')">↺ re-trigger (UAT only)</div>
 
   </div>
 
@@ -284,9 +269,6 @@ html,body { background:#1a1a2e; min-height:100vh; }
         <div class="tc-metric"><div class="label">P&amp;L/Lot</div><div class="val up">+₹1,820</div></div>
       </div>
     </div>
-    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:20px;">
-      Trade alerts route here → popup suppressed when on this tab
-    </div>
   </div>
 
   <!-- ── PERFORMANCE TAB ── -->
@@ -295,9 +277,6 @@ html,body { background:#1a1a2e; min-height:100vh; }
     <div class="post-card" style="text-align:center;padding:24px;">
       <div style="font-size:1.4rem;font-weight:800;color:var(--green);">+₹12,480</div>
       <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">June 2026 · 4W 2L</div>
-    </div>
-    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:12px;">
-      Popups show here for both alert types
     </div>
   </div>
 
@@ -312,9 +291,6 @@ html,body { background:#1a1a2e; min-height:100vh; }
       <div class="post-time">Yesterday, 3:15 PM</div>
       <div class="post-body">Booked 50% profits at ₹180. Trailing remaining position with SL at cost.</div>
     </div>
-    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:12px;">
-      General updates route here → popup suppressed when on this tab
-    </div>
   </div>
 
   <!-- ── ABOUT TAB ── -->
@@ -322,9 +298,6 @@ html,body { background:#1a1a2e; min-height:100vh; }
     <div class="post-card" style="text-align:center;padding:24px 14px;">
       <div style="font-size:1rem;font-weight:700;color:var(--primary);margin-bottom:6px;">Trade2Spend</div>
       <div style="font-size:0.76rem;color:var(--muted);line-height:1.6;">Educational purposes only · Not investment advice<br>We are not SEBI registered</div>
-    </div>
-    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:12px;">
-      Popups show here for both alert types
     </div>
   </div>
 
