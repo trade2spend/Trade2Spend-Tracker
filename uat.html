@@ -123,17 +123,12 @@ html,body { background:#1a1a2e; min-height:100vh; }
   padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0;
 }
 
-/* UAT demo panel */
-.demo-panel {
-  background:#1a2030; border-radius:12px; padding:13px 14px; margin-bottom:14px;
+/* UAT reset button */
+.uat-reset {
+  width:100%; padding:9px; border-radius:9px; border:1px solid #3a3060;
+  background:transparent; color:#7c6fa0; font-size:0.72rem; font-weight:600;
+  cursor:pointer; font-family:inherit; margin-bottom:14px;
 }
-.demo-head { font-size:0.6rem; font-weight:800; text-transform:uppercase; letter-spacing:0.09em; color:#7c6fa0; margin-bottom:8px; }
-.demo-fire  {
-  width:100%; padding:11px; border-radius:10px; border:none;
-  background:#4a2a78; color:#fff; font-size:0.82rem; font-weight:700;
-  cursor:pointer; font-family:inherit;
-}
-.demo-note  { font-size:0.62rem; color:#7c6fa0; margin-top:8px; line-height:1.55; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    COMPONENT 2 — CENTRE OVERLAY POPUP
@@ -142,10 +137,9 @@ html,body { background:#1a1a2e; min-height:100vh; }
   position:fixed; inset:0;
   background:rgba(10,8,20,0.55);
   display:flex; align-items:center; justify-content:center;
-  z-index:400;
+  z-index:400; padding:24px;
   opacity:0; pointer-events:none;
   transition:opacity 0.22s ease;
-  padding:24px;
 }
 .popup-overlay.visible { opacity:1; pointer-events:auto; }
 
@@ -153,17 +147,15 @@ html,body { background:#1a1a2e; min-height:100vh; }
   background:#fff; border-radius:20px; width:100%; max-width:340px;
   overflow:hidden;
   transform:scale(0.92) translateY(12px);
-  transition:transform 0.28s cubic-bezier(0.34,1.3,0.64,1);
+  transition:transform 0.3s cubic-bezier(0.34,1.3,0.64,1);
   box-shadow:0 20px 60px rgba(10,8,20,0.22);
 }
 .popup-overlay.visible .popup-card { transform:scale(1) translateY(0); }
 
-/* Purple top accent bar */
 .popup-accent { height:4px; background:var(--primary); }
 
 .popup-body { padding:22px 22px 6px; }
 
-/* Alert tag row */
 .popup-tag-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
 .popup-tag {
   display:inline-flex; align-items:center; gap:5px;
@@ -178,25 +170,18 @@ html,body { background:#1a1a2e; min-height:100vh; }
   font-family:inherit;
 }
 
-/* Instrument — the hero */
 .popup-instrument {
   font-size:1.65rem; font-weight:800; color:var(--text);
   letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px;
 }
-.popup-instrument .opt-type {
-  color:var(--primary); font-size:1.1rem; font-weight:700; margin-left:4px;
-}
-.popup-sub {
-  font-size:0.76rem; color:var(--muted); font-weight:500; margin-bottom:22px;
-}
+.popup-instrument .opt-type { color:var(--primary); font-size:1.1rem; font-weight:700; margin-left:4px; }
+.popup-sub { font-size:0.76rem; color:var(--muted); font-weight:500; margin-bottom:22px; }
 
-/* Action buttons */
 .popup-actions { display:flex; gap:8px; padding:0 22px 22px; }
 .btn-view {
   flex:1; padding:13px; border-radius:11px; border:none;
   background:var(--primary); color:#fff;
   font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit;
-  letter-spacing:0.01em;
 }
 .btn-later {
   padding:13px 18px; border-radius:11px;
@@ -209,7 +194,7 @@ html,body { background:#1a1a2e; min-height:100vh; }
 <body>
 <div class="shell">
 
-  <div class="uat-strip">🧪 UAT · ALERT NOTIFICATION SYSTEM · ADMIN ONLY</div>
+  <div class="uat-strip">🧪 UAT · ALERT NOTIFICATION · ADMIN ONLY</div>
 
   <div class="tab-bar">
     <div class="tab-item active">Markets</div>
@@ -220,12 +205,8 @@ html,body { background:#1a1a2e; min-height:100vh; }
 
   <div class="page">
 
-    <!-- UAT CONTROLS -->
-    <div class="demo-panel">
-      <div class="demo-head">🎛️ UAT Demo Controls</div>
-      <button class="demo-fire" onclick="fireTestAlert()">🔔 Fire New Trade Alert</button>
-      <div class="demo-note">Fires the centre popup + shows the banner below gainers/losers. Popup stays until "View Alert" or "Later" is tapped. In production this triggers on a new Supabase post.</div>
-    </div>
+    <!-- UAT-only reset (admin testing tool, not visible to members) -->
+    <button class="uat-reset" onclick="resetAndFire()">↺ Re-trigger alert (UAT only)</button>
 
     <!-- INDEX PRICES -->
     <div class="sec-head">Live Markets</div>
@@ -308,37 +289,46 @@ html,body { background:#1a1a2e; min-height:100vh; }
 </div>
 
 <script>
-function showBanner(instrument, label) {
-  document.getElementById('banner-title').textContent = label;
-  document.getElementById('banner-section').style.display = 'block';
-}
-
+/* ── Show / dismiss ─────────────────────────────────────────────────────── */
 function showPopup() {
   document.getElementById('popup-overlay').classList.add('visible');
 }
-
 function dismissPopup() {
   document.getElementById('popup-overlay').classList.remove('visible');
 }
-
 function handleOverlayClick(e) {
   if (e.target === document.getElementById('popup-overlay')) dismissPopup();
 }
 
-function fireTestAlert() {
-  showBanner('NIFTY 24000', 'NIFTY 24000 Call alert');
-  showPopup();
+/* ── Show markets banner ────────────────────────────────────────────────── */
+function showBanner(label) {
+  document.getElementById('banner-title').textContent = label;
+  document.getElementById('banner-section').style.display = 'block';
 }
 
+/* ── Navigate to Updates tab ────────────────────────────────────────────── */
 function goToUpdates() {
   dismissPopup();
-  /* In production: showTab('updates') + scroll to the post */
+  /* Production: showTab('updates') + scroll to post card */
   const t = document.createElement('div');
   t.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#1a2030;color:#f0c040;font-size:0.72rem;font-weight:700;padding:9px 18px;border-radius:20px;z-index:600;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,0.2);pointer-events:none;';
   t.textContent = '→ Routes to Updates tab in production';
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2500);
 }
+
+/* ── UAT reset (re-trigger for testing) ─────────────────────────────────── */
+function resetAndFire() {
+  showBanner('NIFTY 24000 Call alert');
+  showPopup();
+}
+
+/* ── AUTO-FIRE ON LOAD — simulates new alert arriving ──────────────────── */
+/* Production: this fires when Supabase poll finds a post newer than last seen */
+window.addEventListener('load', () => {
+  showBanner('NIFTY 24000 Call alert');
+  setTimeout(showPopup, 600); /* small delay so page renders first */
+});
 </script>
 </body>
 </html>
