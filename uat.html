@@ -4,557 +4,398 @@
 <meta charset="UTF-8">
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
-<title>UAT — Trade Card v2 · Trade2Spend</title>
+<title>UAT · Alert Notification · Trade2Spend</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:      #fdfbf7;
-  --card:    #ffffff;
-  --text:    #2d2a32;
-  --muted:   #888380;
-  --primary: #4a2a78;
-  --pri-lt:  #ede9fe;
-  --green:   #22c55e;
-  --grn-lt:  #dcfce7;
-  --red:     #ef4444;
-  --red-lt:  #fee2e2;
-  --gold:    #d97706;
-  --border:  #e5e5e5;
+  --primary:       #4a2a78;
+  --primary-light: #f3f0f8;
+  --accent:        #FF6F00;
+  --bg:            #f6f3ee;
+  --card:          #fbf9f5;
+  --text:          #1a2030;
+  --muted:         #9ca3af;
+  --green:         #059669;
+  --red:           #dc2626;
+  --border:        #ede8f5;
+  --radius:        14px;
 }
 * { box-sizing:border-box; margin:0; padding:0;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-family:'Plus Jakarta Sans',sans-serif;
     -webkit-tap-highlight-color:transparent; }
-html,body { background:var(--bg); color:var(--text); min-height:100vh; }
-.shell { max-width:480px; margin:0 auto; padding-bottom:48px; }
+html,body { background:#1a1a2e; min-height:100vh; }
 
+.shell {
+  max-width:480px; margin:0 auto; background:var(--bg);
+  min-height:100vh; position:relative; overflow:hidden;
+}
+
+/* UAT banner */
 .uat-strip {
   background:#1a2030; color:#f0c040;
   font-size:0.62rem; font-weight:700; letter-spacing:0.07em;
   text-align:center; padding:6px 16px;
-  position:sticky; top:0; z-index:200;
+  position:sticky; top:0; z-index:300;
 }
-.page { padding:0 14px; }
-.note { font-size:0.64rem; color:var(--muted); margin-bottom:6px; padding:0 2px; line-height:1.5; }
 
-.sec-div { display:flex; align-items:center; gap:8px; margin:18px 0 10px; }
+/* Mock tab bar */
+.tab-bar {
+  background:var(--card); border-bottom:1px solid var(--border);
+  display:flex; padding:0 4px; position:sticky; top:28px; z-index:200;
+}
+.tab-item {
+  flex:1; padding:10px 4px 8px;
+  font-size:0.68rem; font-weight:600; text-align:center;
+  color:var(--muted); border-bottom:2px solid transparent;
+  cursor:pointer; transition:color .15s;
+}
+.tab-item.active { color:var(--primary); border-bottom-color:var(--primary); }
+
+.page { padding:12px 14px 100px; }
+
+/* Section head */
+.sec-head {
+  font-size:0.6rem; font-weight:800; text-transform:uppercase;
+  letter-spacing:0.09em; color:var(--muted); margin-bottom:8px;
+}
+
+/* Index rows */
+.index-row {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:10px; padding:10px 14px; margin-bottom:7px;
+  display:flex; justify-content:space-between; align-items:center;
+}
+.idx-name { font-weight:700; font-size:0.88rem; color:var(--text); }
+.idx-val  { font-size:0.82rem; font-weight:700; }
+.idx-val .chg { font-size:0.68rem; font-weight:600; margin-left:4px; }
+.up   { color:var(--green); }
+.down { color:var(--red); }
+
+/* Gainers/Losers */
+.gl-wrap { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:4px; }
+.gl-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:10px; overflow:hidden;
+}
+.gl-head {
+  padding:7px 10px; border-bottom:1px solid var(--border);
+  font-size:0.58rem; font-weight:800; text-transform:uppercase;
+  letter-spacing:0.07em; color:var(--muted);
+}
+.gl-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 10px; border-bottom:1px solid #f5f2ee;
+  font-size:0.74rem;
+}
+.gl-row:last-child { border-bottom:none; }
+.gl-name { font-weight:600; color:var(--text); }
+
+/* Divider */
+.sec-div { display:flex; align-items:center; gap:8px; margin:14px 0 10px; }
 .sec-div-line { flex:1; height:1px; background:var(--border); }
 .sec-div-tag {
   font-size:0.6rem; font-weight:800; text-transform:uppercase;
-  letter-spacing:0.09em; white-space:nowrap; padding:3px 10px; border-radius:20px;
+  letter-spacing:0.08em; white-space:nowrap; padding:3px 10px;
+  border-radius:20px;
 }
-.tag-current  { background:#f3f4f6; color:#6b7280; }
-.tag-proposed { background:var(--pri-lt); color:var(--primary); }
+.tag-alert { background:#fff3e0; color:var(--accent); }
+.tag-uat   { background:var(--primary-light); color:var(--primary); }
 
-/* ── CARD SHELL ── */
-.trade-card {
-  background:var(--card); border:1px solid var(--border);
-  border-radius:10px; margin-bottom:10px; overflow:hidden;
-  box-shadow:0 1px 3px rgba(0,0,0,0.03);
-}
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COMPONENT 1 — MARKETS TAB ALERT BANNER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#banner-section { display:none; }
 
-/* ── CARD HEADER ── */
-.trade-header {
-  padding:10px 14px; display:flex;
-  justify-content:space-between; align-items:center;
-  border-bottom:1px dashed var(--border);
+.market-alert-banner {
+  background:var(--card);
+  border:1px solid var(--border);
+  border-left:3.5px solid var(--accent);
+  border-radius:10px;
+  padding:10px 12px;
+  display:flex; align-items:center; gap:10px;
+  cursor:pointer;
+  animation: bannerEntry .35s cubic-bezier(0.34,1.4,0.64,1);
 }
-.trade-title-box { display:flex; gap:8px; align-items:center; }
-.type-box {
-  width:30px; height:30px; border-radius:6px;
-  display:flex; align-items:center; justify-content:center;
-  font-weight:700; font-size:0.8rem;
+@keyframes bannerEntry {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
 }
-.type-box.ce   { background:var(--grn-lt); color:var(--green); }
-.type-box.lock { background:var(--pri-lt); color:var(--primary); font-size:0.85rem; }
-.trade-name   { font-weight:700; font-size:0.95rem; color:var(--text); margin-bottom:1px; }
-.trade-expiry { font-size:0.72rem; color:var(--muted); }
-
-.badge {
-  padding:3px 8px; border-radius:6px; font-size:0.68rem;
-  font-weight:700; letter-spacing:0.5px; text-transform:uppercase;
+.banner-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:var(--accent); flex-shrink:0;
+  animation:dotBlink 1.5s ease-in-out infinite;
 }
-.badge.profit  { background:var(--grn-lt); color:var(--green); }
-.badge.loss    { background:var(--red-lt); color:var(--red); }
-.badge.neutral { background:var(--pri-lt); color:var(--primary); }
-.badge.prebuy  { background:#fef9c3; color:#854d0e; border:1px solid #fde68a; }
-
-/* ── METRICS ROW — Entry + CMP only (v2) ── */
-.metrics-row {
-  display:grid; grid-template-columns:1fr 1fr;
-  padding:10px 14px; border-bottom:1px dashed var(--border); gap:8px;
+@keyframes dotBlink {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%     { opacity:0.4; transform:scale(0.65); }
 }
-.metric-box { display:flex; flex-direction:column; gap:3px; }
-.m-label {
-  font-size:0.65rem; color:var(--muted);
-  text-transform:uppercase; font-weight:600; letter-spacing:0.3px;
+.banner-text { flex:1; min-width:0; }
+.banner-label {
+  font-size:0.58rem; font-weight:800; text-transform:uppercase;
+  letter-spacing:0.08em; color:var(--accent); margin-bottom:2px;
 }
-.m-value { font-size:0.92rem; font-weight:700; color:var(--text); }
-
-/* ── STATUS ROWS — SL State + Peak ── */
-.status-rows {
-  padding:8px 14px;
-  border-bottom:1px dashed var(--border);
+.banner-title {
+  font-size:0.84rem; font-weight:700; color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.s-row {
-  display:flex; align-items:center;
-  justify-content:space-between; gap:8px;
-  padding:5px 0;
-}
-.s-row + .s-row { border-top:1px solid #f2ede8; }
-.s-label {
-  font-size:0.62rem; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.07em; color:var(--muted); white-space:nowrap; flex-shrink:0;
-}
-.s-right { display:flex; align-items:center; gap:5px; justify-content:flex-end; flex-wrap:wrap; }
-
-/* SL badge [● Active Check] */
-.sl-badge {
-  display:inline-flex; align-items:center; gap:4px;
-  padding:2px 8px; border-radius:20px;
-  font-size:0.7rem; font-weight:700;
-  background:#fef9c3; color:#92400e; border:1px solid #fde68a;
-  transition:background .25s, color .25s, border-color .25s;
-}
-.sl-badge.option-active {
-  background:#fee2e2; color:#b91c1c; border-color:#fca5a5;
-}
-.sl-dot-inner {
-  width:6px; height:6px; border-radius:50%;
-  background:#d97706; flex-shrink:0; transition:background .25s;
-}
-.sl-badge.option-active .sl-dot-inner { background:#dc2626; }
-.sl-sub { font-size:0.6rem; color:var(--muted); font-weight:500; white-space:nowrap; }
-
-/* Peak */
-.peak-val { font-size:0.78rem; font-weight:700; color:var(--primary); }
-.peak-sub { font-size:0.6rem; color:var(--muted); font-weight:500; }
-
-/* ── MOMENTUM ROW ── */
-.momentum-row {
-  display:flex; align-items:center;
-  justify-content:space-between;
-  padding:8px 14px;
-}
-.mom-label {
-  font-size:0.62rem; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.07em; color:var(--muted); white-space:nowrap; flex-shrink:0;
-}
-.mom-right { display:flex; align-items:center; gap:6px; }
-.mom-dot {
-  width:9px; height:9px; border-radius:50%;
-  flex-shrink:0; transition:background .25s;
-}
-.mom-text { font-size:0.76rem; font-weight:700; transition:color .25s; }
-
-/* ── CARD FOOTER ── */
-.trade-footer {
-  padding:5px 14px 6px; background:#fdfdfc; border-top:1px solid var(--border);
-  font-size:0.6rem; color:#b5bec9; font-style:italic; text-align:center;
+.banner-cta {
+  background:var(--primary); color:#fff; border:none;
+  border-radius:8px; font-size:0.72rem; font-weight:700;
+  padding:7px 13px; cursor:pointer; white-space:nowrap;
+  font-family:inherit; flex-shrink:0;
 }
 
-/* ── PRE-BUY BLUR ── */
-.locked-blur { padding:8px 14px 10px; display:flex; flex-direction:column; gap:6px; }
-.blur-row    { display:flex; gap:8px; }
-.blur-pill   { height:8px; border-radius:4px; background:#e8e0f5; }
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COMPONENT 2 — POPUP NOTIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.alert-popup {
+  position:fixed;
+  bottom:0; left:50%; transform:translateX(-50%) translateY(120%);
+  width:100%; max-width:480px;
+  padding:0 12px 24px;
+  z-index:500;
+  opacity:0;
+  transition:transform 0.38s cubic-bezier(0.34,1.28,0.64,1), opacity 0.28s ease;
+  pointer-events:none;
+}
+.alert-popup.visible {
+  transform:translateX(-50%) translateY(0);
+  opacity:1;
+  pointer-events:auto;
+}
+.alert-popup-card {
+  background:#fff;
+  border-radius:16px;
+  box-shadow:0 8px 30px rgba(74,42,120,0.16), 0 2px 8px rgba(0,0,0,0.08);
+  border:1.5px solid var(--border);
+  overflow:hidden;
+}
+.popup-body {
+  display:flex; align-items:center; gap:12px;
+  padding:14px 14px 12px; cursor:pointer;
+}
+.popup-icon {
+  width:42px; height:42px; border-radius:11px;
+  background:#fff3e0; display:flex; align-items:center;
+  justify-content:center; font-size:1.35rem; flex-shrink:0;
+}
+.popup-info { flex:1; min-width:0; }
+.popup-tag {
+  font-size:0.58rem; font-weight:800; text-transform:uppercase;
+  letter-spacing:0.09em; color:var(--accent); margin-bottom:2px;
+}
+.popup-title {
+  font-size:0.92rem; font-weight:700; color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.popup-sub { font-size:0.68rem; color:var(--muted); margin-top:2px; }
+.popup-close {
+  width:28px; height:28px; border-radius:50%; border:none;
+  background:#f3f4f6; color:var(--muted); font-size:0.82rem;
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; font-family:inherit; line-height:1;
+}
+.popup-progress { height:3px; background:#f0edf8; }
+.popup-progress-fill {
+  height:100%; background:var(--primary); width:100%;
+}
 
-/* ── SL MODE TOGGLE ── */
-.sl-toggle {
-  display:flex; margin-bottom:10px;
-  border:1px solid var(--border); border-radius:8px; overflow:hidden;
+/* UAT demo panel */
+.demo-panel {
+  background:#1a2030; border-radius:12px; padding:13px 14px; margin-bottom:16px;
 }
-.sl-toggle-btn {
-  flex:1; padding:7px 10px; font-size:0.7rem; font-weight:600;
-  border:none; background:var(--card); color:var(--muted);
-  cursor:pointer; font-family:inherit; transition:background .18s, color .18s;
-  text-align:center; line-height:1.3;
+.demo-panel-head {
+  font-size:0.6rem; font-weight:800; text-transform:uppercase;
+  letter-spacing:0.09em; color:#7c6fa0; margin-bottom:9px;
 }
-.sl-toggle-btn.active { background:var(--primary); color:#fff; }
-.sl-toggle-btn:first-child { border-right:1px solid var(--border); }
-
-/* ── SIMULATOR PANEL ── */
-.sim-panel {
-  background:#1a2030; border-radius:10px; padding:11px 14px; margin-bottom:6px;
+.demo-btn {
+  width:100%; padding:11px; border-radius:10px; border:none;
+  background:#4a2a78; color:#fff; font-size:0.82rem; font-weight:700;
+  cursor:pointer; font-family:inherit; letter-spacing:0.01em;
 }
-.sim-head {
-  font-size:0.6rem; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.08em; color:#7c6fa0; margin-bottom:7px;
-}
-.sim-row  { display:flex; align-items:center; gap:10px; }
-.sim-panel input[type=range] { flex:1; accent-color:#7c3aed; cursor:pointer; }
-.sim-val  { font-size:0.8rem; font-weight:800; color:#c4b5fd; min-width:48px; text-align:right; }
-.sim-btn  {
-  font-size:0.68rem; font-weight:700; padding:5px 12px;
-  border:1px solid #4a2a78; border-radius:20px;
-  color:#c4b5fd; background:#2d1f4a; cursor:pointer; white-space:nowrap;
+.demo-note {
+  font-size:0.62rem; color:#7c6fa0; margin-top:8px; line-height:1.55;
 }
 </style>
 </head>
 <body>
 <div class="shell">
 
-<div class="uat-strip">🧪 UAT · TRADE CARD v2 · ADMIN ONLY — NOT FOR MEMBERS</div>
+  <!-- UAT STRIP -->
+  <div class="uat-strip">🧪 UAT · ALERT NOTIFICATION SYSTEM · ADMIN ONLY</div>
 
-<div class="page" style="padding-top:14px;">
-
-  <!-- SL PHASE TOGGLE -->
-  <div class="note" style="margin-bottom:8px;">
-    Phase 1 = Spot SL (index-price candle check). Phase 2 = Option SL (hard option-price stop).
-  </div>
-  <div class="sl-toggle">
-    <button class="sl-toggle-btn active" id="btn-spot" onclick="setMode('spot')">
-      Phase 1 — Spot SL<br>
-      <span style="font-size:0.6rem;font-weight:500;opacity:0.8;">15-Min Candle Close</span>
-    </button>
-    <button class="sl-toggle-btn" id="btn-option" onclick="setMode('option')">
-      Phase 2 — Option SL<br>
-      <span style="font-size:0.6rem;font-weight:500;opacity:0.8;">Hard Option-Price Stop</span>
-    </button>
+  <!-- MOCK TAB BAR -->
+  <div class="tab-bar">
+    <div class="tab-item active">Markets</div>
+    <div class="tab-item">My Trades</div>
+    <div class="tab-item">Updates</div>
+    <div class="tab-item">About</div>
   </div>
 
-  <!-- SIMULATOR -->
-  <div class="sim-panel">
-    <div class="sim-head">🎛️ Simulate Live CMP — all cards update together</div>
-    <div class="sim-row">
-      <input type="range" id="slider" min="60" max="230" step="0.5" value="148">
-      <div class="sim-val">₹<span id="cmp-disp">148</span></div>
-      <button class="sim-btn" onclick="togglePlay()">▶ Play</button>
+  <div class="page">
+
+    <!-- UAT DEMO CONTROLS -->
+    <div class="demo-panel">
+      <div class="demo-panel-head">🎛️ UAT Demo Controls</div>
+      <button class="demo-btn" onclick="fireTestAlert()">🔔 Fire New Trade Alert</button>
+      <div class="demo-note">
+        Tap to simulate a new trade alert arriving. The popup slides up from the bottom
+        and the banner appears below gainers/losers. Auto-dismisses in 6 seconds.<br><br>
+        In production: fires whenever a new <code style="color:#c4b5fd;">trade_alert</code> post appears in Supabase
+        that the member hasn't seen yet.
+      </div>
     </div>
-  </div>
 
-  <div style="text-align:center;font-size:0.63rem;color:var(--muted);margin:4px 0 14px;">
-    Entry: <strong style="color:var(--primary);">₹128</strong> &nbsp;·&nbsp;
-    Option SL (Phase 2): <strong style="color:#dc2626;">₹80</strong> &nbsp;·&nbsp;
-    Upside: <strong style="color:var(--green);">Unlimited →</strong>
-  </div>
+    <!-- INDEX PRICES MOCK -->
+    <div class="sec-head">Live Markets</div>
+    <div class="index-row">
+      <span class="idx-name">NIFTY 50</span>
+      <span class="idx-val up">24,356 <span class="chg">+0.42%</span></span>
+    </div>
+    <div class="index-row">
+      <span class="idx-name">BANK NIFTY</span>
+      <span class="idx-val down">52,140 <span class="chg">−0.18%</span></span>
+    </div>
+    <div class="index-row">
+      <span class="idx-name">SENSEX</span>
+      <span class="idx-val up">80,124 <span class="chg">+0.31%</span></span>
+    </div>
 
+    <!-- GAINERS / LOSERS MOCK -->
+    <div class="sec-div" style="margin-top:16px;">
+      <div class="sec-div-line"></div>
+      <span class="sec-div-tag tag-uat">Top Movers</span>
+      <div class="sec-div-line"></div>
+    </div>
 
-  <!-- ══ SECTION A: CURRENT PWA — UNCHANGED ══ -->
-  <div class="sec-div">
-    <div class="sec-div-line"></div>
-    <span class="sec-div-tag tag-current">Current PWA · Unchanged</span>
-    <div class="sec-div-line"></div>
-  </div>
-  <div class="note">What paid members see today — P&amp;L per lot and rationale lock included.</div>
+    <div class="gl-wrap">
+      <div class="gl-card">
+        <div class="gl-head">🟢 Gainers</div>
+        <div class="gl-row"><span class="gl-name">ETERNAL</span><span class="up" style="font-weight:700;">+2.22%</span></div>
+        <div class="gl-row"><span class="gl-name">WIPRO</span><span class="up" style="font-weight:700;">+1.87%</span></div>
+        <div class="gl-row"><span class="gl-name">BHARTIARTL</span><span class="up" style="font-weight:700;">+1.44%</span></div>
+      </div>
+      <div class="gl-card">
+        <div class="gl-head">🔴 Losers</div>
+        <div class="gl-row"><span class="gl-name">INFY</span><span class="down" style="font-weight:700;">−6.75%</span></div>
+        <div class="gl-row"><span class="gl-name">TCS</span><span class="down" style="font-weight:700;">−1.92%</span></div>
+        <div class="gl-row"><span class="gl-name">HCLTECH</span><span class="down" style="font-weight:700;">−1.31%</span></div>
+      </div>
+    </div>
 
-  <div class="trade-card">
-    <div class="trade-header">
-      <div class="trade-title-box">
-        <div class="type-box ce">CE</div>
-        <div>
-          <div class="trade-name">NIFTY <span style="font-weight:700;color:#888;font-size:0.9em;">24200</span></div>
-          <div class="trade-expiry">21 May 2026</div>
+    <!-- COMPONENT 1 — ALERT BANNER (hidden until alert fires) -->
+    <div id="banner-section">
+      <div class="sec-div">
+        <div class="sec-div-line"></div>
+        <span class="sec-div-tag tag-alert">🔔 New Alert</span>
+        <div class="sec-div-line"></div>
+      </div>
+      <div class="market-alert-banner" onclick="goToUpdates()">
+        <span class="banner-dot"></span>
+        <div class="banner-text">
+          <div class="banner-label">New Trade Alert</div>
+          <div class="banner-title" id="banner-title">NIFTY 24000 Call alert</div>
         </div>
-      </div>
-      <span class="badge profit" id="a-badge">IN PROFIT</span>
-    </div>
-    <!-- 2×2 old grid (kept for comparison) -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 14px;">
-      <div class="metric-box">
-        <span class="m-label">Entry Price</span>
-        <span class="m-value">₹128.00</span>
-      </div>
-      <div class="metric-box">
-        <span class="m-label">Current Price</span>
-        <span class="m-value" id="a-cmp">₹148.00</span>
-      </div>
-      <div class="metric-box">
-        <span class="m-label">P&amp;L (Per Lot)</span>
-        <span class="m-value" id="a-pnl" style="color:var(--green);">+₹1,300</span>
-      </div>
-      <div style="display:flex;align-items:flex-end;">
-        <div style="width:100%;padding:8px 12px;background:#fafaf9;border:1px solid var(--border);
-                    border-radius:7px;display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:0.7rem;color:var(--muted);font-weight:600;">Why?</span>
-          <span style="color:var(--primary);font-weight:600;font-size:0.68rem;">🔒 Premium</span>
-        </div>
-      </div>
-    </div>
-    <div class="trade-footer">Educational purposes only. Not investment advice.</div>
-  </div>
-
-
-  <!-- ══ SECTION B: PROPOSED V2 — AUTHORIZED METRICS ONLY ══ -->
-  <div class="sec-div" style="margin-top:20px;">
-    <div class="sec-div-line"></div>
-    <span class="sec-div-tag tag-proposed">Proposed v2 · Authorized Metrics Only</span>
-    <div class="sec-div-line"></div>
-  </div>
-
-  <div class="note" id="note-spot">
-    <strong style="color:#92400e;">Phase 1 active.</strong>
-    Spot SL monitoring via 15-min candle close. No option-price stop set yet.
-    Target, P&amp;L, and volume stripped.
-  </div>
-  <div class="note" id="note-option" style="display:none;">
-    <strong style="color:#b91c1c;">Phase 2 active.</strong>
-    Hard option-price stop set. Level not shown to members — only its active state.
-    Target, P&amp;L, and volume stripped.
-  </div>
-
-  <!-- PAID MEMBER CARD v2 -->
-  <div class="trade-card">
-    <div class="trade-header">
-      <div class="trade-title-box">
-        <div class="type-box ce">CE</div>
-        <div>
-          <div class="trade-name">NIFTY <span style="font-weight:700;color:#888;font-size:0.9em;">24200</span></div>
-          <div class="trade-expiry">21 May 2026</div>
-        </div>
-      </div>
-      <span class="badge profit" id="b-paid-badge">IN PROFIT</span>
-    </div>
-
-    <div class="metrics-row">
-      <div class="metric-box">
-        <span class="m-label">Entry Price</span>
-        <span class="m-value">₹128.00</span>
-      </div>
-      <div class="metric-box">
-        <span class="m-label">Live Price (CMP)</span>
-        <span class="m-value" id="b-paid-cmp">₹148.00</span>
+        <button class="banner-cta" onclick="event.stopPropagation();goToUpdates()">View →</button>
       </div>
     </div>
 
-    <div class="status-rows">
-      <div class="s-row">
-        <span class="s-label" id="b-paid-sl-label">Spot SL State</span>
-        <div class="s-right">
-          <span class="sl-badge" id="b-paid-sl-badge">
-            <span class="sl-dot-inner"></span>
-            <span id="b-paid-sl-main">Active Check</span>
-          </span>
-          <span class="sl-sub" id="b-paid-sl-sub">(15-Min Candle Close)</span>
-        </div>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Peak Scalp High</span>
-        <div class="s-right">
-          <span class="peak-val">Max ₹<span id="b-paid-peak">148.00</span></span>
-          <span class="peak-sub">Post-Buy</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="momentum-row">
-      <span class="mom-label">Study Momentum</span>
-      <div class="mom-right">
-        <span class="mom-dot" id="b-paid-mom-dot" style="background:#22c55e;"></span>
-        <span class="mom-text" id="b-paid-mom-text" style="color:#22c55e;">Favorable Progress</span>
-      </div>
-    </div>
-
-    <div class="trade-footer">Educational purposes only. Not investment advice.</div>
-  </div>
-
-  <!-- FREE MEMBER CARD v2 -->
-  <div class="trade-card" style="margin-top:2px;">
-    <div class="trade-header">
-      <div class="trade-title-box">
-        <div class="type-box ce">CE</div>
-        <div>
-          <div class="trade-name">NIFTY <span style="font-weight:700;color:#888;font-size:0.9em;">24200</span></div>
-          <div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>
-        </div>
-      </div>
-      <span class="badge profit" id="b-free-badge">IN PROFIT</span>
-    </div>
-
-    <div class="metrics-row">
-      <div class="metric-box">
-        <span class="m-label">Entry Price</span>
-        <span class="m-value">₹128.00</span>
-      </div>
-      <div class="metric-box">
-        <span class="m-label">Live Price (CMP)</span>
-        <span class="m-value" id="b-free-cmp">₹148.00</span>
-      </div>
-    </div>
-
-    <div class="status-rows">
-      <div class="s-row">
-        <span class="s-label" id="b-free-sl-label">Spot SL State</span>
-        <div class="s-right">
-          <span class="sl-badge" id="b-free-sl-badge">
-            <span class="sl-dot-inner"></span>
-            <span id="b-free-sl-main">Active Check</span>
-          </span>
-          <span class="sl-sub" id="b-free-sl-sub">(15-Min Candle Close)</span>
-        </div>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Peak Scalp High</span>
-        <div class="s-right">
-          <span class="peak-val">Max ₹<span id="b-free-peak">148.00</span></span>
-          <span class="peak-sub">Post-Buy</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="momentum-row">
-      <span class="mom-label">Study Momentum</span>
-      <div class="mom-right">
-        <span class="mom-dot" id="b-free-mom-dot" style="background:#22c55e;"></span>
-        <span class="mom-text" id="b-free-mom-text" style="color:#22c55e;">Favorable Progress</span>
-      </div>
-    </div>
-
-    <div class="trade-footer">Educational purposes only. Not investment advice.</div>
-  </div>
-
-  <!-- PRE-BUY CARD — no status rows until entry confirmed -->
-  <div class="note" style="margin-top:10px;">Pre-buy state — status dashboard hidden until entry confirmed.</div>
-  <div class="trade-card" style="border-color:#fde68a;">
-    <div class="trade-header">
-      <div class="trade-title-box">
-        <div class="type-box lock">🔒</div>
-        <div>
-          <div class="trade-name">NIFTY</div>
-          <div class="trade-expiry" style="font-size:0.63rem;color:#c4b8d8;font-weight:500;">🔒 Expiry — Premium</div>
-        </div>
-      </div>
-      <span class="badge prebuy">WATCHING</span>
-    </div>
-    <div class="locked-blur">
-      <div class="blur-row">
-        <div class="blur-pill" style="width:40%;"></div>
-        <div class="blur-pill" style="width:25%;opacity:0.5;"></div>
-        <div class="blur-pill" style="width:18%;opacity:0.3;"></div>
-      </div>
-      <div style="text-align:center;padding:4px 0 2px;font-size:0.72rem;color:var(--primary);font-weight:600;">
-        Entry visible once buy is confirmed
-      </div>
-    </div>
-    <div class="trade-footer">Educational purposes only. Not investment advice.</div>
-  </div>
-
-</div><!-- /page -->
+  </div><!-- /page -->
 </div><!-- /shell -->
 
+<!-- COMPONENT 2 — POPUP NOTIFICATION -->
+<div class="alert-popup" id="alert-popup">
+  <div class="alert-popup-card">
+    <div class="popup-body" onclick="goToUpdates()">
+      <div class="popup-icon">🚨</div>
+      <div class="popup-info">
+        <div class="popup-tag">New Trade Alert</div>
+        <div class="popup-title" id="popup-title">NIFTY 24000 Call alert</div>
+        <div class="popup-sub">Tap to view on Trade Alerts</div>
+      </div>
+      <button class="popup-close" onclick="event.stopPropagation();dismissPopup()">✕</button>
+    </div>
+    <div class="popup-progress">
+      <div class="popup-progress-fill" id="popup-fill"></div>
+    </div>
+  </div>
+</div>
+
 <script>
-const ENTRY  = 128;
-const SL_OPT = 80;
-let slMode   = 'spot';
-let peakCmp  = ENTRY;
+const POPUP_MS = 6000;
+let _popupTimer = null;
 
-/* ── MOMENTUM — 3 states per brief ─────────────────────
-   CMP > ENTRY  → #22c55e  Favorable Progress
-   CMP ≈ ENTRY  → #d97706  Neutral Consolidation
-   CMP < ENTRY  → #ef4444  Under Pressure
-──────────────────────────────────────────────────────── */
-function getMomentum(cmp) {
-  const diff = cmp - ENTRY;
-  if (diff >  0.5) return { color: '#22c55e', text: 'Favorable Progress' };
-  if (diff >= -0.5) return { color: '#d97706', text: 'Neutral Consolidation' };
-  return               { color: '#ef4444', text: 'Under Pressure' };
-}
-
-/* ── SL STATE per phase ─────────────────────────────── */
-function getSLState() {
-  if (slMode === 'spot') {
-    return { label:'Spot SL State', cls:'sl-badge', main:'Active Check', sub:'(15-Min Candle Close)' };
-  }
-  return { label:'Option SL', cls:'sl-badge option-active', main:'Hard Stop Active', sub:'(Option Price)' };
-}
-
-/* ── UPDATE ONE CARD ────────────────────────────────── */
-function updateCard(prefix, cmp) {
-  const sl  = getSLState();
-  const mom = getMomentum(cmp);
-  const diff = cmp - ENTRY;
-  const bCls = diff >  0.5 ? 'badge profit'
-             : diff >= -0.5 ? 'badge neutral'
-             : 'badge loss';
-  const bTxt = diff >  0.5 ? 'IN PROFIT'
-             : diff >= -0.5 ? 'AT ENTRY'
-             : 'IN LOSS';
-
-  document.getElementById(prefix + '-badge').className   = bCls;
-  document.getElementById(prefix + '-badge').textContent = bTxt;
-  document.getElementById(prefix + '-cmp').textContent   = '₹' + cmp.toFixed(2);
-
-  document.getElementById(prefix + '-sl-label').textContent = sl.label;
-  document.getElementById(prefix + '-sl-badge').className   = sl.cls;
-  document.getElementById(prefix + '-sl-main').textContent  = sl.main;
-  document.getElementById(prefix + '-sl-sub').textContent   = sl.sub;
-
-  document.getElementById(prefix + '-peak').textContent = peakCmp.toFixed(2);
-
-  document.getElementById(prefix + '-mom-dot').style.background = mom.color;
-  document.getElementById(prefix + '-mom-text').textContent     = mom.text;
-  document.getElementById(prefix + '-mom-text').style.color     = mom.color;
-}
-
-/* ── SECTION A — kept for side-by-side comparison ───── */
-function updateSectionA(cmp) {
-  const diff = cmp - ENTRY;
-  const pnl  = diff * 65;
-  document.getElementById('a-badge').className   = diff > 0.5 ? 'badge profit' : 'badge loss';
-  document.getElementById('a-badge').textContent = diff > 0.5 ? 'IN PROFIT' : 'IN LOSS';
-  document.getElementById('a-cmp').textContent   = '₹' + cmp.toFixed(2);
-  const pnlEl = document.getElementById('a-pnl');
-  pnlEl.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-  const sign = pnl >= 0 ? '+' : '';
-  pnlEl.textContent = sign + '₹' + Math.abs(pnl).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-}
-
-/* ── MASTER UPDATE ──────────────────────────────────── */
-function updateAll(cmp) {
-  if (cmp > peakCmp) peakCmp = cmp;
-  updateSectionA(cmp);
-  updateCard('b-paid', cmp);
-  updateCard('b-free', cmp);
-}
-
-/* ── MODE TOGGLE ────────────────────────────────────── */
-function setMode(mode) {
-  slMode = mode;
-  document.getElementById('btn-spot').classList.toggle('active', mode === 'spot');
-  document.getElementById('btn-option').classList.toggle('active', mode === 'option');
-  document.getElementById('note-spot').style.display   = mode === 'spot'   ? '' : 'none';
-  document.getElementById('note-option').style.display = mode === 'option' ? '' : 'none';
-  updateAll(parseFloat(document.getElementById('slider').value));
-}
-
-/* ── SLIDER ─────────────────────────────────────────── */
-const slider = document.getElementById('slider');
-const disp   = document.getElementById('cmp-disp');
-slider.addEventListener('input', () => {
-  const v = parseFloat(slider.value);
-  disp.textContent = Math.round(v);
-  updateAll(v);
-});
-
-/* ── PLAY / PAUSE ───────────────────────────────────── */
-let animId = null, dir = 1;
-function togglePlay() {
-  const btn = document.querySelector('.sim-btn');
-  if (animId) { cancelAnimationFrame(animId); animId = null; btn.textContent = '▶ Play'; return; }
-  btn.textContent = '⏸ Pause';
-  let last = 0;
-  function step(ts) {
-    if (ts - last > 38) {
-      let v = parseFloat(slider.value) + dir * 1.2;
-      if (v >= parseFloat(slider.max)) { v = parseFloat(slider.max); dir = -1; }
-      if (v <= parseFloat(slider.min)) { v = parseFloat(slider.min); dir =  1; }
-      slider.value = v;
-      disp.textContent = Math.round(v);
-      updateAll(v);
-      last = ts;
+/* ── Format alert label from post content ───────────────────────────────── */
+function parseAlertLabel(content) {
+  const lines = (content||'').split('\n').map(l=>l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const m = line.match(/\b(NIFTY|BANKNIFTY|SENSEX)\b\s*(\d{4,6})\s*(CE|PE)\b/i);
+    if (m) {
+      const type = m[3].toUpperCase() === 'CE' ? 'Call' : 'Put';
+      return `${m[1].toUpperCase()} ${m[2]} ${type} alert`;
     }
-    animId = requestAnimationFrame(step);
   }
-  animId = requestAnimationFrame(step);
+  return 'New Trade Alert';
 }
 
-/* ── VERIFICATION TRAIL DISPATCH ────────────────────── */
-console.table([{
-  'File Adjusted':            'uat.html',
-  'Forbidden Metrics Purged': 'Target Price · Position Volume · Per-Lot P&L',
-  'New Structural Fields':    'Entry Price · CMP · Spot SL State · Peak Scalp High · Study Momentum',
-  'Status':                   '✓ Active'
-}]);
+/* ── Show popup ─────────────────────────────────────────────────────────── */
+function showPopup(label) {
+  document.getElementById('popup-title').textContent = label;
+  const popup = document.getElementById('alert-popup');
+  popup.classList.add('visible');
 
-/* ── INIT ───────────────────────────────────────────── */
-updateAll(parseFloat(slider.value));
+  /* progress bar drain */
+  const fill = document.getElementById('popup-fill');
+  fill.style.transition = 'none';
+  fill.style.width = '100%';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    fill.style.transition = `width ${POPUP_MS}ms linear`;
+    fill.style.width = '0%';
+  }));
+
+  clearTimeout(_popupTimer);
+  _popupTimer = setTimeout(dismissPopup, POPUP_MS);
+}
+
+function dismissPopup() {
+  clearTimeout(_popupTimer);
+  document.getElementById('alert-popup').classList.remove('visible');
+}
+
+/* ── Show markets banner ─────────────────────────────────────────────────── */
+function showBanner(label) {
+  document.getElementById('banner-title').textContent = label;
+  const sec = document.getElementById('banner-section');
+  sec.style.display = 'block';
+  /* re-trigger animation if already visible */
+  const banner = sec.querySelector('.market-alert-banner');
+  banner.style.animation = 'none';
+  requestAnimationFrame(() => { banner.style.animation = ''; });
+}
+
+/* ── Fire both (UAT demo + production hook point) ───────────────────────── */
+function fireTestAlert() {
+  const label = 'NIFTY 24000 Call alert';
+  showBanner(label);
+  showPopup(label);
+}
+
+/* ── Navigate to Updates tab ─────────────────────────────────────────────── */
+function goToUpdates() {
+  dismissPopup();
+  /* In production: showTab('updates') then scroll to the post card */
+  const t = document.createElement('div');
+  t.style.cssText = [
+    'position:fixed','bottom:76px','left:50%','transform:translateX(-50%)',
+    'background:#1a2030','color:#f0c040','font-size:0.72rem','font-weight:700',
+    'padding:9px 18px','border-radius:20px','z-index:600','white-space:nowrap',
+    'box-shadow:0 4px 14px rgba(0,0,0,0.25)','pointer-events:none'
+  ].join(';');
+  t.textContent = '→ Routes to Updates tab in production';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
 </script>
 </body>
 </html>
