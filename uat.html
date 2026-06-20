@@ -34,6 +34,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 .feat{display:flex;flex-direction:column;align-items:center;flex:1;padding:0 6px;text-align:center;}
 .feat-icon{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,0.85);border:1px solid rgba(74,42,120,0.10);display:flex;align-items:center;justify-content:center;margin-bottom:8px;backdrop-filter:blur(4px);}
 .feat-title{font-size:13px;font-weight:700;color:#1a2030;margin-bottom:2px;}
+.feat-title .fi{font-size:15px;font-weight:800;color:#4a2a78;}
 .feat-desc{font-size:10.5px;color:#9ca3af;line-height:1.4;}
 
 .form-card{width:100%;max-width:360px;background:rgba(255,255,255,0.92);border-radius:22px;padding:22px 20px 18px;box-shadow:0 4px 40px rgba(74,42,120,0.08),0 1px 0 rgba(255,255,255,0.9) inset;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
@@ -315,33 +316,41 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
     <div class="features">
       <div class="feat">
         <div class="feat-icon">
+          <!-- Shield + check -->
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             <polyline points="9 12 11 14 15 10"/>
           </svg>
         </div>
-        <div class="feat-title">Educate.</div>
-        <div class="feat-desc">Make informed decisions</div>
+        <div class="feat-title"><span class="fi">D</span>iscipline</div>
+        <div class="feat-desc">Stay consistent with your plan</div>
       </div>
       <div class="feat">
         <div class="feat-icon">
+          <!-- Target / bullseye with arrow -->
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-            <polyline points="16 7 22 7 22 13"/>
+            <circle cx="12" cy="12" r="10"/>
+            <circle cx="12" cy="12" r="6"/>
+            <circle cx="12" cy="12" r="2"/>
+            <path d="m16.5 7.5 2-2"/>
+            <path d="M20 5h-2V3"/>
           </svg>
         </div>
-        <div class="feat-title">Track.</div>
-        <div class="feat-desc">Real-time market movements</div>
+        <div class="feat-title"><span class="fi">C</span>onfidence</div>
+        <div class="feat-desc">Make decisions with clarity</div>
       </div>
       <div class="feat">
         <div class="feat-icon">
+          <!-- Hourglass -->
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <path d="M5 22h14"/>
+            <path d="M5 2h14"/>
+            <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+            <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
           </svg>
         </div>
-        <div class="feat-title">Learn.</div>
-        <div class="feat-desc">Grow with market insights</div>
+        <div class="feat-title"><span class="fi">P</span>atience</div>
+        <div class="feat-desc">Let the right opportunities come</div>
       </div>
     </div>
 
