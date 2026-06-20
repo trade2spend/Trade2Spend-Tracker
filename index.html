@@ -302,6 +302,33 @@
         .totp-submit { flex:2; padding:10px; background:#4a2a78; color:#fff; border:none; border-radius:8px; font-size:0.88rem; font-weight:700; cursor:pointer; font-family:inherit; transition:opacity 0.2s; touch-action:manipulation; }
         .totp-submit:disabled { opacity:0.6; cursor:not-allowed; }
         .totp-footer { text-align:center; font-size:0.68rem; color:#9ca3af; margin-top:10px; }
+
+        /* ── ALERT NOTIFICATION SYSTEM ─────────────────────────────────────── */
+        #alert-banner-section { display:none; margin-top:10px; }
+        .alert-banner { display:flex; align-items:center; gap:10px; background:var(--card-bg); border:1px solid var(--border); border-left:3px solid var(--primary); border-radius:10px; padding:10px 12px; cursor:pointer; animation:alertFadeUp .28s ease; }
+        @keyframes alertFadeUp { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+        .alert-banner-dot { width:7px; height:7px; border-radius:50%; background:var(--primary); flex-shrink:0; animation:alertBlink 1.6s ease-in-out infinite; }
+        @keyframes alertBlink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+        .alert-banner-text { flex:1; min-width:0; }
+        .alert-banner-type { font-size:0.6rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:1px; }
+        .alert-banner-name { font-size:0.84rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
+        .alert-popup-overlay { position:fixed; inset:0; background:rgba(10,8,20,0.55); display:flex; align-items:center; justify-content:center; z-index:400; padding:24px; opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
+        .alert-popup-overlay.visible { opacity:1; pointer-events:auto; }
+        .alert-popup-card { background:#fff; border-radius:20px; width:100%; max-width:340px; overflow:hidden; transform:scale(0.92) translateY(12px); transition:transform 0.3s cubic-bezier(0.34,1.3,0.64,1); box-shadow:0 20px 60px rgba(10,8,20,0.22); }
+        .alert-popup-overlay.visible .alert-popup-card { transform:scale(1) translateY(0); }
+        .alert-popup-accent { height:4px; background:var(--primary); }
+        .alert-popup-body { padding:22px 22px 6px; }
+        .alert-popup-tag-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+        .alert-popup-tag { display:inline-flex; align-items:center; gap:5px; background:var(--primary-light); color:var(--primary); font-size:0.6rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; padding:4px 10px; border-radius:20px; }
+        .alert-popup-tag-dot { width:6px; height:6px; border-radius:50%; background:var(--primary); animation:alertBlink 1.4s ease-in-out infinite; }
+        .alert-popup-close { background:none; border:none; color:var(--text-muted); font-size:1rem; cursor:pointer; line-height:1; padding:2px; font-family:inherit; }
+        .alert-popup-instrument { font-size:1.65rem; font-weight:800; color:var(--text-main); letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px; }
+        .alert-popup-instrument .alert-opt { color:var(--primary); font-size:1.1rem; font-weight:700; margin-left:4px; }
+        .alert-popup-sub { font-size:0.76rem; color:var(--text-muted); font-weight:500; margin-bottom:22px; }
+        .alert-popup-actions { display:flex; gap:8px; padding:0 22px 22px; }
+        .alert-btn-view  { flex:1; padding:13px; border-radius:11px; border:none; background:var(--primary); color:#fff; font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
+        .alert-btn-later { padding:13px 18px; border-radius:11px; border:1.5px solid var(--border); background:transparent; color:var(--text-muted); font-size:0.84rem; font-weight:600; cursor:pointer; font-family:inherit; }
     </style>
 </head>
 <body>
@@ -371,6 +398,17 @@
             <span style="color:var(--border);">|</span>
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▼ 18 Declining</span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">NSE · every 3 min</span>
+        </div>
+        <!-- Alert banner — appears below gainers/losers when a new post is detected -->
+        <div id="alert-banner-section">
+            <div class="alert-banner" onclick="_showAlertPopup()">
+                <span class="alert-banner-dot"></span>
+                <div class="alert-banner-text">
+                    <div class="alert-banner-type" id="alert-banner-type">New Trade Alert</div>
+                    <div class="alert-banner-name"  id="alert-banner-name">New alert</div>
+                </div>
+                <button class="alert-banner-btn" onclick="event.stopPropagation();_goToAlert()">View →</button>
+            </div>
         </div>
     </div>
 
@@ -3026,7 +3064,87 @@ async function triggerA2HS() {
     _a2hsPrompt = null;
   } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
 }
-document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); });
+document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); _startAlertPolling(); });
+
+    /* ── ALERT NOTIFICATION SYSTEM ─────────────────────────────────────────── */
+    let _pendingAlertType = null;
+
+    function _getActiveTab() {
+        const el = document.querySelector('.tab.active');
+        return (el?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1] || 'markets';
+    }
+    function _alertDestTab(type) { return type === 'trade' ? 'trades' : 'updates'; }
+
+    function _triggerAlert(post) {
+        const isTradeAlert = post.post_type === 'trade_alert';
+        const type  = isTradeAlert ? 'trade' : 'update';
+        _pendingAlertType = type;
+
+        // Parse instrument label from content
+        const m = (post.content||'').match(/\b(NIFTY|BANKNIFTY|SENSEX)\b\s*(\d{4,6})\s*(CE|PE)\b/i);
+        const label = m
+            ? `${m[1].toUpperCase()} ${m[2]} ${m[3].toUpperCase()==='CE'?'Call':'Put'} alert`
+            : (isTradeAlert ? 'New Trade Alert' : 'New Market Update');
+
+        // Banner
+        document.getElementById('alert-banner-type').textContent = isTradeAlert ? 'New Trade Alert' : 'New Market Update';
+        document.getElementById('alert-banner-name').textContent = label;
+        document.getElementById('alert-banner-section').style.display = 'block';
+
+        // Popup content
+        document.getElementById('alert-popup-type-label').textContent = isTradeAlert ? 'Trade Alert' : 'Market Update';
+        if (m) {
+            document.getElementById('alert-popup-instrument').innerHTML =
+                `${m[1].toUpperCase()} ${m[2]} <span class="alert-opt">${m[3].toUpperCase()}</span>`;
+            document.getElementById('alert-popup-sub').textContent =
+                `New ${m[3].toUpperCase()==='CE'?'Call':'Put'} alert`;
+        } else {
+            document.getElementById('alert-popup-instrument').textContent = label;
+            document.getElementById('alert-popup-sub').textContent =
+                isTradeAlert ? 'New trade alert' : 'New update from Trade2Spend';
+        }
+
+        // Show popup only if member is NOT already on the destination tab
+        if (_getActiveTab() !== _alertDestTab(type)) _showAlertPopup();
+    }
+
+    function _showAlertPopup()  { document.getElementById('alert-popup-overlay').classList.add('visible'); }
+    function _dismissAlertPopup() { document.getElementById('alert-popup-overlay').classList.remove('visible'); }
+    function _handleAlertOverlayTap(e) { if (e.target === document.getElementById('alert-popup-overlay')) _dismissAlertPopup(); }
+
+    function _goToAlert() {
+        _dismissAlertPopup();
+        if (!_pendingAlertType) return;
+        const dest  = _alertDestTab(_pendingAlertType);
+        const tabEl = document.querySelector(`.tab[onclick*="'${dest}'"]`);
+        if (tabEl) switchTab(dest, tabEl);
+    }
+
+    async function _pollForAlerts() {
+        try {
+            const [tradeRes, updateRes] = await Promise.all([
+                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=1&select=id,content,post_type,sent_at', {method:'GET'}),
+                sbFetch('posts?is_deleted=eq.false&post_type=in.(general,market_update)&parent_id=is.null&order=sent_at.desc&limit=1&select=id,content,post_type,sent_at', {method:'GET'})
+            ]);
+            const lastTradeId  = localStorage.getItem('t2s_last_trade_alert_id');
+            const lastUpdateId = localStorage.getItem('t2s_last_update_alert_id');
+            const latestTrade  = Array.isArray(tradeRes)  ? tradeRes[0]  : null;
+            const latestUpdate = Array.isArray(updateRes) ? updateRes[0] : null;
+            if (latestTrade && latestTrade.id !== lastTradeId) {
+                localStorage.setItem('t2s_last_trade_alert_id', latestTrade.id);
+                if (lastTradeId) _triggerAlert(latestTrade); // skip first load — just seed the ID
+            }
+            if (latestUpdate && latestUpdate.id !== lastUpdateId) {
+                localStorage.setItem('t2s_last_update_alert_id', latestUpdate.id);
+                if (lastUpdateId) _triggerAlert(latestUpdate);
+            }
+        } catch(e) { /* silent — polling is non-critical */ }
+    }
+
+    function _startAlertPolling() {
+        _pollForAlerts();
+        setInterval(_pollForAlerts, 60000);
+    }
 
     // ── TOTP MODAL ───────────────────────────────────────────────────────────
     const VM_BASE = 'https://api.trade2spend.com';
@@ -3100,6 +3218,28 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             <button id="totp-submit-btn" class="totp-submit" onclick="submitTotpFromPwa()">Start Tracking →</button>
         </div>
         <div class="totp-footer">Auto-stops at 3:35 PM IST · Kotak Neo only</div>
+    </div>
+</div>
+
+<!-- Alert Notification Popup -->
+<div class="alert-popup-overlay" id="alert-popup-overlay" onclick="_handleAlertOverlayTap(event)">
+    <div class="alert-popup-card">
+        <div class="alert-popup-accent"></div>
+        <div class="alert-popup-body">
+            <div class="alert-popup-tag-row">
+                <span class="alert-popup-tag">
+                    <span class="alert-popup-tag-dot"></span>
+                    <span id="alert-popup-type-label">Trade Alert</span>
+                </span>
+                <button class="alert-popup-close" onclick="_dismissAlertPopup()">✕</button>
+            </div>
+            <div class="alert-popup-instrument" id="alert-popup-instrument">New Alert</div>
+            <div class="alert-popup-sub" id="alert-popup-sub">Tap to view</div>
+        </div>
+        <div class="alert-popup-actions">
+            <button class="alert-btn-view"  onclick="_goToAlert()">View Alert →</button>
+            <button class="alert-btn-later" onclick="_dismissAlertPopup()">Later</button>
+        </div>
     </div>
 </div>
 
