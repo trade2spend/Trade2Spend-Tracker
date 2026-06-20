@@ -26,37 +26,38 @@ html,body { background:#1a1a2e; min-height:100vh; }
 
 .shell {
   max-width:480px; margin:0 auto; background:var(--bg);
-  min-height:100vh; position:relative;
+  min-height:100vh; display:flex; flex-direction:column;
 }
 
 /* UAT strip */
 .uat-strip {
   background:#1a2030; color:#f0c040;
   font-size:0.62rem; font-weight:700; letter-spacing:0.07em;
-  text-align:center; padding:6px 16px;
-  position:sticky; top:0; z-index:50;
+  text-align:center; padding:6px 16px; flex-shrink:0;
 }
 
 /* Tab bar */
 .tab-bar {
   background:var(--card); border-bottom:1px solid var(--border);
-  display:flex; position:sticky; top:28px; z-index:49;
+  display:flex; flex-shrink:0;
 }
 .tab-item {
-  flex:1; padding:10px 4px 8px;
-  font-size:0.68rem; font-weight:600; text-align:center;
+  flex:1; padding:10px 2px 8px;
+  font-size:0.65rem; font-weight:600; text-align:center;
   color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;
+  white-space:nowrap; overflow:hidden;
 }
 .tab-item.active { color:var(--primary); border-bottom-color:var(--primary); }
 
-.page { padding:12px 14px 100px; }
+/* Tab pages */
+.tab-page { display:none; flex:1; overflow-y:auto; padding:14px 14px 80px; }
+.tab-page.active { display:block; }
 
+/* ── Shared content styles ── */
 .sec-head {
   font-size:0.6rem; font-weight:800; text-transform:uppercase;
   letter-spacing:0.09em; color:var(--muted); margin-bottom:8px;
 }
-
-/* Index rows */
 .index-row {
   background:var(--card); border:1px solid var(--border);
   border-radius:10px; padding:10px 14px; margin-bottom:7px;
@@ -68,71 +69,70 @@ html,body { background:#1a1a2e; min-height:100vh; }
 .up   { color:var(--green); }
 .down { color:var(--red); }
 
-/* Gainers / Losers */
 .gl-wrap { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .gl-card { background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-.gl-head {
-  padding:7px 10px; border-bottom:1px solid var(--border);
-  font-size:0.58rem; font-weight:800; text-transform:uppercase;
-  letter-spacing:0.07em; color:var(--muted);
-}
-.gl-row {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:6px 10px; border-bottom:1px solid #f5f2ee; font-size:0.74rem;
-}
+.gl-head { padding:7px 10px; border-bottom:1px solid var(--border); font-size:0.58rem; font-weight:800; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); }
+.gl-row  { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #f5f2ee; font-size:0.74rem; }
 .gl-row:last-child { border-bottom:none; }
 .gl-name { font-weight:600; color:var(--text); }
 
-/* Divider */
 .sec-div { display:flex; align-items:center; gap:8px; margin:14px 0 10px; }
 .sec-div-line { flex:1; height:1px; background:var(--border); }
-.sec-div-tag {
-  font-size:0.6rem; font-weight:800; text-transform:uppercase;
-  letter-spacing:0.08em; white-space:nowrap; padding:3px 10px;
-  border-radius:20px; background:var(--primary-light); color:var(--primary);
+.sec-div-tag  { font-size:0.6rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; white-space:nowrap; padding:3px 10px; border-radius:20px; background:var(--primary-light); color:var(--primary); }
+
+/* Mock trade card */
+.trade-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:12px; overflow:hidden; margin-bottom:10px;
 }
+.tc-header {
+  padding:10px 14px; border-bottom:1px dashed var(--border);
+  display:flex; justify-content:space-between; align-items:center;
+}
+.tc-name { font-weight:700; font-size:0.92rem; color:var(--text); }
+.tc-expiry { font-size:0.68rem; color:var(--muted); margin-top:1px; }
+.tc-badge { font-size:0.68rem; font-weight:700; padding:3px 9px; border-radius:6px; background:#dcfce7; color:var(--green); }
+.tc-metrics { display:grid; grid-template-columns:repeat(3,1fr); padding:10px 14px; gap:6px; }
+.tc-metric .label { font-size:0.62rem; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }
+.tc-metric .val   { font-size:0.88rem; font-weight:700; color:var(--text); margin-top:2px; }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   COMPONENT 1 — MARKETS ALERT BANNER
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-#banner-section { display:none; }
+/* Mock post card */
+.post-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:12px; padding:12px 14px; margin-bottom:10px;
+}
+.post-time { font-size:0.64rem; color:var(--muted); margin-bottom:6px; }
+.post-body { font-size:0.84rem; color:var(--text); line-height:1.55; }
 
-.market-alert-banner {
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ALERT BANNER — below gainers/losers
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#alert-banner-section { display:none; }
+
+.alert-banner {
   display:flex; align-items:center; gap:10px;
   background:var(--card); border:1px solid var(--border);
-  border-left:3px solid var(--primary);
-  border-radius:10px; padding:10px 12px; cursor:pointer;
+  border-left:3px solid var(--primary); border-radius:10px;
+  padding:10px 12px; cursor:pointer;
   animation:fadeUp .28s ease;
 }
-@keyframes fadeUp {
-  from { opacity:0; transform:translateY(5px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-.banner-dot {
+@keyframes fadeUp { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+
+.alert-banner-dot {
   width:7px; height:7px; border-radius:50%;
   background:var(--primary); flex-shrink:0;
   animation:blink 1.6s ease-in-out infinite;
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
-.banner-text  { flex:1; min-width:0; }
-.banner-type  { font-size:0.6rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:1px; }
-.banner-name  { font-size:0.84rem; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.banner-btn   {
-  border:none; background:var(--primary); color:#fff;
-  font-size:0.7rem; font-weight:700; font-family:inherit;
-  padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0;
-}
 
-/* UAT reset button */
-.uat-reset {
-  width:100%; padding:9px; border-radius:9px; border:1px solid #3a3060;
-  background:transparent; color:#7c6fa0; font-size:0.72rem; font-weight:600;
-  cursor:pointer; font-family:inherit; margin-bottom:14px;
-}
+.alert-banner-text  { flex:1; min-width:0; }
+.alert-banner-type  { font-size:0.6rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:1px; }
+.alert-banner-name  { font-size:0.84rem; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.alert-banner-btn   { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   COMPONENT 2 — CENTRE OVERLAY POPUP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CENTRE OVERLAY POPUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .popup-overlay {
   position:fixed; inset:0;
   background:rgba(10,8,20,0.55);
@@ -153,8 +153,7 @@ html,body { background:#1a1a2e; min-height:100vh; }
 .popup-overlay.visible .popup-card { transform:scale(1) translateY(0); }
 
 .popup-accent { height:4px; background:var(--primary); }
-
-.popup-body { padding:22px 22px 6px; }
+.popup-body   { padding:22px 22px 6px; }
 
 .popup-tag-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
 .popup-tag {
@@ -164,31 +163,26 @@ html,body { background:#1a1a2e; min-height:100vh; }
   letter-spacing:0.08em; padding:4px 10px; border-radius:20px;
 }
 .popup-tag-dot { width:6px; height:6px; border-radius:50%; background:var(--primary); animation:blink 1.4s ease-in-out infinite; }
-.popup-dismiss-x {
-  background:none; border:none; color:var(--muted);
-  font-size:1rem; cursor:pointer; line-height:1; padding:2px;
-  font-family:inherit;
-}
+.popup-close-x { background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; line-height:1; padding:2px; font-family:inherit; }
 
-.popup-instrument {
-  font-size:1.65rem; font-weight:800; color:var(--text);
-  letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px;
-}
-.popup-instrument .opt-type { color:var(--primary); font-size:1.1rem; font-weight:700; margin-left:4px; }
+.popup-instrument { font-size:1.65rem; font-weight:800; color:var(--text); letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px; }
+.popup-instrument .opt { color:var(--primary); font-size:1.1rem; font-weight:700; margin-left:4px; }
 .popup-sub { font-size:0.76rem; color:var(--muted); font-weight:500; margin-bottom:22px; }
 
 .popup-actions { display:flex; gap:8px; padding:0 22px 22px; }
-.btn-view {
-  flex:1; padding:13px; border-radius:11px; border:none;
-  background:var(--primary); color:#fff;
-  font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit;
+.btn-view  { flex:1; padding:13px; border-radius:11px; border:none; background:var(--primary); color:#fff; font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
+.btn-later { padding:13px 18px; border-radius:11px; border:1.5px solid var(--border); background:transparent; color:var(--muted); font-size:0.84rem; font-weight:600; cursor:pointer; font-family:inherit; }
+
+/* UAT controls */
+.uat-controls {
+  background:#1a2030; border-radius:10px; padding:11px 13px; margin-bottom:14px;
 }
-.btn-later {
-  padding:13px 18px; border-radius:11px;
-  border:1.5px solid var(--border); background:transparent;
-  color:var(--muted); font-size:0.84rem; font-weight:600;
-  cursor:pointer; font-family:inherit;
-}
+.uat-ctrl-head { font-size:0.58rem; font-weight:800; text-transform:uppercase; letter-spacing:0.09em; color:#7c6fa0; margin-bottom:8px; }
+.uat-ctrl-row  { display:flex; gap:7px; }
+.uat-btn { flex:1; padding:9px 6px; border-radius:8px; border:none; font-size:0.72rem; font-weight:700; cursor:pointer; font-family:inherit; }
+.uat-btn-trade  { background:#4a2a78; color:#fff; }
+.uat-btn-update { background:#2a4a78; color:#fff; }
+.uat-ctrl-note  { font-size:0.6rem; color:#7c6fa0; margin-top:7px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -196,19 +190,30 @@ html,body { background:#1a1a2e; min-height:100vh; }
 
   <div class="uat-strip">🧪 UAT · ALERT NOTIFICATION · ADMIN ONLY</div>
 
+  <!-- TAB BAR -->
   <div class="tab-bar">
-    <div class="tab-item active">Markets</div>
-    <div class="tab-item">My Trades</div>
-    <div class="tab-item">Updates</div>
-    <div class="tab-item">About</div>
+    <div class="tab-item active"   onclick="switchTab('markets')">Markets</div>
+    <div class="tab-item"          onclick="switchTab('trades')">My Trades</div>
+    <div class="tab-item"          onclick="switchTab('performance')">Performance</div>
+    <div class="tab-item"          onclick="switchTab('updates')">Updates</div>
+    <div class="tab-item"          onclick="switchTab('about')">About</div>
   </div>
 
-  <div class="page">
+  <!-- ── MARKETS TAB ── -->
+  <div class="tab-page active" id="tab-markets">
 
-    <!-- UAT-only reset (admin testing tool, not visible to members) -->
-    <button class="uat-reset" onclick="resetAndFire()">↺ Re-trigger alert (UAT only)</button>
+    <div class="uat-controls">
+      <div class="uat-ctrl-head">🎛️ UAT — Simulate Incoming Alert</div>
+      <div class="uat-ctrl-row">
+        <button class="uat-btn uat-btn-trade"  onclick="fireAlert('trade')">🚨 Trade Alert</button>
+        <button class="uat-btn uat-btn-update" onclick="fireAlert('update')">📢 General Update</button>
+      </div>
+      <div class="uat-ctrl-note">
+        Switch tabs first, then fire — popup is suppressed when already on the destination tab.<br>
+        Trade alert → My Trades tab &nbsp;·&nbsp; General update → Updates tab
+      </div>
+    </div>
 
-    <!-- INDEX PRICES -->
     <div class="sec-head">Live Markets</div>
     <div class="index-row">
       <span class="idx-name">NIFTY 50</span>
@@ -223,7 +228,6 @@ html,body { background:#1a1a2e; min-height:100vh; }
       <span class="idx-val up">80,124 <span class="chg">+0.31%</span></span>
     </div>
 
-    <!-- GAINERS / LOSERS -->
     <div class="sec-div" style="margin-top:16px;">
       <div class="sec-div-line"></div>
       <span class="sec-div-tag">Top Movers</span>
@@ -244,91 +248,180 @@ html,body { background:#1a1a2e; min-height:100vh; }
       </div>
     </div>
 
-    <!-- COMPONENT 1 — ALERT BANNER (below gainers/losers) -->
-    <div id="banner-section">
+    <!-- Alert banner — below gainers/losers on Markets tab -->
+    <div id="alert-banner-section">
       <div class="sec-div">
         <div class="sec-div-line"></div>
         <span class="sec-div-tag">🔔 New Alert</span>
         <div class="sec-div-line"></div>
       </div>
-      <div class="market-alert-banner" onclick="showPopup()">
-        <span class="banner-dot"></span>
-        <div class="banner-text">
-          <div class="banner-type">New Trade Alert</div>
-          <div class="banner-name" id="banner-title">NIFTY 24000 Call alert</div>
+      <div class="alert-banner" onclick="showPopupAgain()">
+        <span class="alert-banner-dot"></span>
+        <div class="alert-banner-text">
+          <div class="alert-banner-type" id="banner-type-label">New Trade Alert</div>
+          <div class="alert-banner-name"  id="banner-name">NIFTY 24000 Call alert</div>
         </div>
-        <button class="banner-btn" onclick="event.stopPropagation();goToUpdates()">View →</button>
+        <button class="alert-banner-btn" onclick="event.stopPropagation();goTo()">View →</button>
       </div>
     </div>
 
   </div>
-</div>
 
-<!-- COMPONENT 2 — CENTRE OVERLAY POPUP -->
-<div class="popup-overlay" id="popup-overlay" onclick="handleOverlayClick(event)">
-  <div class="popup-card" id="popup-card">
+  <!-- ── MY TRADES TAB ── -->
+  <div class="tab-page" id="tab-trades">
+    <div class="sec-head" style="margin-bottom:10px;">Active Trades</div>
+    <div class="trade-card">
+      <div class="tc-header">
+        <div>
+          <div class="tc-name">NIFTY 24000 <span style="color:#888;font-size:0.85em;">CE</span></div>
+          <div class="tc-expiry">Weekly · 24 Jun 2026</div>
+        </div>
+        <span class="tc-badge">IN PROFIT</span>
+      </div>
+      <div class="tc-metrics">
+        <div class="tc-metric"><div class="label">Entry</div><div class="val">₹128</div></div>
+        <div class="tc-metric"><div class="label">CMP</div><div class="val up">₹156</div></div>
+        <div class="tc-metric"><div class="label">P&amp;L/Lot</div><div class="val up">+₹1,820</div></div>
+      </div>
+    </div>
+    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:20px;">
+      Trade alerts route here → popup suppressed when on this tab
+    </div>
+  </div>
+
+  <!-- ── PERFORMANCE TAB ── -->
+  <div class="tab-page" id="tab-performance">
+    <div class="sec-head" style="margin-bottom:10px;">This Month</div>
+    <div class="post-card" style="text-align:center;padding:24px;">
+      <div style="font-size:1.4rem;font-weight:800;color:var(--green);">+₹12,480</div>
+      <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">June 2026 · 4W 2L</div>
+    </div>
+    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:12px;">
+      Popups show here for both alert types
+    </div>
+  </div>
+
+  <!-- ── UPDATES TAB ── -->
+  <div class="tab-page" id="tab-updates">
+    <div class="sec-head" style="margin-bottom:10px;">Latest Updates</div>
+    <div class="post-card">
+      <div class="post-time">Today, 10:32 AM</div>
+      <div class="post-body">Market opening above yesterday's high. Watching for a breakout setup on NIFTY near 24050.</div>
+    </div>
+    <div class="post-card">
+      <div class="post-time">Yesterday, 3:15 PM</div>
+      <div class="post-body">Booked 50% profits at ₹180. Trailing remaining position with SL at cost.</div>
+    </div>
+    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:12px;">
+      General updates route here → popup suppressed when on this tab
+    </div>
+  </div>
+
+  <!-- ── ABOUT TAB ── -->
+  <div class="tab-page" id="tab-about">
+    <div class="post-card" style="text-align:center;padding:24px 14px;">
+      <div style="font-size:1rem;font-weight:700;color:var(--primary);margin-bottom:6px;">Trade2Spend</div>
+      <div style="font-size:0.76rem;color:var(--muted);line-height:1.6;">Educational purposes only · Not investment advice<br>We are not SEBI registered</div>
+    </div>
+    <div style="font-size:0.72rem;color:var(--muted);text-align:center;margin-top:12px;">
+      Popups show here for both alert types
+    </div>
+  </div>
+
+</div><!-- /shell -->
+
+<!-- CENTRE OVERLAY POPUP -->
+<div class="popup-overlay" id="popup-overlay" onclick="handleOverlayTap(event)">
+  <div class="popup-card">
     <div class="popup-accent"></div>
     <div class="popup-body">
       <div class="popup-tag-row">
         <span class="popup-tag">
           <span class="popup-tag-dot"></span>
-          Trade Alert
+          <span id="popup-type-label">Trade Alert</span>
         </span>
-        <button class="popup-dismiss-x" onclick="dismissPopup()">✕</button>
+        <button class="popup-close-x" onclick="dismissPopup()">✕</button>
       </div>
-      <div class="popup-instrument" id="popup-instrument">
-        NIFTY 24000 <span class="opt-type">CE</span>
-      </div>
+      <div class="popup-instrument" id="popup-instrument">NIFTY 24000 <span class="opt">CE</span></div>
       <div class="popup-sub" id="popup-sub">New Call alert · Weekly expiry</div>
     </div>
     <div class="popup-actions">
-      <button class="btn-view" onclick="goToUpdates()">View Alert →</button>
+      <button class="btn-view"  onclick="goTo()">View Alert →</button>
       <button class="btn-later" onclick="dismissPopup()">Later</button>
     </div>
   </div>
 </div>
 
 <script>
-/* ── Show / dismiss ─────────────────────────────────────────────────────── */
+/* ── State ──────────────────────────────────────────────────────────────── */
+let _activeTab   = 'markets';  // tracks current tab
+let _pendingType = null;       // 'trade' | 'update' — type of active alert
+
+/* ── Tab switching ──────────────────────────────────────────────────────── */
+function switchTab(tabId) {
+  _activeTab = tabId;
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  document.querySelectorAll('.tab-item')[
+    ['markets','trades','performance','updates','about'].indexOf(tabId)
+  ].classList.add('active');
+}
+
+/* ── Destination tab per alert type ────────────────────────────────────── */
+function destTab(type) {
+  return type === 'trade' ? 'trades' : 'updates';
+}
+
+/* ── Fire alert (called by UAT buttons + production Supabase poll) ──────── */
+function fireAlert(type) {
+  _pendingType = type;
+  const isTradeAlert = type === 'trade';
+
+  /* Set banner content */
+  document.getElementById('banner-type-label').textContent = isTradeAlert ? 'New Trade Alert'  : 'New Market Update';
+  document.getElementById('banner-name').textContent       = isTradeAlert ? 'NIFTY 24000 Call alert' : 'Market update posted';
+  document.getElementById('alert-banner-section').style.display = 'block';
+
+  /* Set popup content */
+  document.getElementById('popup-type-label').textContent = isTradeAlert ? 'Trade Alert'    : 'Market Update';
+  document.getElementById('popup-instrument').innerHTML   = isTradeAlert
+    ? 'NIFTY 24000 <span class="opt">CE</span>'
+    : 'Market Update';
+  document.getElementById('popup-sub').textContent        = isTradeAlert
+    ? 'New Call alert · Weekly expiry'
+    : 'New update from Trade2Spend';
+
+  /* Suppress if member is already on the destination tab */
+  if (_activeTab === destTab(type)) return;
+
+  showPopup();
+}
+
+/* ── Popup show / dismiss ───────────────────────────────────────────────── */
 function showPopup() {
   document.getElementById('popup-overlay').classList.add('visible');
 }
 function dismissPopup() {
   document.getElementById('popup-overlay').classList.remove('visible');
 }
-function handleOverlayClick(e) {
+function handleOverlayTap(e) {
   if (e.target === document.getElementById('popup-overlay')) dismissPopup();
 }
 
-/* ── Show markets banner ────────────────────────────────────────────────── */
-function showBanner(label) {
-  document.getElementById('banner-title').textContent = label;
-  document.getElementById('banner-section').style.display = 'block';
+/* ── Re-open popup from banner tap ─────────────────────────────────────── */
+function showPopupAgain() {
+  if (_pendingType && _activeTab !== destTab(_pendingType)) showPopup();
 }
 
-/* ── Navigate to Updates tab ────────────────────────────────────────────── */
-function goToUpdates() {
+/* ── Navigate to destination tab ───────────────────────────────────────── */
+function goTo() {
   dismissPopup();
-  /* Production: showTab('updates') + scroll to post card */
-  const t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#1a2030;color:#f0c040;font-size:0.72rem;font-weight:700;padding:9px 18px;border-radius:20px;z-index:600;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,0.2);pointer-events:none;';
-  t.textContent = '→ Routes to Updates tab in production';
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2500);
+  if (_pendingType) switchTab(destTab(_pendingType));
 }
 
-/* ── UAT reset (re-trigger for testing) ─────────────────────────────────── */
-function resetAndFire() {
-  showBanner('NIFTY 24000 Call alert');
-  showPopup();
-}
-
-/* ── AUTO-FIRE ON LOAD — simulates new alert arriving ──────────────────── */
-/* Production: this fires when Supabase poll finds a post newer than last seen */
-window.addEventListener('load', () => {
-  showBanner('NIFTY 24000 Call alert');
-  setTimeout(showPopup, 600); /* small delay so page renders first */
-});
+/* ── Auto-fire on load (production: fires when new Supabase post detected) */
+window.addEventListener('load', () => setTimeout(() => fireAlert('trade'), 700));
 </script>
 </body>
 </html>
