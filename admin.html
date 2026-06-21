@@ -1363,37 +1363,169 @@ function filterMembers(q){
   renderMemberList(allMembers.filter(m => m.mobile && m.mobile.includes(q)));
 }
 
+function memberExpiryStatus(subscription_end, memberStatus) {
+  if (memberStatus === 'disabled') return { label:'DISABLED', color:'var(--red)', bg:'var(--redbg)', border:'var(--redborder)' };
+  if (!subscription_end) return { label:'NO DATE', color:'var(--muted)', bg:'var(--bg3)', border:'var(--border2)' };
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp   = new Date(subscription_end); exp.setHours(0,0,0,0);
+  const days  = Math.round((exp - today) / 86400000);
+  if (days > 3)  return { label:`${days}d left`,      color:'var(--green)', bg:'var(--greenbg)', border:'var(--greenborder)' };
+  if (days > 0)  return { label:`${days}d left ⚠`,   color:'#b45309',      bg:'#fef3c7',        border:'#fcd34d' };
+  if (days === 0) return { label:'Expires today',     color:'var(--red)',   bg:'var(--redbg)',   border:'var(--redborder)' };
+  return { label:`Exp ${Math.abs(days)}d ago`, color:'var(--red)', bg:'var(--redbg)', border:'var(--redborder)' };
+}
+
 function renderMemberList(members){
   const el = document.getElementById('mgmt-list');
   if(!members||!members.length){
     el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">No members found.</div>'; return;
   }
-  el.innerHTML = members.map(m => {
+  // Sort: soonest expiry first
+  const sorted = [...members].sort((a,b) => {
+    const da = a.subscription_end ? new Date(a.subscription_end) : new Date('2099-01-01');
+    const db = b.subscription_end ? new Date(b.subscription_end) : new Date('2099-01-01');
+    return da - db;
+  });
+  el.innerHTML = sorted.map(m => {
+    const safeId = esc(m.id);
     const tier   = m.tier === 'paid'
       ? `<span style="background:var(--goldbg);color:var(--gold);border:0.5px solid var(--goldborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">PAID</span>`
       : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">FREE</span>`;
-    const status = m.status === 'enabled'
-      ? `<span style="background:var(--greenbg);color:var(--green);border:0.5px solid var(--greenborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">ACTIVE</span>`
-      : `<span style="background:var(--redbg);color:var(--red);border:0.5px solid var(--redborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">DISABLED</span>`;
-    const subEnd = m.subscription_end ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">Exp: ${esc(m.subscription_end)}</div>` : '';
-    const newTier   = m.tier==='paid' ? 'free' : 'paid';
-    const newStatus = m.status==='enabled' ? 'disabled' : 'enabled';
-    const safeId    = esc(m.id);
+    const st     = memberExpiryStatus(m.subscription_end, m.status);
+    const chip   = `<span style="background:${st.bg};color:${st.color};border:0.5px solid ${st.border};border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">${st.label}</span>`;
+    const expLine = m.subscription_end ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">Exp: ${esc(m.subscription_end)}</div>` : '';
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border);">
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:13px;">${esc(m.name)||'—'}</div>
+        <div style="flex:1;min-width:0;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
+          <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
           <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
-          ${subEnd}
+          ${expLine}
         </div>
-        <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
-          ${tier}${status}
-          <button onclick="toggleTier('${safeId}','${newTier}')" title="Toggle tier" style="padding:4px 7px;background:var(--goldbg);border:0.5px solid var(--goldborder);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">⇄</button>
-          <button onclick="toggleStatus('${safeId}','${newStatus}')" title="Toggle status" style="padding:4px 7px;background:${m.status==='enabled'?'var(--redbg)':'var(--greenbg)'};border:0.5px solid ${m.status==='enabled'?'var(--redborder)':'var(--greenborder)'};border-radius:6px;color:${m.status==='enabled'?'var(--red)':'var(--green)'};font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">${m.status==='enabled'?'✕':'✓'}</button>
-          <button onclick="resetMemberPin('${safeId}')" title="Reset PIN" style="padding:4px 7px;background:rgba(96,165,250,0.1);border:0.5px solid rgba(96,165,250,0.3);border-radius:6px;color:#60a5fa;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🔑</button>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0;">
+          ${tier}
+          ${chip}
         </div>
       </div>`;
   }).join('');
+}
+
+// ── MEMBER DETAIL SHEET ──────────────────────────────────────────────────────
+
+function openMemberDetail(memberId) {
+  const m = allMembers.find(x => x.id === memberId);
+  if (!m) return;
+  const st        = memberExpiryStatus(m.subscription_end, m.status);
+  const isEnabled = m.status === 'enabled';
+  const today     = new Date(); today.setHours(0,0,0,0);
+  const expDate   = m.subscription_end ? new Date(m.subscription_end) : null;
+  expDate && expDate.setHours(0,0,0,0);
+  const extendFrom = (expDate && expDate > today) ? 'Expiry' : 'Today';
+  const mJson     = JSON.stringify({id:m.id, name:m.name||'', mobile:m.mobile||'', subscription_end:m.subscription_end||''}).replace(/'/g,"&#39;");
+  const btnBase   = `padding:10px 4px;border-radius:8px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg3);color:var(--text);`;
+
+  let ov = document.getElementById('member-detail-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'member-detail-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.5);display:flex;align-items:flex-end;justify-content:center;';
+    ov.onclick = e => { if(e.target===ov) closeDetail(); };
+    document.body.appendChild(ov);
+  }
+
+  ov.innerHTML = `
+    <div style="background:var(--bg2);border-radius:18px 18px 0 0;width:100%;max-width:480px;padding:20px 18px 28px;box-shadow:0 -8px 32px rgba(0,0,0,0.25);">
+      <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px;"></div>
+
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text);">${esc(m.name)||'(no name)'}</div>
+          <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px;">${esc(m.mobile)}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          ${m.tier==='paid'
+            ? `<span style="background:var(--goldbg);color:var(--gold);border:0.5px solid var(--goldborder);border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">PAID</span>`
+            : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">FREE</span>`}
+          <span style="background:${st.bg};color:${st.color};border:0.5px solid ${st.border};border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">${st.label}</span>
+        </div>
+      </div>
+
+      <!-- Expiry -->
+      <div style="background:var(--bg3);border-radius:10px;padding:11px 14px;margin-bottom:14px;">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Subscription Expiry</div>
+        <div style="font-size:15px;font-weight:700;color:${st.color};">${m.subscription_end || 'Not set'}</div>
+      </div>
+
+      <!-- Quick extend -->
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:7px;">Extend from ${extendFrom}</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;">
+        <button onclick="extendSubscription('${m.id}',7)"  style="${btnBase}">+7d</button>
+        <button onclick="extendSubscription('${m.id}',15)" style="${btnBase}">+15d</button>
+        <button onclick="extendSubscription('${m.id}',30)" style="${btnBase}">+30d</button>
+        <button onclick="extendSubscription('${m.id}',60)" style="${btnBase}">+60d</button>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <button onclick="setMemberDetailStatus('${m.id}','${isEnabled?'disabled':'enabled'}')"
+          style="padding:11px;border:none;border-radius:10px;font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:${isEnabled?'var(--redbg)':'var(--greenbg)'};color:${isEnabled?'var(--red)':'var(--green)'};">
+          ${isEnabled ? '✕ Disable' : '✓ Enable'}
+        </button>
+        <button id="detail-copy-btn" onclick="copyRenewalMessage('${mJson}')"
+          style="padding:11px;border:0.5px solid var(--border2);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--bg3);color:var(--text);">
+          📋 Copy Message
+        </button>
+      </div>
+
+      <button onclick="closeDetail()" style="width:100%;padding:10px;border:0.5px solid var(--border2);border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Close</button>
+    </div>`;
+  ov.style.display = 'flex';
+}
+
+function closeDetail(){
+  const el = document.getElementById('member-detail-overlay');
+  if (el) el.style.display = 'none';
+}
+
+async function extendSubscription(memberId, extraDays){
+  const m = allMembers.find(x => x.id === memberId);
+  if (!m) return;
+  const today = new Date(); today.setHours(0,0,0,0);
+  let base = m.subscription_end ? new Date(m.subscription_end) : new Date(today);
+  base.setHours(0,0,0,0);
+  if (base < today) base = new Date(today);
+  base.setDate(base.getDate() + extraDays);
+  const newEnd = base.toISOString().slice(0,10);
+  try {
+    await sbPatch(`members?id=eq.${memberId}`, { subscription_end: newEnd, status: 'enabled' });
+    m.subscription_end = newEnd;
+    m.status = 'enabled';
+    renderMemberList(allMembers);
+    openMemberDetail(memberId);
+  } catch(e){ alert('Failed to extend: ' + e.message); }
+}
+
+async function setMemberDetailStatus(memberId, status){
+  try {
+    await sbPatch(`members?id=eq.${memberId}`, { status });
+    const m = allMembers.find(x => x.id === memberId);
+    if (m) m.status = status;
+    renderMemberList(allMembers);
+    openMemberDetail(memberId);
+  } catch(e){ alert('Failed: ' + e.message); }
+}
+
+function copyRenewalMessage(mJson){
+  let m;
+  try { m = JSON.parse(mJson.replace(/&#39;/g,"'")); } catch(e){ return; }
+  const expStr = m.subscription_end
+    ? new Date(m.subscription_end).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
+    : 'soon';
+  const msg = `Hi${m.name?' '+m.name:''}, your Trade2Spend premium access expires on ${expStr}. Renew now to keep getting live trade alerts — ping me to continue. 🙏`;
+  navigator.clipboard.writeText(msg).then(() => {
+    const btn = document.getElementById('detail-copy-btn');
+    if (btn){ btn.textContent='✓ Copied!'; setTimeout(()=>{ btn.textContent='📋 Copy Message'; },2000); }
+  });
 }
 
 // ── FOLLOW-UP SYSTEM ────────────────────────────────────────────────────────
