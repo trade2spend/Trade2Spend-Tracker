@@ -44,12 +44,13 @@
             background: var(--bg-color);
             z-index: 100; padding: 14px 16px 0;
             transition: padding .25s ease, box-shadow .25s ease;
-            will-change: padding; overflow: hidden;
+            will-change: padding;
         }
-        .header-top { display: flex; justify-content: space-between; align-items: center; }
-        .header-brand { display: flex; align-items: center; gap: 10px; transition: transform .25s ease; transform-origin: left center; will-change: transform; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .header-brand { display: flex; align-items: center; gap: 10px; transition: transform .25s ease; transform-origin: left center; will-change: transform; flex: 1; min-width: 0; }
         .logo-img { height: 38px; width: 38px; object-fit: contain; transition: height .25s ease, width .25s ease; }
-        .header-titles h1 { font-size: 1.15rem; color: var(--text-main); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1px; }
+        .header-titles { min-width: 0; }
+        .header-titles h1 { font-size: 1.15rem; color: var(--text-main); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .header-titles p { font-size: 0.72rem; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; transition: opacity .2s ease, max-height .2s ease; overflow: hidden; max-height: 20px; }
 
         .header-right { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); flex-shrink: 0; flex-wrap: nowrap; }
