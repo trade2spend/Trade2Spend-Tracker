@@ -1474,6 +1474,15 @@
             return true;
         });
         if (validReplies.length > 0) return 'triggered';
+        // Auto-detect: if live CMP >= entry price, trade is triggered (no manual follow-up needed)
+        if (_lastOptionLTPs) {
+            const f = extractTradeAlertFields(post.content||'');
+            if (f.instrument && f.strike && f.optType && f.entry) {
+                const key = `${f.instrument}-${f.strike}-${f.optType}`;
+                const liveCMP = _lastOptionLTPs[key];
+                if (liveCMP != null && liveCMP >= f.entry) return 'triggered';
+            }
+        }
         const tz = { timeZone:'Asia/Kolkata' };
         const nowIST  = new Date(new Date().toLocaleString('en-US', tz));
         const postIST = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US', tz));
