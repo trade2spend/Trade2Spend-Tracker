@@ -2596,10 +2596,14 @@
                     </div>` : '';
 
                 const renderedContent = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
+                const _typeBadge = post.post_type === 'market_update'
+                    ? `<span class="update-badge badge-market-update">📊 Market Update</span>`
+                    : `<span class="update-badge badge-general">💬 General</span>`;
+                const _cardBorder = post.post_type === 'market_update' ? 'var(--primary)' : '#d97706';
                 html += `
-                    <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}">
+                    <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" style="border-left:3px solid ${_cardBorder};">
                         <div class="update-header">
-                            <span class="update-time">${timeStr}</span>
+                            <div style="display:flex;align-items:center;gap:7px;flex:1;min-width:0;">${_typeBadge}<span class="update-time">${timeStr}</span></div>
                             ${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share this update"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>` : ''}
                         </div>
                         <div class="update-body"><div class="update-content">${renderedContent}</div></div>
@@ -2781,6 +2785,14 @@
             // Refresh the correct tab
             if (fromTab === 'trades') fetchTradeAlerts();
             else fetchUpdates();
+            // Push notification for trade alert follow-ups
+            if (fromTab === 'trades') {
+                fetch('https://api.trade2spend.com/send-push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades' })
+                }).catch(() => {});
+            }
 
         } catch(e) {
             console.error('Reply failed:', e);
@@ -2795,7 +2807,8 @@
         const perm = await Notification.requestPermission();
         if(perm === 'granted') {
             document.getElementById('notif-banner').style.display = 'none';
-            alert('✅ Notifications enabled!');
+            await subscribeToPush();
+            alert('✅ Notifications enabled! You\'ll get instant alerts for new trades.');
         }
     }
 
