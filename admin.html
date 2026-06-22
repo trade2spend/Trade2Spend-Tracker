@@ -1253,14 +1253,14 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div class="grid2" style="margin-bottom:12px;">
       <div class="field">
         <div class="field-label">Tier</div>
-        <select id="mgmt-tier" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;">
+        <select id="mgmt-tier" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;box-sizing:border-box;min-height:44px;">
           <option value="paid">Paid Member</option>
           <option value="free">Free Member</option>
         </select>
       </div>
       <div class="field">
         <div class="field-label">Subscription End</div>
-        <input type="date" id="mgmt-subend" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;">
+        <input type="date" id="mgmt-subend" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;box-sizing:border-box;min-height:44px;-webkit-appearance:none;appearance:none;">
       </div>
     </div>
     <button onclick="addMember()" style="width:100%;padding:12px;background:var(--green);border:none;border-radius:var(--radius-sm);color:#fff;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">+ Add Member</button>
@@ -1448,11 +1448,11 @@ function openMemberDetail(memberId) {
   }
 
   ov.innerHTML = `
-    <div style="background:var(--bg2);border-radius:18px 18px 0 0;width:100%;max-width:480px;padding:20px 18px 28px;box-shadow:0 -8px 32px rgba(0,0,0,0.25);">
-      <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="background:var(--bg2);border-radius:18px 18px 0 0;width:100%;max-width:480px;padding:16px 16px 24px;box-shadow:0 -8px 32px rgba(0,0,0,0.25);">
+      <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 14px;"></div>
 
       <!-- Header -->
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
         <div>
           <div style="font-size:16px;font-weight:700;color:var(--text);">${esc(m.name)||'(no name)'}</div>
           <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px;">${esc(m.mobile)}</div>
@@ -1465,14 +1465,13 @@ function openMemberDetail(memberId) {
         </div>
       </div>
 
-      <!-- Expiry -->
-      <div style="background:var(--bg3);border-radius:10px;padding:11px 14px;margin-bottom:14px;">
-        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Subscription Expiry</div>
-        <div style="font-size:15px;font-weight:700;color:${st.color};">${m.subscription_end || 'Not set'}</div>
+      <!-- Expiry (compact inline line) -->
+      <div style="font-size:12px;color:${st.color};font-weight:600;margin-bottom:14px;">
+        Expires: ${m.subscription_end || 'Not set'}
       </div>
 
       <!-- Quick extend -->
-      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:7px;">Extend from ${extendFrom}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Extend from ${extendFrom}</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;">
         <button onclick="extendSubscription('${m.id}',7)"  style="${btnBase}">+7d</button>
         <button onclick="extendSubscription('${m.id}',15)" style="${btnBase}">+15d</button>
@@ -1488,26 +1487,18 @@ function openMemberDetail(memberId) {
           style="padding:9px 14px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg3);color:var(--text);font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Extend →</button>
       </div>
 
-      <!-- Actions row 1: status + copy -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <!-- Actions: 3 in one row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
         <button onclick="setMemberDetailStatus('${m.id}','${isEnabled?'disabled':'enabled'}')"
-          style="padding:11px;border:none;border-radius:10px;font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:${isEnabled?'var(--redbg)':'var(--greenbg)'};color:${isEnabled?'var(--red)':'var(--green)'};">
+          style="padding:10px 4px;border:none;border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:${isEnabled?'var(--redbg)':'var(--greenbg)'};color:${isEnabled?'var(--red)':'var(--green)'};">
           ${isEnabled ? '✕ Disable' : '✓ Enable'}
         </button>
-        <button id="detail-copy-btn" onclick="copyRenewalMessage('${mJson}')"
-          style="padding:11px;border:0.5px solid var(--border2);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--bg3);color:var(--text);">
-          📋 Copy Message
-        </button>
-      </div>
-
-      <!-- Actions row 2: tier toggle + reset PIN -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
         <button onclick="toggleTier('${m.id}','${m.tier==='paid'?'free':'paid'}');closeDetail();"
-          style="padding:11px;border:0.5px solid var(--goldborder);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--goldbg);color:var(--gold);">
-          ⇄ Switch to ${m.tier==='paid'?'Free':'Paid'}
+          style="padding:10px 4px;border:0.5px solid var(--goldborder);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--goldbg);color:var(--gold);">
+          ⇄ ${m.tier==='paid'?'→ Free':'→ Paid'}
         </button>
         <button onclick="resetMemberPin('${m.id}');closeDetail();"
-          style="padding:11px;border:0.5px solid rgba(96,165,250,0.3);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:rgba(96,165,250,0.1);color:#60a5fa;">
+          style="padding:10px 4px;border:0.5px solid rgba(96,165,250,0.3);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:rgba(96,165,250,0.1);color:#60a5fa;">
           🔑 Reset PIN
         </button>
       </div>
