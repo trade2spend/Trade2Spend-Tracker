@@ -181,6 +181,14 @@
         .update-time { font-size: 0.7rem; color: var(--text-muted); }
         .update-body { padding: 2px 12px 8px; }
         .update-content { font-size: 0.85rem; color: var(--text-main); line-height: 1.55; }
+        .hl-index { font-weight: 700; color: var(--primary); }
+        .hl-bull  { font-weight: 700; color: var(--green); }
+        .hl-bear  { font-weight: 700; color: var(--red); }
+        .hl-action{ font-weight: 700; color: #d97706; }
+        .hl-price { font-weight: 700; }
+        .hl-pct   { font-weight: 700; }
+        .hl-opt-ce{ display:inline-block; background:#dcfce7; color:#059669; font-weight:700; font-size:0.82em; padding:0 4px; border-radius:3px; }
+        .hl-opt-pe{ display:inline-block; background:#fee2e2; color:#dc2626; font-weight:700; font-size:0.82em; padding:0 4px; border-radius:3px; }
         .update-footer { display: flex; align-items: center; justify-content: flex-end; padding: 0 8px 6px; }
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 5px 6px; display:flex;align-items:center; border-radius:6px; }
@@ -1247,6 +1255,31 @@
             .replace(/educational\s+(?:and\s+)?informational\s+purposes[^<\n]*/gi, '')
             .replace(/(<br\s*\/?>\s*){2,}/g, '<br>')
             .trim();
+    }
+
+    function applyMessageFormatting(safeHtml) {
+        return safeHtml
+            // Index names — bold purple
+            .replace(/\b(BANKNIFTY|FINNIFTY|MIDCAPNIFTY|SENSEX|NIFTY)\b/gi,
+                '<strong class="hl-index">$1</strong>')
+            // CE / PE — coloured chips
+            .replace(/\bCE\b/g, '<span class="hl-opt-ce">CE</span>')
+            .replace(/\bPE\b/g, '<span class="hl-opt-pe">PE</span>')
+            // Bullish keywords — green
+            .replace(/\b(BUY|LONG|BULLISH|BREAKOUT|RALLY|BOUNCE)\b/gi,
+                '<strong class="hl-bull">$1</strong>')
+            // Bearish keywords — red
+            .replace(/\b(SELL|SHORT|BEARISH|BREAKDOWN|CORRECTION)\b/gi,
+                '<strong class="hl-bear">$1</strong>')
+            // Action / cautionary — orange
+            .replace(/\b(BOOK PROFIT|BOOK LOSS|EXIT|HOLD|CAUTION|AVOID)\b/gi,
+                '<strong class="hl-action">$1</strong>')
+            // 5–6 digit index price levels — bold
+            .replace(/\b(\d{5,6}(?:\.\d{1,2})?)\b/g,
+                '<strong class="hl-price">$1</strong>')
+            // Percentages — bold
+            .replace(/\b(\d+(?:\.\d+)?%)/g,
+                '<strong class="hl-pct">$1</strong>');
     }
 
     let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
@@ -2556,7 +2589,7 @@
                             <div class="thread-replies" id="${tid}" style="display:none;">`;
                         visibleReplies.forEach(reply => {
                             const ts2 = formatPostTime(reply.sent_at||reply.created_at);
-                            const txt2 = stripDisclaimerText(sanitizeHtml(reply.content||'').replace(/\n/g,'<br>'));
+                            const txt2 = stripDisclaimerText(applyMessageFormatting(sanitizeHtml(reply.content||'')).replace(/\n/g,'<br>'));
                             repliesHtml += `<div class="reply-card"><div class="reply-header"><span class="update-time">${ts2}</span></div><div class="reply-body">${txt2}</div></div>`;
                         });
                         repliesHtml += `</div>`;
@@ -2596,7 +2629,7 @@
                         </div>
                     </div>` : '';
 
-                const renderedContent = stripDisclaimerText(sanitizeHtml(mainContent).replace(/\n/g,'<br>'));
+                const renderedContent = stripDisclaimerText(applyMessageFormatting(sanitizeHtml(mainContent)).replace(/\n/g,'<br>'));
                 const _typeBadge = post.post_type === 'market_update'
                     ? `<span class="update-badge badge-market-update">📊 Market Update</span>`
                     : `<span class="update-badge badge-general">💬 General</span>`;
