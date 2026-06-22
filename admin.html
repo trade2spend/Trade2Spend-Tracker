@@ -1340,11 +1340,12 @@ async function sbGet(path){
   const text = await res.text(); return text ? JSON.parse(text) : [];
 }
 async function sbPatch(path, body){
-  await fetch(`${SB_URL}/rest/v1/${path}`, {
+  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
     method:'PATCH',
     headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
     body: JSON.stringify(body)
   });
+  if (!res.ok){ const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
 }
 
 async function loadMembers(){
@@ -1386,24 +1387,38 @@ function renderMemberList(members){
     const db = b.subscription_end ? new Date(b.subscription_end) : new Date('2099-01-01');
     return da - db;
   });
+  const qb = `padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);`;
   el.innerHTML = sorted.map(m => {
-    const safeId = esc(m.id);
-    const tier   = m.tier === 'paid'
+    const safeId  = esc(m.id);
+    const st      = memberExpiryStatus(m.subscription_end, m.status);
+    const isEnabled = m.status === 'enabled';
+    const tierBadge = m.tier === 'paid'
       ? `<span style="background:var(--goldbg);color:var(--gold);border:0.5px solid var(--goldborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">PAID</span>`
       : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">FREE</span>`;
-    const st     = memberExpiryStatus(m.subscription_end, m.status);
-    const chip   = `<span style="background:${st.bg};color:${st.color};border:0.5px solid ${st.border};border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">${st.label}</span>`;
-    const expLine = m.subscription_end ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">Exp: ${esc(m.subscription_end)}</div>` : '';
+    const expLine = m.subscription_end
+      ? `<div style="font-size:10px;color:${st.color};margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>${st.label}</b></div>`
+      : `<div style="font-size:10px;color:var(--muted);margin-top:2px;">No expiry set</div>`;
+    const tierBtn = m.tier === 'paid'
+      ? `<button onclick="toggleTier('${safeId}','free')" style="${qb}">→ Free</button>`
+      : `<button onclick="toggleTier('${safeId}','paid')" style="${qb};background:var(--goldbg);color:var(--gold);border-color:var(--goldborder);">→ Paid</button>`;
+    const statusBtn = isEnabled
+      ? `<button onclick="setMemberDetailStatus('${safeId}','disabled',true)" style="${qb};background:var(--redbg);color:var(--red);border-color:var(--redborder);">✕ Disable</button>`
+      : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="${qb};background:var(--greenbg);color:var(--green);border-color:var(--greenborder);">✓ Enable</button>`;
     return `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border);">
-        <div style="flex:1;min-width:0;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
-          <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
-          <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
-          ${expLine}
+      <div style="padding:10px 0;border-bottom:0.5px solid var(--border);">
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
+            <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
+            ${expLine}
+          </div>
+          <div style="flex-shrink:0;margin-top:2px;">${tierBadge}</div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0;">
-          ${tier}
-          ${chip}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;">
+          <button onclick="extendSubscription('${safeId}',7,true)" style="${qb}">+7d</button>
+          <button onclick="extendSubscription('${safeId}',30,true)" style="${qb}">+1M</button>
+          ${tierBtn}
+          ${statusBtn}
         </div>
       </div>`;
   }).join('');
@@ -1507,7 +1522,7 @@ function closeDetail(){
   if (el) el.style.display = 'none';
 }
 
-async function extendSubscription(memberId, extraDays){
+async function extendSubscription(memberId, extraDays, skipSheet = false){
   const m = allMembers.find(x => x.id === memberId);
   if (!m) return;
   const today = new Date(); today.setHours(0,0,0,0);
@@ -1521,7 +1536,8 @@ async function extendSubscription(memberId, extraDays){
     m.subscription_end = newEnd;
     m.status = 'enabled';
     renderMemberList(allMembers);
-    openMemberDetail(memberId);
+    if (!skipSheet) openMemberDetail(memberId);
+    else showToast(`✓ Extended +${extraDays}d → ${newEnd}`);
   } catch(e){ alert('Failed to extend: ' + e.message); }
 }
 
@@ -1531,13 +1547,14 @@ function extendCustomDays(memberId){
   extendSubscription(memberId, val);
 }
 
-async function setMemberDetailStatus(memberId, status){
+async function setMemberDetailStatus(memberId, status, skipSheet = false){
   try {
     await sbPatch(`members?id=eq.${memberId}`, { status });
     const m = allMembers.find(x => x.id === memberId);
     if (m) m.status = status;
     renderMemberList(allMembers);
-    openMemberDetail(memberId);
+    if (!skipSheet) openMemberDetail(memberId);
+    else showToast(status === 'enabled' ? '✓ Member enabled' : '✓ Member disabled');
   } catch(e){ alert('Failed: ' + e.message); }
 }
 
@@ -1712,6 +1729,7 @@ async function toggleTier(id, newTier){
     await sbPatch(`members?id=eq.${id}`, {tier: newTier});
     const m = allMembers.find(m=>m.id===id);
     if(m){ m.tier=newTier; renderMemberList(allMembers); }
+    showToast(`✓ Switched to ${newTier}`);
   } catch(e){ alert('Failed: '+e.message); }
 }
 
