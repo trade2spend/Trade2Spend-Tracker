@@ -1259,7 +1259,7 @@
 
     function applyMessageFormatting(safeHtml) {
         return safeHtml
-            // Index names — bold purple
+            // Index names — bold black
             .replace(/\b(BANKNIFTY|FINNIFTY|MIDCAPNIFTY|SENSEX|NIFTY)\b/gi,
                 '<strong class="hl-index">$1</strong>')
             // CE / PE — coloured chips
@@ -1274,8 +1274,14 @@
             // Action / cautionary — orange
             .replace(/\b(BOOK PROFIT|BOOK LOSS|EXIT|HOLD|CAUTION|AVOID)\b/gi,
                 '<strong class="hl-action">$1</strong>')
-            // 5–6 digit index price levels — bold
+            // Indian comma-format price levels: 24,002 / 23,940 / 75,000 — bold
+            .replace(/\b(\d{2},\d{3}(?:\.\d{1,2})?)\b/g,
+                '<strong class="hl-price">$1</strong>')
+            // Raw 5–6 digit price levels without commas: 24002 / 50000 — bold
             .replace(/\b(\d{5,6}(?:\.\d{1,2})?)\b/g,
+                '<strong class="hl-price">$1</strong>')
+            // Time durations: 30+ minutes, 15-minute, 1 hour, 5 days — bold
+            .replace(/\b(\d+[+-]?\s*(?:minutes?|mins?|hours?|hrs?|days?|weeks?))\b/gi,
                 '<strong class="hl-price">$1</strong>')
             // Percentages — bold
             .replace(/\b(\d+(?:\.\d+)?%)/g,
