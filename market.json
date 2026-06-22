@@ -1,11 +1,11 @@
 {
   "marketOpen": true,
-  "lastUpdated": "2026-06-22T03:54:21.981Z",
+  "lastUpdated": "2026-06-22T03:54:36.859Z",
   "indices": {
     "NIFTY": {
-      "price": 24128.35,
-      "change": 115.25,
-      "changePct": 0.48
+      "price": 24135.85,
+      "change": 122.75,
+      "changePct": 0.51
     },
     "SENSEX": {
       "price": 77212,
@@ -13,16 +13,16 @@
       "changePct": 0.53
     },
     "BANKNIFTY": {
-      "price": 57817.65,
-      "change": 131.9,
+      "price": 57818.6,
+      "change": 132.85,
       "changePct": 0.23
     }
   },
   "breadth": {
     "nifty50": {
       "advancing": 40,
-      "declining": 9,
-      "unchanged": 1
+      "declining": 10,
+      "unchanged": 0
     }
   },
   "gainers": [
@@ -130,48 +130,53 @@
   "losers": [
     {
       "symbol": "INDIGO",
-      "price": 4985,
-      "change": -0.73
+      "price": 4977,
+      "change": -0.89
     },
     {
       "symbol": "TITAN",
-      "price": 4392.8,
-      "change": -0.61
-    },
-    {
-      "symbol": "ADANIENT",
-      "price": 3021.4,
-      "change": -0.56
+      "price": 4390,
+      "change": -0.68
     },
     {
       "symbol": "GRASIM",
-      "price": 3136,
-      "change": -0.43
+      "price": 3134.2,
+      "change": -0.49
+    },
+    {
+      "symbol": "ADANIENT",
+      "price": 3024.1,
+      "change": -0.47
     },
     {
       "symbol": "ADANIPORTS",
-      "price": 1829.4,
-      "change": -0.32
-    },
-    {
-      "symbol": "MAXHEALTH",
-      "price": 1092.3,
-      "change": -0.22
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "price": 1907,
-      "change": -0.2
+      "price": 1830,
+      "change": -0.29
     },
     {
       "symbol": "BAJAJFINSV",
-      "price": 1766.2,
+      "price": 1765.9,
+      "change": -0.2
+    },
+    {
+      "symbol": "MAXHEALTH",
+      "price": 1092.75,
       "change": -0.18
     },
     {
-      "symbol": "HINDALCO",
-      "price": 1009.6,
+      "symbol": "BHARTIARTL",
+      "price": 1910.1,
       "change": -0.04
+    },
+    {
+      "symbol": "ULTRACEMCO",
+      "price": 11366,
+      "change": -0.01
+    },
+    {
+      "symbol": "HINDALCO",
+      "price": 1009.9,
+      "change": -0.01
     }
   ]
 }
