@@ -159,6 +159,8 @@ let _activeContractsTs   = 0;  // last Supabase refresh timestamp
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
 let _sbSlAlertedToday    = new Set(); // post IDs where SL auto-follow-up already posted today
+let _sbTrigAlertDate     = null;
+let _sbTrigAlertedToday  = new Set(); // post IDs where trigger auto-follow-up already posted today
 let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was sent
 
 function loadState() {
@@ -2677,6 +2679,67 @@ async function checkSupabaseSLs() {
   } catch(e) { console.error('[sb-sl]', e.message); }
 }
 
+// Auto-post "✅ Buying triggered" when live CMP first reaches the entry price
+async function checkSupabaseTriggers() {
+  if (!isMarketHours() || !session.token) return;
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const today = ist.toDateString();
+  if (_sbTrigAlertDate !== today) { _sbTriggerAlertedToday.clear(); _sbTrigAlertDate = today; }
+  try {
+    const since = new Date(ist); since.setHours(0, 0, 0, 0);
+    const posts = await sbFetch(
+      `posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&select=id,content`,
+      { method: 'GET' }
+    );
+    if (!posts.length) return;
+    const reps = await sbFetch(
+      `posts?is_deleted=eq.false&parent_id=in.(${posts.map(p => `"${p.id}"`).join(',')})&order=sent_at.desc&select=id,parent_id,content`,
+      { method: 'GET' }
+    );
+    const rMap = {};
+    reps.forEach(r => { (rMap[r.parent_id] = rMap[r.parent_id] || []).push(r); });
+    const STATUS_ONLY = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['']?t\s+(?:take|enter))/i;
+
+    for (const post of posts) {
+      if (_sbTriggerAlertedToday.has(post.id)) continue;
+      const pr = rMap[post.id] || [];
+      if (sbTradeFullyExited(pr)) { _sbTriggerAlertedToday.add(post.id); continue; }
+      // Skip if follow-ups already confirm trigger (non-status-only reply exists)
+      const validReplies = pr.filter(r => !STATUS_ONLY.test((r.content||'').trim()) && !(r.content||'').includes('[T2S_UNLOCK]'));
+      if (validReplies.length > 0) { _sbTriggerAlertedToday.add(post.id); continue; }
+      // Extract entry price (option premium, must be < 5000)
+      const em = (post.content||'').match(/(?:buy(?:ing)?|sell(?:ing)?)\s+at\s+₹?\s*(\d+(?:\.\d+)?)/i);
+      if (!em) continue;
+      const entry = parseFloat(em[1]);
+      if (entry <= 0 || entry >= 5000) continue;
+      // Build option chain key
+      const t = (post.content||'').toUpperCase();
+      const im = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/); if (!im) continue;
+      const am = t.slice(t.indexOf(im[1]) + im[1].length).match(/\b(\d{4,6})\b/); if (!am) continue;
+      const tm = t.match(/\b(CE|PE)\b/); if (!tm) continue;
+      const key = `${im[1]}-${am[1]}-${tm[1]}`;
+      const cmp = _optionChain[key];
+      if (!cmp) continue;
+      const isSell = /\bsell(?:ing)?\b/i.test(post.content||'');
+      const triggered = isSell ? (cmp <= entry) : (cmp >= entry);
+      if (triggered) {
+        _sbTriggerAlertedToday.add(post.id);
+        const ep = Math.round(cmp * 100) / 100;
+        await sbFetch('posts', {
+          method: 'POST',
+          body: JSON.stringify({
+            content: `✅ Buying triggered at ₹${ep}`,
+            post_type: 'follow_up', audience: 'all',
+            allow_sharing: false, is_deleted: false,
+            parent_id: post.id, sent_at: new Date().toISOString()
+          })
+        });
+        console.log(`[trigger-auto] ${key} triggered at ₹${ep} (entry ₹${entry})`);
+      }
+    }
+  } catch(e) { console.error('[sb-trigger]', e.message); }
+}
+
 // 3:20 PM alert: unresolved positions where SL was not auto-triggered
 async function checkResolveAlert() {
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -2734,6 +2797,7 @@ setInterval(() => {
   if (isMarketHours()) {
     checkSLs().catch(e => tgAlert(`⚠️ SL poll: ${e.message}`));
     checkSupabaseSLs().catch(e => console.error('[sb-sl]', e.message));
+    checkSupabaseTriggers().catch(e => console.error('[sb-trigger]', e.message));
     if (!marketScraperInterval) startMarketScraper();
   }
   checkResolveAlert().catch(e => console.error('[resolve-alert]', e.message));
