@@ -2605,7 +2605,8 @@ function extractOptSL(text) {
   const pats = [
     /(?:revised?|modif|moved?|shifted?|new|updated?)\s+sl\s+(?:to\s+)?(?:₹\s*)?(\d+(?:\.\d+)?)/i,
     /sl\s+(?:to|at|now|=)\s*(?:₹\s*)?(\d+(?:\.\d+)?)/i,
-    /(?:sl|stop[\s-]?loss).{0,20}(?:revised?|changed|updated|moved)\s*(?:to\s*)?(?:₹\s*)?(\d+(?:\.\d+)?)/i
+    /(?:sl|stop[\s-]?loss).{0,20}(?:revised?|changed|updated|moved)\s*(?:to\s*)?(?:₹\s*)?(\d+(?:\.\d+)?)/i,
+    /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
   ];
   for (const p of pats) {
     const m = text.match(p);
