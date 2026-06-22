@@ -1,80 +1,70 @@
 {
   "marketOpen": true,
-  "lastUpdated": "2026-06-22T04:03:51.284Z",
+  "lastUpdated": "2026-06-22T04:04:06.715Z",
   "indices": {
     "NIFTY": {
-      "price": 24137.75,
-      "change": 124.65,
-      "changePct": 0.52
+      "price": 24133.2,
+      "change": 120.1,
+      "changePct": 0.5
     },
     "SENSEX": {
-      "price": 77231.01,
-      "change": 428.11,
-      "changePct": 0.56
+      "price": 77206.43,
+      "change": 403.53,
+      "changePct": 0.53
     },
     "BANKNIFTY": {
-      "price": 57802.55,
-      "change": 116.8,
-      "changePct": 0.2
+      "price": 57796.75,
+      "change": 111,
+      "changePct": 0.19
     }
   },
   "breadth": {
     "nifty50": {
       "advancing": 34,
-      "declining": 15,
-      "unchanged": 1
+      "declining": 16,
+      "unchanged": 0
     }
   },
   "gainers": [
     {
       "symbol": "CIPLA",
-      "price": 1386.5,
-      "change": 2.57
+      "price": 1385,
+      "change": 2.46
     },
     {
       "symbol": "RELIANCE",
-      "price": 1341.3,
-      "change": 2.43
+      "price": 1340.9,
+      "change": 2.4
     },
     {
       "symbol": "TECHM",
-      "price": 1429.5,
-      "change": 1.41
-    },
-    {
-      "symbol": "INFY",
-      "price": 1064.3,
-      "change": 1.23
+      "price": 1426,
+      "change": 1.16
     },
     {
       "symbol": "HDFCBANK",
-      "price": 787.9,
-      "change": 1.04
+      "price": 787.95,
+      "change": 1.05
     },
     {
-      "symbol": "TMPV",
-      "price": 363.1,
-      "change": 1
+      "symbol": "INFY",
+      "price": 1062.4,
+      "change": 1.05
     },
     {
       "symbol": "BAJFINANCE",
-      "price": 970.15,
-      "change": 0.87
+      "price": 970.35,
+      "change": 0.89
     },
     {
-      "symbol": "EICHERMOT",
-      "price": 7676,
+      "symbol": "TMPV",
+      "price": 362.55,
       "change": 0.85
     },
     {
-      "symbol": "HCLTECH",
-      "price": 1140.5,
-      "change": 0.78
-    },
-    {
-      "symbol": "TCS",
-      "price": 2140.7,
-      "change": 0.74
+      "symbol": "EICHERMOT",
+      "price": 7672,
+      "change": 0.8
     },
     {
       "symbol": "ICICIBANK",
@@ -82,14 +72,29 @@
       "change": 0.73
     },
     {
+      "symbol": "HCLTECH",
+      "price": 1139.5,
+      "change": 0.69
+    },
+    {
       "symbol": "HDFCLIFE",
-      "price": 596.05,
-      "change": 0.71
+      "price": 595.8,
+      "change": 0.67
+    },
+    {
+      "symbol": "TCS",
+      "price": 2139,
+      "change": 0.66
     },
     {
       "symbol": "BAJAJ-AUTO",
-      "price": 10130,
-      "change": 0.64
+      "price": 10125,
+      "change": 0.59
+    },
+    {
+      "symbol": "JIOFIN",
+      "price": 245.88,
+      "change": 0.58
     },
     {
       "symbol": "NESTLEIND",
@@ -97,33 +102,28 @@
       "change": 0.57
     },
     {
-      "symbol": "JIOFIN",
-      "price": 245.8,
-      "change": 0.55
+      "symbol": "TRENT",
+      "price": 3220,
+      "change": 0.44
     },
     {
       "symbol": "WIPRO",
-      "price": 181.72,
-      "change": 0.51
-    },
-    {
-      "symbol": "TRENT",
-      "price": 3221.2,
-      "change": 0.48
+      "price": 181.6,
+      "change": 0.44
     },
     {
       "symbol": "DRREDDY",
-      "price": 1278.2,
-      "change": 0.48
-    },
-    {
-      "symbol": "ONGC",
-      "price": 247.1,
-      "change": 0.35
+      "price": 1277.5,
+      "change": 0.42
     },
     {
       "symbol": "KOTAKBANK",
-      "price": 400.45,
+      "price": 400.7,
+      "change": 0.36
+    },
+    {
+      "symbol": "ONGC",
+      "price": 247,
       "change": 0.3
     }
   ],
