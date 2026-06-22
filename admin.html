@@ -1480,11 +1480,20 @@ function openMemberDetail(memberId) {
       </div>
 
       <!-- Custom days -->
-      <div style="display:flex;gap:6px;margin-bottom:14px;">
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
         <input type="number" id="detail-custom-days" min="1" max="365" placeholder="Custom days"
           style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;font-weight:600;padding:9px 10px;outline:none;font-family:'Space Grotesk',sans-serif;">
         <button onclick="extendCustomDays('${m.id}')"
           style="padding:9px 14px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg3);color:var(--text);font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Extend →</button>
+      </div>
+
+      <!-- Set exact date -->
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin:8px 0 6px;">Set exact expiry date</div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <input type="date" id="detail-set-date" value="${m.subscription_end||''}"
+          style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;font-weight:600;padding:9px 10px;outline:none;font-family:'Space Grotesk',sans-serif;">
+        <button onclick="setExpiryDate('${m.id}')"
+          style="padding:9px 14px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg3);color:var(--text);font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;white-space:nowrap;">Set →</button>
       </div>
 
       <!-- Actions: 3 in one row -->
@@ -1493,11 +1502,11 @@ function openMemberDetail(memberId) {
           style="padding:10px 4px;border:none;border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:${isEnabled?'var(--redbg)':'var(--greenbg)'};color:${isEnabled?'var(--red)':'var(--green)'};">
           ${isEnabled ? '✕ Disable' : '✓ Enable'}
         </button>
-        <button onclick="toggleTier('${m.id}','${m.tier==='paid'?'free':'paid'}');closeDetail();"
+        <button onclick="toggleTier('${m.id}','${m.tier==='paid'?'free':'paid'}')"
           style="padding:10px 4px;border:0.5px solid var(--goldborder);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--goldbg);color:var(--gold);">
           ⇄ ${m.tier==='paid'?'→ Free':'→ Paid'}
         </button>
-        <button onclick="resetMemberPin('${m.id}');closeDetail();"
+        <button onclick="resetMemberPin('${m.id}')"
           style="padding:10px 4px;border:0.5px solid rgba(96,165,250,0.3);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:rgba(96,165,250,0.1);color:#60a5fa;">
           🔑 Reset PIN
         </button>
@@ -1721,7 +1730,20 @@ async function toggleTier(id, newTier){
     const m = allMembers.find(m=>m.id===id);
     if(m){ m.tier=newTier; renderMemberList(allMembers); }
     showToast(`✓ Switched to ${newTier}`);
+    openMemberDetail(id);
   } catch(e){ alert('Failed: '+e.message); }
+}
+
+async function setExpiryDate(memberId){
+  const val = document.getElementById('detail-set-date').value;
+  if (!val){ alert('Please pick a date.'); return; }
+  try {
+    await sbPatch(`members?id=eq.${memberId}`, { subscription_end: val, status: 'enabled' });
+    const m = allMembers.find(x => x.id === memberId);
+    if(m){ m.subscription_end = val; m.status = 'enabled'; }
+    renderMemberList(allMembers);
+    openMemberDetail(memberId);
+  } catch(e){ alert('Failed to set date: ' + e.message); }
 }
 
 async function toggleStatus(id, newStatus){
