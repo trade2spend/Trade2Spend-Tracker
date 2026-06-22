@@ -1406,7 +1406,8 @@
                 /(?:revised?|modif(?:y|ied|ying)|moved?|shifted?|new|updated?)\s+sl\s+(?:to\s+)?(?:for\s+\w+\s+)?(\d+(?:\.\d+)?)/i,
                 /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
                 /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
-                /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i
+                /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i,
+                /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
             ];
             for (const p of slPats) { const m=text.match(p); if(m&&m[1]){ r.slRevised=parseFloat(m[1]); if(!r.exitPct) r.type='sl_update'; break; } }
         }
