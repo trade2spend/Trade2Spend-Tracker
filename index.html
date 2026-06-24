@@ -614,16 +614,16 @@
         } catch(e) { /* silent */ }
     }
     async function toggleLike(postId, btnEl) {
-        const memberId = localStorage.getItem('t2s_member_id');
-        if (!memberId) return;
+        // Always update UI immediately — visual feedback must never depend on network
         _userInteracted.add(postId);
         const wasLiked = _myLikes.has(postId);
         if (wasLiked) { _myLikes.delete(postId); _likeCounts[postId] = Math.max(0, (_likeCounts[postId]||1) - 1); }
         else          { _myLikes.add(postId);    _likeCounts[postId] = (_likeCounts[postId]||0) + 1; }
-        // Direct update on the tapped element — no querySelector needed, instant
         if (btnEl) _applyLikeState(btnEl, postId);
-        // Sync any other rendered instances of same post
         document.querySelectorAll(`[data-like-btn="${postId}"]`).forEach(b => { if (b !== btnEl) _applyLikeState(b, postId); });
+        // Supabase write — only if logged in
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (!memberId) return;
         try {
             if (wasLiked) await sbFetch(`post_likes?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'DELETE' });
             else          await sbFetch('post_likes', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId }) });
