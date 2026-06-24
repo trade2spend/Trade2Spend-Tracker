@@ -559,9 +559,9 @@
     let _lastOptionLTPs = null; // latest option LTPs — re-applied after trade card rebuilds
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
-    let _likeCounts = {};        // postId → total like count
-    const _myLikes = new Set();  // postIds liked by current member
-    const _likeInteractedTs = {}; // postId → timestamp of last user interaction (guards fetchLikes race)
+    let _likeCounts = {};          // postId → total like count
+    const _myLikes = new Set();    // postIds liked by current member
+    const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
 
     function _heartSvg(filled) {
         return filled
@@ -582,7 +582,6 @@
     async function fetchLikes(postIds) {
         if (!postIds || !postIds.length) return;
         const memberId = localStorage.getItem('t2s_member_id');
-        const fetchStarted = Date.now();
         try {
             const ids = postIds.map(id => `"${id}"`).join(',');
             const rows = await sbFetch(`post_likes?post_id=in.(${ids})&select=post_id,member_id`, { method: 'GET' });
@@ -593,10 +592,19 @@
                 if (l.member_id === memberId) freshMine.add(l.post_id);
             });
             postIds.forEach(id => {
-                // Skip any post the user interacted with after this fetch started — don't overwrite optimistic state
-                if (_likeInteractedTs[id] && _likeInteractedTs[id] > fetchStarted) return;
-                _likeCounts[id] = freshCounts[id] || 0;
-                if (freshMine.has(id)) _myLikes.add(id); else _myLikes.delete(id);
+                const fresh = freshCounts[id] || 0;
+                if (_userInteracted.has(id)) {
+                    // User touched this post — preserve their local like state, adjust count to reflect other members
+                    const localLiked = _myLikes.has(id);
+                    const serverLiked = freshMine.has(id);
+                    if (localLiked && !serverLiked)       _likeCounts[id] = fresh + 1; // user liked, server doesn't know yet
+                    else if (!localLiked && serverLiked)  _likeCounts[id] = Math.max(0, fresh - 1); // user unliked, server still shows
+                    else                                   _likeCounts[id] = fresh;
+                    // _myLikes is intentionally NOT touched
+                } else {
+                    _likeCounts[id] = fresh;
+                    if (freshMine.has(id)) _myLikes.add(id); else _myLikes.delete(id);
+                }
                 updateLikeUI(id);
             });
         } catch(e) { /* silent */ }
@@ -604,7 +612,7 @@
     async function toggleLike(postId) {
         const memberId = localStorage.getItem('t2s_member_id');
         if (!memberId) return;
-        _likeInteractedTs[postId] = Date.now(); // guard: fetchLikes must not overwrite after this
+        _userInteracted.add(postId); // fetchLikes will never overwrite this post's local state
         const wasLiked = _myLikes.has(postId);
         // Optimistic update
         if (wasLiked) { _myLikes.delete(postId); _likeCounts[postId] = Math.max(0, (_likeCounts[postId]||1) - 1); }
@@ -1868,6 +1876,7 @@
             });
             container.dataset.loaded = '1';
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
+            _userInteracted.forEach(id => updateLikeUI(id)); // instantly restore liked hearts after re-render
             fetchLikes(tradeParents.map(p => p.id));
             _cSave('t2s_alerts_html', container.innerHTML);
             // Trade Alert tab badge: count today's new trade alerts
@@ -2106,7 +2115,7 @@
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${s1RepliesHtml}
-                <div class="trigger-banner" style="justify-content:space-between;">${_statePill}${_s1ShareBtn}</div>
+                <div class="trigger-banner" style="justify-content:space-between;">${_statePill}<div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${_s1ShareBtn}</div></div>
             </div>`;
         }
 
