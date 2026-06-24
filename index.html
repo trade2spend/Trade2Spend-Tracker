@@ -627,11 +627,7 @@
         try {
             if (wasLiked) await sbFetch(`post_likes?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'DELETE' });
             else          await sbFetch('post_likes', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId }) });
-        } catch(e) {
-            if (wasLiked) { _myLikes.add(postId); _likeCounts[postId]++; }
-            else          { _myLikes.delete(postId); _likeCounts[postId] = Math.max(0, (_likeCounts[postId]||1)-1); }
-            if (btnEl) _applyLikeState(btnEl, postId);
-        }
+        } catch(e) { /* silent — keep optimistic state, will sync on next load */ }
     }
     function formatExpiryDisplay(expiry, instrument, postDate) {
         if (!expiry) return expiry;
