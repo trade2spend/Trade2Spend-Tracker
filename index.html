@@ -792,10 +792,30 @@
             }
         }
         // Update live option CMPs on trade cards in-place — skip on cache renders to avoid stale flicker
-        if (data.optionLTPs && !isMarketClosedNow() && !opts.skipLTPs) updateTradeCMPs(data.optionLTPs);
+        if (data.optionLTPs  && !isMarketClosedNow() && !opts.skipLTPs) updateTradeCMPs(data.optionLTPs);
+        if (data.optionHighs && !isMarketClosedNow() && !opts.skipLTPs) updateTradeHighs(data.optionHighs);
     }
 
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
+    // Extract the VM-tracked intraday high from [HIGH:X] follow-up posted at close
+    function extractHighFromReplies(replies) {
+        for (const r of replies) {
+            const m = (r.content || '').match(/^\[HIGH:([\d.]+)\]$/);
+            if (m) return parseFloat(m[1]);
+        }
+        return null;
+    }
+
+    // Update Day High spans on active trade cards (live, from VM /market optionHighs)
+    function updateTradeHighs(optionHighs) {
+        if (!optionHighs) return;
+        document.querySelectorAll('[data-live-high]').forEach(el => {
+            const key = el.dataset.liveHigh;
+            const high = optionHighs[key];
+            if (high != null && high > 0) el.textContent = `₹${high.toFixed(2)}`;
+        });
+    }
+
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
         _lastOptionLTPs = optionLTPs;
@@ -1689,6 +1709,7 @@
     // ── RENDER STRUCTURED FOLLOW-UP CARD ─────────────────────────────────────
     function renderFollowUpCard(reply, parsed, cumulativeExit, prevSL) {
         if (parsed.isAdminUnlock||(reply.content||'').includes('[T2S_UNLOCK]')) return '';
+        if (/^\[HIGH:[\d.]+\]$/.test(reply.content||'')) return '';
         const ts = formatPostTime(reply.sent_at||reply.created_at);
         const rawText = stripDisclaimerText(sanitizeHtml(reply.content||'').replace(/\n/g,'<br>'));
 
@@ -2097,6 +2118,7 @@
             let freeRepliesHtml2 = '';
             const _freeVisReplies2 = postReplies.filter(r => {
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
+                if (/^\[HIGH:[\d.]+\]$/.test(r.content||'')) return false;
                 if (r.audience==='paid_only') return false;
                 if (_STATUS_ONLY_RE.test((r.content||'').trim())) return false;
                 return true;
@@ -2140,6 +2162,7 @@
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
+                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Day High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -2200,7 +2223,7 @@
             }
             // follow-ups visible to free members on closed trades
             let _cf25Html = '';
-            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && r.audience !== 'paid_only');
+            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && r.audience !== 'paid_only');
             if (_cf25Vis.length > 0) {
                 const _cf25id = `cf25-replies-${post.id}`, _cf25n = _cf25Vis.length;
                 _cf25Html = `<button class="replies-toggle" id="btn-${_cf25id}" data-count="${_cf25n}" onclick="toggleReplies('${_cf25id}')">↳ ${_cf25n} update${_cf25n>1?'s':''} — tap to view</button><div class="thread-replies" id="${_cf25id}" style="display:none;">`;
@@ -2215,6 +2238,8 @@
             const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
+            const _optHigh25 = extractHighFromReplies(postReplies);
+            const _maxPoss25 = (_optHigh25 && fields.entry) ? Math.round(_optHigh25 - fields.entry) : null;
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -2237,9 +2262,12 @@
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${_cf25Html}
                 <div class="closed-trade-bar" style="${_barStyle25}">
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
-                        ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
+                    <div>
+                        <div style="display:flex;align-items:center;gap:6px;${_maxPoss25!==null?'margin-bottom:4px':''}">
+                            <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
+                            ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
+                        </div>
+                        ${_maxPoss25!==null?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh25})</span></div>`:''}
                     </div>
                     <button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>
                 </div>
@@ -2343,7 +2371,7 @@
         if (postReplies.length > 0) {
             let cumExitR=0;
             let currentSL = initSL3 || null;
-            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]'));
+            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||''));
             if (visibleReplies.length > 0) {
                 const tid=`ta-replies-${post.id}`, n=visibleReplies.length;
                 repliesHtml=`<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
@@ -2402,6 +2430,8 @@
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle3 = _loss3 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
+            const _optHigh3 = extractHighFromReplies(postReplies);
+            const _maxPoss3 = (_optHigh3 && fields.entry) ? Math.round(_optHigh3 - fields.entry) : null;
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -2429,9 +2459,12 @@
                     : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
                 ) : ''}
                 <div class="closed-trade-bar" style="${_barStyle3}">
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
-                        ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
+                    <div>
+                        <div style="display:flex;align-items:center;gap:6px;${_maxPoss3!==null?'margin-bottom:4px':''}">
+                            <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
+                            ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
+                        </div>
+                        ${_maxPoss3!==null?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`:''}
                     </div>
                     ${shareBtn3}
                 </div>
@@ -2468,6 +2501,10 @@
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
                 <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+            </div>
+            <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Day High</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
