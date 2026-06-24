@@ -130,6 +130,12 @@
         .metric-sub { font-size: 0.7rem; color: var(--text-muted); }
         .val-up { color: var(--green); }
         .val-down { color: var(--red); }
+        .cmp-up   { color: #16a34a !important; }
+        .cmp-down { color: #dc2626 !important; }
+        @keyframes cmp-tick-up   { 0%,40%{ background:#dcfce7; border-radius:3px; } 100%{ background:transparent; } }
+        @keyframes cmp-tick-down { 0%,40%{ background:#fee2e2; border-radius:3px; } 100%{ background:transparent; } }
+        .cmp-flash-up   { animation: cmp-tick-up   0.7s ease-out; }
+        .cmp-flash-down { animation: cmp-tick-down 0.7s ease-out; }
 
         .premium-pill { background: var(--primary); color: white; padding: 5px 9px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; touch-action: manipulation; }
 
@@ -547,6 +553,8 @@
     let _tradeRefreshTimer = null;
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs = null; // latest option LTPs — re-applied after trade card rebuilds
+    const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
+    const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     function formatExpiryDisplay(expiry, instrument, postDate) {
         if (!expiry) return expiry;
         const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -792,9 +800,24 @@
         if (!optionLTPs) return;
         _lastOptionLTPs = optionLTPs;
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
-            const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-PE"
+            const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-CE"
             const ltp = optionLTPs[key];
-            if (ltp != null && ltp > 0) el.textContent = `₹${ltp.toFixed(2)}`;
+            if (ltp != null && ltp > 0) {
+                const prev = _cmpPrevPrices[key];
+                el.textContent = `₹${ltp.toFixed(2)}`;
+                if (prev != null && ltp !== prev) {
+                    const dir = ltp > prev ? 'up' : 'down';
+                    _cmpLastDir[key] = dir;
+                    // Restart flash animation
+                    el.classList.remove('cmp-flash-up', 'cmp-flash-down');
+                    void el.offsetWidth;
+                    el.classList.add(dir === 'up' ? 'cmp-flash-up' : 'cmp-flash-down');
+                }
+                // Always re-apply last known direction (survives DOM rebuilds)
+                el.classList.toggle('cmp-up',   _cmpLastDir[key] === 'up');
+                el.classList.toggle('cmp-down', _cmpLastDir[key] === 'down');
+                _cmpPrevPrices[key] = ltp;
+            }
         });
     }
 
