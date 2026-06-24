@@ -200,7 +200,7 @@
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 5px 6px; display:flex;align-items:center; border-radius:6px; }
         .update-share:hover { color: var(--primary); background: var(--primary-light); }
         .update-like { background:none; border:none; cursor:pointer; color:#c4b8d8; padding:4px 5px; display:flex; align-items:center; gap:3px; border-radius:6px; touch-action:manipulation; }
-        .update-like:hover { color:#ef4444; background:#fef2f2; }
+        .update-like:hover { color:#ef4444; }
         .update-like.liked { color:#ef4444; }
         .like-count { font-size:0.68rem; font-weight:700; min-width:10px; }
         .admin-delete-btn { background:none; border:1px solid #fca5a5; color:#dc2626; border-radius:6px; font-size:0.72rem; font-weight:600; padding:5px 10px; cursor:pointer; font-family:inherit; }
@@ -559,8 +559,9 @@
     let _lastOptionLTPs = null; // latest option LTPs — re-applied after trade card rebuilds
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
-    let _likeCounts = {};      // postId → total like count
-    const _myLikes = new Set(); // postIds liked by current member
+    let _likeCounts = {};        // postId → total like count
+    const _myLikes = new Set();  // postIds liked by current member
+    const _likeInteractedTs = {}; // postId → timestamp of last user interaction (guards fetchLikes race)
 
     function _heartSvg(filled) {
         return filled
@@ -581,6 +582,7 @@
     async function fetchLikes(postIds) {
         if (!postIds || !postIds.length) return;
         const memberId = localStorage.getItem('t2s_member_id');
+        const fetchStarted = Date.now();
         try {
             const ids = postIds.map(id => `"${id}"`).join(',');
             const rows = await sbFetch(`post_likes?post_id=in.(${ids})&select=post_id,member_id`, { method: 'GET' });
@@ -591,6 +593,8 @@
                 if (l.member_id === memberId) freshMine.add(l.post_id);
             });
             postIds.forEach(id => {
+                // Skip any post the user interacted with after this fetch started — don't overwrite optimistic state
+                if (_likeInteractedTs[id] && _likeInteractedTs[id] > fetchStarted) return;
                 _likeCounts[id] = freshCounts[id] || 0;
                 if (freshMine.has(id)) _myLikes.add(id); else _myLikes.delete(id);
                 updateLikeUI(id);
@@ -600,6 +604,7 @@
     async function toggleLike(postId) {
         const memberId = localStorage.getItem('t2s_member_id');
         if (!memberId) return;
+        _likeInteractedTs[postId] = Date.now(); // guard: fetchLikes must not overwrite after this
         const wasLiked = _myLikes.has(postId);
         // Optimistic update
         if (wasLiked) { _myLikes.delete(postId); _likeCounts[postId] = Math.max(0, (_likeCounts[postId]||1) - 1); }
