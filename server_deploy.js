@@ -154,8 +154,10 @@ let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric to
 let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
 let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min when stale
 let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...}, ... } from scrip master
-let _activeContracts     = []; // [{instrument,strike,type,expiry}] parsed from Supabase
+let _activeContracts     = []; // [{instrument,strike,type,expiry,postId}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
+let _optionHighs         = {}; // key → { high: number, postId: string } — max LTP since session start
+let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
 let _sbSlAlertedToday    = new Set(); // post IDs where SL auto-follow-up already posted today
@@ -455,6 +457,8 @@ async function loginKotak(totp) {
       `<i>Market scraper runs automatically 9:15–3:35 IST (no TOTP needed)</i>`
     ).catch(()=>{});
     await saveState();
+    _optionHighs     = {}; // reset highs for new trading day
+    _highPostedToday = false;
     // Download scrip master in background after login so option tokens are ready
     downloadScripMaster().catch(e => console.error('[scrip] post-login download error:', e.message));
     return true;
@@ -831,7 +835,7 @@ async function refreshActiveContracts() {
   try {
     const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const r = await ft(
-      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=content`,
+      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=id,content`,
       { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 8000
     );
     if (!r.ok) return;
@@ -857,7 +861,7 @@ async function refreshActiveContracts() {
       const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
       // Deduplicate
       if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type && c.expiry===expiry))
-        contracts.push({ instrument: instr, strike, type, expiry });
+        contracts.push({ instrument: instr, strike, type, expiry, postId: p.id });
     });
     _activeContracts = contracts;
     console.log(`[contracts] Active: ${contracts.map(c=>`${c.instrument}${c.strike}${c.type}`).join(', ')}`);
@@ -898,7 +902,11 @@ async function fetchKotakOptionLTPs() {
       if (ltp > 0) {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
-        if (_latestMarketData) _latestMarketData.optionLTPs = { ..._optionChain };
+        _optionHighs[key] = { high: Math.max((_optionHighs[key]?.high || 0), ltp), postId: c.postId || _optionHighs[key]?.postId };
+        if (_latestMarketData) {
+          _latestMarketData.optionLTPs  = { ..._optionChain };
+          _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
+        }
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
         // Cache returned numeric token to avoid repeated symbol-based lookups
         const respToken = String(d?.data?.[0]?.token || d?.data?.[0]?.scripToken || '').trim();
@@ -1151,11 +1159,36 @@ async function pushMarketToGitHub(marketData) {
   } catch (e) { console.error('pushMarketToGitHub error:', e.message); return false; }
 }
 
+// Save the intraday high for each active contract to Supabase as a [HIGH:X] follow-up.
+// Called once at 3:35 PM so the member PWA can display "Max possible" on closed trade cards.
+async function saveOptionHighsToSupabase() {
+  if (_highPostedToday) return;
+  _highPostedToday = true;
+  for (const [key, data] of Object.entries(_optionHighs)) {
+    if (!data.high || !data.postId) continue;
+    try {
+      const r = await ft(`${SB_URL}/rest/v1/posts`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          content: `[HIGH:${data.high.toFixed(2)}]`,
+          post_type: 'follow_up', audience: 'all',
+          allow_sharing: false, is_deleted: false,
+          parent_id: data.postId, sent_at: new Date().toISOString()
+        })
+      }, 8000);
+      console.log(`[high] ${r.ok ? 'Saved' : 'Failed'} ₹${data.high} for ${key}`);
+    } catch(e) { console.error('[high] save error:', e.message); }
+  }
+}
+
 async function runMarketScraper(force = false) {
   const now  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const mins = now.getHours() * 60 + now.getMinutes();
   if (!force && !isMarketHours()) {
     stopMarketScraper();
+    // Save intraday highs to Supabase so member PWA can show "Max possible" on closed cards
+    saveOptionHighsToSupabase().catch(e => console.error('[high]', e.message));
     // Push final closing snapshot — fetch Yahoo Nifty50 for closing gainers/losers
     try {
       const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
