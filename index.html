@@ -199,7 +199,7 @@
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 5px 6px; display:flex;align-items:center; border-radius:6px; }
         .update-share:hover { color: var(--primary); background: var(--primary-light); }
-        .update-like { background:none; border:none; cursor:pointer; color:#c4b8d8; padding:4px 5px; display:flex; align-items:center; gap:3px; border-radius:6px; touch-action:manipulation; }
+        .update-like { background:none; border:none; cursor:pointer; color:#c4b8d8; padding:4px 5px; display:flex; align-items:center; gap:3px; border-radius:6px; touch-action:manipulation; outline:none; -webkit-tap-highlight-color:transparent; }
         .update-like:hover { color:#ef4444; }
         .update-like.liked { color:#ef4444; }
         .like-count { font-size:0.68rem; font-weight:700; min-width:10px; }
@@ -563,21 +563,25 @@
     const _myLikes = new Set();    // postIds liked by current member
     const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
 
-    function _heartSvg(filled) {
-        return filled
-            ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="#ef4444" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`
-            : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
+    // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
+    function _applyLikeState(btn, postId) {
+        const liked = _myLikes.has(postId);
+        const count = _likeCounts[postId] || 0;
+        btn.classList.toggle('liked', liked);
+        const svg = btn.querySelector('svg');
+        if (svg) {
+            svg.setAttribute('fill',   liked ? '#ef4444' : 'none');
+            svg.setAttribute('stroke', liked ? '#ef4444' : '#c4b8d8');
+            svg.setAttribute('stroke-width', liked ? '1.5' : '1.8');
+        }
+        const span = btn.querySelector('.like-count');
+        if (span) span.textContent = count > 0 ? String(count) : '';
     }
     function mkLikeBtn(postId) {
-        return `<button class="update-like" data-like-btn="${postId}" onclick="event.stopPropagation();toggleLike('${postId}')" title="Like">${_heartSvg(false)}<span class="like-count"></span></button>`;
+        return `<button class="update-like" data-like-btn="${postId}" onclick="event.stopPropagation();toggleLike('${postId}',this)" title="Like"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c4b8d8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span class="like-count"></span></button>`;
     }
     function updateLikeUI(postId) {
-        document.querySelectorAll(`[data-like-btn="${postId}"]`).forEach(btn => {
-            const count = _likeCounts[postId] || 0;
-            const liked = _myLikes.has(postId);
-            btn.innerHTML = `${_heartSvg(liked)}${count > 0 ? `<span class="like-count">${count}</span>` : '<span class="like-count"></span>'}`;
-            btn.classList.toggle('liked', liked);
-        });
+        document.querySelectorAll(`[data-like-btn="${postId}"]`).forEach(btn => _applyLikeState(btn, postId));
     }
     async function fetchLikes(postIds) {
         if (!postIds || !postIds.length) return;
@@ -609,23 +613,24 @@
             });
         } catch(e) { /* silent */ }
     }
-    async function toggleLike(postId) {
+    async function toggleLike(postId, btnEl) {
         const memberId = localStorage.getItem('t2s_member_id');
         if (!memberId) return;
-        _userInteracted.add(postId); // fetchLikes will never overwrite this post's local state
+        _userInteracted.add(postId);
         const wasLiked = _myLikes.has(postId);
-        // Optimistic update
         if (wasLiked) { _myLikes.delete(postId); _likeCounts[postId] = Math.max(0, (_likeCounts[postId]||1) - 1); }
-        else           { _myLikes.add(postId);    _likeCounts[postId] = (_likeCounts[postId]||0) + 1; }
-        updateLikeUI(postId);
+        else          { _myLikes.add(postId);    _likeCounts[postId] = (_likeCounts[postId]||0) + 1; }
+        // Direct update on the tapped element — no querySelector needed, instant
+        if (btnEl) _applyLikeState(btnEl, postId);
+        // Sync any other rendered instances of same post
+        document.querySelectorAll(`[data-like-btn="${postId}"]`).forEach(b => { if (b !== btnEl) _applyLikeState(b, postId); });
         try {
             if (wasLiked) await sbFetch(`post_likes?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'DELETE' });
             else          await sbFetch('post_likes', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId }) });
         } catch(e) {
-            // Revert on error
             if (wasLiked) { _myLikes.add(postId); _likeCounts[postId]++; }
             else          { _myLikes.delete(postId); _likeCounts[postId] = Math.max(0, (_likeCounts[postId]||1)-1); }
-            updateLikeUI(postId);
+            if (btnEl) _applyLikeState(btnEl, postId);
         }
     }
     function formatExpiryDisplay(expiry, instrument, postDate) {
