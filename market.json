@@ -1,6 +1,6 @@
 {
   "marketOpen": true,
-  "lastUpdated": "2026-06-24T08:47:19.242Z",
+  "lastUpdated": "2026-06-24T08:47:34.360Z",
   "indices": {
     "NIFTY": {
       "price": 24054.45,
@@ -8,9 +8,9 @@
       "changePct": 0.97
     },
     "SENSEX": {
-      "price": 77079.65,
-      "change": 878.97,
-      "changePct": 1.15
+      "price": 77087,
+      "change": 886.32,
+      "changePct": 1.16
     },
     "BANKNIFTY": {
       "price": 58163.55,
@@ -130,28 +130,33 @@
   "losers": [
     {
       "symbol": "BAJAJ-AUTO",
-      "price": 9813,
-      "change": -2.11
+      "price": 9808,
+      "change": -2.16
     },
     {
       "symbol": "SBILIFE",
-      "price": 1761.5,
-      "change": -1.38
+      "price": 1760.6,
+      "change": -1.43
     },
     {
       "symbol": "NTPC",
-      "price": 360.15,
-      "change": -1.22
+      "price": 360.2,
+      "change": -1.21
     },
     {
       "symbol": "TMPV",
-      "price": 350.35,
-      "change": -1.18
+      "price": 350.25,
+      "change": -1.21
+    },
+    {
+      "symbol": "HDFCLIFE",
+      "price": 591.2,
+      "change": -1.05
     },
     {
       "symbol": "BEL",
-      "price": 415.8,
-      "change": -1
+      "price": 415.75,
+      "change": -1.01
     },
     {
       "symbol": "ONGC",
@@ -159,49 +164,44 @@
       "change": -1
     },
     {
-      "symbol": "HDFCLIFE",
-      "price": 591.55,
-      "change": -0.99
-    },
-    {
       "symbol": "MARUTI",
-      "price": 13321,
-      "change": -0.97
+      "price": 13322,
+      "change": -0.96
     },
     {
       "symbol": "ETERNAL",
-      "price": 256.75,
-      "change": -0.85
+      "price": 256.7,
+      "change": -0.87
     },
     {
       "symbol": "HINDALCO",
-      "price": 980.4,
-      "change": -0.65
-    },
-    {
-      "symbol": "GRASIM",
-      "price": 3126.1,
-      "change": -0.58
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "price": 1891,
-      "change": -0.56
-    },
-    {
-      "symbol": "TATACONSUM",
-      "price": 1098,
-      "change": -0.53
-    },
-    {
-      "symbol": "TATASTEEL",
-      "price": 192.54,
-      "change": -0.53
+      "price": 979.7,
+      "change": -0.72
     },
     {
       "symbol": "JSWSTEEL",
-      "price": 1235.7,
-      "change": -0.52
+      "price": 1233.7,
+      "change": -0.68
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "price": 1890.1,
+      "change": -0.6
+    },
+    {
+      "symbol": "GRASIM",
+      "price": 3125.5,
+      "change": -0.6
+    },
+    {
+      "symbol": "TATASTEEL",
+      "price": 192.57,
+      "change": -0.51
+    },
+    {
+      "symbol": "TATACONSUM",
+      "price": 1098.6,
+      "change": -0.47
     },
     {
       "symbol": "NESTLEIND",
@@ -209,14 +209,14 @@
       "change": -0.25
     },
     {
-      "symbol": "ASIANPAINT",
-      "price": 2655.8,
-      "change": -0.2
-    },
-    {
       "symbol": "COALINDIA",
       "price": 443.5,
       "change": -0.19
+    },
+    {
+      "symbol": "ASIANPAINT",
+      "price": 2657.1,
+      "change": -0.15
     }
   ]
 }
