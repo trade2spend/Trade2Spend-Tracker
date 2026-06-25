@@ -595,7 +595,7 @@
         const memberId = localStorage.getItem('t2s_member_id');
         try {
             const ids = postIds.join(',');
-            const rows = await sbFetch(`post_likes?post_id=in.(${ids})&select=post_id,member_id`, { method: 'GET' });
+            const rows = await sbFetch(`post_shares?post_id=in.(${ids})&platform=eq._like&select=post_id,member_id`, { method: 'GET' });
             if (!Array.isArray(rows)) return;
             const freshCounts = {}, freshMine = new Set();
             rows.forEach(l => {
@@ -628,8 +628,8 @@
         const memberId = localStorage.getItem('t2s_member_id');
         if (!memberId) return;
         try {
-            if (wasLiked) await sbFetch(`post_likes?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'DELETE' });
-            else          await sbFetch('post_likes', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId }) });
+            if (wasLiked) await sbFetch(`post_shares?post_id=eq.${postId}&member_id=eq.${memberId}&platform=eq._like`, { method: 'DELETE' });
+            else          await sbFetch('post_shares', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId, platform: '_like', shared_at: new Date().toISOString() }) });
         } catch(e) {
             console.error('[Like save]', e.message);
             _likeToast('Like not saved: ' + e.message.slice(0, 80));
