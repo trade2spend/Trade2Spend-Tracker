@@ -920,7 +920,8 @@ async function fetchKotakOptionLTPs() {
       continue;
     }
     try {
-      const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/nse_fo|${identifier}/ltp`;
+      const _exchSeg = c.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
+      const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${_exchSeg}|${identifier}/ltp`;
       const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
@@ -1945,7 +1946,7 @@ async function handleMessage(text) {
       // Test 1: numeric token (if available)
       if (numToken) {
         try {
-          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${numToken}/ltp`;
+          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${numToken}/ltp`;
           const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
           const txt = await r.text();
           await tgSend(`Token lookup (${numToken}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
@@ -1955,7 +1956,7 @@ async function handleMessage(text) {
       // Test 2: trading symbol (fallback path)
       if (tradeSym) {
         try {
-          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/nse_fo|${tradeSym}/ltp`;
+          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${tradeSym}/ltp`;
           const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
           const txt = await r.text();
           await tgSend(`Symbol lookup (${tradeSym}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
