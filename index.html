@@ -370,6 +370,7 @@
                         <span id="global-market-text">Closed</span>
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
+                    <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -1664,12 +1665,15 @@
     // Unlock Entry/Expiry/Call-Put/CMP only when: 50%+ exit, SL hit/gone, full exit, or admin unlock
     function getFreeUnlockedFields(replies) {
         const u = { callPut:false, entry:false, expiry:false, cmp:false, sl:false, all:false };
+        let cumExit = 0;
         for (const r of (replies||[])) {
             const c = r.content||'';
             if (c.includes('[T2S_UNLOCK]')) { u.all=true; return u; }
             const p = parseFollowUpContent(c);
-            if (p.isFullExit || (p.exitPct && p.exitPct >= 50)) {
-                u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true;
+            if (p.isFullExit) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
+            if (p.exitPct) {
+                cumExit = Math.min(100, cumExit + p.exitPct);
+                if (cumExit >= 50) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
             }
             if (p.slRevised) u.sl=true;
         }
@@ -1874,6 +1878,20 @@
         }
         const reauthBtn = document.getElementById('admin-reauth-btn');
         if (reauthBtn) reauthBtn.style.display = isAdmin ? 'inline-block' : 'none';
+        // Tier chip in header
+        const _tierChip = document.getElementById('member-tier-chip');
+        if (_tierChip) {
+            if (isAdmin) {
+                _tierChip.textContent = 'ADMIN';
+                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);';
+            } else if (memberTier === 'paid') {
+                _tierChip.textContent = 'PAID';
+                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';
+            } else {
+                _tierChip.textContent = 'FREE';
+                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';
+            }
+        }
 
         try {
             const [tradeParents, allFollowUps] = await Promise.all([
