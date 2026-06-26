@@ -22,11 +22,11 @@
   --radius:10px;--radius-sm:7px;--radius-lg:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;font-size:15px;}
+html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;height:100dvh;overflow:hidden;font-size:15px;}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:var(--bg2);}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
-.app{max-width:520px;margin:0 auto;padding:0 0 5rem;overflow-x:hidden;}
+.app{max-width:520px;margin:0 auto;padding:0 0 5rem;overflow-x:hidden;overflow-y:auto;height:100dvh;overscroll-behavior:none;}
 
 .topbar{position:sticky;top:0;z-index:100;background:rgba(244,246,249,0.97);backdrop-filter:blur(16px);border-bottom:0.5px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
 .brand{display:flex;align-items:center;gap:10px;}
@@ -377,11 +377,10 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
       <div class="brand-name">Trade2Spend</div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:3px;">
         <button id="kotak-hdr-btn" onclick="showQuickTotp(null)" title="Kotak — tap to connect" style="display:flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;font-family:'Space Grotesk',sans-serif;color:#6b7280;">
-          <span id="kotak-hdr-dot" style="width:9px;height:9px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .3s;"></span>🔑
+          <span id="kotak-hdr-dot" style="width:9px;height:9px;border-radius:50%;background:#dc2626;flex-shrink:0;transition:background .3s;"></span>🔑
         </button>
-        <a href="https://app.trade2spend.com/?tab=trades" target="_blank" title="Open member view" style="display:flex;align-items:center;gap:4px;text-decoration:none;">
-          <span style="width:9px;height:9px;border-radius:50%;background:#059669;display:inline-block;"></span>
-        </a>
+        <a href="https://app.trade2spend.com/?tab=trades" target="_blank" title="Open member view" style="text-decoration:none;font-size:13px;color:#6b7280;line-height:1;">🔗</a>
+        <button onclick="softRefresh()" title="Refresh screen" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:15px;color:#6b7280;line-height:1;">↻</button>
       </div>
     </div>
   </div>
@@ -1335,7 +1334,13 @@ window.onload=()=>{
 };
 
 // ── TABS ──
+let _currentTab = 'trade';
+function softRefresh() {
+  showTab(_currentTab);
+  checkKotakStatus();
+}
 function showTab(t){
+  _currentTab = t;
   ['trade','algo','posts','general','campaign','results','history','setup','membership','manage'].forEach(id=>{
     document.getElementById('tab-'+id).style.display=id===t?'block':'none';
   });
