@@ -2959,10 +2959,8 @@ async function connectKotak() {
     const d = await r.json();
     if (d.ok) {
       inp.value = '';
-      msg.style.color = '#059669';
-      msg.textContent = '✓ ' + (d.message || 'Connected');
-      msg.style.display = '';
       await checkKotakStatus();
+      showToast('✓ Kotak connected — live CMP active');
     } else {
       msg.style.color = '#dc2626';
       msg.textContent = d.error || 'Login failed — wait for a fresh TOTP and try again';
