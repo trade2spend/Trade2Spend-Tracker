@@ -1342,6 +1342,8 @@ window.onload=()=>{
   memRenderWelcome();
   // Auto-load follow-up post list since Trade tab is the default
   loadFollowUpData();
+  // Restore holiday override from localStorage before any network call
+  initHolidayFromStorage();
   // Check Kotak status on load so header shows correct state immediately
   checkKotakStatus();
 };
@@ -2839,6 +2841,39 @@ function copyMsg(type){
 // ── KOTAK CONNECTION ──
 let _kotakConnected = false;
 let _marketHolidayActive = false;
+const T2S_HOLIDAY_KEY = 't2s_holiday_override';
+
+function _istMinsNow() {
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return ist.getHours() * 60 + ist.getMinutes();
+}
+
+function initHolidayFromStorage() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(T2S_HOLIDAY_KEY) || 'null');
+    if (!stored || !stored.active) return;
+    const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const sameDay = stored.date === ist.toDateString();
+    const before335 = _istMinsNow() < 15 * 60 + 35;
+    if (sameDay && before335) {
+      _marketHolidayActive = true;
+      syncHolidayUI(true);
+    } else {
+      localStorage.removeItem(T2S_HOLIDAY_KEY);
+    }
+  } catch {}
+}
+
+function saveHolidayToStorage(active) {
+  try {
+    if (active) {
+      const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      localStorage.setItem(T2S_HOLIDAY_KEY, JSON.stringify({ active: true, date: ist.toDateString() }));
+    } else {
+      localStorage.removeItem(T2S_HOLIDAY_KEY);
+    }
+  } catch {}
+}
 
 function syncHolidayUI(active) {
   const card = document.getElementById('market-holiday-card');
@@ -2866,6 +2901,7 @@ async function toggleMarketHoliday() {
     });
     if (!r.ok) throw new Error('Server error');
     _marketHolidayActive = newState;
+    saveHolidayToStorage(_marketHolidayActive);
     syncHolidayUI(_marketHolidayActive);
     showToast(newState ? '🏖 Market marked as closed' : '✓ Market status set to auto');
   } catch(e) {
@@ -2884,6 +2920,7 @@ async function checkKotakStatus() {
     _kotakConnected = !!d.loggedIn;
     if (typeof d.marketHoliday === 'boolean' && d.marketHoliday !== _marketHolidayActive) {
       _marketHolidayActive = d.marketHoliday;
+      saveHolidayToStorage(_marketHolidayActive);
       syncHolidayUI(_marketHolidayActive);
     }
   } catch { _kotakConnected = false; }
