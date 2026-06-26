@@ -4830,6 +4830,21 @@ async function triggerA2HS() {
   } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
 }
 document.addEventListener('DOMContentLoaded', function() { initA2HS(); });
+
+// ── iOS KEYBOARD: keep fixed topbar visible when virtual keyboard opens ─────
+// On iOS PWA, the visual viewport scrolls when keyboard appears.
+// position:fixed is relative to the layout viewport, so it drifts off screen.
+// We use the visualViewport API to pin the topbar to the visual viewport top.
+(function() {
+  if (!window.visualViewport) return;
+  const vv = window.visualViewport;
+  function fixTopbar() {
+    const bar = document.querySelector('.topbar');
+    if (bar) bar.style.top = Math.max(0, vv.offsetTop) + 'px';
+  }
+  vv.addEventListener('resize', fixTopbar);
+  vv.addEventListener('scroll', fixTopbar);
+})();
 </script>
 
 
