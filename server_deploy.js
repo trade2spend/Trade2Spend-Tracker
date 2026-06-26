@@ -2740,8 +2740,8 @@ async function checkSupabaseTriggers() {
       // Skip if follow-ups already confirm trigger (non-status-only reply exists)
       const validReplies = pr.filter(r => !STATUS_ONLY.test((r.content||'').trim()) && !(r.content||'').includes('[T2S_UNLOCK]'));
       if (validReplies.length > 0) { _sbTriggerAlertedToday.add(post.id); continue; }
-      // Extract entry price (option premium, must be < 5000)
-      const em = (post.content||'').match(/(?:buy(?:ing)?|sell(?:ing)?)\s+at\s+₹?\s*(\d+(?:\.\d+)?)/i);
+      // Extract entry price — format: "I am buying Nifty 24200 CE at 110"
+      const em = (post.content||'').match(/(?:buy(?:ing)?|sell(?:ing)?)[\s\S]*?\bat\s+₹?\s*(\d+(?:\.\d+)?)/i);
       if (!em) continue;
       const entry = parseFloat(em[1]);
       if (entry <= 0 || entry >= 5000) continue;
