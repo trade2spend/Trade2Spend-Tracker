@@ -2386,10 +2386,14 @@ const server = http.createServer(async (req, res) => {
     // Stale state.json tokens from prior days correctly report false → triggers TOTP prompt
     const _sessionAge = Date.now() - (session.lastLogin || 0);
     const _isLoggedIn = !!session.token && _sessionAge < SESSION_MAX_AGE_MS;
+    const _hIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const _hMins = _hIst.getHours() * 60 + _hIst.getMinutes();
+    const _holidayActive = _marketHoliday && _hMins < 15 * 60 + 35;
+    if (_marketHoliday && !_holidayActive) { _marketHoliday = false; saveHolidayState(); }
     res.end(JSON.stringify({
       ok: true, uptime: Math.round(process.uptime()),
       loggedIn: _isLoggedIn, paperMode: state.paperMode,
-      marketHoliday: _marketHoliday,
+      marketHoliday: _holidayActive,
       openTrades: Object.values(state.trades).filter(t=>!t.pending).length,
       dailyPnl: state.dailyPnl, orders: state.orderCount
     }));
