@@ -2752,6 +2752,14 @@ async function checkSupabaseSLs() {
       if (sbTradeFullyExited(pr)) continue;
       let sl = null;
       for (const r of pr) { const v = extractOptSL(r.content || ''); if (v) { sl = v; break; } }
+      // "SL to cost / no loss" = entry price — resolve from original post
+      if (!sl) {
+        const hasCostSL = pr.some(r => /sl\s+(?:to|at|moved?\s+to|revised?\s+to)\s+cost|no[\s-]?loss|breakeven|cost\s+sl/i.test(r.content || ''));
+        if (hasCostSL) {
+          const em = (post.content || '').match(/(?:buy(?:ing)?|sell(?:ing)?)[\s\S]*?\bat\s+₹?\s*(\d+(?:\.\d+)?)/i);
+          if (em) sl = parseFloat(em[1]);
+        }
+      }
       if (!sl) continue;
       const t = (post.content || '').toUpperCase();
       const im = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/); if (!im) continue;
