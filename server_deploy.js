@@ -43,7 +43,7 @@ console.log(`Starting with CHAT_ID=${CHAT_ID}, token=${BOT_TOKEN.slice(0,8)}...`
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 // gw-napi returns 502 — mis.kotaksecurities.com handles scrip-master + LTP correctly
 const DATA_URL           = 'https://mis.kotaksecurities.com';
-const LOT_SIZES          = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 10 };
+const LOT_SIZES          = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 20 }; // fallback — overridden by Kotak scrip master
 const MAX_DAILY_LOSS     = 15000;
 const MAX_QTY            = 100;
 const MAX_ORDERS         = 10;
@@ -150,6 +150,7 @@ function kvUnlock(key) { _locks.delete(key); }
 let marketScraperInterval = null;
 let _latestMarketData    = null;
 let _marketHoliday       = false; // manual holiday override — set via /market-holiday endpoint
+let _kotakLotSizes       = {};    // lot sizes extracted from Kotak scrip master — keyed by instrument (NIFTY/BANKNIFTY/SENSEX)
 let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, NSE fallback)
 let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
 let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
@@ -653,13 +654,14 @@ async function downloadScripMaster() {
     const iExp  = _findCol(hdrs,'lExpiryDate','pExpiryDate','pExpDt','expiryDate','pExpiry','expiry');
     const iStr  = _findCol(hdrs,'dStrikePrice','pStrikePrice','strikePrice','pStrikePrc','pStrike','strike');
     const iTok  = _findCol(hdrs,'pSymbol','token','pToken','instrumentToken');
+    const iLot  = _findCol(hdrs,'dBodLotQuantity','lotSize','pLotSize','lLotSize','bodLotQuantity','lotQty'); // lot size per contract
     if ([iName,iType,iExp,iStr,iTok].some(i=>i<0)) {
-      return { map:{}, err:`Col missing — iName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok} | Hdrs: ${hdrs.join(',')}` };
+      return { map:{}, lotMap:{}, err:`Col missing — iName:${iName} iType:${iType} iExp:${iExp} iStr:${iStr} iTok:${iTok} | Hdrs: ${hdrs.join(',')}` };
     }
     // Auto-detect if strike is stored ×100 (old: 2400000) or actual value (new: 24000)
     const firstStrike = parseFloat(lines[1]?.split(',')?.[iStr]?.replace(/[";]/g,'').trim()||'0');
     const strikeDiv   = firstStrike > 100000 ? 100 : 1;
-    const map = {};
+    const map = {}, lotMap = {};
     for (let i = 1; i < lines.length; i++) {
       const c = lines[i].split(',');
       if (c.length <= Math.max(iName,iType,iExp,iStr,iTok)) continue;
@@ -671,8 +673,13 @@ async function downloadScripMaster() {
       const token  = c[iTok]?.replace(/"/g,'').trim();
       if (!name||!type||!exp||strRaw===0||!token||!['CE','PE'].includes(type)) continue;
       map[`${name}-${strike}-${type}-${exp}`] = token;
+      // Extract lot size once per instrument (same across all contracts of that instrument)
+      if (iLot >= 0 && !lotMap[name] && c[iLot]) {
+        const lot = parseInt(c[iLot].replace(/[";]/g,'').trim() || '0');
+        if (lot > 0) lotMap[name] = lot;
+      }
     }
-    return { map, err:null };
+    return { map, lotMap, err:null };
   }
 
   const d2s = d => `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;
@@ -762,7 +769,7 @@ async function downloadScripMaster() {
     return;
   }
 
-  const { map: newMap, err } = parseCsv(csvText);
+  const { map: newMap, lotMap, err } = parseCsv(csvText);
   const count = Object.keys(newMap).length;
 
   if (err) {
@@ -785,6 +792,10 @@ async function downloadScripMaster() {
 
   _scripMaster   = newMap;
   _scripMasterTs = Date.now();
+  if (lotMap && Object.keys(lotMap).length > 0) {
+    _kotakLotSizes = lotMap;
+    console.log('[scrip] Lot sizes from Kotak:', JSON.stringify(_kotakLotSizes));
+  }
   buildExpiryDates();
   const sample = Object.keys(newMap).filter(k=>k.startsWith('NIFTY-')&&k.includes(String(currentYear))).slice(0,3);
   console.log(`[scrip] ✅ ${count} contracts from ${sourceLabel}. Sample: ${sample.join(', ')}`);
@@ -2172,7 +2183,11 @@ const server = http.createServer(async (req, res) => {
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const dayNow = nowIst.getDay(), minsNow = nowIst.getHours() * 60 + nowIst.getMinutes();
     const timeOpen = dayNow >= 1 && dayNow <= 5 && minsNow >= 9 * 60 + 15 && minsNow < 15 * 60 + 30;
-    res.end(JSON.stringify({ ...base, marketOpen: !_marketHoliday && timeOpen }));
+    // Merge Kotak lot sizes with hardcoded fallback — Kotak values take priority
+    const lotSizes = Object.keys(_kotakLotSizes).length > 0
+      ? { ...LOT_SIZES, ..._kotakLotSizes }
+      : LOT_SIZES;
+    res.end(JSON.stringify({ ...base, marketOpen: !_marketHoliday && timeOpen, lotSizes }));
     return;
   }
 
