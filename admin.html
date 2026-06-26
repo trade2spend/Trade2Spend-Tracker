@@ -2840,6 +2840,22 @@ function copyMsg(type){
 let _kotakConnected = false;
 let _marketHolidayActive = false;
 
+function syncHolidayUI(active) {
+  const card = document.getElementById('market-holiday-card');
+  const chip = document.getElementById('market-holiday-chip');
+  const btn  = document.getElementById('market-holiday-btn');
+  if (!card) return;
+  if (active) {
+    card.style.borderColor = 'var(--redborder)'; card.style.background = 'var(--redbg)';
+    chip.style.color = 'var(--red)'; chip.style.borderColor = 'var(--redborder)'; chip.style.background = 'var(--redbg)'; chip.textContent = 'HOLIDAY';
+    btn.style.color = 'var(--red)'; btn.style.borderColor = 'var(--redborder)'; btn.textContent = '✓ Holiday Active — Tap to Reset to Auto';
+  } else {
+    card.style.borderColor = 'var(--greenborder)'; card.style.background = 'var(--greenbg)';
+    chip.style.color = 'var(--green)'; chip.style.borderColor = 'var(--greenborder)'; chip.style.background = 'var(--greenbg)'; chip.textContent = 'AUTO';
+    btn.style.color = 'var(--green)'; btn.style.borderColor = 'var(--greenborder)'; btn.textContent = '🏖 Mark Today as Holiday (Close Market)';
+  }
+}
+
 async function toggleMarketHoliday() {
   const newState = !_marketHolidayActive;
   try {
@@ -2850,18 +2866,7 @@ async function toggleMarketHoliday() {
     });
     if (!r.ok) throw new Error('Server error');
     _marketHolidayActive = newState;
-    const card = document.getElementById('market-holiday-card');
-    const chip = document.getElementById('market-holiday-chip');
-    const btn  = document.getElementById('market-holiday-btn');
-    if (_marketHolidayActive) {
-      card.style.borderColor = 'var(--redborder)'; card.style.background = 'var(--redbg)';
-      chip.style.color = 'var(--red)'; chip.style.borderColor = 'var(--redborder)'; chip.style.background = 'var(--redbg)'; chip.textContent = 'HOLIDAY';
-      btn.style.color = 'var(--red)'; btn.style.borderColor = 'var(--redborder)'; btn.textContent = '✓ Holiday Active — Tap to Reset to Auto';
-    } else {
-      card.style.borderColor = 'var(--greenborder)'; card.style.background = 'var(--greenbg)';
-      chip.style.color = 'var(--green)'; chip.style.borderColor = 'var(--greenborder)'; chip.style.background = 'var(--greenbg)'; chip.textContent = 'AUTO';
-      btn.style.color = 'var(--green)'; btn.style.borderColor = 'var(--greenborder)'; btn.textContent = '🏖 Mark Today as Holiday (Close Market)';
-    }
+    syncHolidayUI(_marketHolidayActive);
     showToast(newState ? '🏖 Market marked as closed' : '✓ Market status set to auto');
   } catch(e) {
     showToast('Failed to update market status');
@@ -2877,6 +2882,10 @@ async function checkKotakStatus() {
     const r = await fetch('https://api.trade2spend.com/?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
     _kotakConnected = !!d.loggedIn;
+    if (typeof d.marketHoliday === 'boolean' && d.marketHoliday !== _marketHolidayActive) {
+      _marketHolidayActive = d.marketHoliday;
+      syncHolidayUI(_marketHolidayActive);
+    }
   } catch { _kotakConnected = false; }
   const hdrDot = document.getElementById('kotak-hdr-dot');
   if (_kotakConnected) {
