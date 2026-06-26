@@ -19,7 +19,8 @@ import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
-const STATE_FILE = path.join(__dirname, 'state.json');
+const STATE_FILE   = path.join(__dirname, 'state.json');
+const HOLIDAY_FILE = path.join(__dirname, '.holiday_state.json');
 const PORT       = process.env.PORT || 3000;
 
 // ── ENV ──────────────────────────────────────────────────────────────────────
@@ -166,6 +167,21 @@ let _sbSlAlertedToday    = new Set(); // post IDs where SL auto-follow-up alread
 let _sbTrigAlertDate     = null;
 let _sbTrigAlertedToday  = new Set(); // post IDs where trigger auto-follow-up already posted today
 let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was sent
+
+function loadHolidayState() {
+  try {
+    const d = JSON.parse(fs.readFileSync(HOLIDAY_FILE, 'utf8'));
+    const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    if (d.date === ist.toDateString()) { _marketHoliday = !!d.holiday; console.log(`[holiday] Restored: ${_marketHoliday}`); }
+  } catch {}
+}
+
+function saveHolidayState() {
+  try {
+    const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    fs.writeFileSync(HOLIDAY_FILE, JSON.stringify({ date: ist.toDateString(), holiday: _marketHoliday }));
+  } catch {}
+}
 
 function loadState() {
   try {
@@ -2163,6 +2179,7 @@ const server = http.createServer(async (req, res) => {
         const { holiday, key } = JSON.parse(body || '{}');
         if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end('{"ok":false}'); return; }
         _marketHoliday = !!holiday;
+        saveHolidayState();
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ ok: true, holiday: _marketHoliday }));
         console.log(`Market holiday override set to: ${_marketHoliday}`);
@@ -2372,6 +2389,7 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true, uptime: Math.round(process.uptime()),
       loggedIn: _isLoggedIn, paperMode: state.paperMode,
+      marketHoliday: _marketHoliday,
       openTrades: Object.values(state.trades).filter(t=>!t.pending).length,
       dailyPnl: state.dailyPnl, orders: state.orderCount
     }));
@@ -2647,6 +2665,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 loadState();
+loadHolidayState();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
 
 // On startup: populate _latestMarketData from GitHub so /market works immediately
