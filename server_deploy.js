@@ -149,6 +149,7 @@ function kvUnlock(key) { _locks.delete(key); }
 
 let marketScraperInterval = null;
 let _latestMarketData    = null;
+let _marketHoliday       = false; // manual holiday override — set via /market-holiday endpoint
 let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, NSE fallback)
 let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
 let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
@@ -2137,6 +2138,23 @@ async function executeFromPWA(trade) {
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
 
+  // Market holiday override — POST /market-holiday
+  if (req.method === 'POST' && urlPath === '/market-holiday') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { holiday, key } = JSON.parse(body || '{}');
+        if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end('{"ok":false}'); return; }
+        _marketHoliday = !!holiday;
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true, holiday: _marketHoliday }));
+        console.log(`Market holiday override set to: ${_marketHoliday}`);
+      } catch(e) { res.writeHead(400); res.end('{"ok":false}'); }
+    });
+    return;
+  }
+
   // Live market data — GET /market (used by PWA instead of GitHub CDN)
   if (req.method === 'GET' && urlPath === '/market') {
     res.writeHead(200, {
@@ -2144,7 +2162,12 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-cache, no-store'
     });
-    res.end(JSON.stringify(_latestMarketData || { marketOpen: false, indices: {}, lastUpdated: new Date().toISOString() }));
+    const base = _latestMarketData || { indices: {}, lastUpdated: new Date().toISOString() };
+    // Re-compute marketOpen fresh at request time so cached data doesn't serve stale status
+    const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const dayNow = nowIst.getDay(), minsNow = nowIst.getHours() * 60 + nowIst.getMinutes();
+    const timeOpen = dayNow >= 1 && dayNow <= 5 && minsNow >= 9 * 60 + 15 && minsNow < 15 * 60 + 30;
+    res.end(JSON.stringify({ ...base, marketOpen: !_marketHoliday && timeOpen }));
     return;
   }
 
