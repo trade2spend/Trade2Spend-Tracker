@@ -1905,9 +1905,11 @@ async function handleMagicLink() {
 
 // ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
 async function checkSessionSlot() {
+  if (sessionStorage.getItem('t2s_admin_authed')) return;
   const mySource = 'admin_session_' + getAdminDeviceId();
   try {
     const rows = await sbGet('keep_alive_log?source=like.admin_session_%25&order=pinged_at.asc');
+    if (sessionStorage.getItem('t2s_admin_authed')) return;
     const mine   = rows.find(r => r.source === mySource);
     const others = rows.filter(r => r.source !== mySource);
     if (!mine && others.length >= 2) { showAdminLocked('sessions'); }
@@ -1997,12 +1999,18 @@ async function pinInit() {
     showToast('No PIN set — create one below to secure the app.');
     return;
   }
+  // Guard: user may have unlocked while Supabase fetches above were in flight
+  if (sessionStorage.getItem('t2s_admin_authed')) {
+    document.getElementById('pin-overlay').classList.add('hidden');
+    return;
+  }
   document.getElementById('pin-overlay').classList.remove('hidden');
   // Check localStorage lockout (persists across refresh — cannot be bypassed)
   const lockUntil = localStorage.getItem('t2s_admin_lock_until');
   if (lockUntil && new Date() < new Date(lockUntil)) { showAdminLocked('pin'); return; }
   try {
     const locks = await sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1');
+    if (sessionStorage.getItem('t2s_admin_authed')) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
     if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
   } catch(e) {}
   await checkSessionSlot();
