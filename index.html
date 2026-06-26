@@ -949,6 +949,7 @@
                 if (res.ok) {
                     const data = await res.json();
                     if (data.expiry) _marketExpiry = data.expiry;
+                    if (data.lotSizes) _kotakLotSizes = data.lotSizes;
                     renderMarketUI(data);
                     localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
                     return data;
@@ -984,8 +985,9 @@
     }
 
     // Strict lot size lookup — never use .includes() for instrument matching
-    const LOT_SIZES = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 10, MIDCAP: 75, NIFTYFIN: 25 };
-    function getLotSize(instrument) { return LOT_SIZES[instrument] || 65; }
+    const LOT_SIZES = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 20, MIDCAP: 75, NIFTYFIN: 25 }; // fallback — overridden by Kotak scrip master via /market
+    let _kotakLotSizes = {}; // populated from /market response after TOTP
+    function getLotSize(instrument) { return _kotakLotSizes[instrument] || LOT_SIZES[instrument] || 65; }
 
     // Strip premium fields from trade payload before rendering
     function sanitizeTrade(trade, canSeePremium) {
@@ -1180,9 +1182,11 @@
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
                 // Weighted average across all partial exits (50%@180 + 50%@158 → avg 169, not just 158)
+                // P&L priority: VM Day High ([HIGH:XXX]) > weighted exit > calculateMaxProfit
+                const dayHighPerf   = extractHighFromReplies(replies);
                 const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies) });
                 const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
-                const maxPrice = exitPricePerf || (mp ? mp.max : null);
+                const maxPrice = dayHighPerf || exitPricePerf || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
                 let pnlPts = null, pnlRs = null, isWin = false;
                 if (f.entry && maxPrice) {
