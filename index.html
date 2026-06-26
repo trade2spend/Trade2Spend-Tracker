@@ -647,7 +647,7 @@
         if (/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/i.test(expiry)) return expiry;
         const lo = expiry.toLowerCase();
         // Try live Kotak scrip master dates first
-        const ed = _marketExpiry && (_marketExpiry[instrument] || _marketExpiry['NIFTY']);
+        const ed = _marketExpiry && _marketExpiry[instrument];
         if (ed) {
             let rawDate = null, label = expiry;
             if      (lo === 'weekly' || lo === 'current week' || lo.includes('current')) { rawDate = ed.current;  label = 'Weekly'; }
