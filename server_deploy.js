@@ -1144,7 +1144,12 @@ async function fetchYahooIndex(instrument) {
   } catch(e) { console.error(`[Yahoo] ${instrument} error: ${e.message}`); return null; }
 }
 
+let _lastGhMarketPush = 0;
 async function pushMarketToGitHub(marketData) {
+  // Rate-limit to once per 15 min — frequent pushes flood GitHub Pages build queue
+  const now = Date.now();
+  if (now - _lastGhMarketPush < 15 * 60 * 1000) return false;
+  _lastGhMarketPush = now;
   if (!GH_TOKEN) { console.error('GH_TOKEN not set — cannot push market.json'); return false; }
   const api = `https://api.github.com/repos/${GH_REPO}/contents/market.json`;
   const headers = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
