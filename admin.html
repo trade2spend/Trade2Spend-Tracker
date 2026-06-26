@@ -22,11 +22,11 @@
   --radius:10px;--radius-sm:7px;--radius-lg:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;font-size:15px;overflow-x:hidden;}
+html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;font-size:15px;}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:var(--bg2);}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
-.app{max-width:520px;margin:0 auto;padding:0 0 5rem;}
+.app{max-width:520px;margin:0 auto;padding:0 0 5rem;overflow-x:hidden;}
 
 .topbar{position:sticky;top:0;z-index:100;background:rgba(244,246,249,0.97);backdrop-filter:blur(16px);border-bottom:0.5px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
 .brand{display:flex;align-items:center;gap:10px;}
@@ -375,14 +375,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
     <div>
       <div class="brand-name">Trade2Spend</div>
-      <div class="brand-sub">Not SEBI Registered · Educational Only</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:3px;">
+        <button id="kotak-hdr-btn" onclick="showQuickTotp(null)" title="Kotak — tap to connect" style="display:flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;font-family:'Space Grotesk',sans-serif;color:#6b7280;">
+          <span id="kotak-hdr-dot" style="width:9px;height:9px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .3s;"></span>🔑
+        </button>
+        <a href="https://app.trade2spend.com/?tab=trades" target="_blank" title="Open member view" style="display:flex;align-items:center;gap:4px;text-decoration:none;">
+          <span style="width:9px;height:9px;border-radius:50%;background:#059669;display:inline-block;"></span>
+        </a>
+      </div>
     </div>
-  </div>
-  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto;margin-right:8px;">
-    <button id="kotak-hdr-btn" onclick="showQuickTotp(null)" title="Kotak connection" style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;border:1.5px solid #e5e7eb;background:#fff;cursor:pointer;font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;color:#374151;white-space:nowrap;">
-      <span id="kotak-hdr-dot" style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .3s;"></span>🔑 Kotak
-    </button>
-    <a href="https://app.trade2spend.com/?tab=trades" target="_blank" style="display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:8px;border:1.5px solid #e5e7eb;background:#fff;text-decoration:none;font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;color:#374151;white-space:nowrap;">📊 Live</a>
   </div>
   <div class="tabs">
     <button class="tab on" onclick="showTab('trade')">Trade</button>
