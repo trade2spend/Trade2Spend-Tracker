@@ -28,7 +28,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
 .app{max-width:520px;margin:0 auto;padding:62px 0 5rem;overflow-x:hidden;overscroll-behavior:none;}
 
-.topbar{position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;z-index:100;background:rgba(244,246,249,0.97);backdrop-filter:blur(16px);border-bottom:0.5px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(244,246,249,0.97);backdrop-filter:blur(16px);border-bottom:0.5px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
 @keyframes spin-once{to{transform:rotate(360deg)}}
 .refreshing{animation:spin-once .4s linear;display:inline-block;}
 .brand{display:flex;align-items:center;gap:10px;}
@@ -369,9 +369,6 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   </div>
 </div>
 
-<div class="app">
-
-
 <div class="topbar">
   <div class="brand">
     <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
@@ -400,6 +397,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   </div>
 </div>
 
+<div class="app">
 <!-- TRADE TAB -->
 <div id="tab-trade">
 <div class="page" style="margin-top:12px;">
@@ -906,6 +904,19 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
 
+  <!-- Market Holiday Override -->
+  <div class="setup-card" id="market-holiday-card" style="border-color:var(--greenborder);background:var(--greenbg);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <div class="setup-label" style="color:var(--green);margin-bottom:0;">📅 Market Status</div>
+      <div id="market-holiday-chip" style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:var(--greenbg);color:var(--green);border:1px solid var(--greenborder);">AUTO</div>
+    </div>
+    <div class="info-text" style="margin-bottom:10px;">Override when NSE is closed on a weekday (holiday, special session, etc.).</div>
+    <button id="market-holiday-btn" onclick="toggleMarketHoliday()"
+      style="width:100%;padding:11px;border-radius:var(--radius-sm);border:1px solid var(--greenborder);background:transparent;color:var(--green);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">
+      🏖 Mark Today as Holiday (Close Market)
+    </button>
+  </div>
+
   <div class="setup-card" style="border-color:var(--goldborder);background:var(--goldbg);">
     <div class="setup-label" style="color:var(--gold);">Telegram Bot Token</div>
     <div class="info-text" style="margin-bottom:8px;">Get from @BotFather → /newbot → add bot as Admin to @trade2spend channel</div>
@@ -1341,12 +1352,13 @@ function softRefresh() {
   const btn = document.querySelector('[onclick="softRefresh()"]');
   if (btn) {
     btn.classList.remove('refreshing');
-    void btn.offsetWidth; // force reflow to restart animation
+    void btn.offsetWidth;
     btn.classList.add('refreshing');
     setTimeout(() => btn.classList.remove('refreshing'), 450);
   }
   showTab(_currentTab);
   checkKotakStatus();
+  showToast('✓ Refreshed');
 }
 function showTab(t){
   _currentTab = t;
@@ -2826,6 +2838,35 @@ function copyMsg(type){
 
 // ── KOTAK CONNECTION ──
 let _kotakConnected = false;
+let _marketHolidayActive = false;
+
+async function toggleMarketHoliday() {
+  const newState = !_marketHolidayActive;
+  try {
+    const r = await fetch('https://api.trade2spend.com/market-holiday', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holiday: newState, key: 'T2SMonitor2026' })
+    });
+    if (!r.ok) throw new Error('Server error');
+    _marketHolidayActive = newState;
+    const card = document.getElementById('market-holiday-card');
+    const chip = document.getElementById('market-holiday-chip');
+    const btn  = document.getElementById('market-holiday-btn');
+    if (_marketHolidayActive) {
+      card.style.borderColor = 'var(--redborder)'; card.style.background = 'var(--redbg)';
+      chip.style.color = 'var(--red)'; chip.style.borderColor = 'var(--redborder)'; chip.style.background = 'var(--redbg)'; chip.textContent = 'HOLIDAY';
+      btn.style.color = 'var(--red)'; btn.style.borderColor = 'var(--redborder)'; btn.textContent = '✓ Holiday Active — Tap to Reset to Auto';
+    } else {
+      card.style.borderColor = 'var(--greenborder)'; card.style.background = 'var(--greenbg)';
+      chip.style.color = 'var(--green)'; chip.style.borderColor = 'var(--greenborder)'; chip.style.background = 'var(--greenbg)'; chip.textContent = 'AUTO';
+      btn.style.color = 'var(--green)'; btn.style.borderColor = 'var(--greenborder)'; btn.textContent = '🏖 Mark Today as Holiday (Close Market)';
+    }
+    showToast(newState ? '🏖 Market marked as closed' : '✓ Market status set to auto');
+  } catch(e) {
+    showToast('Failed to update market status');
+  }
+}
 
 async function checkKotakStatus() {
   const dot = document.getElementById('kotak-dot');
