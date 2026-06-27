@@ -812,6 +812,35 @@ async function downloadScripMaster() {
     _kotakLotSizes = lotMap;
     console.log('[scrip] Lot sizes from Kotak:', JSON.stringify(_kotakLotSizes));
   }
+
+  // Also download BSE F&O scrip master — SENSEX & BANKEX options are BSE-listed (bse_fo exchange)
+  let bseCsvText = null;
+  for (const url of [`${DATA_URL}/Dist/master/bse_fo.csv`, 'https://gw-napi.kotaksecurities.com/Dist/master/bse_fo.csv']) {
+    for (const authHdr of [`Bearer ${session.token}`, session.token]) {
+      try {
+        const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 60000);
+        if (r.ok) { const t = await r.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; break; } }
+      } catch {}
+      if (bseCsvText) break;
+    }
+    if (bseCsvText) break;
+  }
+  if (!bseCsvText) {
+    for (const dateStr of dates) {
+      try {
+        const r = await ftKotak(`${cdnBase}/${dateStr}/bfo/transformed/scrip_master.csv`, {}, 30000);
+        if (r.ok) { const t = await r.text(); if (t && t.length > 1000) { bseCsvText = t; break; } }
+      } catch {}
+    }
+  }
+  if (bseCsvText) {
+    const { map: bseMap } = parseCsv(bseCsvText);
+    const bseCount = Object.keys(bseMap).length;
+    if (bseCount > 0) { Object.assign(_scripMaster, bseMap); console.log(`[scrip] BSE F&O: +${bseCount} contracts (SENSEX/BANKEX) merged`); }
+  } else {
+    console.log('[scrip] BSE F&O: all download approaches failed — SENSEX will use trading symbol fallback');
+  }
+
   buildExpiryDates();
   const sample = Object.keys(newMap).filter(k=>k.startsWith('NIFTY-')&&k.includes(String(currentYear))).slice(0,3);
   console.log(`[scrip] ✅ ${count} contracts from ${sourceLabel}. Sample: ${sample.join(', ')}`);
@@ -1946,7 +1975,7 @@ async function handleMessage(text) {
       // Test 1: numeric token (if available)
       if (numToken) {
         try {
-          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${numToken}/ltp`;
+          const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${numToken}/ltp`;
           const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
           const txt = await r.text();
           await tgSend(`Token lookup (${numToken}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
@@ -1956,7 +1985,7 @@ async function handleMessage(text) {
       // Test 2: trading symbol (fallback path)
       if (tradeSym) {
         try {
-          const url = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${tradeSym}/ltp`;
+          const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${tradeSym}/ltp`;
           const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
           const txt = await r.text();
           await tgSend(`Symbol lookup (${tradeSym}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
