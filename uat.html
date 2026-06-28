@@ -3113,17 +3113,27 @@
         const lastLogin = parseInt(localStorage.getItem('t2s_last_login')||'0');
         const SESSION_24H = 24 * 60 * 60 * 1000;
 
+        function showUatLoginMsg() {
+            document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;padding:32px;text-align:center;font-family:'Plus Jakarta Sans',sans-serif;background:#f6f3ee;">
+                <div style="font-size:2rem;margin-bottom:16px;">🔐</div>
+                <h2 style="font-size:1.1rem;font-weight:800;color:#1a2030;margin-bottom:10px;">Session Required</h2>
+                <p style="font-size:0.85rem;color:#9ca3af;line-height:1.6;max-width:280px;margin-bottom:24px;">Please log in to the main app first, then come back to this UAT page.</p>
+                <a href="index.html" style="background:#4a2a78;color:#fff;padding:13px 28px;border-radius:12px;font-size:0.9rem;font-weight:700;text-decoration:none;display:inline-block;">Log in to Main App →</a>
+                <p style="margin-top:16px;font-size:0.75rem;color:#b5bec9;">After logging in, press Back or navigate to <strong>uat.html</strong></p>
+            </div>`;
+        }
+
         if(mode !== 'free' && !memberId){
-            window.location.href='login.html'; return;
+            showUatLoginMsg(); return;
         }
         if(mode !== 'free' && memberId){
             if(Date.now()-lastLogin >= SESSION_24H){
-                window.location.href='login.html'; return;
+                showUatLoginMsg(); return;
             }
             try {
                 const members=await sbFetch(`members?id=eq.${memberId}&select=status`,{method:'GET'});
                 if(!members||!members.length||members[0].status==='disabled'){
-                    window.location.href='login.html'; return;
+                    showUatLoginMsg(); return;
                 }
             } catch(e){ console.warn('Auth check failed',e); }
         }
