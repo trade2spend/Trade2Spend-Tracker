@@ -348,13 +348,23 @@
         .alert-popup-actions { display:flex; gap:8px; padding:0 22px 22px; }
         .alert-btn-view  { flex:1; padding:13px; border-radius:11px; border:none; background:var(--primary); color:#fff; font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
         .alert-btn-later { padding:13px 18px; border-radius:11px; border:1.5px solid var(--border); background:transparent; color:var(--text-muted); font-size:0.84rem; font-weight:600; cursor:pointer; font-family:inherit; }
+        /* ── PRODUCT TOUR ──────────────────────────────────────── */
+        #tour-overlay { display:none; position:fixed; inset:0; z-index:19000; }
+        #tour-backdrop { position:fixed; inset:0; z-index:19000; background:rgba(0,0,0,0.72); pointer-events:all; }
+        #tour-highlight { position:fixed; z-index:19001; border-radius:10px; pointer-events:none; box-shadow:0 0 0 9999px rgba(0,0,0,0.68); transition:top .22s ease,left .22s ease,width .22s ease,height .22s ease; }
+        #tour-tooltip { position:fixed; z-index:19002; background:#fff; border-radius:14px; padding:18px 16px 14px; width:min(300px,88vw); box-shadow:0 8px 32px rgba(0,0,0,0.22); pointer-events:all; }
+        .tour-arrow { position:absolute; width:14px; height:7px; background:#fff; display:none; }
+        #tour-arrow-up { top:-7px; clip-path:polygon(50% 0%,0% 100%,100% 100%); }
+        #tour-arrow-down { bottom:-7px; clip-path:polygon(0% 0%,100% 0%,50% 100%); }
+        .tour-dot { width:6px; height:6px; border-radius:50%; background:#e5e7eb; transition:all .2s; flex-shrink:0; }
+        .tour-dot.active { background:#4a2a78; width:18px; border-radius:3px; }
     </style>
 </head>
 <body>
 
 <div class="app-container">
     <!-- STICKY HEADER -->
-    <div style="position:fixed;top:6px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);color:#fff;font-size:0.55rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;padding:3px 12px;border-radius:20px;z-index:9999;white-space:nowrap;pointer-events:none;">UAT · Not Production</div>
+    <div onclick="restartTour()" style="position:fixed;top:6px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);color:#fff;font-size:0.55rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;padding:3px 12px;border-radius:20px;z-index:9999;white-space:nowrap;cursor:pointer;">UAT · Tap to replay tour</div>
     <div id="header-wrapper" class="sticky-header">
         <div class="header-top">
             <div class="header-brand">
@@ -3158,6 +3168,7 @@
         } else {
             updateNotifBell();
         }
+        setTimeout(initTour, 1200);
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
@@ -3290,6 +3301,136 @@
     setInterval(checkPwaResolveAlert, 30_000);
     // Safety: ensure bell state is set even if session init took a different path
     setTimeout(updateNotifBell, 1000);
+
+    // ── PRODUCT TOUR ──────────────────────────────────────────────────────────
+    let _tourIdx = 0, _tourVisible = [];
+    const _TOUR = [
+        { target: null, pos: 'center',
+          title: '👋 Welcome to Trade2Spend',
+          body: 'Your live option trade tracker is ready. Let me show you the key features — takes under a minute.' },
+        { target: ".tab[onclick*='markets']", pos: 'below',
+          title: '📊 Markets',
+          body: 'Live Nifty, Sensex & BankNifty prices updated every few seconds during market hours. Plus top gainers and losers from the Nifty 50.' },
+        { target: ".tab[onclick*='trades']", pos: 'below',
+          title: '⚡ Trade Alert',
+          body: 'Your active trades with live CMP, running P&L, and SESSION HIGH. This is the main screen to watch during market hours.' },
+        { target: ".tab[onclick*='updates']", pos: 'below',
+          title: '📢 Updates',
+          body: "Market commentary and trade follow-ups posted by Tushar. Unread posts show a purple left border — don't miss them." },
+        { target: ".tab[onclick*='performance']", pos: 'below',
+          title: '📈 Performance',
+          body: 'Monthly P&L summary of all closed trades. Your complete track record at a glance.' },
+        { target: '#notif-bell-btn', pos: 'below',
+          title: '🔔 Never Miss a Trade',
+          body: 'Tap the bell to allow push notifications. You get an instant alert the moment a new trade is posted — even when the app is closed.' },
+        { target: '#a2hs-fab', pos: 'above',
+          title: '📲 Install the App',
+          body: 'Add Trade2Spend to your home screen for one-tap access. Works like a native app — no App Store needed.' },
+    ];
+
+    async function initTour() {
+        const forceReplay = new URLSearchParams(location.search).get('tour') === '1';
+        if (!forceReplay && sessionStorage.getItem('t2s_tour_shown')) return;
+        const mid = localStorage.getItem('t2s_member_id');
+        if (!mid) return;
+        if (!forceReplay) {
+            try {
+                const rows = await sbFetch(`members?id=eq.${mid}&select=tour_completed`, { method:'GET' });
+                if (rows?.[0]?.tour_completed) return;
+            } catch(e) { return; }
+        }
+        sessionStorage.setItem('t2s_tour_shown', '1');
+        _tourVisible = _TOUR.filter(s => {
+            if (!s.target) return true;
+            const el = document.querySelector(s.target);
+            return el && el.offsetParent !== null;
+        });
+        _tourIdx = 0;
+        document.getElementById('tour-overlay').style.display = 'block';
+        _renderTour();
+    }
+
+    function restartTour() {
+        sessionStorage.removeItem('t2s_tour_shown');
+        _tourVisible = _TOUR.filter(s => {
+            if (!s.target) return true;
+            const el = document.querySelector(s.target);
+            return el && el.offsetParent !== null;
+        });
+        _tourIdx = 0;
+        document.getElementById('tour-overlay').style.display = 'block';
+        _renderTour();
+    }
+
+    function _renderTour() {
+        const step = _tourVisible[_tourIdx];
+        if (!step) { _closeTour(); return; }
+        const total = _tourVisible.length;
+        document.getElementById('tour-title').textContent = step.title;
+        document.getElementById('tour-body').textContent = step.body;
+        document.getElementById('tour-prev-btn').style.display = _tourIdx > 0 ? 'inline-flex' : 'none';
+        const nb = document.getElementById('tour-next-btn');
+        nb.textContent = _tourIdx === total - 1 ? "Let's go! ✓" : 'Next →';
+        const dc = document.getElementById('tour-dots');
+        dc.innerHTML = _tourVisible.map((_,i) => `<div class="tour-dot${i===_tourIdx?' active':''}"></div>`).join('');
+
+        const hl = document.getElementById('tour-highlight');
+        const tt = document.getElementById('tour-tooltip');
+        const bd = document.getElementById('tour-backdrop');
+        const au = document.getElementById('tour-arrow-up');
+        const ad = document.getElementById('tour-arrow-down');
+        au.style.display = 'none';
+        ad.style.display = 'none';
+        // Reset tooltip position
+        tt.style.top = ''; tt.style.left = ''; tt.style.bottom = ''; tt.style.transform = '';
+
+        if (!step.target) {
+            hl.style.display = 'none';
+            bd.style.display = 'block';
+            tt.style.top = '50%'; tt.style.left = '50%'; tt.style.transform = 'translate(-50%,-50%)';
+        } else {
+            const el = document.querySelector(step.target);
+            if (!el || el.offsetParent === null) { _tourIdx++; _renderTour(); return; }
+            const r = el.getBoundingClientRect(), pad = 6;
+            hl.style.top    = (r.top  - pad) + 'px';
+            hl.style.left   = (r.left - pad) + 'px';
+            hl.style.width  = (r.width  + pad * 2) + 'px';
+            hl.style.height = (r.height + pad * 2) + 'px';
+            hl.style.display = 'block';
+            bd.style.display = 'none';
+            requestAnimationFrame(() => {
+                const vw = window.innerWidth, vh = window.innerHeight;
+                const ttW = tt.offsetWidth || 290, ttH = tt.offsetHeight || 140;
+                const gap = 12;
+                let top, left;
+                if (step.pos === 'below') {
+                    top = r.bottom + gap;
+                    if (top + ttH > vh - 8) top = r.top - ttH - gap;
+                    else au.style.display = 'block';
+                } else {
+                    top = r.top - ttH - gap;
+                    if (top < 8) { top = r.bottom + gap; au.style.display = 'block'; }
+                    else ad.style.display = 'block';
+                }
+                left = Math.max(8, Math.min(r.left + r.width / 2 - ttW / 2, vw - ttW - 8));
+                tt.style.top  = top  + 'px';
+                tt.style.left = left + 'px';
+                const arrowL = Math.max(10, Math.min(r.left + r.width / 2 - left - 7, ttW - 24));
+                if (au.style.display !== 'none') au.style.left = arrowL + 'px';
+                if (ad.style.display !== 'none') ad.style.left = arrowL + 'px';
+            });
+        }
+    }
+
+    function tourNext() { _tourIdx++; if (_tourIdx >= _tourVisible.length) _closeTour(); else _renderTour(); }
+    function tourPrev() { if (_tourIdx > 0) { _tourIdx--; _renderTour(); } }
+    function skipTour()  { _closeTour(); }
+
+    function _closeTour() {
+        document.getElementById('tour-overlay').style.display = 'none';
+        const mid = localStorage.getItem('t2s_member_id');
+        if (mid) sbFetch(`members?id=eq.${mid}`, { method:'PATCH', body:JSON.stringify({ tour_completed:true }) }).catch(()=>{});
+    }
 </script>
 
 <!-- WHY POPUP (for posts older than T-7 days) -->
@@ -3590,6 +3731,26 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             <button class="alert-btn-later" onclick="_dismissAlertPopup()">Later</button>
         </div>
     </div>
+</div>
+
+<!-- PRODUCT TOUR OVERLAY -->
+<div id="tour-overlay">
+  <div id="tour-backdrop"></div>
+  <div id="tour-highlight"></div>
+  <div id="tour-tooltip">
+    <div class="tour-arrow" id="tour-arrow-up"></div>
+    <div class="tour-arrow" id="tour-arrow-down"></div>
+    <div id="tour-dots" style="display:flex;gap:5px;align-items:center;margin-bottom:12px;"></div>
+    <div id="tour-title" style="font-size:1rem;font-weight:800;color:#1a2030;margin-bottom:6px;line-height:1.3;"></div>
+    <div id="tour-body" style="font-size:0.82rem;color:#6b7280;line-height:1.55;margin-bottom:14px;"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <button onclick="skipTour()" style="background:none;border:none;font-size:0.78rem;color:#9ca3af;cursor:pointer;padding:4px 0;font-family:inherit;touch-action:manipulation;">Skip tour</button>
+      <div style="display:flex;gap:8px;">
+        <button id="tour-prev-btn" onclick="tourPrev()" style="display:none;align-items:center;background:#f3f0f8;border:none;border-radius:8px;padding:9px 14px;font-size:0.8rem;font-weight:600;color:#4a2a78;cursor:pointer;font-family:inherit;touch-action:manipulation;">← Back</button>
+        <button id="tour-next-btn" onclick="tourNext()" style="background:#4a2a78;border:none;border-radius:8px;padding:9px 18px;font-size:0.8rem;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;touch-action:manipulation;">Next →</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 </body>
