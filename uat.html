@@ -3057,22 +3057,15 @@
         }
     }
 
-    async function updateNotifBell() {
+    function updateNotifBell() {
         const bell = document.getElementById('notif-bell-btn');
         if (!bell) return;
-        // Hide bell only if push subscription is confirmed active
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-            try {
-                const reg = await Promise.race([
-                    navigator.serviceWorker.ready,
-                    new Promise((_, rej) => setTimeout(() => rej(), 2000))
-                ]);
-                const sub = await reg.pushManager.getSubscription();
-                if (sub) { bell.style.display = 'none'; return; }
-            } catch {}
+        // Hide when granted — show for default (never asked) or denied (user disabled from settings)
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            bell.style.display = 'none';
+        } else {
+            bell.style.display = 'inline-block';
         }
-        // Show bell for all other states: not asked, denied, not supported, no subscription
-        bell.style.display = 'inline-block';
     }
 
     function logout(){
@@ -3310,7 +3303,7 @@
 </div>
 
 <!-- Global Sticky Disclaimer -->
-<div class="global-disclaimer-bar">For educational purposes only · We are not SEBI registered · Always verify prices with your broker before trading</div>
+<div class="global-disclaimer-bar">Beta · For educational purposes only · We are not SEBI registered · Always verify prices with your broker before trading</div>
 
 <!-- SEBI Disclaimer Modal -->
 <div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
