@@ -371,6 +371,7 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
+                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:0.9rem;cursor:pointer;padding:0;line-height:1;color:#9ca3af;">🔔</button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -389,8 +390,9 @@
         <div class="tabs">
             <div class="tab active" onclick="switchTab('markets', this)">Markets</div>
             <div class="tab" onclick="switchTab('trades', this)">Trade Alert</div>
-            <div class="tab" onclick="switchTab('performance', this)">Performance</div>
             <div class="tab" onclick="switchTab('updates', this)">Updates</div>
+            <div class="tab" onclick="switchTab('performance', this)">Performance</div>
+            <div class="tab" onclick="switchTab('learning', this)">Learning</div>
             <div class="tab" onclick="switchTab('about', this)">About</div>
         </div>
     </div>
@@ -523,17 +525,45 @@
         </div>
     </div>
 
+    <!-- LEARNING TAB -->
+    <div id="learning" class="content-section">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;">
+            <div style="font-size:2.8rem;margin-bottom:16px;">📚</div>
+            <h2 style="font-size:1.2rem;font-weight:800;color:var(--text-main);margin-bottom:10px;">Coming Soon</h2>
+            <p style="font-size:0.85rem;color:var(--text-muted);line-height:1.65;max-width:280px;">Learning resources, trade breakdowns, and options education — curated for Indian retail traders.</p>
+        </div>
+    </div>
+
     <!-- ABOUT TAB -->
     <div id="about" class="content-section">
-        <div style="background: var(--card-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border);">
-            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
-                <img src="logo.png" style="width: 50px; height: 50px;" alt="Logo">
-                <h3 style="color: var(--text-main);">Trade2Spend</h3>
+        <div style="background:var(--card-bg);padding:24px;border-radius:12px;border:1px solid var(--border);margin-bottom:12px;">
+            <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px;">
+                <img src="logo.png" style="width:46px;height:46px;border-radius:10px;" alt="Logo">
+                <div>
+                    <h3 style="color:var(--text-main);font-size:1rem;font-weight:800;">Trade2Spend</h3>
+                    <p style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Independent trading education community</p>
+                </div>
             </div>
-            <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 25px;">Trade2Spend is an independent educational platform where we share our personal trade setups. Every entry, exit, and P&L on this tracker is real and verified against live market data.</p>
-            
-            <a href="https://t.me/tusharview" class="btn-primary" style="text-align: center;">Premium Channel → Message @tusharview</a>
-            <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align: center;">Join Free Telegram Channel</a>
+            <p style="color:var(--text-muted);font-size:0.84rem;line-height:1.65;margin-bottom:20px;">An independent educational platform where we share real trade setups, entries, exits and P&L — verified against live market data. Not investment advice.</p>
+
+            <p style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Follow us</p>
+            <div style="display:flex;gap:10px;margin-bottom:20px;">
+                <a href="https://www.youtube.com/@trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#fff0f0;border:1px solid #fecaca;border-radius:12px;text-decoration:none;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#dc2626"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.7 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg>
+                    <span style="font-size:0.68rem;font-weight:700;color:#dc2626;">YouTube</span>
+                </a>
+                <a href="https://t.me/trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;text-decoration:none;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#2563eb"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.94 8.19l-2.02 9.52c-.15.67-.54.84-1.09.52l-3-2.21-1.45 1.4c-.16.16-.3.3-.61.3l.22-3.07 5.6-5.06c.24-.22-.05-.34-.38-.12L6.18 14.4l-2.96-.92c-.64-.2-.65-.64.14-.95l11.55-4.45c.54-.19 1.01.13.83.95-.16.68-.15.69-.15.69l.35-.53z"/></svg>
+                    <span style="font-size:0.68rem;font-weight:700;color:#2563eb;">Telegram</span>
+                </a>
+                <a href="https://www.instagram.com/trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#fdf4ff;border:1px solid #e9d5ff;border-radius:12px;text-decoration:none;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="url(#igGrad)"><defs><linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#f97316"/><stop offset="50%" style="stop-color:#ec4899"/><stop offset="100%" style="stop-color:#8b5cf6"/></linearGradient></defs><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                    <span style="font-size:0.68rem;font-weight:700;color:#9333ea;">Instagram</span>
+                </a>
+            </div>
+
+            <a href="https://t.me/tusharview" class="btn-primary" style="text-align:center;">Join Premium → Message @tusharview</a>
+            <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align:center;">Free Telegram Channel @trade2spend</a>
         </div>
     </div>
 
@@ -693,7 +723,7 @@
         const n = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
         return n > 5000 ? '<span style="font-size:0.56rem;white-space:nowrap;letter-spacing:0;">SL (15 Min Candle)</span>' : 'SL';
     }
-    const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', about:'About' };
+    const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', learning:'Learning', about:'About' };
     function setTabBadge(tabKey, count) {
         const tabEl = document.querySelector(`.tab[onclick*="'${tabKey}'"]`);
         if (!tabEl) return;
@@ -1159,7 +1189,7 @@
         const _pc = _cLoad('t2s_perf_state', 5*60*1000);
         if (_pc) {
             container.innerHTML = _pc.histHtml || '';
-            document.getElementById('curr-month-name').innerText = _pc.currName || 'CURRENT MONTH';
+            document.getElementById('curr-month-name').innerText = (_pc.currName && !/invalid|undefined|nan/i.test(_pc.currName)) ? _pc.currName : 'CURRENT MONTH';
             document.getElementById('perf-winrate').innerText = _pc.currWinrate || '--%';
             document.getElementById('perf-total').innerText = _pc.currTotal || '--';
             document.getElementById('perf-max').innerText = _pc.currMax || '--';
@@ -1214,7 +1244,7 @@
 
             // Group by month
             const byMonth = {};
-            tradeData.forEach(t => {
+            tradeData.filter(t => t.monthKey && !/invalid|undefined|nan/i.test(t.monthKey)).forEach(t => {
                 if (!byMonth[t.monthKey]) byMonth[t.monthKey] = {key:t.monthKey, sortKey:t.sortMonth, trades:[]};
                 byMonth[t.monthKey].trades.push(t);
             });
@@ -1245,7 +1275,8 @@
             // Current month summary
             const curr = months[0];
             const currS = curr ? _perfMonthSummary(curr.trades) : null;
-            document.getElementById('curr-month-name').innerText = curr ? curr.key.toUpperCase() : 'CURRENT MONTH';
+            const _validKey = curr && curr.key && !/invalid|undefined|nan/i.test(curr.key);
+            document.getElementById('curr-month-name').innerText = (_validKey ? curr.key : 'CURRENT MONTH').toUpperCase();
             if (currS && currS.total > 0) {
                 document.getElementById('perf-winrate').innerText = currS.winRate + '%';
                 document.getElementById('perf-total').innerText = `${currS.total} (${currS.wins}W · ${currS.losses}L)`;
@@ -2624,10 +2655,6 @@
         if (_uc && _uc.posts && _cachedTier) renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
         else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
-        if('Notification' in window && Notification.permission === 'default') {
-            document.getElementById('notif-banner').style.display = 'flex';
-        }
-
         try {
             const memberId = localStorage.getItem('t2s_member_id');
             let memberTier = 'free';
@@ -3010,12 +3037,31 @@
     }
 
     async function enableNotifications() {
-        if(!('Notification' in window)) return;
+        if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
+            alert('To receive trade alerts, open this app in Safari and install it to your home screen first.');
+            return;
+        }
+        if (Notification.permission === 'denied') {
+            alert('Notifications are blocked. Go to Settings → your browser → Notifications and allow Trade2Spend, then try again.');
+            return;
+        }
         const perm = await Notification.requestPermission();
-        if(perm === 'granted') {
-            document.getElementById('notif-banner').style.display = 'none';
+        if (perm === 'granted') {
             await subscribeToPush();
-            alert('✅ Notifications enabled! You\'ll get instant alerts for new trades.');
+            updateNotifBell();
+            alert('✅ Notifications enabled! You\'ll get instant trade alerts.');
+        } else {
+            updateNotifBell();
+        }
+    }
+
+    function updateNotifBell() {
+        const bell = document.getElementById('notif-bell-btn');
+        if (!bell) return;
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            bell.style.display = 'none';
+        } else {
+            bell.style.display = 'inline-block';
         }
     }
 
@@ -3094,7 +3140,11 @@
             fetchTradeAlerts();
         }
         // Subscribe to push notifications silently after session confirmed
-        if (memberId) subscribeToPush().catch(() => {});
+        if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
+        } else {
+            updateNotifBell();
+        }
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
@@ -3225,6 +3275,7 @@
         } catch(e) { console.error('[resolve-pwa]', e.message); }
     }
     setInterval(checkPwaResolveAlert, 30_000);
+    setTimeout(updateNotifBell, 1000);
 </script>
 
 <!-- WHY POPUP (for posts older than T-7 days) -->
@@ -3238,7 +3289,7 @@
 </div>
 
 <!-- Global Sticky Disclaimer -->
-<div class="global-disclaimer-bar">Educational Purposes Only · Not An Investment Advice<br>WE ARE NOT SEBI REGISTERED</div>
+<div class="global-disclaimer-bar">For educational purposes only · We are not SEBI registered<br>Beta · Always verify prices with your broker before trading</div>
 
 <!-- SEBI Disclaimer Modal -->
 <div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
