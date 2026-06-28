@@ -3039,9 +3039,16 @@
     }
 
     async function enableNotifications() {
-        if(!('Notification' in window)) return;
+        if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
+            alert('To receive trade alerts, open this app in Safari and install it to your home screen first.');
+            return;
+        }
+        if (Notification.permission === 'denied') {
+            alert('Notifications are blocked. Go to Settings → your browser → Notifications and allow Trade2Spend, then try again.');
+            return;
+        }
         const perm = await Notification.requestPermission();
-        if(perm === 'granted') {
+        if (perm === 'granted') {
             await subscribeToPush();
             updateNotifBell();
             alert('✅ Notifications enabled! You\'ll get instant trade alerts.');
@@ -3053,19 +3060,18 @@
     async function updateNotifBell() {
         const bell = document.getElementById('notif-bell-btn');
         if (!bell) return;
-        if (!('Notification' in window)) { bell.style.display = 'none'; return; }
-        if (Notification.permission === 'denied') { bell.style.display = 'none'; return; }
-        if (Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+        // Hide bell only if push subscription is confirmed active
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
             try {
-                const swReady = Promise.race([
+                const reg = await Promise.race([
                     navigator.serviceWorker.ready,
-                    new Promise((_, rej) => setTimeout(() => rej(new Error('sw-timeout')), 2000))
+                    new Promise((_, rej) => setTimeout(() => rej(), 2000))
                 ]);
-                const reg = await swReady;
                 const sub = await reg.pushManager.getSubscription();
                 if (sub) { bell.style.display = 'none'; return; }
             } catch {}
         }
+        // Show bell for all other states: not asked, denied, not supported, no subscription
         bell.style.display = 'inline-block';
     }
 
@@ -3144,12 +3150,10 @@
             fetchTradeAlerts();
         }
         // Re-subscribe silently only if permission already granted (never prompt without user gesture)
-        if (memberId) {
-            if (Notification && Notification.permission === 'granted') {
-                subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
-            } else {
-                updateNotifBell();
-            }
+        if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
+        } else {
+            updateNotifBell();
         }
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
@@ -3281,6 +3285,8 @@
         } catch(e) { console.error('[resolve-pwa]', e.message); }
     }
     setInterval(checkPwaResolveAlert, 30_000);
+    // Safety: ensure bell state is set even if session init took a different path
+    setTimeout(updateNotifBell, 1000);
 </script>
 
 <!-- WHY POPUP (for posts older than T-7 days) -->
