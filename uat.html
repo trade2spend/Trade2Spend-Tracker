@@ -372,6 +372,7 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
+                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:0.9rem;cursor:pointer;padding:0;line-height:1;color:#9ca3af;">🔔</button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -2626,10 +2627,6 @@
         if (_uc && _uc.posts && _cachedTier) renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
         else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
-        if('Notification' in window && Notification.permission === 'default') {
-            document.getElementById('notif-banner').style.display = 'flex';
-        }
-
         try {
             const memberId = localStorage.getItem('t2s_member_id');
             let memberTier = 'free';
@@ -3015,10 +3012,27 @@
         if(!('Notification' in window)) return;
         const perm = await Notification.requestPermission();
         if(perm === 'granted') {
-            document.getElementById('notif-banner').style.display = 'none';
             await subscribeToPush();
-            alert('✅ Notifications enabled! You\'ll get instant alerts for new trades.');
+            updateNotifBell();
+            alert('✅ Notifications enabled! You\'ll get instant trade alerts.');
+        } else {
+            updateNotifBell();
         }
+    }
+
+    async function updateNotifBell() {
+        const bell = document.getElementById('notif-bell-btn');
+        if (!bell) return;
+        if (!('Notification' in window) || !('serviceWorker' in navigator)) { bell.style.display = 'none'; return; }
+        if (Notification.permission === 'denied') { bell.style.display = 'none'; return; }
+        if (Notification.permission === 'granted') {
+            try {
+                const reg = await navigator.serviceWorker.ready;
+                const sub = await reg.pushManager.getSubscription();
+                if (sub) { bell.style.display = 'none'; return; }
+            } catch {}
+        }
+        bell.style.display = 'inline-block';
     }
 
     function logout(){
@@ -3095,8 +3109,8 @@
             // Pre-load trade alerts in background so tab is instant when user switches
             fetchTradeAlerts();
         }
-        // Subscribe to push notifications silently after session confirmed
-        if (memberId) subscribeToPush().catch(() => {});
+        // Subscribe to push notifications silently after session confirmed; update bell visibility after
+        if (memberId) subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
@@ -3240,7 +3254,7 @@
 </div>
 
 <!-- Global Sticky Disclaimer -->
-<div class="global-disclaimer-bar">⚠️ Beta · Validate all prices with your broker before trading · Not investment advice · Not SEBI registered</div>
+<div class="global-disclaimer-bar">For educational purposes only · We are not SEBI registered · Always verify prices with your broker before trading</div>
 
 <!-- SEBI Disclaimer Modal -->
 <div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
