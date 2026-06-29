@@ -4619,11 +4619,7 @@ let pushMsgType  = 'trade';
 function openPushModal(type){
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
   if(!msg){ showToast('Generate a message first.'); return; }
-  if (!_kotakConnected) {
-    showQuickTotp(() => _doOpenPushModal(type));
-  } else {
-    _doOpenPushModal(type);
-  }
+  _doOpenPushModal(type);
 }
 
 function _doOpenPushModal(type) {
