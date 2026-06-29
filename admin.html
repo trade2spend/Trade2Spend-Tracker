@@ -2949,6 +2949,21 @@ async function checkKotakStatus() {
 }
 
 // ── QUICK TOTP MODAL ──────────────────────────────────────────────────────────
+function _isDuringMarketHours() {
+  const mins = _istMinsNow();
+  const ist  = new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Kolkata' }));
+  const day  = ist.getDay(); // 1=Mon … 5=Fri
+  return day >= 1 && day <= 5 && mins >= 9*60+15 && mins <= 15*60+35;
+}
+function _totpAskedToday() {
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Kolkata' })).toDateString();
+  return localStorage.getItem('t2s_totp_asked') === today;
+}
+function _markTotpAsked() {
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Kolkata' })).toDateString();
+  localStorage.setItem('t2s_totp_asked', today);
+}
+
 let _quickTotpCallback = null;
 
 function showQuickTotp(callback) {
@@ -4619,7 +4634,12 @@ let pushMsgType  = 'trade';
 function openPushModal(type){
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
   if(!msg){ showToast('Generate a message first.'); return; }
-  _doOpenPushModal(type);
+  if (!_kotakConnected && _isDuringMarketHours() && !_totpAskedToday()) {
+    _markTotpAsked();
+    showQuickTotp(() => _doOpenPushModal(type));
+  } else {
+    _doOpenPushModal(type);
+  }
 }
 
 function _doOpenPushModal(type) {
