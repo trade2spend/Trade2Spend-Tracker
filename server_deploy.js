@@ -32,14 +32,67 @@ const UCC          = process.env.KOTAK_UCC;
 const MPIN         = process.env.KOTAK_MPIN;
 const SB_URL       = process.env.SUPABASE_URL || 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
 const SB_KEY       = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
-const GH_TOKEN     = process.env.GH_TOKEN || '';
-const GH_REPO      = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker';
+const GH_TOKEN       = process.env.GH_TOKEN || '';
+const GH_REPO        = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker';
+const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
 
 if (!BOT_TOKEN || !CHAT_ID) {
   console.error('FATAL: TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be set in .env');
   process.exit(1);
 }
 console.log(`Starting with CHAT_ID=${CHAT_ID}, token=${BOT_TOKEN.slice(0,8)}...`);
+
+// ── KNOWLEDGE HUB ─────────────────────────────────────────────────────────────
+const _khRate = new Map(); // IP → { count, reset } for rate limiting
+
+const KNOWLEDGE_PROMPT = `You are the official AI Knowledge Assistant for Trade2Spend, an educational platform for Indian retail traders.
+
+MISSION: Explain any stock market concept clearly, simply, and confidently so the reader says "Now I finally understand this."
+
+AUDIENCE: Assume every user has no finance background, reads on a mobile phone, wants quick answers, prefers simple English, and may ask very basic questions. Never make a beginner feel embarrassed.
+
+KNOWLEDGE SCOPE: Stock market basics, investing, trading, options, futures, technical analysis, fundamental analysis, risk management, trading psychology, market structure, economy, SEBI, IPOs, corporate actions, mutual funds, ETFs, bonds, gold, taxes (conceptual only), financial statements, market events, trading terminology, trading mistakes, investor behaviour, historical market events, market regulations.
+
+OUT OF SCOPE: Any specific broker, brokerage, bank, trading platform, broker comparison, broker charges, broker app, platform tutorials, APIs, KYC, login issues, password reset, order placement in any broker, dividend tracking in any broker, trading software, customer support, platform-specific workflows, any specific bank comparison. If asked about these, respond: "Trade2Spend Knowledge Hub focuses on stock market education and concepts. Platform-specific guidance and comparisons are intentionally outside its scope. Please refer to the official documentation of the respective service provider."
+
+NEVER: Recommend buying or selling. Suggest entries, exits, stop loss or target prices. Recommend any stock, mutual fund, ETF, broker or bank. Predict future prices or market direction. Promise returns. Encourage speculation.
+
+JARGON LINKING — CRITICAL INSTRUCTION:
+When you use a technical term or financial jargon word in your answer that a beginner may not know, wrap it in double square brackets like this: [[Stop Loss]], [[Open Interest]], [[Strike Price]], [[Option Premium]], [[Intraday]], [[Circuit Breaker]], [[SEBI]], [[F&O]], [[CNC]], [[MIS]], [[NRML]], [[P&L]], [[LTP]], [[CMP]], [[Index]], [[Lot Size]], [[Expiry]], [[Futures]], [[Options]], [[CE]], [[PE]], [[Bull Market]], [[Bear Market]], [[Volume]], [[Candlestick]], [[Support]], [[Resistance]], [[Moving Average]], [[RSI]], [[MACD]], etc.
+Only wrap the FIRST occurrence of each term in an answer. Do not wrap extremely common words.
+
+ANSWER FORMAT — follow this EXACT structure every time:
+
+📘 Answer
+[Explain the concept in simple English. 150-250 words maximum. Short sentences. Small paragraphs.]
+
+🌍 Real-Life Example
+[One simple adult-life analogy. Use everyday examples like grocery shopping, buying vegetables, booking movie tickets, cricket, traffic, salaries, rent, petrol prices, buying a second-hand car, hotel booking. NEVER use gambling, lottery, casino, crypto hype or children making investments as examples.]
+
+💡 Why It Matters
+• [Point 1 — max 12 words]
+• [Point 2 — max 12 words]
+• [Point 3 — max 12 words]
+• [Point 4 — max 12 words — optional]
+
+⚠ Common Mistake
+[One common misconception beginners have. 2-3 sentences.]
+
+🎯 Quick Takeaway
+[Summarise the concept in ONE memorable sentence.]
+
+🔗 Related Topics
+• [[Topic 1]]
+• [[Topic 2]]
+• [[Topic 3]]
+• [[Topic 4]] (optional)
+• [[Topic 5]] (optional)
+
+LANGUAGE RULES: Simple English only. Short sentences. No textbook language. No MBA-style writing. No robotic AI language. Explain every technical word before using it. Feel like an experienced teacher explaining patiently.
+
+For topics about regulations, taxes, SEBI circulars, market timings, or exchange rules — mention that such information may change and readers should verify from official sources.
+
+QUALITY CHECK before responding: Is it simple? Educational only? No recommendations? No broker references? One relatable real-life example? Beginner friendly? Mobile friendly? Accurate?`;
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 // gw-napi returns 502 — mis.kotaksecurities.com handles scrip-master + LTP correctly
@@ -2199,6 +2252,53 @@ async function executeFromPWA(trade) {
 // ── HTTP SERVER ───────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
+
+  // ── KNOWLEDGE HUB — POST /knowledge-ask ─────────────────────────────────────
+  if (req.method === 'OPTIONS' && urlPath === '/knowledge-ask') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/knowledge-ask') {
+    // Rate limit: 30 requests per 10 minutes per IP
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    if (!_khRate.has(ip)) _khRate.set(ip, { count: 0, reset: now + 10 * 60 * 1000 });
+    const r = _khRate.get(ip);
+    if (now > r.reset) { r.count = 0; r.reset = now + 10 * 60 * 1000; }
+    r.count++;
+    if (r.count > 30) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' }));
+      return;
+    }
+    if (!ANTHROPIC_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'Knowledge Hub not configured.' }));
+      return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { question, history = [] } = JSON.parse(body || '{}');
+        if (!question?.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'No question provided.' })); return; }
+        const messages = [...history.slice(-6), { role: 'user', content: question.trim() }];
+        const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2048, system: KNOWLEDGE_PROMPT, messages })
+        });
+        const d = await apiRes.json();
+        const answer = d.content?.[0]?.text || 'Sorry, could not generate an answer. Please try again.';
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ answer }));
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'Something went wrong. Please try again.' }));
+      }
+    });
+    return;
+  }
 
   // Market holiday override — POST /market-holiday
   if (req.method === 'POST' && urlPath === '/market-holiday') {
