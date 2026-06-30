@@ -3379,87 +3379,84 @@
     const KH_API = 'https://api.trade2spend.com/knowledge-ask';
     let _khStack = []; // [{question, answer}]
 
+    function _khNormalize(q) {
+        // If user typed a term/keyword (no question word, short) — wrap it
+        if (!/[?]$/.test(q) && !/^(what|how|why|when|where|who|explain|tell|is|are|can|do|does|define)/i.test(q))
+            return `Explain "${q}" simply`;
+        return q;
+    }
+
+    function _khExtractTopic(q) {
+        return q
+            .replace(/^(what is a?n?\s+|what are\s+|how does\s+|how do\s+|explain\s+"?|tell me about\s+|define\s+|what'?s\s+a?\s*|why is\s+)/i, '')
+            .replace(/"?\?*$/, '').trim();
+    }
+
     async function khAsk() {
         const inp = document.getElementById('kh-input');
-        const q = (inp?.value || '').trim();
-        if (!q) { inp?.focus(); return; }
+        const display = (inp?.value || '').trim();
+        if (!display) { inp?.focus(); return; }
         inp.value = '';
         _khStack = [];
-        await _khFetch(q);
+        await _khFetch(display, _khNormalize(display));
     }
 
     async function khAskNext() {
         const inp = document.getElementById('kh-input-ans');
-        const q = (inp?.value || '').trim();
-        if (!q) { inp?.focus(); return; }
+        const display = (inp?.value || '').trim();
+        if (!display) { inp?.focus(); return; }
         inp.value = '';
-        await _khFetch(q);
+        await _khFetch(display, _khNormalize(display));
     }
 
     async function khAskTerm(term) {
-        await _khFetch(`What is ${term}?`);
+        await _khFetch(term, `Explain "${term}" simply`);
     }
 
-    async function _khFetch(question) {
-        _khShowAnswer(question, null); // show loading
+    async function _khFetch(display, apiQ) {
+        _khShowAnswer(display, null);
         const history = _khStack.slice(-3).flatMap(s => [
-            { role: 'user', content: s.question },
+            { role: 'user', content: s.apiQ },
             { role: 'assistant', content: s.answer }
         ]);
         try {
             const res = await fetch(KH_API, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question, history })
+                body: JSON.stringify({ question: apiQ, history })
             });
             const d = await res.json();
             if (d.error) throw new Error(d.error);
-            _khStack.push({ question, answer: d.answer });
-            _khShowAnswer(question, d.answer);
+            _khStack.push({ question: display, apiQ, answer: d.answer });
+            _khShowAnswer(display, d.answer);
         } catch(e) {
-            _khShowAnswer(question, null, e.message || 'Something went wrong. Please try again.');
+            _khShowAnswer(display, null, e.message || 'Something went wrong. Please try again.');
         }
     }
 
     function _khShowAnswer(question, answer, error) {
-        const landing = document.getElementById('kh-landing');
-        const ansScreen = document.getElementById('kh-answer');
-        const content = document.getElementById('kh-content');
-        const navQ = document.getElementById('kh-nav-q');
-        const depth = document.getElementById('kh-depth');
-
-        landing.style.display = 'none';
-        ansScreen.style.display = 'block';
-        navQ.textContent = question;
-        depth.textContent = _khStack.length > 1 ? `${_khStack.length} deep` : '';
-
-        // Scroll to top of learning section
-        document.getElementById('learning')?.closest('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+        document.getElementById('kh-landing').style.display = 'none';
+        document.getElementById('kh-answer').style.display = 'block';
+        document.getElementById('kh-nav-q').textContent = question;
+        document.getElementById('kh-depth').textContent = _khStack.length > 1 ? `${_khStack.length} deep` : '';
         document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
 
+        const content = document.getElementById('kh-content');
+        const bubble = `<div class="kh-q-bubble">${_khEscape(question)}</div>`;
+
         if (!answer && !error) {
-            content.innerHTML = `
-                <div class="kh-q-bubble">${_khEscape(question)}</div>
-                <div class="kh-loading">
-                    <div style="margin-bottom:10px;font-size:1.4rem;">🤔</div>
-                    <span class="kh-loading-dot">●</span>
-                    <span class="kh-loading-dot">●</span>
-                    <span class="kh-loading-dot">●</span>
-                    <div style="margin-top:8px;font-size:0.78rem;">Thinking...</div>
-                </div>`;
+            content.innerHTML = bubble + `<div class="kh-loading">
+                <div style="margin-bottom:10px;font-size:1.4rem;">🤔</div>
+                <span class="kh-loading-dot">●</span><span class="kh-loading-dot">●</span><span class="kh-loading-dot">●</span>
+                <div style="margin-top:8px;font-size:0.78rem;">Thinking...</div></div>`;
             return;
         }
-
         if (error) {
-            content.innerHTML = `
-                <div class="kh-q-bubble">${_khEscape(question)}</div>
-                <div class="kh-section" style="border-color:#fca5a5;">
-                    <div class="kh-section-body" style="color:#dc2626;">⚠ ${_khEscape(error)}</div>
-                </div>`;
+            content.innerHTML = bubble + `<div class="kh-section" style="border-color:#fca5a5;">
+                <div class="kh-section-body" style="color:#dc2626;">⚠ ${_khEscape(error)}</div></div>`;
             return;
         }
-
-        content.innerHTML = `<div class="kh-q-bubble">${_khEscape(question)}</div>` + _khRender(answer);
+        content.innerHTML = bubble + _khRender(answer, _khExtractTopic(question));
     }
 
     function khBack() {
@@ -3473,83 +3470,77 @@
         }
     }
 
-    function _khRender(text) {
+    function _khRender(text, mainTopic) {
         const SECTIONS = [
-            { emoji: '📘', key: 'Answer',          color: '#4a2a78', bg: '#f8f5ff' },
+            { emoji: '📘', key: 'Answer',            color: '#4a2a78', bg: '#f8f5ff' },
             { emoji: '🌍', key: 'Real-Life Example', color: '#059669', bg: '#f0fdf4' },
-            { emoji: '💡', key: 'Why It Matters',   color: '#d97706', bg: '#fffbeb' },
-            { emoji: '⚠',  key: 'Common Mistake',   color: '#dc2626', bg: '#fff5f5' },
-            { emoji: '🎯', key: 'Quick Takeaway',   color: '#2563eb', bg: '#eff6ff' },
-            { emoji: '🔗', key: 'Related Topics',   color: '#6b7280', bg: '#f9fafb' },
+            { emoji: '💡', key: 'Why It Matters',    color: '#d97706', bg: '#fffbeb' },
+            { emoji: '⚠',  key: 'Common Mistake',    color: '#dc2626', bg: '#fff5f5' },
+            { emoji: '🎯', key: 'Quick Takeaway',    color: '#2563eb', bg: '#eff6ff' },
+            { emoji: '🔗', key: 'Related Topics',    color: '#6b7280', bg: '#f9fafb' },
         ];
-
-        // Split text by section headers
+        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const sectionMap = {};
-        let remaining = text;
         for (const s of SECTIONS) {
-            const pattern = new RegExp(`${s.emoji}\\s*\\**${s.key}\\**`, 'i');
-            const idx = remaining.search(pattern);
+            const pat = new RegExp(esc(s.emoji) + '\\s*\\**' + esc(s.key) + '\\**', 'i');
+            const idx = text.search(pat);
             if (idx === -1) continue;
-            const afterHeader = remaining.slice(idx).replace(pattern, '').trimStart();
-            // Find next section start
-            let endIdx = afterHeader.length;
+            const after = text.slice(idx).replace(pat, '').trimStart();
+            let end = after.length;
             for (const s2 of SECTIONS) {
                 if (s2.key === s.key) continue;
-                const p2 = new RegExp(`${s2.emoji}\\s*\\**${s2.key}\\**`, 'i');
-                const i2 = afterHeader.search(p2);
-                if (i2 !== -1 && i2 < endIdx) endIdx = i2;
+                const p2 = new RegExp(esc(s2.emoji) + '\\s*\\**' + esc(s2.key) + '\\**', 'i');
+                const i2 = after.search(p2);
+                if (i2 !== -1 && i2 < end) end = i2;
             }
-            sectionMap[s.key] = afterHeader.slice(0, endIdx).trim();
+            sectionMap[s.key] = after.slice(0, end).trim();
         }
+
+        // One shared set — each jargon term links only ONCE across the full answer
+        const linked = new Set();
+        const skipLower = (mainTopic || '').toLowerCase();
+        const lk = (t) => _khLinkify(t, skipLower, linked);
 
         let html = '';
         for (const s of SECTIONS) {
             const body = sectionMap[s.key];
             if (!body) continue;
-
-            const isRelated = s.key === 'Related Topics';
-            const isBullets = s.key === 'Why It Matters';
-
             let bodyHtml = '';
-            if (isRelated) {
-                // Render as tappable chips — each line/bullet is a topic
+            if (s.key === 'Related Topics') {
                 const topics = body.split('\n')
-                    .map(l => l.replace(/^[\-•\*\[\]]+\s*/g, '').replace(/\[\[([^\]]+)\]\]/g, '$1').trim())
+                    .map(l => l.replace(/^[\-•*\[\]]+\s*/g,'').replace(/\[\[([^\]]+)\]\]/g,'$1').trim())
                     .filter(Boolean);
                 bodyHtml = topics.map(t =>
                     `<span class="kh-related-chip" onclick="khAskTerm('${_khEscapeAttr(t)}')">${_khEscape(t)}</span>`
                 ).join('');
-            } else if (isBullets) {
-                const points = body.split('\n').map(l => l.replace(/^[\-•\*]+\s*/, '').trim()).filter(Boolean);
-                bodyHtml = '<ul>' + points.map(p => `<li>${_khLinkify(p)}</li>`).join('') + '</ul>';
+            } else if (s.key === 'Why It Matters') {
+                const pts = body.split('\n').map(l => l.replace(/^[\-•*]+\s*/,'').trim()).filter(Boolean);
+                bodyHtml = '<ul>' + pts.map(p => `<li>${lk(p)}</li>`).join('') + '</ul>';
             } else {
                 bodyHtml = body.split('\n\n').map(para => {
-                    const lines = para.split('\n').map(l => l.replace(/^[\-•\*]+\s*/, '').trim()).filter(Boolean);
-                    if (lines.length > 1 && para.match(/^[\-•\*]/m)) {
-                        return '<ul>' + lines.map(l => `<li>${_khLinkify(l)}</li>`).join('') + '</ul>';
-                    }
-                    return `<p style="margin:0 0 8px 0;">${_khLinkify(lines.join(' '))}</p>`;
+                    const lines = para.split('\n').map(l => l.replace(/^[\-•*]+\s*/,'').trim()).filter(Boolean);
+                    if (lines.length > 1 && /^[\-•*]/m.test(para))
+                        return '<ul>' + lines.map(l => `<li>${lk(l)}</li>`).join('') + '</ul>';
+                    return `<p style="margin:0 0 6px 0;">${lk(lines.join(' '))}</p>`;
                 }).join('');
             }
-
-            html += `
-            <div class="kh-section" style="background:${s.bg};border-color:${s.color}22;">
+            html += `<div class="kh-section" style="background:${s.bg};border-color:${s.color}22;">
                 <div class="kh-section-label" style="color:${s.color};">${s.emoji} ${s.key}</div>
-                <div class="kh-section-body">${bodyHtml}</div>
-            </div>`;
+                <div class="kh-section-body">${bodyHtml}</div></div>`;
         }
-
-        return html || `<div class="kh-section"><div class="kh-section-body">${_khLinkify(text)}</div></div>`;
+        return html || `<div class="kh-section"><div class="kh-section-body">${lk(text)}</div></div>`;
     }
 
-    function _khLinkify(text) {
-        // Render [[Term]] as tappable jargon link, **bold** as bold, escape rest
+    function _khLinkify(text, skipLower, linked) {
         return text
             .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-            .replace(/\[\[([^\]]+)\]\]/g, (_, term) =>
-                `<span class="kh-jargon" onclick="khAskTerm('${_khEscapeAttr(term)}')">${term}</span>`
-            );
+            .replace(/\[\[([^\]]+)\]\]/g, (_, term) => {
+                const tl = term.toLowerCase();
+                if (tl === skipLower || linked.has(tl)) return term; // skip self + duplicates
+                linked.add(tl);
+                return `<span class="kh-jargon" onclick="khAskTerm('${_khEscapeAttr(term)}')">${term}</span>`;
+            });
     }
 
     function _khEscape(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
