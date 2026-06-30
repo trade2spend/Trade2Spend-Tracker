@@ -348,6 +348,19 @@
         .alert-popup-actions { display:flex; gap:8px; padding:0 22px 22px; }
         .alert-btn-view  { flex:1; padding:13px; border-radius:11px; border:none; background:var(--primary); color:#fff; font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
         .alert-btn-later { padding:13px 18px; border-radius:11px; border:1.5px solid var(--border); background:transparent; color:var(--text-muted); font-size:0.84rem; font-weight:600; cursor:pointer; font-family:inherit; }
+        /* ── KNOWLEDGE HUB ────────────────────────────────────── */
+        .kh-section { background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px; }
+        .kh-section-label { font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px; }
+        .kh-section-body { font-size:0.85rem;color:var(--text-main);line-height:1.7; }
+        .kh-section-body ul { padding-left:18px;margin:0; }
+        .kh-section-body li { margin-bottom:4px; }
+        .kh-jargon { color:var(--primary);text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-weight:600;touch-action:manipulation; }
+        .kh-related-chip { display:inline-block;background:var(--primary-light);color:var(--primary);border-radius:20px;padding:5px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;margin:4px 4px 0 0;touch-action:manipulation;border:1px solid #d5c8f0; }
+        .kh-loading { text-align:center;padding:40px 20px;color:var(--text-muted);font-size:0.85rem; }
+        .kh-loading-dot { display:inline-block;animation:kh-pulse 1.2s ease-in-out infinite; }
+        .kh-loading-dot:nth-child(2){animation-delay:.2s;} .kh-loading-dot:nth-child(3){animation-delay:.4s;}
+        @keyframes kh-pulse { 0%,80%,100%{opacity:.2;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
+        .kh-q-bubble { background:var(--primary);color:#fff;border-radius:12px 12px 4px 12px;padding:10px 14px;font-size:0.84rem;line-height:1.5;margin-bottom:14px;display:inline-block;max-width:90%; }
         /* ── PRODUCT TOUR ──────────────────────────────────────── */
         #tour-overlay { display:none; position:fixed; inset:0; z-index:19000; }
         #tour-backdrop { position:fixed; inset:0; z-index:19000; background:rgba(0,0,0,0.72); pointer-events:all; }
@@ -537,12 +550,72 @@
     </div>
 
     <!-- LEARNING TAB -->
-    <div id="learning" class="content-section">
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;">
-            <div style="font-size:2.8rem;margin-bottom:16px;">📚</div>
-            <h2 style="font-size:1.2rem;font-weight:800;color:var(--text-main);margin-bottom:10px;">Coming Soon</h2>
-            <p style="font-size:0.85rem;color:var(--text-muted);line-height:1.65;max-width:280px;">Learning resources, trade breakdowns, and options education — curated for Indian retail traders.</p>
+    <div id="learning" class="content-section" style="padding:0;">
+
+      <!-- ── LANDING ─────────────────────────────────────────────── -->
+      <div id="kh-landing" style="padding:20px 16px 100px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span style="font-size:1.6rem;">📚</span>
+          <div>
+            <div style="font-size:1.05rem;font-weight:800;color:var(--text-main);line-height:1.2;">Knowledge Hub</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.5px;text-transform:uppercase;">Stock Market Education</div>
+          </div>
         </div>
+
+        <p style="font-size:0.84rem;color:var(--text-main);line-height:1.65;margin-bottom:14px;">
+          Ask any stock market question. Get a clear, jargon-free answer with a real-life example — in plain English.
+        </p>
+
+        <div style="background:#fff8f0;border:1px solid #fde8cc;border-radius:10px;padding:12px 14px;margin-bottom:20px;">
+          <div style="font-size:0.72rem;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">This is NOT</div>
+          <div style="font-size:0.8rem;color:#6b7280;line-height:1.8;">
+            ✗ &nbsp;Investment advice or trading tips<br>
+            ✗ &nbsp;Buy / sell recommendations<br>
+            ✗ &nbsp;Broker or platform guidance<br>
+            ✗ &nbsp;A substitute for a SEBI-registered advisor
+          </div>
+        </div>
+
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+          <div style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Ask anything</div>
+          <div style="display:flex;gap:8px;align-items:flex-end;">
+            <textarea id="kh-input" placeholder="e.g. What is a Stop Loss? What is Open Interest? How does F&O work?"
+              style="flex:1;background:#f8f6ff;border:1.5px solid #e0d9f5;border-radius:10px;padding:10px 12px;font-size:0.84rem;color:var(--text-main);resize:none;min-height:70px;font-family:inherit;outline:none;line-height:1.5;"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();khAsk();}"></textarea>
+            <button onclick="khAsk()" id="kh-send-btn"
+              style="background:var(--primary);color:#fff;border:none;border-radius:10px;width:42px;height:42px;font-size:1.1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;touch-action:manipulation;">→</button>
+          </div>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;">Press Enter to ask · Shift+Enter for new line</div>
+        </div>
+      </div>
+
+      <!-- ── ANSWER SCREEN ───────────────────────────────────────── -->
+      <div id="kh-answer" style="display:none;padding:0 0 100px;">
+
+        <!-- Nav bar -->
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg-color);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;">
+          <button onclick="khBack()" style="background:var(--primary-light);border:none;border-radius:8px;padding:6px 12px;font-size:0.82rem;font-weight:600;color:var(--primary);cursor:pointer;font-family:inherit;touch-action:manipulation;white-space:nowrap;">← Back</button>
+          <div id="kh-nav-q" style="font-size:0.78rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"></div>
+          <div id="kh-depth" style="font-size:0.68rem;color:var(--text-muted);white-space:nowrap;"></div>
+        </div>
+
+        <!-- Answer content -->
+        <div id="kh-content" style="padding:16px;"></div>
+
+        <!-- Follow-up ask widget -->
+        <div style="padding:0 16px 16px;">
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:12px;">
+            <div style="font-size:0.7rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Ask a follow-up or new question</div>
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+              <textarea id="kh-input-ans" placeholder="Type your next question..."
+                style="flex:1;background:#f8f6ff;border:1.5px solid #e0d9f5;border-radius:10px;padding:10px 12px;font-size:0.84rem;color:var(--text-main);resize:none;min-height:52px;font-family:inherit;outline:none;line-height:1.5;"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();khAskNext();}"></textarea>
+              <button onclick="khAskNext()" style="background:var(--primary);color:#fff;border:none;border-radius:10px;width:42px;height:42px;font-size:1.1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;touch-action:manipulation;">→</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ABOUT TAB -->
@@ -3301,6 +3374,186 @@
     setInterval(checkPwaResolveAlert, 30_000);
     // Safety: ensure bell state is set even if session init took a different path
     setTimeout(updateNotifBell, 1000);
+
+    // ── KNOWLEDGE HUB ─────────────────────────────────────────────────────────
+    const KH_API = 'https://api.trade2spend.com/knowledge-ask';
+    let _khStack = []; // [{question, answer}]
+
+    async function khAsk() {
+        const inp = document.getElementById('kh-input');
+        const q = (inp?.value || '').trim();
+        if (!q) { inp?.focus(); return; }
+        inp.value = '';
+        _khStack = [];
+        await _khFetch(q);
+    }
+
+    async function khAskNext() {
+        const inp = document.getElementById('kh-input-ans');
+        const q = (inp?.value || '').trim();
+        if (!q) { inp?.focus(); return; }
+        inp.value = '';
+        await _khFetch(q);
+    }
+
+    async function khAskTerm(term) {
+        await _khFetch(`What is ${term}?`);
+    }
+
+    async function _khFetch(question) {
+        _khShowAnswer(question, null); // show loading
+        const history = _khStack.slice(-3).flatMap(s => [
+            { role: 'user', content: s.question },
+            { role: 'assistant', content: s.answer }
+        ]);
+        try {
+            const res = await fetch(KH_API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, history })
+            });
+            const d = await res.json();
+            if (d.error) throw new Error(d.error);
+            _khStack.push({ question, answer: d.answer });
+            _khShowAnswer(question, d.answer);
+        } catch(e) {
+            _khShowAnswer(question, null, e.message || 'Something went wrong. Please try again.');
+        }
+    }
+
+    function _khShowAnswer(question, answer, error) {
+        const landing = document.getElementById('kh-landing');
+        const ansScreen = document.getElementById('kh-answer');
+        const content = document.getElementById('kh-content');
+        const navQ = document.getElementById('kh-nav-q');
+        const depth = document.getElementById('kh-depth');
+
+        landing.style.display = 'none';
+        ansScreen.style.display = 'block';
+        navQ.textContent = question;
+        depth.textContent = _khStack.length > 1 ? `${_khStack.length} deep` : '';
+
+        // Scroll to top of learning section
+        document.getElementById('learning')?.closest('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+        document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+
+        if (!answer && !error) {
+            content.innerHTML = `
+                <div class="kh-q-bubble">${_khEscape(question)}</div>
+                <div class="kh-loading">
+                    <div style="margin-bottom:10px;font-size:1.4rem;">🤔</div>
+                    <span class="kh-loading-dot">●</span>
+                    <span class="kh-loading-dot">●</span>
+                    <span class="kh-loading-dot">●</span>
+                    <div style="margin-top:8px;font-size:0.78rem;">Thinking...</div>
+                </div>`;
+            return;
+        }
+
+        if (error) {
+            content.innerHTML = `
+                <div class="kh-q-bubble">${_khEscape(question)}</div>
+                <div class="kh-section" style="border-color:#fca5a5;">
+                    <div class="kh-section-body" style="color:#dc2626;">⚠ ${_khEscape(error)}</div>
+                </div>`;
+            return;
+        }
+
+        content.innerHTML = `<div class="kh-q-bubble">${_khEscape(question)}</div>` + _khRender(answer);
+    }
+
+    function khBack() {
+        _khStack.pop();
+        if (_khStack.length === 0) {
+            document.getElementById('kh-landing').style.display = 'block';
+            document.getElementById('kh-answer').style.display = 'none';
+        } else {
+            const prev = _khStack[_khStack.length - 1];
+            _khShowAnswer(prev.question, prev.answer);
+        }
+    }
+
+    function _khRender(text) {
+        const SECTIONS = [
+            { emoji: '📘', key: 'Answer',          color: '#4a2a78', bg: '#f8f5ff' },
+            { emoji: '🌍', key: 'Real-Life Example', color: '#059669', bg: '#f0fdf4' },
+            { emoji: '💡', key: 'Why It Matters',   color: '#d97706', bg: '#fffbeb' },
+            { emoji: '⚠',  key: 'Common Mistake',   color: '#dc2626', bg: '#fff5f5' },
+            { emoji: '🎯', key: 'Quick Takeaway',   color: '#2563eb', bg: '#eff6ff' },
+            { emoji: '🔗', key: 'Related Topics',   color: '#6b7280', bg: '#f9fafb' },
+        ];
+
+        // Split text by section headers
+        const sectionMap = {};
+        let remaining = text;
+        for (const s of SECTIONS) {
+            const pattern = new RegExp(`${s.emoji}\\s*\\**${s.key}\\**`, 'i');
+            const idx = remaining.search(pattern);
+            if (idx === -1) continue;
+            const afterHeader = remaining.slice(idx).replace(pattern, '').trimStart();
+            // Find next section start
+            let endIdx = afterHeader.length;
+            for (const s2 of SECTIONS) {
+                if (s2.key === s.key) continue;
+                const p2 = new RegExp(`${s2.emoji}\\s*\\**${s2.key}\\**`, 'i');
+                const i2 = afterHeader.search(p2);
+                if (i2 !== -1 && i2 < endIdx) endIdx = i2;
+            }
+            sectionMap[s.key] = afterHeader.slice(0, endIdx).trim();
+        }
+
+        let html = '';
+        for (const s of SECTIONS) {
+            const body = sectionMap[s.key];
+            if (!body) continue;
+
+            const isRelated = s.key === 'Related Topics';
+            const isBullets = s.key === 'Why It Matters';
+
+            let bodyHtml = '';
+            if (isRelated) {
+                // Render as tappable chips — each line/bullet is a topic
+                const topics = body.split('\n')
+                    .map(l => l.replace(/^[\-•\*\[\]]+\s*/g, '').replace(/\[\[([^\]]+)\]\]/g, '$1').trim())
+                    .filter(Boolean);
+                bodyHtml = topics.map(t =>
+                    `<span class="kh-related-chip" onclick="khAskTerm('${_khEscapeAttr(t)}')">${_khEscape(t)}</span>`
+                ).join('');
+            } else if (isBullets) {
+                const points = body.split('\n').map(l => l.replace(/^[\-•\*]+\s*/, '').trim()).filter(Boolean);
+                bodyHtml = '<ul>' + points.map(p => `<li>${_khLinkify(p)}</li>`).join('') + '</ul>';
+            } else {
+                bodyHtml = body.split('\n\n').map(para => {
+                    const lines = para.split('\n').map(l => l.replace(/^[\-•\*]+\s*/, '').trim()).filter(Boolean);
+                    if (lines.length > 1 && para.match(/^[\-•\*]/m)) {
+                        return '<ul>' + lines.map(l => `<li>${_khLinkify(l)}</li>`).join('') + '</ul>';
+                    }
+                    return `<p style="margin:0 0 8px 0;">${_khLinkify(lines.join(' '))}</p>`;
+                }).join('');
+            }
+
+            html += `
+            <div class="kh-section" style="background:${s.bg};border-color:${s.color}22;">
+                <div class="kh-section-label" style="color:${s.color};">${s.emoji} ${s.key}</div>
+                <div class="kh-section-body">${bodyHtml}</div>
+            </div>`;
+        }
+
+        return html || `<div class="kh-section"><div class="kh-section-body">${_khLinkify(text)}</div></div>`;
+    }
+
+    function _khLinkify(text) {
+        // Render [[Term]] as tappable jargon link, **bold** as bold, escape rest
+        return text
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\[\[([^\]]+)\]\]/g, (_, term) =>
+                `<span class="kh-jargon" onclick="khAskTerm('${_khEscapeAttr(term)}')">${term}</span>`
+            );
+    }
+
+    function _khEscape(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function _khEscapeAttr(s) { return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
     // ── PRODUCT TOUR ──────────────────────────────────────────────────────────
     let _tourIdx = 0, _tourVisible = [];
