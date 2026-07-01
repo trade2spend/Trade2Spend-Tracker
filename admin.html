@@ -8,7 +8,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Trade2Spend">
 <title>Trade2Spend</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://keuzqxoxtlozlqjjjqvr.supabase.co">
+<link rel="preconnect" href="https://api.trade2spend.com">
+<link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
 <style>
 
 :root{
@@ -1971,48 +1976,43 @@ async function pinInit() {
     return;
   }
 
-  // Check if /unlock_admin was sent via Telegram — Supabase flag set by VM
-  try {
-    const pinReset = await sbGet('keep_alive_log?source=eq.admin_pin_reset&limit=1');
-    if (pinReset && pinReset.length > 0) {
-      // Delete the flag, clear PIN, go straight to Setup
-      await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pin_reset`, {
-        method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-      });
-      await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-        method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-      });
-      localStorage.removeItem('t2s_pin');
-      localStorage.removeItem('t2s_admin_lock_until');
-      document.getElementById('pin-overlay').classList.add('hidden');
-      showTab('setup');
-      showToast('PIN reset by Telegram. Set a new PIN below.');
-      return;
-    }
-  } catch(e) {}
+  // Check pin_reset + pwa_locked in parallel (saves one network round-trip)
+  const [pinReset, locks] = await Promise.all([
+    sbGet('keep_alive_log?source=eq.admin_pin_reset&limit=1').catch(() => []),
+    sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1').catch(() => [])
+  ]);
+
+  if (pinReset && pinReset.length > 0) {
+    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pin_reset`, {
+      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
+      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    localStorage.removeItem('t2s_pin');
+    localStorage.removeItem('t2s_admin_lock_until');
+    document.getElementById('pin-overlay').classList.add('hidden');
+    showTab('setup');
+    showToast('PIN reset by Telegram. Set a new PIN below.');
+    return;
+  }
 
   const savedPin = localStorage.getItem('t2s_pin');
   if (!savedPin) {
-    // No PIN set — go straight to Setup tab to create one
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
     showToast('No PIN set — create one below to secure the app.');
     return;
   }
-  // Guard: user may have unlocked while Supabase fetches above were in flight
   if (sessionStorage.getItem('t2s_admin_authed')) {
     document.getElementById('pin-overlay').classList.add('hidden');
     return;
   }
   document.getElementById('pin-overlay').classList.remove('hidden');
-  // Check localStorage lockout (persists across refresh — cannot be bypassed)
   const lockUntil = localStorage.getItem('t2s_admin_lock_until');
   if (lockUntil && new Date() < new Date(lockUntil)) { showAdminLocked('pin'); return; }
-  try {
-    const locks = await sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1');
-    if (sessionStorage.getItem('t2s_admin_authed')) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
-    if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
-  } catch(e) {}
+  if (sessionStorage.getItem('t2s_admin_authed')) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
+  if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
   await checkSessionSlot();
 }
 
