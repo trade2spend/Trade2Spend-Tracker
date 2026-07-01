@@ -217,6 +217,8 @@ let _sbSlAlertedToday    = new Set(); // post IDs where SL auto-follow-up alread
 let _sbTrigAlertDate     = null;
 let _sbTrigAlertedToday  = new Set(); // post IDs where trigger auto-follow-up already posted today
 let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was sent
+let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper-stopped-during-market-hours
+let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
 
 function loadHolidayState() {
   try {
@@ -568,7 +570,7 @@ async function fetchSpot(instrument = 'NIFTY') {
   if (!session.token || !session.baseUrl) return null;
   const tok = SPOT_TOKENS[instrument.toUpperCase()] || SPOT_TOKENS.NIFTY;
   try {
-    const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${tok.instrument_token}/ltp`;
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${tok.instrument_token}/ltp`;
     const r = await ftKotak(url, {
       method: 'GET',
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
@@ -1021,7 +1023,7 @@ async function fetchKotakOptionLTPs() {
     }
     try {
       const _exchSeg = c.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
-      const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${_exchSeg}|${identifier}/ltp`;
+      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${_exchSeg}|${identifier}/ltp`;
       const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
@@ -1123,7 +1125,7 @@ async function fetchKotakIndexLTP(instrument) {
   const cfg = INDEX_TOKENS[instrument.toUpperCase()];
   if (!cfg) return null;
   try {
-    const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${cfg.token}/ltp`;
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${cfg.token}/ltp`;
     const r = await ftKotak(url, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 5000);
@@ -1284,7 +1286,7 @@ async function fetchKotakNifty50LTPs() {
   const results = await Promise.all(
     symbols.map(sym => {
       const symUrl = sym.replace('&', '%26'); // M&M → M%26M in URL
-      const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${symUrl}/ltp`;
+      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${symUrl}/ltp`;
       return ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 4000)
@@ -1420,6 +1422,14 @@ async function runMarketScraper(force = false) {
     await tgAlert('🔴 <b>Market scraper auto-stopped</b> (3:35 PM IST). market.json marked closed.').catch(()=>{});
     return;
   }
+  // Warn 30 min before Kotak session expires so TOTP can be re-done without a CMP gap
+  const _sessAge = Date.now() - (session.lastLogin || 0);
+  if (session.token && !_sessionExpiryWarned && _sessAge > SESSION_MAX_AGE_MS - 30 * 60 * 1000 && _sessAge < SESSION_MAX_AGE_MS) {
+    _sessionExpiryWarned = true;
+    tgAlert('⚠️ <b>Kotak session expires in ~30 min.</b> Re-enter TOTP now to avoid a CMP gap.').catch(()=>{});
+  }
+  if (_sessAge >= SESSION_MAX_AGE_MS) _sessionExpiryWarned = false;
+
   try {
     // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX
     const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE(), fetchNSEMovers()]);
@@ -2127,7 +2137,7 @@ async function handleMessage(text) {
       // Test 1: numeric token (if available)
       if (numToken) {
         try {
-          const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${numToken}/ltp`;
+          const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${numToken}/ltp`;
           const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
           const txt = await r.text();
           await tgSend(`Token lookup (${numToken}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
@@ -2137,7 +2147,7 @@ async function handleMessage(text) {
       // Test 2: trading symbol (fallback path)
       if (tradeSym) {
         try {
-          const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${tradeSym}/ltp`;
+          const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${c.instrument==='SENSEX'?'bse_fo':'nse_fo'}|${tradeSym}/ltp`;
           const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
           const txt = await r.text();
           await tgSend(`Symbol lookup (${tradeSym}): HTTP ${r.status}\n<code>${txt.slice(0,300)}</code>`);
@@ -3025,7 +3035,7 @@ async function checkSupabaseTriggers() {
   if (!isMarketHours() || !session.token) return;
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const today = ist.toDateString();
-  if (_sbTrigAlertDate !== today) { _sbTriggerAlertedToday.clear(); _sbTrigAlertDate = today; }
+  if (_sbTrigAlertDate !== today) { _sbTrigAlertedToday.clear(); _sbTrigAlertDate = today; }
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
     const posts = await sbFetch(
@@ -3042,12 +3052,12 @@ async function checkSupabaseTriggers() {
     const STATUS_ONLY = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['']?t\s+(?:take|enter))/i;
 
     for (const post of posts) {
-      if (_sbTriggerAlertedToday.has(post.id)) continue;
+      if (_sbTrigAlertedToday.has(post.id)) continue;
       const pr = rMap[post.id] || [];
-      if (sbTradeFullyExited(pr)) { _sbTriggerAlertedToday.add(post.id); continue; }
+      if (sbTradeFullyExited(pr)) { _sbTrigAlertedToday.add(post.id); continue; }
       // Skip if follow-ups already confirm trigger (non-status-only reply exists)
       const validReplies = pr.filter(r => !STATUS_ONLY.test((r.content||'').trim()) && !(r.content||'').includes('[T2S_UNLOCK]'));
-      if (validReplies.length > 0) { _sbTriggerAlertedToday.add(post.id); continue; }
+      if (validReplies.length > 0) { _sbTrigAlertedToday.add(post.id); continue; }
       // Extract entry price — format: "I am buying Nifty 24200 CE at 110"
       const em = (post.content||'').match(/(?:buy(?:ing)?|sell(?:ing)?)[\s\S]*?\bat\s+₹?\s*(\d+(?:\.\d+)?)/i);
       if (!em) continue;
@@ -3064,7 +3074,7 @@ async function checkSupabaseTriggers() {
       const isSell = /\bsell(?:ing)?\b/i.test(post.content||'');
       const triggered = isSell ? (cmp <= entry) : (cmp >= entry);
       if (triggered) {
-        _sbTriggerAlertedToday.add(post.id);
+        _sbTrigAlertedToday.add(post.id);
         const ep = Math.round(cmp * 100) / 100;
         await sbFetch('posts', {
           method: 'POST',
@@ -3139,7 +3149,15 @@ setInterval(() => {
     checkSLs().catch(e => tgAlert(`⚠️ SL poll: ${e.message}`));
     checkSupabaseSLs().catch(e => console.error('[sb-sl]', e.message));
     checkSupabaseTriggers().catch(e => console.error('[sb-trigger]', e.message));
-    if (!marketScraperInterval) startMarketScraper();
+    if (!marketScraperInterval) {
+      startMarketScraper();
+      if (!_scraperStopAlerted) {
+        _scraperStopAlerted = true;
+        tgAlert('⚠️ Market scraper was not running during market hours — auto-restarted.').catch(()=>{});
+      }
+    }
+  } else {
+    _scraperStopAlerted = false; // reset so alert fires again next session if needed
   }
   checkResolveAlert().catch(e => console.error('[resolve-alert]', e.message));
 }, 30_000);
