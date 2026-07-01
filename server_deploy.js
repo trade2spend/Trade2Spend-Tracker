@@ -529,6 +529,25 @@ async function loginKotak(totp) {
     _highPostedToday = false;
     // Download scrip master in background after login so option tokens are ready
     downloadScripMaster().catch(e => console.error('[scrip] post-login download error:', e.message));
+    // Outside market hours: fetch Kotak Nifty50 LTPs to correct yesterday's closing breadth
+    // (NSE API gave wrong numbers; Kotak LTP at this time = yesterday's close vs prev close)
+    if (!isMarketHours()) {
+      setTimeout(async () => {
+        try {
+          const movers = await fetchKotakNifty50LTPs();
+          if (movers?.breadth && _latestMarketData) {
+            _latestMarketData.breadth = { nifty50: movers.breadth };
+            _latestMarketData.gainers = movers.gainers?.length ? movers.gainers : _latestMarketData.gainers;
+            _latestMarketData.losers  = movers.losers?.length  ? movers.losers  : _latestMarketData.losers;
+            const snapshot = { ..._latestMarketData };
+            delete snapshot.optionLTPs; delete snapshot.expiry;
+            await pushMarketToGitHub(snapshot);
+            tgSend(`📊 Closing breadth corrected: ${movers.breadth.advancing}↑ ${movers.breadth.declining}↓ (${movers.count} stocks)`).catch(()=>{});
+            console.log(`[login] breadth corrected: ${movers.breadth.advancing}↑ ${movers.breadth.declining}↓`);
+          }
+        } catch(e) { console.error('[login] post-login breadth update failed:', e.message); }
+      }, 4000);
+    }
     return true;
   } catch (e) {
     tgSend(`❌ Login error: ${e.message}`).catch(()=>{});
