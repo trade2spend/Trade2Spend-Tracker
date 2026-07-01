@@ -17,6 +17,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Trade2Spend">
+    <link rel="preconnect" href="https://keuzqxoxtlozlqjjjqvr.supabase.co">
+    <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="logo.png">
     <title>Trade2Spend | Live Tracker</title>
@@ -1903,11 +1905,13 @@
         let isAdmin = false, memberTier = 'free';
         if (memberId) {
             try {
-                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, {method:'GET'});
+                const cached = window._cachedMember;
+                const members = cached ? [cached] : await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, {method:'GET'});
                 if (members?.length) {
                     if (members[0].status === 'disabled') { window.location.href='login.html'; return; }
                     isAdmin = members[0].is_admin === true;
                     memberTier = members[0].tier || 'free';
+                    if (!cached) window._cachedMember = members[0];
                 }
             } catch(e) {}
         }
@@ -3121,10 +3125,11 @@
                 window.location.href='login.html'; return;
             }
             try {
-                const members=await sbFetch(`members?id=eq.${memberId}&select=status`,{method:'GET'});
+                const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin`,{method:'GET'});
                 if(!members||!members.length||members[0].status==='disabled'){
                     window.location.href='login.html'; return;
                 }
+                window._cachedMember = members[0];
             } catch(e){ console.warn('Auth check failed',e); }
         }
         // Idle auto-lock: update last_active on real user interactions
