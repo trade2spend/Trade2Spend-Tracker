@@ -437,13 +437,13 @@
                 </div>
             </div>
         </div>
-        <!-- Advance / Decline bar — NSE data, updated every 3 min during market hours -->
+        <!-- Advance / Decline bar — Kotak Neo data, derived from Nifty 50 close prices -->
         <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
             <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▲ 32 Advancing</span>
             <span style="color:var(--border);">|</span>
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▼ 18 Declining</span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">NSE · every 3 min</span>
+            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">Kotak Neo · live</span>
         </div>
         <!-- Alert banner — appears below gainers/losers when a new post is detected -->
         <div id="alert-banner-section">
@@ -855,6 +855,7 @@
         }
         if (tabId === 'performance') fetchPerformance();
         if (tabId === 'markets') fetchMarketData();
+        if (tabId === 'learning') setTimeout(() => { const el = document.getElementById('kh-input'); if (el) el.focus(); }, 80);
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -958,7 +959,7 @@
             const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            if(noteEl) noteEl.textContent = isOpen ? 'NSE · every 3 min' : 'NSE · last session';
+            if(noteEl) noteEl.textContent = isOpen ? 'Kotak Neo · live' : 'Kotak Neo · 3:35 PM close';
         }
 
         const moversEl = document.getElementById('movers-section');
@@ -3457,6 +3458,7 @@
             return;
         }
         content.innerHTML = bubble + _khRender(answer, _khExtractTopic(question));
+        setTimeout(() => { const el = document.getElementById('kh-input-ans'); if (el) el.focus(); }, 80);
     }
 
     function khBack() {
@@ -3464,6 +3466,7 @@
         if (_khStack.length === 0) {
             document.getElementById('kh-landing').style.display = 'block';
             document.getElementById('kh-answer').style.display = 'none';
+            setTimeout(() => { const el = document.getElementById('kh-input'); if (el) el.focus(); }, 80);
         } else {
             const prev = _khStack[_khStack.length - 1];
             _khShowAnswer(prev.question, prev.answer);
