@@ -633,6 +633,8 @@ async function fetchNSEMovers() {
       const d = await r.json();
       const stocks = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
       if (stocks.length > 0) {
+        // Keep symbol registry current — detects rebalancing automatically
+        _updateNifty50Symbols(stocks.map(s => s.symbol));
         const mapStock = s => ({
           symbol: s.symbol,
           price:  parseFloat(parseFloat(s.lastPrice || s.ltp || 0).toFixed(2)),
@@ -1119,30 +1121,107 @@ async function fetchKotakIndexLTP(instrument) {
   } catch(e) { console.error(`[KotakIdx] ${instrument}: ${e.message}`); return null; }
 }
 
-// Nifty 50 Yahoo Finance symbols — fallback for gainers/losers when NSE is blocked
-// M&M encoded as M%26M to avoid URL param conflict; ETERNAL covers Zomato rebrand
-const NIFTY50_YF_SYMBOLS = [
-  'ADANIENT.NS','ADANIPORTS.NS','APOLLOHOSP.NS','ASIANPAINT.NS','AXISBANK.NS',
-  'BAJAJ-AUTO.NS','BAJFINANCE.NS','BAJAJFINSV.NS','BEL.NS','BHARTIARTL.NS',
-  'BPCL.NS','BRITANNIA.NS','CIPLA.NS','COALINDIA.NS','DRREDDY.NS',
-  'EICHERMOT.NS','ETERNAL.NS','GRASIM.NS','HCLTECH.NS','HDFCBANK.NS',
-  'HDFCLIFE.NS','HEROMOTOCO.NS','HINDALCO.NS','HINDUNILVR.NS','ICICIBANK.NS',
-  'INDUSINDBK.NS','INFY.NS','ITC.NS','JSWSTEEL.NS','KOTAKBANK.NS',
-  'LT.NS','M%26M.NS','MARUTI.NS','NESTLEIND.NS','NTPC.NS',
-  'ONGC.NS','POWERGRID.NS','RELIANCE.NS','SBIN.NS','SHRIRAMFIN.NS',
-  'SUNPHARMA.NS','TATAMOTORS.NS','TATASTEEL.NS','TATACONSUM.NS','TCS.NS',
-  'TECHM.NS','TITAN.NS','ULTRACEMCO.NS','WIPRO.NS','ZOMATO.NS'
-];
+// ── NIFTY 50 SYMBOL REGISTRY (dynamic — refreshed from NSE, no hardcoded list) ──
+// Source of truth: NSE equity-stockIndices API. Cached to disk, refreshed weekly
+// or immediately when a composition change is detected.
+const N50_CACHE_FILE = path.join(__dirname, 'nifty50_cache.json');
+const N50_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+let _nifty50Symbols   = null; // ['ADANIENT', 'RELIANCE', ...] — NSE trading symbols
+let _nifty50SymbolsTs = 0;    // timestamp of last confirmed-fresh list
+
+// Symbols where Yahoo Finance ticker differs from NSE trading symbol.
+// Add entries here only when Yahoo uses a different name — not for URL encoding.
+const YF_SYMBOL_OVERRIDES = {
+  // e.g. 'ETERNAL': 'ZOMATO' — only needed if Yahoo hasn't updated yet
+};
+
+function nseToYFSymbol(nseSym) {
+  const base = YF_SYMBOL_OVERRIDES[nseSym] || nseSym;
+  return base.replace('&', '%26') + '.NS'; // URL-encode & for M&M → M%26M.NS
+}
+
+function yfToNSESymbol(yfSym) {
+  const base = yfSym.replace('.NS', '').replace('%26', '&');
+  for (const [nse, yf] of Object.entries(YF_SYMBOL_OVERRIDES)) {
+    if (yf === base) return nse;
+  }
+  return base;
+}
+
+function loadNifty50Cache() {
+  try {
+    if (fs.existsSync(N50_CACHE_FILE)) {
+      const { symbols, ts } = JSON.parse(fs.readFileSync(N50_CACHE_FILE, 'utf8'));
+      if (Array.isArray(symbols) && symbols.length >= 45) {
+        _nifty50Symbols   = symbols;
+        _nifty50SymbolsTs = ts || 0;
+        const ageDays = Math.round((Date.now() - (ts || 0)) / 86400000);
+        console.log(`[nifty50] loaded ${symbols.length} symbols from cache (${ageDays}d old)`);
+      }
+    }
+  } catch(e) { console.error('[nifty50] cache load error:', e.message); }
+}
+
+function _saveNifty50Cache() {
+  try {
+    fs.writeFileSync(N50_CACHE_FILE, JSON.stringify({ symbols: _nifty50Symbols, ts: _nifty50SymbolsTs }, null, 2));
+  } catch(e) { console.error('[nifty50] cache save error:', e.message); }
+}
+
+// Called from fetchNSEMovers() whenever a full 50-stock response is received.
+// Detects composition changes and saves to disk; otherwise just keeps in memory.
+function _updateNifty50Symbols(freshSymbols) {
+  if (!freshSymbols?.length) return;
+  const compositionChanged = _nifty50Symbols &&
+    JSON.stringify([...freshSymbols].sort()) !== JSON.stringify([..._nifty50Symbols].sort());
+  const cacheStale = !_nifty50Symbols || Date.now() - _nifty50SymbolsTs > N50_REFRESH_MS;
+  if (compositionChanged) {
+    console.log(`[nifty50] composition changed — was ${_nifty50Symbols?.length}, now ${freshSymbols.length} stocks`);
+  }
+  if (compositionChanged || cacheStale || !_nifty50Symbols) {
+    _nifty50Symbols   = freshSymbols;
+    _nifty50SymbolsTs = Date.now();
+    _saveNifty50Cache();
+  }
+}
+
+// Returns the current Nifty 50 NSE symbol list.
+// Uses memory cache if fresh; does a standalone NSE fetch if stale; returns stale if fetch fails.
+async function getNifty50Symbols() {
+  if (_nifty50Symbols && Date.now() - _nifty50SymbolsTs < N50_REFRESH_MS) return _nifty50Symbols;
+  try {
+    if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+    const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050',
+      { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
+    if (r.ok) {
+      const d = await r.json();
+      const syms = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50').map(s => s.symbol);
+      if (syms.length >= 45) {
+        _nifty50Symbols   = syms;
+        _nifty50SymbolsTs = Date.now();
+        _saveNifty50Cache();
+        console.log(`[nifty50] standalone refresh: ${syms.length} symbols`);
+        return _nifty50Symbols;
+      }
+    }
+  } catch(e) { console.error('[nifty50] standalone refresh failed:', e.message); }
+  return _nifty50Symbols || []; // return stale cache; empty only on first-ever run if NSE is down
+}
+
 let _yahooMoversCache = null, _yahooMoversCacheTs = 0, _yahooMoversStatus = 'never';
 async function fetchYahooNifty50Movers() {
   // 5-minute cache
   if (_yahooMoversCache && Date.now() - _yahooMoversCacheTs < 5 * 60 * 1000) return _yahooMoversCache;
+  const nseSymbols = await getNifty50Symbols();
+  if (!nseSymbols.length) return null;
+  const yfSymbols = nseSymbols.map(nseToYFSymbol);
   // Fetch in batches of 5 with 300ms gap — avoids rate-limiting 50 parallel calls
   const YF_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' };
   const stocks = [];
   const BATCH = 5;
-  for (let i = 0; i < NIFTY50_YF_SYMBOLS.length; i += BATCH) {
-    const slice = NIFTY50_YF_SYMBOLS.slice(i, i + BATCH);
+  for (let i = 0; i < yfSymbols.length; i += BATCH) {
+    const slice = yfSymbols.slice(i, i + BATCH);
     const batch = await Promise.all(slice.map(sym =>
       ft(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`, { headers: YF_HEADERS }, 8000)
         .then(r => r.ok ? r.json() : null)
@@ -1153,12 +1232,12 @@ async function fetchYahooNifty50Movers() {
           const prev  = parseFloat(meta.chartPreviousClose || 0);
           if (!price || !prev) return null;
           const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
-          return { symbol: sym.replace('.NS','').replace('ZOMATO','ETERNAL'), price, change };
+          return { symbol: yfToNSESymbol(sym), price, change };
         })
         .catch(() => null)
     ));
     stocks.push(...batch.filter(Boolean));
-    if (i + BATCH < NIFTY50_YF_SYMBOLS.length) await new Promise(r => setTimeout(r, 300));
+    if (i + BATCH < yfSymbols.length) await new Promise(r => setTimeout(r, 300));
   }
   if (stocks.length < 5) {
     _yahooMoversStatus = `failed — only ${stocks.length} stocks returned`;
@@ -1176,25 +1255,15 @@ async function fetchYahooNifty50Movers() {
 }
 
 // Kotak Nifty50 equity LTPs — used during market hours when NSE movers are blocked
-// Uses nse_cm exchange with trading symbol (same pattern as nse_fo option LTPs)
-const NIFTY50_NSE_SYMBOLS = [
-  'ADANIENT','ADANIPORTS','APOLLOHOSP','ASIANPAINT','AXISBANK',
-  'BAJAJ-AUTO','BAJFINANCE','BAJAJFINSV','BEL','BHARTIARTL',
-  'BPCL','BRITANNIA','CIPLA','COALINDIA','DRREDDY',
-  'EICHERMOT','ETERNAL','GRASIM','HCLTECH','HDFCBANK',
-  'HDFCLIFE','HEROMOTOCO','HINDALCO','HINDUNILVR','ICICIBANK',
-  'INDUSINDBK','INFY','ITC','JSWSTEEL','KOTAKBANK',
-  'LT','M&M','MARUTI','NESTLEIND','NTPC',
-  'ONGC','POWERGRID','RELIANCE','SBIN','SHRIRAMFIN',
-  'SUNPHARMA','TATAMOTORS','TATASTEEL','TATACONSUM','TCS',
-  'TECHM','TITAN','ULTRACEMCO','WIPRO'
-];
+// Symbol list is fetched dynamically from NSE (see getNifty50Symbols above).
 let _kotakMoversCache = null, _kotakMoversCacheTs = 0;
 async function fetchKotakNifty50LTPs() {
   if (!session.token) return null;
   if (_kotakMoversCache && Date.now() - _kotakMoversCacheTs < 2 * 60 * 1000) return _kotakMoversCache;
+  const symbols = await getNifty50Symbols();
+  if (!symbols.length) return null;
   const results = await Promise.all(
-    NIFTY50_NSE_SYMBOLS.map(sym => {
+    symbols.map(sym => {
       const symUrl = sym.replace('&', '%26'); // M&M → M%26M in URL
       const url = `${DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${symUrl}/ltp`;
       return ftKotak(url, {
@@ -1218,12 +1287,17 @@ async function fetchKotakNifty50LTPs() {
     console.log(`[kotak50] only ${stocks.length} stocks returned — symbol-based nse_cm lookup may not work`);
     return null;
   }
+  // change >= 0 counts as advancing (flat = advance per product rule)
+  const advancing = stocks.filter(s => s.change >= 0).length;
+  const declining = stocks.filter(s => s.change < 0).length;
   _kotakMoversCache = {
     gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
-    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
+    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change),
+    breadth: { advancing, declining, unchanged: stocks.filter(s => s.change === 0).length },
+    count: stocks.length
   };
   _kotakMoversCacheTs = Date.now();
-  console.log(`[kotak50] ${stocks.length} stocks — top gainer: ${_kotakMoversCache.gainers[0]?.symbol} ${_kotakMoversCache.gainers[0]?.change}%`);
+  console.log(`[kotak50] ${stocks.length} stocks — ${advancing}↑ ${declining}↓ — top gainer: ${_kotakMoversCache.gainers[0]?.symbol} ${_kotakMoversCache.gainers[0]?.change}%`);
   return _kotakMoversCache;
 }
 
@@ -1308,12 +1382,19 @@ async function runMarketScraper(force = false) {
       const existing = await r.json();
       existing.marketOpen = false;
       existing.lastUpdated = new Date().toISOString();
-      // Fetch closing gainers/losers from Yahoo (NSE is blocked; Kotak session expired at close)
-      const closingMovers = await fetchYahooNifty50Movers();
-      if (closingMovers?.gainers?.length > 0) {
-        existing.gainers = closingMovers.gainers;
-        existing.losers  = closingMovers.losers;
-        console.log('[close] Yahoo closing movers fetched:', closingMovers.gainers.length, 'gainers');
+      // Closing snapshot — Kotak session is still alive at 3:35 PM; LTP at this moment = close price.
+      // change ≥ 0 → advancing, change < 0 → declining (flat counts as advance per product rule).
+      _kotakMoversCacheTs = 0; // force fresh fetch, not cached intraday snapshot
+      const closingMovers = await fetchKotakNifty50LTPs().catch(() => null) || await fetchYahooNifty50Movers();
+      if (closingMovers?.gainers?.length > 0 || closingMovers?.breadth) {
+        existing.gainers = closingMovers.gainers || [];
+        existing.losers  = closingMovers.losers  || [];
+        if (closingMovers.breadth) {
+          existing.breadth = { nifty50: closingMovers.breadth };
+          console.log(`[close] Kotak breadth: ${closingMovers.breadth.advancing}↑ ${closingMovers.breadth.declining}↓ (${closingMovers.count} stocks)`);
+        } else {
+          console.log('[close] Yahoo closing movers fetched (no breadth):', closingMovers.gainers?.length, 'gainers');
+        }
       }
       await pushMarketToGitHub(existing);
     } catch {}
@@ -1346,7 +1427,9 @@ async function runMarketScraper(force = false) {
     if (!banknifty) banknifty = await fetchKotakIndexLTP('BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
     const sensexFinal = sensex || await fetchKotakIndexLTP('SENSEX')  || await fetchYahooIndex('SENSEX');
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
-    const breadth = n50 ? { advancing: parseInt(n50.advances)||0, declining: parseInt(n50.declines)||0, unchanged: parseInt(n50.unchanged)||0 } : null;
+    // Kotak-derived breadth (change ≥ 0 = advancing) takes priority over NSE API counts
+    const nseBreadth = n50 ? { advancing: parseInt(n50.advances)||0, declining: parseInt(n50.declines)||0, unchanged: parseInt(n50.unchanged)||0 } : null;
+    const breadth = _kotakMoversCache?.breadth || nseBreadth;
     const existing = _latestMarketData || { gainers: [], losers: [], breadth: { nifty50: { advancing: 0, declining: 0, unchanged: 0 } } };
     const day = now.getDay(); // 0=Sun, 6=Sat
     const isWeekday = day >= 1 && day <= 5;
@@ -2797,6 +2880,7 @@ process.on('unhandledRejection', (reason) => {
 
 loadState();
 loadHolidayState();
+loadNifty50Cache();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
 
 // On startup: populate _latestMarketData from GitHub so /market works immediately
@@ -2809,6 +2893,10 @@ setTimeout(async () => {
   if (session.token && session.baseUrl) {
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
+  }
+  // Refresh Nifty 50 symbol list at startup if cache is older than 7 days
+  if (!_nifty50Symbols || Date.now() - _nifty50SymbolsTs > N50_REFRESH_MS) {
+    getNifty50Symbols().catch(() => {}); // non-blocking; runs in background
   }
   if (isMarketHours() && !marketScraperInterval) {
     startMarketScraper();
