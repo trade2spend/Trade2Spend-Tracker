@@ -960,7 +960,7 @@ function buildExpiryDates() {
 
 // Parse active option contracts from recent Supabase trade_alert posts
 async function refreshActiveContracts() {
-  if (Date.now() - _activeContractsTs < 5 * 60 * 1000) return; // refresh every 5 min
+  if (Date.now() - _activeContractsTs < 60 * 1000) return; // refresh every 60s
   _activeContractsTs = Date.now();
   try {
     const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
@@ -2835,6 +2835,21 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
     });
+    return;
+  }
+
+  // Immediate contract refresh — called by admin PWA after posting a new trade alert
+  if (req.method === 'POST' && urlPath === '/refresh-contracts') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') {
+      res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
+      return;
+    }
+    _activeContractsTs = 0; // bypass 60s cache so new contract is picked up immediately
+    await refreshActiveContracts().catch(() => {});
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ ok: true, contracts: _activeContracts.length }));
     return;
   }
 
