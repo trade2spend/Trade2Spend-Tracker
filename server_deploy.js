@@ -2620,7 +2620,7 @@ const server = http.createServer(async (req, res) => {
 
   // Health check — GET /
   if (req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     // loggedIn is true only if session was created TODAY (IST) and within 8h
     // Stale state.json tokens from prior days correctly report false → triggers TOTP prompt
     const _sessionAge = Date.now() - (session.lastLogin || 0);
@@ -2865,6 +2865,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Telegram webhook — POST /
+  // Disconnect Kotak session — POST /logout-kotak
+  if (req.method === 'POST' && urlPath === '/logout-kotak') {
+    session.token     = null;
+    session.sid       = null;
+    session.rid       = null;
+    session.auth      = null;
+    session.lastLogin = 0;
+    await saveState();
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   if (req.method === 'POST') {
     let rawBody = '';
     req.on('data', chunk => { rawBody += chunk.toString(); });
