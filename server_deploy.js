@@ -37,10 +37,10 @@ const GH_REPO        = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker'
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
 
 if (!BOT_TOKEN || !CHAT_ID) {
-  console.error('FATAL: TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be set in .env');
-  process.exit(1);
+  console.warn('WARNING: TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set — Telegram notifications disabled, server starting anyway');
+} else {
+  console.log(`Starting with CHAT_ID=${CHAT_ID}, token=${BOT_TOKEN.slice(0,8)}...`);
 }
-console.log(`Starting with CHAT_ID=${CHAT_ID}, token=${BOT_TOKEN.slice(0,8)}...`);
 
 // ── KNOWLEDGE HUB ─────────────────────────────────────────────────────────────
 const _khRate = new Map(); // IP → { count, reset } for rate limiting
@@ -307,6 +307,7 @@ function ftKotak(url, options = {}, ms = FETCH_TIMEOUT) {
 
 // ── TELEGRAM ──────────────────────────────────────────────────────────────────
 async function tgSend(text, keyboard = null) {
+  if (!BOT_TOKEN || !CHAT_ID) return null;
   const body = { chat_id: CHAT_ID, text, parse_mode: 'HTML' };
   if (keyboard) body.reply_markup = JSON.stringify(keyboard);
   if (body.text.length > 4000) body.text = body.text.slice(0, 4000) + '\n<i>...truncated</i>';
@@ -343,6 +344,7 @@ async function tgAnswer(cbId, text = '') {
 }
 
 async function tgAlert(text) {
+  if (!BOT_TOKEN || !CHAT_ID) return;
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
