@@ -913,6 +913,18 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </button>
   </div>
 
+  <!-- Server Status -->
+  <div class="setup-card" id="server-status-card" style="border-color:var(--blueborder);background:var(--bluebg);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div class="setup-label" style="color:#60a5fa;margin-bottom:0;">🖥 Server Status</div>
+      <button onclick="checkServerStatus()" id="server-status-refresh-btn"
+        style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;border:0.5px solid var(--blueborder);background:transparent;color:#60a5fa;cursor:pointer;font-family:'Space Grotesk',sans-serif;">
+        Refresh
+      </button>
+    </div>
+    <div id="server-status-body" style="font-size:13px;color:var(--muted);">Tap Refresh to check.</div>
+  </div>
+
   <!-- Market Holiday Override -->
   <div class="setup-card" id="market-holiday-card" style="border-color:var(--greenborder);background:var(--greenbg);">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -1383,7 +1395,7 @@ function showTab(t){
   if(t==='history') renderHistory();
   if(t==='trade') loadFollowUpData();
   if(t==='algo') refreshAlgoTab();
-  if(t==='setup') checkKotakStatus();
+  if(t==='setup') { checkKotakStatus(); checkServerStatus(); }
   if(t==='campaign'){if(typeof updateCanvas==='function')updateCanvas();if(typeof updateCaption==='function')updateCaption();}
   if(t==='campaign') updateCampaignPreview();
   if(t==='manage') loadMembers();
@@ -3117,6 +3129,33 @@ async function disconnectKotak() {
   if (loginSec) loginSec.style.display = '';
   if (discBtn)  discBtn.style.display  = 'none';
   showToast('✓ Kotak disconnected');
+}
+
+async function checkServerStatus() {
+  const body = document.getElementById('server-status-body');
+  const btn  = document.getElementById('server-status-refresh-btn');
+  if (!body) return;
+  btn.textContent = 'Checking…'; btn.disabled = true;
+  try {
+    const r = await fetch('https://api.trade2spend.com/debug', { signal: AbortSignal.timeout(6000) });
+    const d = await r.json();
+    const connected  = d.hasToken ? '🟢 Connected' : '🔴 Not connected';
+    const scraper    = d.marketScraperRunning ? '🟢 Running' : '🔴 Stopped';
+    const ltpCount   = d.optionLTPsCount ?? 0;
+    const contracts  = (d.activeContracts || []).join(', ') || 'None';
+    const sessMins   = d.sessionAgeMins != null ? `${d.sessionAgeMins} min ago` : '—';
+    body.innerHTML =
+      `<div style="display:grid;gap:6px;">` +
+      `<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Kotak API</span><span style="font-weight:600;">${connected}</span></div>` +
+      `<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Market Scraper</span><span style="font-weight:600;">${scraper}</span></div>` +
+      `<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Options tracking</span><span style="font-weight:600;">${ltpCount} contracts</span></div>` +
+      `<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Last login</span><span style="font-weight:600;">${sessMins}</span></div>` +
+      `<div style="margin-top:4px;font-size:11px;color:var(--muted);">Active: ${contracts}</div>` +
+      `</div>`;
+  } catch(e) {
+    body.innerHTML = `<span style="color:var(--red);">⚠️ Server unreachable — check if trading bot is running on VM</span>`;
+  }
+  btn.textContent = 'Refresh'; btn.disabled = false;
 }
 
 // ── SETUP ──
