@@ -2995,7 +2995,15 @@ async function connectKotakQuick() {
     });
     const d = await r.json();
     if (d.ok) {
-      await checkKotakStatus();
+      _kotakConnected = true;
+      const hdrDot = document.getElementById('kotak-hdr-dot');
+      const algoDot = document.getElementById('kotak-dot');
+      const algoTxt = document.getElementById('kotak-status-text');
+      const loginSec = document.getElementById('kotak-login-section');
+      if (hdrDot) hdrDot.style.background = '#059669';
+      if (algoDot) algoDot.style.background = '#059669';
+      if (algoTxt) { algoTxt.textContent = '✓ Connected — Live CMP tracking active'; algoTxt.style.color = '#059669'; }
+      if (loginSec) loginSec.style.display = 'none';
       document.getElementById('quick-totp-modal').style.display = 'none';
       showToast('✓ Kotak connected — live CMP active');
       if (_quickTotpCallback) { const cb = _quickTotpCallback; _quickTotpCallback = null; cb(); }
@@ -3028,7 +3036,15 @@ async function connectKotak() {
     const d = await r.json();
     if (d.ok) {
       inp.value = '';
-      await checkKotakStatus();
+      _kotakConnected = true;
+      const hdrDot = document.getElementById('kotak-hdr-dot');
+      const algoDot = document.getElementById('kotak-dot');
+      const algoTxt = document.getElementById('kotak-status-text');
+      const loginSec = document.getElementById('kotak-login-section');
+      if (hdrDot) hdrDot.style.background = '#059669';
+      if (algoDot) algoDot.style.background = '#059669';
+      if (algoTxt) { algoTxt.textContent = '✓ Connected — Live CMP tracking active'; algoTxt.style.color = '#059669'; }
+      if (loginSec) loginSec.style.display = 'none';
       showToast('✓ Kotak connected — live CMP active');
     } else {
       msg.style.color = '#dc2626';
@@ -4700,6 +4716,9 @@ async function confirmPushToMembers(){
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
       body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates' })
     }).catch(() => {});
+    if (pushMsgType === 'trade') {
+      fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
+    }
   } catch(e){
     showToast('Failed: ' + (e.message || 'Check connection'));
   }
