@@ -907,6 +907,10 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
               style="border-color:rgba(5,150,105,0.4);color:#34d399;margin-top:8px;">Connect Kotak</button>
       <div id="kotak-msg" style="font-size:12px;margin-top:6px;display:none;"></div>
     </div>
+    <button id="kotak-disconnect-btn" onclick="disconnectKotak()"
+      style="display:none;margin-top:8px;width:100%;padding:9px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);font-size:13px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif;">
+      Disconnect Kotak
+    </button>
   </div>
 
   <!-- Market Holiday Override -->
@@ -2848,6 +2852,10 @@ function copyMsg(type){
 
 // ── KOTAK CONNECTION ──
 let _kotakConnected = false;
+let _lastKotakLoginMs = 0; // timestamp of last successful login — guards against checkKotakStatus() race
+let _kotakStatusReady = false;
+let _resolveKotakStatus = null;
+const _kotakStatusPromise = new Promise(r => { _resolveKotakStatus = r; });
 let _marketHolidayActive = false;
 const T2S_HOLIDAY_KEY = 't2s_holiday_override';
 
@@ -2922,6 +2930,20 @@ async function checkKotakStatus() {
   const txt = document.getElementById('kotak-status-text');
   const sec = document.getElementById('kotak-login-section');
   if (!dot) return;
+  // If we logged in within the last 60 seconds, skip the network check — avoids
+  // a race where this poll arrives after connectKotak() already set the dot green.
+  const msSinceLogin = Date.now() - _lastKotakLoginMs;
+  if (_kotakConnected && msSinceLogin < 60000) {
+    const hdrDot = document.getElementById('kotak-hdr-dot');
+    dot.style.background = '#059669';
+    txt.textContent = '✓ Connected — Live CMP tracking active';
+    txt.style.color = '#059669';
+    if (sec) sec.style.display = 'none';
+    const discBtnE = document.getElementById('kotak-disconnect-btn');
+    if (discBtnE) discBtnE.style.display = '';
+    if (hdrDot) hdrDot.style.background = '#059669';
+    return;
+  }
   try {
     const r = await fetch('https://api.trade2spend.com/?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
@@ -2931,7 +2953,10 @@ async function checkKotakStatus() {
       saveHolidayToStorage(_marketHolidayActive);
       syncHolidayUI(_marketHolidayActive);
     }
-  } catch { _kotakConnected = false; }
+  } catch {
+    // Network error — only mark as disconnected if we don't have a recent login
+    if (msSinceLogin >= 60000) _kotakConnected = false;
+  }
   const hdrDot = document.getElementById('kotak-hdr-dot');
   if (_kotakConnected) {
     dot.style.background = '#059669';
@@ -2939,13 +2964,18 @@ async function checkKotakStatus() {
     txt.style.color = '#059669';
     if (sec) sec.style.display = 'none';
     if (hdrDot) hdrDot.style.background = '#059669';
+    const discBtnC = document.getElementById('kotak-disconnect-btn');
+    if (discBtnC) discBtnC.style.display = '';
   } else {
     dot.style.background = '#dc2626';
     txt.textContent = 'Not connected — using NSE data until you connect';
     txt.style.color = '#dc2626';
     if (sec) sec.style.display = '';
     if (hdrDot) hdrDot.style.background = '#dc2626';
+    const discBtnD = document.getElementById('kotak-disconnect-btn');
+    if (discBtnD) discBtnD.style.display = 'none';
   }
+  if (!_kotakStatusReady) { _kotakStatusReady = true; _resolveKotakStatus(); }
 }
 
 // ── QUICK TOTP MODAL ──────────────────────────────────────────────────────────
@@ -2996,6 +3026,7 @@ async function connectKotakQuick() {
     const d = await r.json();
     if (d.ok) {
       _kotakConnected = true;
+      _lastKotakLoginMs = Date.now();
       const hdrDot = document.getElementById('kotak-hdr-dot');
       const algoDot = document.getElementById('kotak-dot');
       const algoTxt = document.getElementById('kotak-status-text');
@@ -3004,17 +3035,23 @@ async function connectKotakQuick() {
       if (algoDot) algoDot.style.background = '#059669';
       if (algoTxt) { algoTxt.textContent = '✓ Connected — Live CMP tracking active'; algoTxt.style.color = '#059669'; }
       if (loginSec) loginSec.style.display = 'none';
+      const discBtnQ = document.getElementById('kotak-disconnect-btn');
+      if (discBtnQ) discBtnQ.style.display = '';
       document.getElementById('quick-totp-modal').style.display = 'none';
       showToast('✓ Kotak connected — live CMP active');
       if (_quickTotpCallback) { const cb = _quickTotpCallback; _quickTotpCallback = null; cb(); }
     } else {
-      msg.textContent = d.error || 'Failed — wait for a fresh TOTP and try again';
+      const errMsg = d.error || 'Failed — wait for a fresh TOTP and try again';
+      msg.textContent = errMsg;
       msg.style.color = '#dc2626'; msg.style.display = '';
+      showToast('❌ ' + errMsg);
       btn.disabled = false; btn.textContent = 'Connect →';
     }
   } catch(e) {
-    msg.textContent = 'Connection error — check internet and retry';
+    const errMsg = 'Server unreachable — check if trading bot is running';
+    msg.textContent = errMsg;
     msg.style.color = '#dc2626'; msg.style.display = '';
+    showToast('❌ ' + errMsg);
     btn.disabled = false; btn.textContent = 'Connect →';
   }
 }
@@ -3037,6 +3074,7 @@ async function connectKotak() {
     if (d.ok) {
       inp.value = '';
       _kotakConnected = true;
+      _lastKotakLoginMs = Date.now();
       const hdrDot = document.getElementById('kotak-hdr-dot');
       const algoDot = document.getElementById('kotak-dot');
       const algoTxt = document.getElementById('kotak-status-text');
@@ -3045,18 +3083,40 @@ async function connectKotak() {
       if (algoDot) algoDot.style.background = '#059669';
       if (algoTxt) { algoTxt.textContent = '✓ Connected — Live CMP tracking active'; algoTxt.style.color = '#059669'; }
       if (loginSec) loginSec.style.display = 'none';
+      const discBtnK = document.getElementById('kotak-disconnect-btn');
+      if (discBtnK) discBtnK.style.display = '';
       showToast('✓ Kotak connected — live CMP active');
     } else {
+      const errMsg = d.error || 'Login failed — wait for a fresh TOTP and try again';
       msg.style.color = '#dc2626';
-      msg.textContent = d.error || 'Login failed — wait for a fresh TOTP and try again';
+      msg.textContent = errMsg;
       msg.style.display = '';
+      showToast('❌ ' + errMsg);
     }
   } catch(e) {
+    const errMsg = 'Server unreachable — check if trading bot is running';
     msg.style.color = '#dc2626';
-    msg.textContent = 'Network error: ' + e.message;
+    msg.textContent = errMsg;
     msg.style.display = '';
+    showToast('❌ ' + errMsg);
   }
   btn.disabled = false; btn.textContent = 'Connect Kotak';
+}
+
+async function disconnectKotak() {
+  try { await fetch('https://api.trade2spend.com/logout-kotak', { method: 'POST' }); } catch(e) {}
+  _kotakConnected = false;
+  const hdrDot   = document.getElementById('kotak-hdr-dot');
+  const algoDot  = document.getElementById('kotak-dot');
+  const algoTxt  = document.getElementById('kotak-status-text');
+  const loginSec = document.getElementById('kotak-login-section');
+  const discBtn  = document.getElementById('kotak-disconnect-btn');
+  if (hdrDot)   hdrDot.style.background  = '#dc2626';
+  if (algoDot)  algoDot.style.background = '#dc2626';
+  if (algoTxt)  { algoTxt.textContent = 'Disconnected'; algoTxt.style.color = '#dc2626'; }
+  if (loginSec) loginSec.style.display = '';
+  if (discBtn)  discBtn.style.display  = 'none';
+  showToast('✓ Kotak disconnected');
 }
 
 // ── SETUP ──
@@ -4647,9 +4707,10 @@ async function sbPost(path, body){
 let pushAudience = 'all';
 let pushMsgType  = 'trade';
 
-function openPushModal(type){
+async function openPushModal(type){
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
   if(!msg){ showToast('Generate a message first.'); return; }
+  if (!_kotakStatusReady) await _kotakStatusPromise;
   if (!_kotakConnected && _isDuringMarketHours() && !_totpAskedToday()) {
     _markTotpAsked();
     showQuickTotp(() => _doOpenPushModal(type));
