@@ -1571,7 +1571,11 @@
         if (/\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(loNoFuture)) { r.isFullExit=true; r.type='exit'; }
         if (/fully\s+exit|full\s+exit|position\s+clos|clos.*position|booked?\s+full|100\s*%\s*exit|exiting\s+full|exit\s+all/.test(lo)) { r.isFullExit=true; r.type='exit'; }
         if (/\bfully\s+out\b|trade\s+(?:is\s+)?(?:done|over|closed?)\b|exit(?:ed|ing)\s+(?:all|full(?:y)?|everything)|position\s+(?:done|over|exited?)|\ball\s+(?:closed?|out|done|exited?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
-        if (/exit(?:ed|ing)\s+remaining|remaining\s+(?:exited?|booked?|clos(?:ed|ing)?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
+        if (/exit(?:ed|ing)\s+remaining|remaining\s+(?:exited?|booked?|clos(?:ed|ing)?)/.test(lo)) {
+            // "Exiting remaining with 163 as SL" = trailing SL update, not an actual full exit
+            const _hasSLSuffix = /\d+\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss)\b/.test(lo);
+            if (!_hasSLSuffix) { r.isFullExit=true; r.type='exit'; }
+        }
         // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+")
         if (!r.price) {
             const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
@@ -1618,6 +1622,7 @@
                 /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
                 /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
                 /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i,
+                /(\d+(?:\.\d+)?)\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/i,  // "163 as SL" / "163 as my SL"
                 /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
             ];
             for (const p of slPats) { const m=text.match(p); if(m&&m[1]){ r.slRevised=parseFloat(m[1]); if(!r.exitPct) r.type='sl_update'; break; } }
@@ -2434,6 +2439,10 @@
             if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
         }
         const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies) } : null);
+        // For auto-closed partial exits, show the last known CMP as the exit price (more accurate than SL-weighted avg)
+        const _cumExitDisp = getCumulativeExit(postReplies);
+        const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && latestCmp)
+            ? latestCmp : exitPrice;
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
         if (!fields.instrument) {
@@ -2572,9 +2581,22 @@
         if (isClosed) {
             const lotSize3 = getLotSize(fields.instrument);
             let maxPnlPts3 = null, maxPnlRs3 = null;
-            if (fields.entry && exitPrice) {
-                maxPnlPts3 = Math.round(exitPrice - fields.entry);
-                maxPnlRs3  = Math.abs(maxPnlPts3) * lotSize3;
+            if (fields.entry && _effectiveExitPrice) {
+                const _cumExit3 = getCumulativeExit(postReplies);
+                if (isClosed && _cumExit3 > 0 && _cumExit3 < 100 && latestCmp) {
+                    // Adjusted-entry method: after partial exits, break-even shifts
+                    // adjustedEntry = entry − (banked profit from exits / remaining %)
+                    let _banked = 0;
+                    [...postReplies].reverse().forEach(r => {
+                        const fp = parseFollowUpContent(r.content||'');
+                        if (fp.exitPct && fp.price) _banked += (fp.price - fields.entry) * fp.exitPct;
+                    });
+                    const _adjEntry = fields.entry - _banked / (100 - _cumExit3);
+                    maxPnlPts3 = Math.round(latestCmp - _adjEntry);
+                } else {
+                    maxPnlPts3 = Math.round(_effectiveExitPrice - fields.entry);
+                }
+                maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
             }
             const _loss3 = maxPnlPts3 !== null && maxPnlPts3 < 0;
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
@@ -2601,7 +2623,7 @@
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${exitPrice&&exitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span></div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
                 ${why ? (whyVisible
@@ -2977,6 +2999,7 @@
             btn.disabled = false; btn.textContent = 'Post Alert →';
             fetchTradeAlerts();
             checkAndPromptTotp();
+            fetch(`${VM_BASE}/refresh-contracts?key=T2SMonitor2026`, { method: 'POST' }).catch(() => {});
         } catch(e) {
             alert('Failed to post. Check connection.');
             btn.disabled = false; btn.textContent = 'Post Alert →';
