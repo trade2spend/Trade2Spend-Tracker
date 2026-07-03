@@ -2726,15 +2726,8 @@
                 }
             }
 
-            // Incremental fetch — only new posts since last cache, full fetch on first load
-            const _uc2 = _cLoad('t2s_upd_posts');
-            let posts;
-            if (_uc2 && _uc2.latestTs) {
-                const _np = await sbFetch(`posts?is_deleted=eq.false&sent_at=gt.${encodeURIComponent(_uc2.latestTs)}&order=sent_at.desc&limit=100`, {method:'GET'});
-                posts = _np.length > 0 ? [..._np, ...(_uc2.posts||[])].slice(0,100) : (_uc2.posts||[]);
-            } else {
-                posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
-            }
+            // Always full-fetch so deleted posts never persist in cache
+            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
 
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
@@ -2745,7 +2738,7 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            if (posts.length > 0) _cSave('t2s_upd_posts', {posts, latestTs: posts[0].sent_at||posts[0].created_at});
+            if (posts.length > 0) _cSave('t2s_upd_posts', {posts});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
