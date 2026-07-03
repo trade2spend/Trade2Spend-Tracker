@@ -2669,9 +2669,9 @@ function generateTrade(){
   }
   const btn=document.getElementById('trade-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Polishing...';
-  const tG={Professional:'Formal and precise.',Educational:'Brief, explain key levels.',Casual:'Friendly and conversational.',Humble:'Humble, acknowledge uncertainty.'};
+  const tG={Professional:'Clear and factual. No jargon. Straight to the point.',Educational:'Simple and clear. Explain as if talking to a beginner — no technical terms.',Casual:'Friendly and simple. Like a friend texting.',Humble:'Humble and honest. Acknowledge uncertainty in plain, everyday words.'};
   const ins=document.getElementById('ins').checked;
-  const prompt=`You are a trade message formatter. Your ONLY job is to adjust the tone of the message below. 
+  const prompt=`You are a trade message tone adjuster for a non-SEBI registered trader sharing personal market observations.
 
 STRICT RULES — breaking any of these is NOT allowed:
 - The second line after the header MUST start with exactly "I am" — this is non-negotiable
@@ -2680,6 +2680,12 @@ STRICT RULES — breaking any of these is NOT allowed:
 - Do NOT remove or change "I am" under any circumstance
 - Keep * around comment text for bold
 - Plain text only
+- Use simple English — every word must be understandable by a 12-year-old
+- No financial jargon — avoid words like bullish, bearish, resistance, support, breakout, consolidation, momentum
+- The message must be INFORMATIVE only — it shares what happened or what was personally done
+- The message must NEVER be instructive — never tell anyone what to do, consider, watch, or act on
+- Never use words like: should, consider, must try, look to, watch out, you may, if you, target (unless quoting the original exactly)
+- Do NOT add any buy/sell suggestions, hints, or signals that are not already in the original
 
 ORIGINAL MESSAGE (keep this exact structure):
 ${lastTradeMsg}
@@ -2723,26 +2729,31 @@ function generateGeneral(){
   const btn=document.getElementById('gen-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Generating...';
   const tG={
-    Professional:'Professional, authoritative and clear. Use proper sentences. Fix all grammar. Sound like an expert market analyst.',
-    Humble:'Professional yet humble. Acknowledge uncertainty. Sound like a genuine trader sharing views, not giving advice.',
-    Motivational:'Energising, positive and encouraging. Inspire the community to stay focused and disciplined.',
-    Casual:'Friendly and conversational. Like a knowledgeable friend texting about the market.'
+    Professional:'Clear, factual and simple. No jargon. Sound like someone stating plain facts, not an analyst.',
+    Humble:'Honest and humble. Sound like someone sharing what they personally observed, not giving advice. Plain words only.',
+    Motivational:'Positive and encouraging. Keep it simple and uplifting. No technical terms.',
+    Casual:'Friendly and conversational. Like a friend texting about what they noticed today.'
   };
-  const prompt=`You are a professional stock market community manager for Trade2Spend. 
+  const prompt=`You are helping polish a short Telegram message for a trading community. You are NOT a financial analyst. You must NOT give any financial advice, opinions, or signals of any kind.
 
-Your job is to REWRITE and POLISH the raw message below into a crisp, well-structured Telegram post. Do not just copy it — actually improve it.
+Your ONLY job is to fix grammar and make the message easier to read. Do not change the meaning.
 
 RAW MESSAGE:
 "${input}"
 
 REWRITING RULES:
-- Fix all grammar, spelling and repetition errors
-- Make sentences crisp and clear — remove filler words
-- Restructure if needed for better flow
-- Keep the same meaning and key information — do not add new information
+- Fix grammar, spelling, and repetition errors
+- Use simple English — every sentence must be understandable by a 12-year-old
+- No financial jargon — avoid words like bullish, bearish, resistance, support, breakout, consolidation, momentum, trend. If any appear, replace with plain everyday words
+- The message must be INFORMATIVE only — it shares what happened or what was personally observed
+- The message must NEVER be instructive — never tell the reader what to do, consider, watch, or act on
+- Never use words like: should, consider, must try, look to, watch out, you may, if you, target (unless they are in the original message)
+- Do NOT add opinions, recommendations, buy/sell hints, or signals not present in the original
+- Do NOT change the meaning, context, or facts of the original message
+- Do NOT add new information that was not in the original
 - Max 4-5 lines of actual content
 - Plain text only — no markdown, no asterisks, no bold
-- Sound like a real person, not a robot
+- Sound like a real person sharing a personal observation, not an expert giving analysis
 - Tone: ${genTone} — ${tG[genTone]}
 
 ${useHdr?`START the message with exactly this header (do not change it):\n📊 TRADE2SPEND ${ctx.toUpperCase()}\n━━━━━━━━━━━━━━━━━━\n`:'Do not add any header.'}
