@@ -219,6 +219,7 @@ let _sbTrigAlertedToday  = new Set(); // post IDs where trigger auto-follow-up a
 let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was sent
 let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper-stopped-during-market-hours
 let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
+let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
 
 function loadHolidayState() {
   try {
@@ -1056,7 +1057,18 @@ async function fetchKotakOptionLTPs() {
           _scripMaster[`${c.instrument}-${c.strike}-${c.type}-${c.expiry}`] = respToken;
         }
       }
-    } catch(e) { /* silent — stale data is fine */ }
+    } catch(e) { console.error(`[ltp] ${c.instrument}-${c.strike}-${c.type} fetch error: ${e.message}`); }
+  }
+  // Alert when CMP has been empty for >2 min during market hours (logged to PM2 every 2 min)
+  const _hasLtps = Object.keys(_optionChain).length > 0;
+  if (!_hasLtps && _activeContracts.length > 0 && isMarketHours()) {
+    if (!_ltpZeroSince) _ltpZeroSince = Date.now();
+    const _dryMins = Math.floor((Date.now() - _ltpZeroSince) / 60000);
+    if (_dryMins >= 2 && _dryMins % 2 === 0) {
+      console.error(`[ltp] ALERT: No option LTPs for ${_dryMins} min — sid:${!!session.sid} auth:${!!session.auth} token:${!!session.token}`);
+    }
+  } else {
+    _ltpZeroSince = 0; // reset once LTPs are flowing
   }
 }
 
@@ -2610,55 +2622,22 @@ const server = http.createServer(async (req, res) => {
         }
       } else { ltpTest = { note: 'no scrip master, no active contracts' }; }
     }
-    // Test active contract using the same ftKotak call as fetchKotakOptionLTPs()
-    let activeContractTest = null;
-    if (session.token && session.baseUrl && _activeContracts.length > 0) {
-      const ac = _activeContracts[0];
-      const numTok = getOptionToken(ac.instrument, ac.strike, ac.type, ac.expiry);
-      const tradeSym = numTok ? null : buildTradingSymbol(ac.instrument, ac.strike, ac.type, ac.expiry);
-      const identifier = numTok || tradeSym;
-      const exchSeg = ac.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
-      if (identifier) {
-        try {
-          const testUrl = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${exchSeg}|${identifier}/ltp`;
-          const tr = await ftKotak(testUrl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth } }, 4000);
-          const ttxt = await tr.text();
-          // Also try with Bearer session.token (same as scrip master download — which works)
-          let bearerTest = null;
-          try {
-            const tr2 = await ftKotak(testUrl, { headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth } }, 4000);
-            const ttxt2 = await tr2.text();
-            bearerTest = { status: tr2.status, body: ttxt2.slice(0, 200) };
-          } catch(e) { bearerTest = { error: e.message }; }
-          activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300), bearerTest, hsServerId: session.hsServerId };
-        } catch(e) { activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, error: e.message }; }
-      }
-    }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const debugVars = { tokenOk: !!session.token, sidOk: !!session.sid, authOk: !!session.auth, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
-    // Quick NSE option chain test
-    let nseTest = null;
-    try {
-      if (!_nseCookies) await refreshNSECookies();
-      const nr = await ft('https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY', { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 6000);
-      const ntxt = await nr.text();
-      nseTest = { status: nr.status, bodyLen: ntxt.length, sample: ntxt.slice(0, 150) };
-    } catch(e) { nseTest = { error: e.message }; }
     res.end(JSON.stringify({
       hasToken: !!session.token,
       sessionAgeMins: Math.round((Date.now() - (session.lastLogin||0)) / 60000),
       activeContracts: _activeContracts.map(c => `${c.instrument}-${c.strike}-${c.type}-${c.expiry}`),
       optionLTPsCount: Object.keys(_optionChain).length,
       optionLTPsSample: Object.entries(_optionChain).slice(0,5),
+      ltpDryMins: _ltpZeroSince ? Math.floor((Date.now()-_ltpZeroSince)/60000) : 0,
       activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
       scripMasterSize: Object.keys(_scripMaster).length,
       scripMasterNiftySample: smNiftySample,
       debugVars,
-      nseTest,
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
-      activeContractTest,
       yahooMoversStatus: _yahooMoversStatus
     }));
     return;
