@@ -1036,9 +1036,9 @@ async function fetchKotakOptionLTPs() {
       const _exchSeg = c.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
       const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${_exchSeg}|${identifier}/ltp`;
       const r = await ftKotak(url, {
-        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth }
       }, 3000);
-      if (!r.ok) continue;
+      if (!r.ok) { console.log(`[ltp] ${identifier} ${_exchSeg} status ${r.status}`); continue; }
       const d = await r.json();
       const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp);
       if (ltp > 0) {
@@ -2621,7 +2621,7 @@ const server = http.createServer(async (req, res) => {
       if (identifier) {
         try {
           const testUrl = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${exchSeg}|${identifier}/ltp`;
-          const tr = await ftKotak(testUrl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
+          const tr = await ftKotak(testUrl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth } }, 4000);
           const ttxt = await tr.text();
           activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300) };
         } catch(e) { activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, error: e.message }; }
