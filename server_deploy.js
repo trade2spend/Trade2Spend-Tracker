@@ -2623,7 +2623,14 @@ const server = http.createServer(async (req, res) => {
           const testUrl = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${exchSeg}|${identifier}/ltp`;
           const tr = await ftKotak(testUrl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth } }, 4000);
           const ttxt = await tr.text();
-          activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300) };
+          // Also try with Bearer session.token as Authorization (alternative Kotak auth style)
+          let bearerTest = null;
+          try {
+            const tr2 = await ftKotak(testUrl, { headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token } }, 4000);
+            const ttxt2 = await tr2.text();
+            bearerTest = { status: tr2.status, body: ttxt2.slice(0, 200) };
+          } catch(e) { bearerTest = { error: e.message }; }
+          activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300), bearerTest };
         } catch(e) { activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, error: e.message }; }
       }
     }
