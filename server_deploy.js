@@ -2587,7 +2587,7 @@ const server = http.createServer(async (req, res) => {
       const firstToken = Object.entries(_scripMaster).find(([k,v]) => k.startsWith('NIFTY-'));
       const testKey = firstToken ? firstToken[0] : null;
       const testToken = firstToken ? firstToken[1] : null;
-      const gwBase = DATA_URL;
+      const gwBase = session.baseUrl || DATA_URL;
       if (testToken) {
         try {
           const url = `${gwBase}/script-details/1.0/quotes/neosymbol/nse_fo|${testToken}/ltp`;
@@ -2609,6 +2609,23 @@ const server = http.createServer(async (req, res) => {
           } catch(e) { ltpTest.error = e.message; }
         }
       } else { ltpTest = { note: 'no scrip master, no active contracts' }; }
+    }
+    // Test active contract using the same ftKotak call as fetchKotakOptionLTPs()
+    let activeContractTest = null;
+    if (session.token && session.baseUrl && _activeContracts.length > 0) {
+      const ac = _activeContracts[0];
+      const numTok = getOptionToken(ac.instrument, ac.strike, ac.type, ac.expiry);
+      const tradeSym = numTok ? null : buildTradingSymbol(ac.instrument, ac.strike, ac.type, ac.expiry);
+      const identifier = numTok || tradeSym;
+      const exchSeg = ac.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
+      if (identifier) {
+        try {
+          const testUrl = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${exchSeg}|${identifier}/ltp`;
+          const tr = await ftKotak(testUrl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 4000);
+          const ttxt = await tr.text();
+          activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300) };
+        } catch(e) { activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, error: e.message }; }
+      }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
@@ -2634,6 +2651,7 @@ const server = http.createServer(async (req, res) => {
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
+      activeContractTest,
       yahooMoversStatus: _yahooMoversStatus
     }));
     return;
