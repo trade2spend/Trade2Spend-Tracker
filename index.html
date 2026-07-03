@@ -2708,9 +2708,12 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        const _uc = _cLoad('t2s_upd_posts');
-        if (_uc && _uc.posts && _cachedTier) renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
-        else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
+        const _uc = _cLoad('t2s_upd_posts', 3 * 60 * 1000); // 3-min TTL
+        if (_uc && _uc.posts && _cachedTier) {
+            renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+            return; // cache is fresh and tier known — skip Supabase fetch
+        }
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
         try {
             const memberId = localStorage.getItem('t2s_member_id');
