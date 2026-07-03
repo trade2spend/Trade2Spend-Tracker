@@ -1445,7 +1445,7 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
-                localStorage.removeItem('t2s_upd_posts'); // bust cache so next fetchUpdates() goes to Supabase
+                localStorage.removeItem('t2s_upd_posts_v2'); // bust cache so next fetchUpdates() goes to Supabase
                 const activeTab = document.querySelector('.nav-tab.active, .tab-btn.active')?.dataset?.tab;
                 if (activeTab === 'updates') fetchUpdates();
             } catch(_) {}
@@ -2760,7 +2760,7 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        const _uc = _cLoad('t2s_upd_posts', 30 * 60 * 1000); // 30-min TTL — Realtime handles freshness
+        const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000); // 30-min TTL — Realtime handles freshness
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
             return; // cache is fresh and tier known — skip Supabase fetch
@@ -2793,7 +2793,7 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            if (posts.length > 0) _cSave('t2s_upd_posts', {posts});
+            if (posts.length > 0) _cSave('t2s_upd_posts_v2', {posts});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
