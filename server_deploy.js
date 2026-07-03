@@ -511,6 +511,11 @@ async function loginKotak(totp) {
     try { d2 = JSON.parse(text2); } catch { tgSend(`❌ MPIN non-JSON response`).catch(()=>{}); return false; }
     if (!d2.data?.token) { tgSend(`❌ MPIN failed: ${d2.message || d2.error || 'Unknown'}`).catch(()=>{}); return false; }
 
+    // Capture previous login date BEFORE overwriting session.lastLogin
+    const _prevLoginIST = session.lastLogin
+      ? new Date(new Date(session.lastLogin).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString()
+      : null;
+
     session.token      = d2.data.token;
     session.sid        = d2.data.sid;
     session.rid        = d2.data.rid        || '';
@@ -529,8 +534,12 @@ async function loginKotak(totp) {
       `<i>Market scraper runs automatically 9:15–3:35 IST (no TOTP needed)</i>`
     ).catch(()=>{});
     await saveState();
-    _optionHighs     = {}; // reset highs for new trading day
-    _highPostedToday = false;
+    // Only reset tracked highs on a NEW trading day — same-day re-logins preserve accumulated peaks
+    const _todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+    if (_prevLoginIST !== _todayIST) {
+      _optionHighs     = {};
+      _highPostedToday = false;
+    }
     // Download scrip master in background after login so option tokens are ready
     downloadScripMaster().catch(e => console.error('[scrip] post-login download error:', e.message));
     // Outside market hours: fetch Kotak Nifty50 LTPs to correct yesterday's closing breadth
