@@ -1408,6 +1408,58 @@
         } finally { clearTimeout(timer); }
     }
 
+    // ── SUPABASE REALTIME ─────────────────────────────────────────────────────
+    // Subscribes to postgres_changes on the posts table via WebSocket.
+    // Supabase pushes INSERT/UPDATE/DELETE events to all open member browsers —
+    // no polling needed. Cache is busted on each event so the next fetchUpdates()
+    // hits Supabase fresh. Auto-reconnects after 5s on disconnect.
+    let _rtSocket = null, _rtRef = 0, _rtHeartbeatTimer = null, _rtReconnectTimer = null;
+
+    function initRealtimeSubscription() {
+        if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
+        clearTimeout(_rtReconnectTimer);
+        const wsUrl = SUPABASE_URL.replace('https://', 'wss://') +
+            '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
+        _rtSocket = new WebSocket(wsUrl);
+
+        _rtSocket.onopen = () => {
+            _rtSocket.send(JSON.stringify({
+                topic: 'realtime:*', event: 'phx_join',
+                payload: {
+                    config: {
+                        broadcast: { self: false },
+                        presence: { key: '' },
+                        postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }]
+                    }
+                },
+                ref: String(++_rtRef)
+            }));
+            clearInterval(_rtHeartbeatTimer);
+            _rtHeartbeatTimer = setInterval(() => {
+                if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN)
+                    _rtSocket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++_rtRef) }));
+            }, 30000);
+        };
+
+        _rtSocket.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.event !== 'postgres_changes') return;
+                localStorage.removeItem('t2s_upd_posts'); // bust cache so next fetchUpdates() goes to Supabase
+                const activeTab = document.querySelector('.nav-tab.active, .tab-btn.active')?.dataset?.tab;
+                if (activeTab === 'updates') fetchUpdates();
+            } catch(_) {}
+        };
+
+        _rtSocket.onclose = () => {
+            clearInterval(_rtHeartbeatTimer);
+            _rtSocket = null;
+            _rtReconnectTimer = setTimeout(initRealtimeSubscription, 5000);
+        };
+
+        _rtSocket.onerror = () => { if (_rtSocket) _rtSocket.close(); };
+    }
+
     function formatPostTime(ts) {
         return new Date(ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
     }
@@ -2708,7 +2760,7 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        const _uc = _cLoad('t2s_upd_posts', 3 * 60 * 1000); // 3-min TTL
+        const _uc = _cLoad('t2s_upd_posts', 30 * 60 * 1000); // 30-min TTL — Realtime handles freshness
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
             return; // cache is fresh and tier known — skip Supabase fetch
@@ -2757,6 +2809,7 @@
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id));
+            initRealtimeSubscription();
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
         }
