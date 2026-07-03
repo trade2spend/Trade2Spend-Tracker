@@ -431,7 +431,7 @@
             <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▲ 32 Advancing</span>
             <span style="color:var(--border);">|</span>
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▼ 18 Declining</span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">Kotak Neo · live</span>
+            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">Market Feed</span>
         </div>
         <!-- Alert banner — appears below gainers/losers when a new post is detected -->
         <div id="alert-banner-section">
@@ -875,7 +875,7 @@
         if(!anyIndex) {
             container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
         } else if (!document.getElementById('mcard-src')) {
-            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
+            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Market Feed</div>`;
         }
 
         if(data.breadth && data.breadth.nifty50) {
@@ -885,7 +885,7 @@
             const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            if(noteEl) noteEl.textContent = isOpen ? 'Live data' : 'Data as of 3:35 PM';
+            if(noteEl) noteEl.textContent = isOpen ? 'Market Feed' : 'Market Feed · Closed';
         }
 
         const moversEl = document.getElementById('movers-section');
@@ -895,10 +895,10 @@
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
             document.getElementById('gainers-list').innerHTML = gainers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">Market Feed</div>`;
             document.getElementById('losers-list').innerHTML = losers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">Market Feed</div>`;
         }
 
         if(data.lastUpdated) {
