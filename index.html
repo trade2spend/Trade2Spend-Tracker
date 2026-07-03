@@ -1447,8 +1447,10 @@
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
                 localStorage.removeItem('t2s_upd_posts_v2'); // bust cache so next fetchUpdates() goes to Supabase
-                const activeTab = document.querySelector('.nav-tab.active, .tab-btn.active')?.dataset?.tab;
-                if (activeTab === 'updates') fetchUpdates();
+                const _rtActiveEl = document.querySelector('.tab.active');
+                const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
+                if (_rtTabId === 'updates') fetchUpdates();
+                else if (_rtTabId === 'trades') fetchTradeAlerts();
             } catch(_) {}
         };
 
