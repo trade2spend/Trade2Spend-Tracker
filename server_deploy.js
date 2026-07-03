@@ -1486,6 +1486,7 @@ async function runMarketScraper(force = false) {
     const marketData = {
       marketOpen:  isMarketOpen,
       lastUpdated: new Date().toISOString(),
+      dataSource:  isSessionValid() ? 'broker' : 'nse',
       indices: {
         NIFTY:     nifty     || existing.indices?.NIFTY     || { price: 0, change: 0, changePct: 0 },
         SENSEX:    sensexFinal || existing.indices?.SENSEX    || { price: 0, change: 0, changePct: 0 },
