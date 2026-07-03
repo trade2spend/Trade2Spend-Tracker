@@ -2623,14 +2623,22 @@ const server = http.createServer(async (req, res) => {
           const testUrl = `${session.baseUrl}/script-details/1.0/quotes/neosymbol/${exchSeg}|${identifier}/ltp`;
           const tr = await ftKotak(testUrl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth } }, 4000);
           const ttxt = await tr.text();
-          // Also try with Bearer session.token as Authorization (alternative Kotak auth style)
-          let bearerTest = null;
+          // Also try WITHOUT IPv4 forcing (no family:4) — Python aiohttp doesn't force IPv4
+          let noIpv4Test = null;
           try {
-            const tr2 = await ftKotak(testUrl, { headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token } }, 4000);
-            const ttxt2 = await tr2.text();
-            bearerTest = { status: tr2.status, body: ttxt2.slice(0, 200) };
-          } catch(e) { bearerTest = { error: e.message }; }
-          activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300), bearerTest };
+            const r3 = await new Promise((resolve, reject) => {
+              const u3 = new URL(testUrl);
+              const req3 = https.request({ hostname: u3.hostname, port: 443, path: u3.pathname, method: 'GET',
+                headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth }
+                // no family:4
+              }, (res) => { const ch=[]; res.on('data',c=>ch.push(c)); res.on('end',()=>resolve({status:res.statusCode,body:Buffer.concat(ch).toString().slice(0,200)})); });
+              req3.setTimeout(4000, () => { req3.destroy(); reject(new Error('timeout')); });
+              req3.on('error', reject);
+              req3.end();
+            });
+            noIpv4Test = r3;
+          } catch(e) { noIpv4Test = { error: e.message }; }
+          activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, hasNumToken: !!numTok, status: tr.status, body: ttxt.slice(0, 300), noIpv4Test };
         } catch(e) { activeContractTest = { contract: `${ac.instrument}-${ac.strike}-${ac.type}-${ac.expiry}`, identifier, error: e.message }; }
       }
     }
