@@ -517,9 +517,9 @@ async function loginKotak(totp) {
       : null;
 
     session.token      = d2.data.token;
-    session.sid        = d2.data.sid;
+    session.sid        = d2.data.sid        || d1.data.sid   || '';  // step2 rarely returns sid; fall back to step1 sid
     session.rid        = d2.data.rid        || '';
-    session.auth       = d2.data.auth       || '';
+    session.auth       = d2.data.auth       || d1.data.token || '';  // step1 token is used as Auth header for step2 — valid for FO LTP too
     session.hsServerId = d2.data.hsServerId || d2.data.serverId || d2.data.rid || '';
     // Always use gw-napi — Kotak-assigned URLs (e.g. e21.*) may be unreachable from this VM
     session.baseUrl    = 'https://gw-napi.kotaksecurities.com';
