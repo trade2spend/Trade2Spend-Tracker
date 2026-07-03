@@ -875,7 +875,7 @@
         if(!anyIndex) {
             container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
         } else if (!document.getElementById('mcard-src')) {
-            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Market Feed</div>`;
+            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">${data.dataSource==='broker' ? 'Market Feed' : 'NSE Data'}</div>`;
         }
 
         if(data.breadth && data.breadth.nifty50) {
@@ -885,7 +885,7 @@
             const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            if(noteEl) noteEl.textContent = isOpen ? 'Market Feed' : 'Market Feed · Closed';
+            if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
         }
 
         const moversEl = document.getElementById('movers-section');
@@ -893,12 +893,13 @@
             moversEl.style.display = 'block';
             const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
+            const _srcLabel = data.dataSource==='broker' ? 'Market Feed' : 'NSE Data';
             document.getElementById('gainers-list').innerHTML = gainers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">Market Feed</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_srcLabel}</div>`;
             document.getElementById('losers-list').innerHTML = losers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">Market Feed</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_srcLabel}</div>`;
         }
 
         if(data.lastUpdated) {
