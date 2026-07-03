@@ -885,7 +885,7 @@
             const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            if(noteEl) noteEl.textContent = isOpen ? 'Kotak Neo · live' : 'Kotak Neo · 3:35 PM close';
+            if(noteEl) noteEl.textContent = isOpen ? 'Live data' : 'Data as of 3:35 PM';
         }
 
         const moversEl = document.getElementById('movers-section');
@@ -3763,7 +3763,7 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
                 closeTotpModal();
                 const t = document.createElement('div');
                 t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:10px 20px;border-radius:20px;font-size:0.82rem;font-weight:700;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
-                t.textContent = '✅ Kotak connected — live CMP tracking started';
+                t.textContent = '✅ Live CMP tracking started';
                 document.body.appendChild(t);
                 setTimeout(() => t.remove(), 4000);
             } else {
@@ -3781,7 +3781,7 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
 <div id="totp-modal">
     <div class="totp-box">
         <div class="totp-title">📲 Start Live CMP Tracking</div>
-        <div class="totp-sub">Trade alert is live! Enter your 6-digit Kotak TOTP to start fetching live option prices from Kotak Neo.</div>
+        <div class="totp-sub">Trade alert is live! Enter your 6-digit TOTP to start fetching live option prices.</div>
         <input id="totp-input" class="totp-input" type="text" inputmode="numeric" maxlength="6" placeholder="——————"
                oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
                onkeydown="if(event.key==='Enter')submitTotpFromPwa()">
@@ -3790,7 +3790,7 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             <button class="totp-skip" onclick="closeTotpModal()">Skip</button>
             <button id="totp-submit-btn" class="totp-submit" onclick="submitTotpFromPwa()">Start Tracking →</button>
         </div>
-        <div class="totp-footer">Auto-stops at 3:35 PM IST · Kotak Neo only</div>
+        <div class="totp-footer">Auto-stops at 3:35 PM IST</div>
     </div>
 </div>
 
