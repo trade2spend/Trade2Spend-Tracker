@@ -2635,7 +2635,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
-    const debugVars = { tokenOk: !!session.token, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
+    const debugVars = { tokenOk: !!session.token, sidOk: !!session.sid, authOk: !!session.auth, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
     // Quick NSE option chain test
     let nseTest = null;
     try {
