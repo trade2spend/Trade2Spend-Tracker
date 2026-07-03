@@ -1401,6 +1401,18 @@ async function saveOptionHighsToSupabase() {
   }
 }
 
+function parseNSEIndex(nseData, inst) {
+  if (!nseData) return null;
+  const name = NSE_INDEX_NAMES[inst];
+  const idx  = nseData.data?.find(x => x.indexSymbol === name || x.index === name);
+  if (!idx) return null;
+  return {
+    price:     parseFloat((parseFloat(idx.last || idx.indexValue || 0)).toFixed(2)),
+    change:    parseFloat((parseFloat(idx.variation || idx.change || 0)).toFixed(2)),
+    changePct: parseFloat((parseFloat(idx.percentChange || idx.pChange || 0)).toFixed(2))
+  };
+}
+
 async function runMarketScraper(force = false) {
   const now  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const mins = now.getHours() * 60 + now.getMinutes();
@@ -1451,21 +1463,18 @@ async function runMarketScraper(force = false) {
       fetchNSEOptionChainFallback('NIFTY').catch(()=>{}),
       fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{})
     ]);
-    let [nifty, banknifty] = ['NIFTY', 'BANKNIFTY'].map(inst => {
-      if (!nseData) return null;
-      const name = NSE_INDEX_NAMES[inst];
-      const idx  = nseData.data?.find(x => x.indexSymbol === name || x.index === name);
-      if (!idx) return null;
-      return {
-        price:     parseFloat((parseFloat(idx.last || idx.indexValue || 0)).toFixed(2)),
-        change:    parseFloat((parseFloat(idx.variation || idx.change || 0)).toFixed(2)),
-        changePct: parseFloat((parseFloat(idx.percentChange || idx.pChange || 0)).toFixed(2))
-      };
-    });
-    // Kotak Neo primary (TOTP logged in) → Yahoo Finance fallback when not logged in
-    if (!nifty)     nifty     = await fetchKotakIndexLTP('NIFTY')     || await fetchYahooIndex('NIFTY');
-    if (!banknifty) banknifty = await fetchKotakIndexLTP('BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-    const sensexFinal = sensex || await fetchKotakIndexLTP('SENSEX')  || await fetchYahooIndex('SENSEX');
+    // Kotak session active → Kotak primary for index prices, NSE fallback
+    // Kotak session not active → NSE public website primary, Yahoo last resort
+    let nifty, banknifty, sensexFinal;
+    if (isSessionValid()) {
+      nifty       = await fetchKotakIndexLTP('NIFTY')     || parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
+      banknifty   = await fetchKotakIndexLTP('BANKNIFTY') || parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
+      sensexFinal = await fetchKotakIndexLTP('SENSEX')    || sensex                               || await fetchYahooIndex('SENSEX');
+    } else {
+      nifty       = parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
+      banknifty   = parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
+      sensexFinal = sensex                               || await fetchYahooIndex('SENSEX');
+    }
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     // Kotak-derived breadth (change ≥ 0 = advancing) takes priority over NSE API counts
     const nseBreadth = n50 ? { advancing: parseInt(n50.advances)||0, declining: parseInt(n50.declines)||0, unchanged: parseInt(n50.unchanged)||0 } : null;
