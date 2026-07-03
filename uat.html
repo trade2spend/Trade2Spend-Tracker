@@ -1567,6 +1567,45 @@
         } catch(e) { alert('Failed to delete. Try again.'); }
     }
 
+    // Supabase Realtime WebSocket — instant notification when any post is inserted/updated
+    let _rtSocket = null, _rtRef = 0, _rtHeartbeatTimer = null, _rtReconnectTimer = null;
+    function initRealtimeSubscription() {
+        if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
+        clearTimeout(_rtReconnectTimer);
+        const wsUrl = SUPABASE_URL.replace('https://', 'wss://') +
+            '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
+        _rtSocket = new WebSocket(wsUrl);
+        _rtSocket.onopen = () => {
+            _rtSocket.send(JSON.stringify({
+                topic: 'realtime:*', event: 'phx_join',
+                payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] } },
+                ref: String(++_rtRef)
+            }));
+            clearInterval(_rtHeartbeatTimer);
+            _rtHeartbeatTimer = setInterval(() => {
+                if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN)
+                    _rtSocket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++_rtRef) }));
+            }, 30000);
+        };
+        _rtSocket.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.event !== 'postgres_changes') return;
+                localStorage.removeItem('t2s_upd_posts_v2');
+                const _rtActiveEl = document.querySelector('.tab.active');
+                const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
+                if (_rtTabId === 'updates') fetchUpdates();
+                else if (_rtTabId === 'trades') fetchTradeAlerts();
+            } catch(_) {}
+        };
+        _rtSocket.onclose = () => {
+            clearInterval(_rtHeartbeatTimer);
+            _rtSocket = null;
+            _rtReconnectTimer = setTimeout(initRealtimeSubscription, 5000);
+        };
+        _rtSocket.onerror = () => { if (_rtSocket) _rtSocket.close(); };
+    }
+
     async function markPostRead(postId) {
         const memberId = localStorage.getItem('t2s_member_id');
         if(!memberId) return;
@@ -2112,6 +2151,7 @@
 
         container.innerHTML = html;
         if (_lastOptionLTPs && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
+        initRealtimeSubscription();
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
