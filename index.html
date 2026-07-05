@@ -2037,6 +2037,23 @@
                 sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
                 sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', {method:'GET'})
             ]);
+            // Supplement from GitHub backup if follow-ups are missing from Supabase
+            if (!allFollowUps.length) {
+                try {
+                    const _bk = await fetch('https://raw.githubusercontent.com/Trade2spend/Trade2Spend-Tracker/main/posts_backup.json?t=' + Date.now());
+                    if (_bk.ok) {
+                        const _bd = await _bk.json();
+                        const _bkAll = (_bd.posts || []).filter(p => !p.is_deleted);
+                        const _existIds = new Set(tradeParents.map(p => p.id));
+                        if (!tradeParents.length) {
+                            const _bkParents = _bkAll.filter(p => p.post_type === 'trade_alert' && !p.parent_id && !_existIds.has(p.id));
+                            tradeParents.push(..._bkParents);
+                            _bkParents.forEach(p => _existIds.add(p.id));
+                        }
+                        allFollowUps.push(..._bkAll.filter(p => p.parent_id && !_existIds.has(p.id)));
+                    }
+                } catch(e) {}
+            }
             const replyMap = {};
             allFollowUps.forEach(r => {
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
@@ -2796,6 +2813,18 @@
 
             // Always full-fetch so deleted posts never persist in cache
             const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
+            // Supplement from GitHub backup if Supabase returns no general/market posts
+            if (!posts.some(p => ['general','market_update'].includes(p.post_type))) {
+                try {
+                    const _bk2 = await fetch('https://raw.githubusercontent.com/Trade2spend/Trade2Spend-Tracker/main/posts_backup.json?t=' + Date.now());
+                    if (_bk2.ok) {
+                        const _bd2 = await _bk2.json();
+                        const _existIds2 = new Set(posts.map(p => p.id));
+                        const _bkGeneral = (_bd2.posts || []).filter(p => !p.is_deleted && ['general','market_update'].includes(p.post_type) && !_existIds2.has(p.id));
+                        posts.push(..._bkGeneral);
+                    }
+                } catch(e) {}
+            }
 
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
