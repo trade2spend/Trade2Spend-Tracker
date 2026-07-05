@@ -2634,8 +2634,8 @@
                 </div>
             </div>` : '';
 
-        // not_triggered: compact card (same as free member)
-        if (tradeState3 === 'not_triggered') {
+        // not_triggered: compact card — only when trade is still active (not auto-closed)
+        if (tradeState3 === 'not_triggered' && !isClosed) {
             return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
                 <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
                     <div class="type-box ${typeClass3}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType||'—'}</div>
@@ -2817,7 +2817,7 @@
 
     function renderUpdates(allPosts, memberTier, isAdmin, readMap) {
         const container = document.getElementById('updates-container');
-        const generalTypes = ['market_update','general','trade_alert'];
+        const generalTypes = ['market_update','general'];
 
         if(!allPosts || allPosts.length === 0) {
             container.innerHTML = `<div style="text-align:center;padding:60px 20px;color:#888;"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div>No updates yet. Check back soon!</div>`;
