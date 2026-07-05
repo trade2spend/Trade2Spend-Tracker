@@ -1893,8 +1893,21 @@
                 const lrd = new Date(new Date(reps[0].sent_at||reps[0].created_at).toLocaleString('en-US', tz));
                 if (lrd.toDateString() !== td.toDateString()) return true; // reply from prev day → closed
             }
-            // No replies + posted on a previous calendar day → expired (never triggered)
-            if (reps.length === 0 && postIST.toDateString() !== td.toDateString()) return true;
+            // No replies + posted on a previous calendar day → auto-close ONLY if expiry has passed
+            if (reps.length === 0 && postIST.toDateString() !== td.toDateString()) {
+                const _f = extractTradeAlertFields(post.content || '');
+                if (_f.expiry && _f.instrument && /weekly|current\s*week/i.test(_f.expiry)) {
+                    const _isSensex = (_f.instrument||'').toUpperCase().includes('SENSEX');
+                    const _wDow = _isSensex ? 4 : 2; // NIFTY=Tuesday(2), SENSEX=Thursday(4)
+                    const _base = new Date(post.sent_at || post.created_at);
+                    const _diff = (_wDow - _base.getDay() + 7) % 7;
+                    const _expD = new Date(_base);
+                    _expD.setDate(_base.getDate() + _diff);
+                    _expD.setHours(0, 0, 0, 0); // start of expiry day
+                    if (td < _expD) return false; // expiry day not reached yet → keep active
+                }
+                return true;
+            }
             // Intraday auto-close: trade posted today + market closed (pre-market or post-market) + no overnight hold
             if (postIST.toDateString() === td.toDateString()) {
                 const nowMins = td.getHours() * 60 + td.getMinutes();
