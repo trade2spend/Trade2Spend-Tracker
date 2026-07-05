@@ -1171,7 +1171,7 @@
         const valid = trades.filter(t => t.pnlPts !== null && t.pnlPts !== 0);
         const wins = valid.filter(t => t.isWin).length;
         const losses = valid.filter(t => !t.isWin).length;
-        const total = wins + losses;
+        const total = wins + losses || trades.length;
         const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
         const maxPnlRs = trades.reduce((mx, t) => t.pnlRs !== null ? Math.max(mx, Math.abs(t.pnlRs)) : mx, 0);
         const totalPnlRs = trades.reduce((s, t) => t.pnlRs !== null ? s + t.pnlRs : s, 0);
@@ -2216,7 +2216,7 @@
                         ${_ntBox1}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                     </div>
                     <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
@@ -2285,7 +2285,7 @@
                         ${_ntBox}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName}${strikeStr?' '+strikeStr:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                     </div>
                     <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
@@ -2407,7 +2407,7 @@
                         ${_ntBox25}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${fields.instrument||'Trade'}${fields.strike?' '+fields.strike:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                     </div>
                     <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
@@ -2641,7 +2641,7 @@
                     <div class="type-box ${typeClass3}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType||'—'}</div>
                     <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${fields.instrument}${fields.strike?' '+fields.strike:''}</span>
                     <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                    <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                    <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                 </div>
                 <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
             </div>`;
@@ -2773,8 +2773,11 @@
                 const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status,is_admin`, { method: 'GET' });
                 if(members && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
-                    memberTier = members[0].tier;
+                    memberTier = members[0].tier || localStorage.getItem('t2s_mode') || 'free';
                     isAdmin    = members[0].is_admin === true;
+                } else {
+                    // Supabase returned no rows — fall back to login-time stored mode
+                    memberTier = localStorage.getItem('t2s_mode') || 'free';
                 }
             }
 
