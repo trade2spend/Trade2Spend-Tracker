@@ -2088,12 +2088,6 @@
             });
         const closedPosts = _recentPosts
             .filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]))
-            .filter(p => {
-                // Same T+2 rule as active: hide "not triggered" trades after 2 days
-                const st = getTradeState(p, _pubReplies(p));
-                if (st === 'not_triggered') return Date.now() - new Date(p.sent_at || p.created_at).getTime() < _twoDay;
-                return true;
-            })
             .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
 
         let html = '';
@@ -2820,7 +2814,7 @@
 
     function renderUpdates(allPosts, memberTier, isAdmin, readMap) {
         const container = document.getElementById('updates-container');
-        const generalTypes = ['market_update','general'];
+        const generalTypes = ['market_update','general','trade_alert'];
 
         if(!allPosts || allPosts.length === 0) {
             container.innerHTML = `<div style="text-align:center;padding:60px 20px;color:#888;"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div>No updates yet. Check back soon!</div>`;
