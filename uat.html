@@ -2234,7 +2234,7 @@
             for (const r of pubReplies_s1) {
                 const fp = parseFollowUpContent(r.content||'');
                 if (fp.cmp) { latestCmp1 = fp.cmp; break; }
-                if (fp.price && (fp.type==='cmp_update'||fp.type==='status')) { latestCmp1 = fp.price; break; }
+                if (fp.price && (fp.type==='cmp_update'||fp.type==='status'||fp.type==='exit')) { latestCmp1 = fp.price; break; }
             }
             const cumExit1 = getCumulativeExit(pubReplies_s1);
             const typeBoxS1 = showCP1 && fields.optType
@@ -2351,8 +2351,10 @@
                 slDisplay2 = lockBtn;
             } else if (revisedSL2) {
                 const revNum2 = parseFloat(String(revisedSL2).replace(/[^0-9.]/g,''));
-                if (initialSL2 && initialSL2 > 5000 && revNum2 < 5000) {
-                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
+                const initNum2 = typeof initialSL2 === 'number' ? initialSL2 : 0;
+                const slChanged = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
+                if (slChanged) {
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}${initialSL2>5000?`<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`:''}`;
                 } else {
                     slDisplay2 = revisedSL2;
                     slLabel2 = slLabelFor(revisedSL2);
@@ -2369,7 +2371,7 @@
             for (const r of postReplies) {
                 const fp = parseFollowUpContent(r.content||'');
                 if (fp.cmp) { latestCmp=fp.cmp; break; }
-                if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
+                if (fp.price&&(fp.type==='cmp_update'||fp.type==='status'||fp.type==='exit')) { latestCmp=fp.price; break; }
             }
 
             const cumExit = getCumulativeExit(postReplies);
@@ -2543,7 +2545,7 @@
         for (const r of postReplies) {
             const fp = parseFollowUpContent(r.content||'');
             if (fp.cmp) { latestCmp=fp.cmp; break; }
-            if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
+            if (fp.price&&(fp.type==='cmp_update'||fp.type==='status'||fp.type==='exit')) { latestCmp=fp.price; break; }
         }
         const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies) } : null);
 
