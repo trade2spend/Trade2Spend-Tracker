@@ -2592,8 +2592,8 @@ const server = http.createServer(async (req, res) => {
   // Browser LTP relay — GET /active-contracts-for-ltp?key=...
   // Returns active contracts + session headers so Admin PWA browser can fetch LTPs directly
   if (req.method === 'GET' && urlPath === '/active-contracts-for-ltp') {
-    const k = parsedUrl.query.key;
-    if (k !== 'T2SMonitor2026') { res.writeHead(401); res.end('{}'); return; }
+    const k = new URL('https://x' + req.url).searchParams.get('key');
+    if (k !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     if (!session.token || !_activeContracts.length) {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ contracts: [], reason: session.token ? 'no_contracts' : 'not_logged_in' }));
