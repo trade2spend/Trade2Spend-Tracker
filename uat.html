@@ -2478,8 +2478,9 @@
             let slDisp25 = '—', slLabel25 = 'SL';
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
-                if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
-                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
+                const slChanged25 = initSL25 && (revSL25 === 'Cost (No Loss)' || (rn25 > 0 && Math.round(rn25) !== initSL25));
+                if (slChanged25) {
+                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}${initSL25>5000?`<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`:''}`;
                 } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
             } else if (initSL25) {
                 slDisp25 = `₹${initSL25}`;
@@ -2608,8 +2609,9 @@
         let slDisplay3, slLabel3 = 'SL';
         if (revSL3) {
             const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
-            if (initSL3 && initSL3 > 5000 && revNum3 < 5000) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
+            const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== initSL3));
+            if (slChanged3) {
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}${initSL3>5000?`<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`:''}`;
             } else { slDisplay3 = revSL3; slLabel3 = slLabelFor(revSL3); }
         } else if (initSL3) {
             slDisplay3 = `₹${initSL3}`;
