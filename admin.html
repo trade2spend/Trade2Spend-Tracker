@@ -981,8 +981,13 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
   <div class="setup-card" style="border-color:rgba(5,150,105,0.3);background:rgba(5,150,105,0.04);">
-    <div class="setup-label" style="color:#34d399;">🐙 GitHub Integration</div>
-    <div class="info-text">GitHub token is stored securely on the server — not in the browser. trades.json and market.json are updated via the VM automatically. No action needed here.</div>
+    <div class="setup-label" style="color:#34d399;">🐙 GitHub Backup</div>
+    <div class="info-text" style="margin-bottom:10px;">Every post you send is backed up to GitHub. If Supabase loses data, tap Restore to recover all posts instantly.</div>
+    <div class="field-label" style="margin-bottom:4px;">GitHub Token</div>
+    <input type="password" class="setup-input" id="gh-token-input" placeholder="ghp_...">
+    <button class="setup-btn" onclick="saveGHToken()">Save Token</button>
+    <div class="setup-saved" id="gh-saved">✓ Token saved</div>
+    <button id="restore-backup-btn" onclick="restoreFromBackup()" style="width:100%;margin-top:10px;padding:10px;border-radius:8px;border:1.5px solid rgba(5,150,105,0.4);background:rgba(5,150,105,0.08);color:#059669;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔄 Restore from Backup</button>
   </div>
   <div class="setup-card">
     <div class="setup-label">🔐 App PIN Lock</div>
@@ -1734,6 +1739,9 @@ async function sendFollowUp() {
             body: JSON.stringify(postBody)
         });
         if (!res.ok) throw new Error(await res.text());
+        const _fuData = await res.json().catch(() => []);
+        const _fuPost = Array.isArray(_fuData) ? _fuData[0] : _fuData;
+        if (_fuPost) writeBackup(_fuPost).catch(() => {});
 
         statusEl.style.color = 'var(--green)';
         statusEl.textContent = '✓ Follow-up sent';
@@ -4751,7 +4759,73 @@ async function sbPost(path, body){
     body: JSON.stringify(body)
   });
   const text = await res.text();
+  if (!res.ok) throw new Error(`Save failed (${res.status}): ${text.slice(0, 120)}`);
   return text ? JSON.parse(text) : [];
+}
+
+// ── GITHUB BACKUP ──
+const GH_BACKUP_FILE = 'posts_backup.json';
+
+async function writeBackup(newPost) {
+  const ghToken = localStorage.getItem('tm_gh_token') || '';
+  if (!ghToken) return;
+  try {
+    const api = `https://api.github.com/repos/${GH_REPO}/contents/${GH_BACKUP_FILE}`;
+    const headers = { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json' };
+    const r = await fetch(api, { headers });
+    const j = await r.json();
+    const current = j.content
+      ? JSON.parse(atob(j.content.replace(/\n/g, '')))
+      : { posts: [] };
+    const sha = j.sha || '';
+    if (!current.posts.find(p => p.id === newPost.id)) {
+      current.posts.unshift(newPost);
+    }
+    current.lastUpdated = new Date().toISOString();
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(current, null, 2))));
+    await fetch(api, {
+      method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `backup: ${newPost.post_type||'post'}`, content: encoded, sha, branch: 'main' })
+    });
+  } catch(e) {
+    throw e;
+  }
+}
+
+async function restoreFromBackup() {
+  const ghToken = localStorage.getItem('tm_gh_token') || '';
+  if (!ghToken) { showToast('Set GitHub token in Setup first.'); return; }
+  const btn = document.getElementById('restore-backup-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Restoring...'; }
+  try {
+    const bkUrl = `https://raw.githubusercontent.com/${GH_REPO}/main/${GH_BACKUP_FILE}?t=${Date.now()}`;
+    const r = await fetch(bkUrl);
+    if (!r.ok) { showToast('Backup file not found on GitHub.'); if(btn){btn.disabled=false;btn.textContent='🔄 Restore from Backup';} return; }
+    const backup = await r.json();
+    const backupPosts = backup.posts || [];
+    if (!backupPosts.length) { showToast('Backup is empty — nothing to restore.'); if(btn){btn.disabled=false;btn.textContent='🔄 Restore from Backup';} return; }
+    const sbRes = await fetch(`${SB_URL}/rest/v1/posts?select=id&limit=500`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    const existing = await sbRes.json();
+    const existingIds = new Set(existing.map(p => p.id));
+    const toRestore = backupPosts.filter(p => !existingIds.has(p.id));
+    let restored = 0;
+    for (const post of toRestore) {
+      try {
+        await sbPost('posts', {
+          id: post.id, content: post.content, post_type: post.post_type,
+          audience: post.audience, allow_sharing: post.allow_sharing ?? true,
+          is_deleted: false, sent_at: post.sent_at, parent_id: post.parent_id || null
+        });
+        restored++;
+      } catch(e) { console.warn('Restore skip:', post.id, e.message); }
+    }
+    showToast(restored > 0 ? `✓ Restored ${restored} post${restored>1?'s':''} to Supabase` : '✓ Supabase already up to date');
+  } catch(e) {
+    showToast('Restore failed: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Restore from Backup'; }
 }
 
 let pushAudience = 'all';
@@ -4806,7 +4880,7 @@ async function confirmPushToMembers(){
       const why = whyEl ? whyEl.value.trim() : '';
       if (why) content = msg + '\n[WHY]' + why + '[/WHY]';
     }
-    await sbPost('posts', {
+    const _savedArr = await sbPost('posts', {
       content:       content,
       post_type:     pushMsgType === 'trade' ? 'trade_alert' : 'general',
       audience:      pushAudience,
@@ -4814,6 +4888,8 @@ async function confirmPushToMembers(){
       is_deleted:    false,
       sent_at:       new Date().toISOString()
     });
+    const _savedPost = Array.isArray(_savedArr) ? _savedArr[0] : _savedArr;
+    if (_savedPost) writeBackup(_savedPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
     // Clear Why field after posting
     const whyEl = document.getElementById('trade-why');
     if (whyEl) whyEl.value = '';
@@ -4973,11 +5049,13 @@ async function sendPostsReply(parentId, btn) {
   if(!text||text.length<2){ showToast('Type a follow-up message first.'); return; }
   btn.disabled=true; btn.textContent='Sending...';
   try {
-    await sbPost('posts', {
+    const _fuArr = await sbPost('posts', {
       content: text, post_type: 'follow_up', audience,
       allow_sharing: false, is_deleted: false,
       parent_id: parentId, sent_at: new Date().toISOString()
     });
+    const _fuPost = Array.isArray(_fuArr) ? _fuArr[0] : _fuArr;
+    if (_fuPost) writeBackup(_fuPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
     showToast('✓ Follow-up sent!');
     loadPostsFeed();
   } catch(e) {
