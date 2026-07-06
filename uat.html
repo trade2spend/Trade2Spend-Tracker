@@ -2354,7 +2354,7 @@
                 const initNum2 = typeof initialSL2 === 'number' ? initialSL2 : 0;
                 const slChanged = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
                 if (slChanged) {
-                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}${initialSL2>5000?`<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`:''}`;
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else {
                     slDisplay2 = revisedSL2;
                     slLabel2 = slLabelFor(revisedSL2);
@@ -2480,7 +2480,7 @@
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 const slChanged25 = initSL25 && (revSL25 === 'Cost (No Loss)' || (rn25 > 0 && Math.round(rn25) !== initSL25));
                 if (slChanged25) {
-                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}${initSL25>5000?`<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`:''}`;
+                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
             } else if (initSL25) {
                 slDisp25 = `₹${initSL25}`;
@@ -2611,7 +2611,7 @@
             const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== initSL3));
             if (slChanged3) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}${initSL3>5000?`<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`:''}`;
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
             } else { slDisplay3 = revSL3; slLabel3 = slLabelFor(revSL3); }
         } else if (initSL3) {
             slDisplay3 = `₹${initSL3}`;
