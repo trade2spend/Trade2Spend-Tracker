@@ -2782,6 +2782,84 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── POSTS BACKUP — POST /backup-post ────────────────────────────────────────
+  if (req.method === 'OPTIONS' && urlPath === '/backup-post') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-secret' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/backup-post') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    const secret = req.headers['x-t2s-secret'];
+    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+      res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
+    }
+    if (!GH_TOKEN) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on server' })); return; }
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', async () => {
+      let newPost;
+      try { newPost = JSON.parse(body); } catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' })); return; }
+      try {
+        const api = `https://api.github.com/repos/${GH_REPO}/contents/posts_backup.json`;
+        const hdrs = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+        const r = await ft(api, { headers: hdrs }, 8000);
+        const cur = await r.json();
+        const current = cur.content ? JSON.parse(Buffer.from(cur.content.replace(/\n/g, ''), 'base64').toString()) : { posts: [] };
+        const sha = cur.sha || '';
+        if (!current.posts.find(p => p.id === newPost.id)) current.posts.unshift(newPost);
+        current.lastUpdated = new Date().toISOString();
+        const encoded = Buffer.from(JSON.stringify(current, null, 2)).toString('base64');
+        await ft(api, { method: 'PUT', headers: hdrs, body: JSON.stringify({ message: `backup: ${newPost.post_type||'post'}`, content: encoded, sha, branch: 'main' }) }, 12000);
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    });
+    return;
+  }
+
+  // ── POSTS RESTORE — POST /restore-backup ─────────────────────────────────────
+  if (req.method === 'OPTIONS' && urlPath === '/restore-backup') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-secret' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/restore-backup') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    const secret = req.headers['x-t2s-secret'];
+    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+      res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
+    }
+    if (!GH_TOKEN) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on server' })); return; }
+    req.on('data', () => {});
+    req.on('end', async () => {
+      try {
+        // Fetch backup from GitHub
+        const bkR = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/posts_backup.json?t=${Date.now()}`, {}, 8000);
+        const backup = await bkR.json();
+        const backupPosts = backup.posts || [];
+        if (!backupPosts.length) { res.writeHead(200); res.end(JSON.stringify({ ok: true, restored: 0, message: 'Backup is empty' })); return; }
+        // Fetch existing Supabase post IDs
+        const sbR = await ft(`${SB_URL}/rest/v1/posts?select=id&limit=1000`, { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 8000);
+        const existing = await sbR.json();
+        const existingIds = new Set((existing || []).map(p => p.id));
+        const toRestore = backupPosts.filter(p => !existingIds.has(p.id));
+        let restored = 0;
+        for (const post of toRestore) {
+          try {
+            await fetch(`${SB_URL}/rest/v1/posts`, {
+              method: 'POST',
+              headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+              body: JSON.stringify({ id: post.id, content: post.content, post_type: post.post_type, audience: post.audience, allow_sharing: post.allow_sharing ?? true, is_deleted: false, sent_at: post.sent_at, parent_id: post.parent_id || null })
+            });
+            restored++;
+          } catch(e) { console.warn('[restore] skip', post.id, e.message); }
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, restored, total: backupPosts.length }));
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    });
+    return;
+  }
+
   // TOTP login from PWA — POST /totp-login
   if (req.method === 'POST' && urlPath === '/totp-login') {
     const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
