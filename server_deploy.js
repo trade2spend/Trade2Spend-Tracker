@@ -2608,7 +2608,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({
       contracts,
-      ltpBase: 'https://gw-napi.kotaksecurities.com',
+      ltpBase: DATA_URL,
       headers: { 'Authorization': CONSUMER_KEY, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' }
     }));
     return;
