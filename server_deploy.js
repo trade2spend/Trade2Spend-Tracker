@@ -241,7 +241,7 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       if (data.session) session = { ...session, ...data.session };
-      session.baseUrl = 'https://gw-napi.kotaksecurities.com'; // always override — assigned URLs unreachable from VM
+      session.baseUrl = DATA_URL; // always override — gw-napi dead as of Jul 6, mis.kotaksecurities.com working
       if (data.state)   state   = { ...state,   ...data.state };
       console.log(`State loaded: ${Object.keys(state.trades).length} trades`);
     }
@@ -523,7 +523,7 @@ async function loginKotak(totp) {
     session.auth       = d2.data.auth       || d1.data.token || '';  // step1 token is used as Auth header for step2 — valid for FO LTP too
     session.hsServerId = d2.data.hsServerId || d2.data.serverId || d2.data.rid || '';
     // Always use gw-napi — Kotak-assigned URLs (e.g. e21.*) may be unreachable from this VM
-    session.baseUrl    = 'https://gw-napi.kotaksecurities.com';
+    session.baseUrl    = DATA_URL;
     session.lastLogin  = Date.now();
     state.paperMode    = false;
 
