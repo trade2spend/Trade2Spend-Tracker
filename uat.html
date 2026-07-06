@@ -1765,8 +1765,8 @@
         if (!f.expiry) { const dm=content.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i); if(dm) f.expiry=`${dm[1]} ${dm[2].charAt(0).toUpperCase()+dm[2].slice(1).toLowerCase()} ${dm[3]}`; }
         const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
-        const slm = content.match(/(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
-        if (slm) f.sl = parseFloat(slm[1]);
+        const slm = content.match(/\bsl\b\s*(?:(?:below|above|at|@|₹)\s*)?(\d{2,6}(?:\.\d+)?)|stop[\s-]?loss\s*(?:(?:below|above|at|@|₹)\s*)?(\d{2,6}(?:\.\d+)?)|(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
+        if (slm) { const _sv=parseFloat(slm[1]||slm[2]||slm[3]); if(_sv>0&&!isNaN(_sv)) f.sl=_sv; }
         return f;
     }
 
