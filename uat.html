@@ -2346,6 +2346,7 @@
             // SL display: spot-based → option-price-based with strikethrough
             const initialSL2 = fields.sl;
             const revisedSL2 = getCurrentSL(postReplies);
+            const revisedSL2Display = (revisedSL2 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revisedSL2;
             let slDisplay2, slLabel2 = 'SL';
             if (!showSL && !showCP) {
                 slDisplay2 = lockBtn;
@@ -2354,10 +2355,10 @@
                 const initNum2 = typeof initialSL2 === 'number' ? initialSL2 : 0;
                 const slChanged = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
                 if (slChanged) {
-                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else {
-                    slDisplay2 = revisedSL2;
-                    slLabel2 = slLabelFor(revisedSL2);
+                    slDisplay2 = revisedSL2Display;
+                    slLabel2 = slLabelFor(revisedSL2Display);
                 }
             } else if (initialSL2) {
                 slDisplay2 = `₹${initialSL2}`;
@@ -2475,13 +2476,14 @@
             // SL display with strikethrough
             const initSL25 = fields.sl;
             const revSL25  = getCurrentSL(postReplies);
+            const revSL25Display = (revSL25 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL25;
             let slDisp25 = '—', slLabel25 = 'SL';
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 const slChanged25 = initSL25 && (revSL25 === 'Cost (No Loss)' || (rn25 > 0 && Math.round(rn25) !== initSL25));
                 if (slChanged25) {
-                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
-                } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
+                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+                } else { slDisp25 = revSL25Display; slLabel25 = slLabelFor(revSL25Display); }
             } else if (initSL25) {
                 slDisp25 = `₹${initSL25}`;
                 slLabel25 = slLabelFor(initSL25);
@@ -2606,13 +2608,14 @@
         // SL — same strikethrough logic as free member
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
+        const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
         let slDisplay3, slLabel3 = 'SL';
         if (revSL3) {
             const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== initSL3));
             if (slChanged3) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
-            } else { slDisplay3 = revSL3; slLabel3 = slLabelFor(revSL3); }
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+            } else { slDisplay3 = revSL3Display; slLabel3 = slLabelFor(revSL3Display); }
         } else if (initSL3) {
             slDisplay3 = `₹${initSL3}`;
             slLabel3 = slLabelFor(initSL3);
