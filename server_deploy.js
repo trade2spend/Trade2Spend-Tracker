@@ -2589,6 +2589,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Browser LTP relay — GET /active-contracts-for-ltp?key=...
+  // Returns active contracts + session headers so Admin PWA browser can fetch LTPs directly
+  if (req.method === 'GET' && urlPath === '/active-contracts-for-ltp') {
+    const k = parsedUrl.query.key;
+    if (k !== 'T2SMonitor2026') { res.writeHead(401); res.end('{}'); return; }
+    if (!session.token || !_activeContracts.length) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ contracts: [], reason: session.token ? 'no_contracts' : 'not_logged_in' }));
+      return;
+    }
+    const contracts = _activeContracts.map(c => {
+      const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
+      const tradeSym = numToken ? null : buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
+      const identifier = numToken || tradeSym;
+      return { key: `${c.instrument}-${c.strike}-${c.type}`, exchange: c.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo', identifier };
+    }).filter(c => c.identifier);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({
+      contracts,
+      ltpBase: 'https://gw-napi.kotaksecurities.com',
+      headers: { 'Authorization': CONSUMER_KEY, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' }
+    }));
+    return;
+  }
+
   // Debug — GET /debug
   if (req.method === 'GET' && urlPath === '/debug') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
