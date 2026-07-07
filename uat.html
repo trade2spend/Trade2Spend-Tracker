@@ -1772,7 +1772,7 @@
         // No loss explicit
         if (/no\s+loss\s+(?:possible|now)|can.t\s+lose/i.test(text)) r.noLossPossible=true;
         // CMP mention — allow up to 6 digits to cover option premiums and spot levels
-        const cm = text.match(/cmp\s*[=:]?\s*(\d{2,6}(?:\.\d+)?)/i);
+        const cm = text.match(/cmp\s*[=:]?\s*(?:₹\s*)?(\d{2,6}(?:\.\d+)?)/i);
         if (cm) { const n=parseFloat(cm[1]); if(n>5) r.cmp=n; }
         return r;
     }
