@@ -951,7 +951,8 @@
                 const cardId = `mcard-${idx}`;
                 const existing = document.getElementById(cardId);
                 if (existing) {
-                    existing.querySelector('.market-price').textContent = priceStr;
+                    const mp = existing.querySelector('.market-price');
+                    mp.textContent = priceStr; mp.classList.remove('skel-pulse');
                     const pill = existing.querySelector('.change-pill');
                     if (pill) { pill.className = `change-pill ${pillClass}`; pill.innerHTML = changeStr; }
                     const trend = existing.querySelector('.trend-icon');
