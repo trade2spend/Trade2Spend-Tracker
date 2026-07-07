@@ -1067,14 +1067,10 @@
             const raw = localStorage.getItem('t2s_market_cache');
             if (raw) {
                 const { data, ts } = JSON.parse(raw);
-                const istNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-                const istMidnight = new Date(istNow); istMidnight.setHours(0, 0, 0, 0);
-                const cacheFromToday = ts >= istMidnight.getTime();
-                // Show cache for instant display: today's cache always, or yesterday's if < 24h
-                if (cacheFromToday || Date.now() - ts < 24 * 60 * 60 * 1000) {
-                    cachedData = data;
-                    renderMarketUI(data, { skipLTPs: true });
-                }
+                // Always show any cached data immediately as placeholder (stale-while-revalidate)
+                // Fresh data from VM will arrive in ~1-3s and silently overwrite
+                cachedData = data;
+                renderMarketUI(data, { skipLTPs: true });
             }
         } catch {}
 
