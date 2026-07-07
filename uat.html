@@ -446,15 +446,29 @@
             </div>
         </div>
         <!-- Gainers / Losers -->
-        <div class="movers-section" id="movers-section" style="display:none;">
+        <div class="movers-section" id="movers-section" style="display:block;">
             <div class="movers-grid">
                 <div class="movers-card">
                     <div class="movers-card-title g">▲ Top Gainers</div>
-                    <div id="gainers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
+                    <div id="gainers-list">
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:56px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:48px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:64px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:52px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:60px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:44px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                    </div>
                 </div>
                 <div class="movers-card">
                     <div class="movers-card-title l">▼ Top Losers</div>
-                    <div id="losers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
+                    <div id="losers-list">
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:44px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:60px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:52px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:64px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:48px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:56px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -995,6 +1009,8 @@
             document.getElementById('losers-list').innerHTML = losers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
                 + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+        } else if (moversEl) {
+            moversEl.style.display = 'none';
         }
 
         if(data.lastUpdated) {
