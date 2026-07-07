@@ -1867,7 +1867,7 @@
             }
             if (p.slRevised) u.sl=true;
         }
-        if (cumExit > 0 && u.sl) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
+        if (u.sl) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
         return u;
     }
 
