@@ -94,6 +94,8 @@
         .change-pill { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 5px; font-size: 0.68rem; font-weight: 700; gap: 3px; }
         .change-pill.up { background: var(--green-light); color: #15803d; }
         .change-pill.down { background: var(--red-light); color: #b91c1c; }
+        .skel-pulse { background: linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; color:transparent!important; border-radius:5px; min-height:14px; min-width:40px; }
+        @keyframes t2s-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         /* Gainers / Losers */
         .movers-section { margin-top: 14px; }
         .movers-title { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
@@ -423,7 +425,26 @@
     <!-- MARKETS TAB -->
     <div id="markets" class="content-section active" style="padding-top:10px;">
         <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:0 2px 4px;"></div>
-        <div class="market-grid" id="market-grid-container"></div>
+        <div class="market-grid" id="market-grid-container">
+            <div class="market-card" id="mcard-NIFTY">
+                <div class="market-title">NIFTY</div>
+                <div class="trend-icon skel-pulse"> </div>
+                <div class="market-price skel-pulse"> </div>
+                <div class="change-pill skel-pulse"> </div>
+            </div>
+            <div class="market-card" id="mcard-SENSEX">
+                <div class="market-title">SENSEX</div>
+                <div class="trend-icon skel-pulse"> </div>
+                <div class="market-price skel-pulse"> </div>
+                <div class="change-pill skel-pulse"> </div>
+            </div>
+            <div class="market-card" id="mcard-BANKNIFTY">
+                <div class="market-title">BANK NIFTY</div>
+                <div class="trend-icon skel-pulse"> </div>
+                <div class="market-price skel-pulse"> </div>
+                <div class="change-pill skel-pulse"> </div>
+            </div>
+        </div>
         <!-- Gainers / Losers -->
         <div class="movers-section" id="movers-section" style="display:none;">
             <div class="movers-grid">
@@ -3261,6 +3282,10 @@
             if(Date.now()-lastLogin >= SESSION_24H){
                 showUatLoginMsg(); return;
             }
+        }
+        // Start market data fetch immediately — runs in parallel with auth check below
+        const _mktLoad = fetchMarketData();
+        if(mode !== 'free' && memberId){
             try {
                 const members=await sbFetch(`members?id=eq.${memberId}&select=status`,{method:'GET'});
                 if(!members||!members.length||members[0].status==='disabled'){
@@ -3335,7 +3360,7 @@
                 scheduleMarketRefresh(d);
             }, 5000);
         }
-        fetchMarketData().then(d => scheduleMarketRefresh(d));
+        _mktLoad.then(d => scheduleMarketRefresh(d));
     })();
 
     // ── PWA INSTALL PROMPT ──
