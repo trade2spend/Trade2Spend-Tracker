@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260707-001 | Markets tab: skeleton loading for index cards, gainers/losers, advance-decline bar + stale-while-revalidate cache + parallel market fetch on init -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -110,6 +111,8 @@
         .mover-pct { font-weight: 700; font-size: 0.72rem; }
         .mover-pct.up { color: var(--green); }
         .mover-pct.dn { color: var(--red); }
+        .skel-pulse { background: linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; color:transparent!important; border-radius:5px; min-height:14px; min-width:40px; }
+        @keyframes t2s-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
         /* --- TRADE CARDS --- */
         .trade-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02);}
@@ -411,27 +414,60 @@
     <!-- MARKETS TAB -->
     <div id="markets" class="content-section active" style="padding-top:10px;">
         <div id="market-last-updated" style="font-size:0.68rem;color:#aaa;text-align:right;padding:0 2px 4px;"></div>
-        <div class="market-grid" id="market-grid-container"></div>
+        <div class="market-grid" id="market-grid-container">
+            <div class="market-card" id="mcard-NIFTY">
+                <div class="market-title">NIFTY</div>
+                <div class="trend-icon skel-pulse"> </div>
+                <div class="market-price skel-pulse"> </div>
+                <div class="change-pill skel-pulse"> </div>
+            </div>
+            <div class="market-card" id="mcard-SENSEX">
+                <div class="market-title">SENSEX</div>
+                <div class="trend-icon skel-pulse"> </div>
+                <div class="market-price skel-pulse"> </div>
+                <div class="change-pill skel-pulse"> </div>
+            </div>
+            <div class="market-card" id="mcard-BANKNIFTY">
+                <div class="market-title">BANK NIFTY</div>
+                <div class="trend-icon skel-pulse"> </div>
+                <div class="market-price skel-pulse"> </div>
+                <div class="change-pill skel-pulse"> </div>
+            </div>
+        </div>
         <!-- Gainers / Losers -->
-        <div class="movers-section" id="movers-section" style="display:none;">
+        <div class="movers-section" id="movers-section" style="display:block;">
             <div class="movers-grid">
                 <div class="movers-card">
                     <div class="movers-card-title g">▲ Top Gainers</div>
-                    <div id="gainers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
+                    <div id="gainers-list">
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:56px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:48px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:64px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:52px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:60px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:44px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                    </div>
                 </div>
                 <div class="movers-card">
                     <div class="movers-card-title l">▼ Top Losers</div>
-                    <div id="losers-list"><div style="font-size:0.75rem;color:#aaa;padding:8px 0;">Updating during market hours</div></div>
+                    <div id="losers-list">
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:44px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:60px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:52px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:64px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:48px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                        <div class="mover-row"><span class="mover-name skel-pulse" style="width:56px;display:inline-block;"> </span><span class="mover-pct skel-pulse" style="width:32px;display:inline-block;"> </span></div>
+                    </div>
                 </div>
             </div>
         </div>
         <!-- Advance / Decline bar — Kotak Neo data, derived from Nifty 50 close prices -->
         <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▲ 32 Advancing</span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
             <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';">▼ 18 Declining</span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note">Market Feed</span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
+            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
         <!-- Alert banner — appears below gainers/losers when a new post is detected -->
         <div id="alert-banner-section">
@@ -856,7 +892,8 @@
                 const cardId = `mcard-${idx}`;
                 const existing = document.getElementById(cardId);
                 if (existing) {
-                    existing.querySelector('.market-price').textContent = priceStr;
+                    const mp = existing.querySelector('.market-price');
+                    mp.textContent = priceStr; mp.classList.remove('skel-pulse');
                     const pill = existing.querySelector('.change-pill');
                     if (pill) { pill.className = `change-pill ${pillClass}`; pill.innerHTML = changeStr; }
                     const trend = existing.querySelector('.trend-icon');
@@ -891,6 +928,7 @@
         const moversEl = document.getElementById('movers-section');
         if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
             moversEl.style.display = 'block';
+
             const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
             const _srcLabel = data.dataSource==='broker' ? 'Market Feed' : 'NSE Data';
@@ -900,6 +938,8 @@
             document.getElementById('losers-list').innerHTML = losers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
                 + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_srcLabel}</div>`;
+        } else if (moversEl) {
+            moversEl.style.display = 'none';
         }
 
         if(data.lastUpdated) {
@@ -972,14 +1012,10 @@
             const raw = localStorage.getItem('t2s_market_cache');
             if (raw) {
                 const { data, ts } = JSON.parse(raw);
-                const istNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-                const istMidnight = new Date(istNow); istMidnight.setHours(0, 0, 0, 0);
-                const cacheFromToday = ts >= istMidnight.getTime();
-                // Show cache for instant display: today's cache always, or yesterday's if < 24h
-                if (cacheFromToday || Date.now() - ts < 24 * 60 * 60 * 1000) {
-                    cachedData = data;
-                    renderMarketUI(data, { skipLTPs: true });
-                }
+                // Always show any cached data immediately as placeholder (stale-while-revalidate)
+                // Fresh data from VM will arrive in ~1-3s and silently overwrite
+                cachedData = data;
+                renderMarketUI(data, { skipLTPs: true });
             }
         } catch {}
 
@@ -3259,6 +3295,10 @@
             if(Date.now()-lastLogin >= SESSION_24H){
                 window.location.href='login.html'; return;
             }
+        }
+        // Start market data fetch immediately — runs in parallel with auth check below
+        const _mktLoad = fetchMarketData();
+        if(mode !== 'free' && memberId){
             try {
                 const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin`,{method:'GET'});
                 if(!members||!members.length||members[0].status==='disabled'){
@@ -3334,7 +3374,7 @@
                 scheduleMarketRefresh(d);
             }, 5000);
         }
-        fetchMarketData().then(d => scheduleMarketRefresh(d));
+        _mktLoad.then(d => scheduleMarketRefresh(d));
     })();
 
     // ── PWA INSTALL PROMPT ──
