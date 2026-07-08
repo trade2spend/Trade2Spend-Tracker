@@ -170,60 +170,33 @@ Time stop: Exit all by 3:00 PM IST. No new entries after 2:30 PM. Expiry day: no
 ── AVOID TRADING WHEN ──
 BB in squeeze with weak signals, ADX below 20 (ranging), First candle range > 80 points, VIX above 20, Major news event within 30 minutes
 
-── MANDATORY RESPONSE FORMAT (Section 8) ──
+── RESPONSE FORMAT ──
 
-Use EXACTLY this format. Start directly with **MARKET SNAPSHOT** — no preamble or explanation before it.
+Keep total response under 15 lines. No headers. No sections. No jargon. Write so a 12-year-old understands instantly.
 
-**MARKET SNAPSHOT**
-- Index/Stock: [instrument name and CMP visible on chart]
-- Trend: Bullish / Bearish / Sideways
-- VWAP position: Above / Below / At / Not visible
+LINE 1 — verdict only, start with one of these exact words:
+GO — Buy [CE or PE]: [one short reason, under 8 words]
+WAIT: [one short reason, under 8 words]
+NO TRADE: [one short reason, under 8 words]
 
-**PRIMARY STRATEGY CHECK**
-- EMA 9/21: Crossed bullish / Crossed bearish / Not crossed / Not visible
-- RSI: [value if visible] — Above 60 / Below 40 / Neutral (40–60) / Not visible
-- Range breakout: Confirmed bullish / Confirmed bearish / Not confirmed / Not visible
-- Volume: Above SMA / Below SMA / Not visible
-- BB: Expanding / Squeezing / Neutral / Not visible
+LINES 2–4 — exactly 2 or 3 bullet points starting with •, each under 8 words:
+• [what the main signal is showing]
+• [what confirms or what is missing]
+• [third point only if truly important]
 
-**TIER ASSESSMENT**
-- Result: Tier 1 / Tier 2 / Tier 3 / NO TRADE
-- Signals confirmed: [list which ones]
-- Signals missing: [list which ones]
+IF GO — next 4 lines, trade setup:
+Buy: [ATM strike] [CE/PE]
+Hedge: [strike 100 points OTM] [CE/PE]
+Enter: [plain English entry condition]
+SL: [plain English cut-loss condition]
 
-**TRADE SETUP**
-(If NO TRADE, write: No trade setup — primary signals not confirmed. Skip rest of this section.)
-- Direction: Bullish / Bearish
-- Buy strike: [ATM strike]
-- Sell hedge: [100 points OTM strike]
-- Entry condition: [candle close level or price]
-- SL: Spot sustains [level] for one 15-min candle close
-- Target: 15–20 points net on spread
-- Label: Inside primary strategy — Tier [1/2/3]
+ALWAYS — exactly 1 line for key prices:
+Levels: Support [price] · Resistance [price]
 
-**PATTERN ANALYSIS**
-(Always complete — independent of primary strategy result)
-- Pattern spotted: [name] or None visible
-- Signal: Bullish / Bearish / Neutral
-- Entry condition: [level or candle close]
-- SL: [level]
-- Target: [level]
-- Label: Inside strategy (aligns with primary) / Outside strategy — general signal
+IF a candlestick pattern is clearly visible — 1 line only:
+Pattern: [name] · [Bullish/Bearish]
 
-**DIVERGENCE CHECK**
-- RSI divergence: Bullish divergence / Bearish divergence / None
-- Details: [describe price action vs RSI movement]
-
-**KEY LEVELS**
-- Support: [level]
-- Resistance: [level]
-- First candle high/low: [levels if visible, else Not visible]
-
-**FINAL CALL**
-One of these three — start with the keyword, then one line reason:
-GO — Tier [1/2/3]: [reason]
-WAIT — [specific condition to watch for before entering]
-NO TRADE — [clear reason why no trade is possible right now]`;
+Stop. Do not write anything else. No summary. No disclaimer. No extra lines.`;
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 // gw-napi returns 502 — mis.kotaksecurities.com handles scrip-master + LTP correctly
