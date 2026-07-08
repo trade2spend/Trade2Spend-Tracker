@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260708-003 | server.js: Telegram notification storm fix — removed tgAlert from isSessionValid() (was firing every 5s on expired session), removed self-resetting guard, reset guard on fresh TOTP login
 /**
  * Trade2Spend Algo Bot — server.js v5.0
  * Runs on VM via PM2. No Redis — in-memory state with file backup.
