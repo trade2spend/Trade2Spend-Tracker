@@ -2,6 +2,7 @@
 <!-- DEPLOY: T2S-PROD-20260708-001 | Trade Alert tab: free member unlock fix — SL follow-up on paid-only trade unlocks CE/PE, Expiry, Entry, SL, CMP (previously required 50%+ exit) -->
 <!-- DEPLOY: T2S-PROD-20260708-002 | Trade Alert tab: CMP regex fix — parseFollowUpContent now matches "CMP ₹X" format (₹ symbol was blocking digit match, causing CMP to show — for all members) -->
 <!-- DEPLOY: T2S-PROD-20260709-001 | Trade Alert tab: CMP fallback from root trade alert content — if no follow-up reply has CMP yet, parse CMP from the initial trade alert post content (where Admin PWA embeds "CMP 50"); guard <10000 excludes spot index values; !isClosed guard on Section 3 prevents polluting _effectiveExitPrice for partial exits -->
+<!-- DEPLOY: T2S-PROD-20260709-002 | Trade Alert tab: SL strikethrough fix for free members — Section 1 (free viewer of paid-only active trade) now shows old SL with strikethrough and new SL when SL is updated; Section 2 (free viewer of public active trade) condition broadened from spot→option only (>5000→<5000) to any numeric SL change; both sections handle "Cost (No Loss)" SL type; label changed to "Revised" for clarity. Rollback: revert Section 1 lines 2314-2316 to 3-line block and Section 2 condition back to >5000 check. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2312,8 +2313,15 @@
                 s1RepliesHtml += `</div>`;
             }
             const _slS1Val = getCurrentSL(pubReplies_s1);
-            const _slS1Html = showSL1 ? (_slS1Val || '—') : lockBtn;
-            const _slS1Label = (showSL1 && _slS1Val) ? slLabelFor(_slS1Val) : 'SL';
+            const _slS1Display = (_slS1Val === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : _slS1Val;
+            const _slS1InitSL = fields.sl;
+            const _slS1RevNum = parseFloat(String(_slS1Val||'').replace(/[^0-9.]/g,''));
+            const _slS1Changed = _slS1InitSL && (_slS1Val === 'Cost (No Loss)' || (_slS1RevNum > 0 && Math.round(_slS1RevNum) !== Math.round(_slS1InitSL)));
+            const _slS1HtmlVal = _slS1Changed
+                ? `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${_slS1InitSL}</s> → ${_slS1Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`
+                : (_slS1Display || '—');
+            const _slS1Html = showSL1 ? _slS1HtmlVal : lockBtn;
+            const _slS1Label = (showSL1 && _slS1Display) ? slLabelFor(_slS1Display) : 'SL';
             return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
                 <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
@@ -2377,19 +2385,22 @@
                 ? `<div class="type-box ${typeClass2}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">🔒</div>`;
 
-            // SL display: spot-based → option-price-based with strikethrough
+            // SL display: show strikethrough when SL revised (any numeric change or Cost (No Loss))
             const initialSL2 = fields.sl;
             const revisedSL2 = getCurrentSL(postReplies);
+            const revisedSL2Display = (revisedSL2 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revisedSL2;
             let slDisplay2, slLabel2 = 'SL';
             if (!showSL && !showCP) {
                 slDisplay2 = lockBtn;
             } else if (revisedSL2) {
                 const revNum2 = parseFloat(String(revisedSL2).replace(/[^0-9.]/g,''));
-                if (initialSL2 && initialSL2 > 5000 && revNum2 < 5000) {
-                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
+                const initNum2 = typeof initialSL2 === 'number' ? initialSL2 : 0;
+                const slChanged2 = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
+                if (slChanged2) {
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else {
-                    slDisplay2 = revisedSL2;
-                    slLabel2 = slLabelFor(revisedSL2);
+                    slDisplay2 = revisedSL2Display;
+                    slLabel2 = slLabelFor(revisedSL2Display);
                 }
             } else if (initialSL2) {
                 slDisplay2 = `₹${initialSL2}`;
