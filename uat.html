@@ -379,7 +379,10 @@
 
 <div class="app-container">
     <!-- STICKY HEADER -->
-    <div onclick="restartTour()" style="position:fixed;top:6px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);color:#fff;font-size:0.55rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;padding:3px 12px;border-radius:20px;z-index:9999;white-space:nowrap;cursor:pointer;">UAT · Tap to replay tour</div>
+    <div style="position:fixed;top:6px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;z-index:9999;">
+        <div onclick="restartTour()" style="background:rgba(220,38,38,0.9);color:#fff;font-size:0.55rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;padding:3px 12px;border-radius:20px;white-space:nowrap;cursor:pointer;">UAT · Tap to replay tour</div>
+        <button id="test-cmp-btn" onclick="testDummyCmp()" style="padding:3px 10px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap;">Test CMP</button>
+    </div>
     <div id="header-wrapper" class="sticky-header">
         <div class="header-top">
             <div class="header-brand">
@@ -4031,6 +4034,40 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             errEl.textContent = 'Could not reach server. Check connection.';
             btn.disabled = false; btn.textContent = 'Start Tracking →';
         }
+    }
+
+    // UAT-only: inject dummy LTPs to verify CMP display path works without needing Kotak login or market hours
+    async function testDummyCmp() {
+        const btn = document.getElementById('test-cmp-btn');
+        btn.textContent = 'Testing...';
+        btn.disabled = true;
+        try {
+            const res = await fetch('https://api.trade2spend.com/test-cmp?key=T2SMonitor2026');
+            const data = await res.json();
+            const fakeLTPs = data.optionLTPs || {};
+            // Bypass market-hours gate: temporarily override isMarketClosedNow
+            const _realCheck = window.isMarketClosedNow;
+            window.isMarketClosedNow = () => false;
+            updateTradeCMPs(fakeLTPs);
+            window.isMarketClosedNow = _realCheck;
+            // Check if any trade card CMP elements exist
+            const els = document.querySelectorAll('[data-live-cmp]');
+            if (els.length === 0) {
+                btn.textContent = 'No cards';
+                btn.style.background = '#dc2626';
+            } else {
+                btn.textContent = 'CMP OK';
+                btn.style.background = '#059669';
+            }
+        } catch(e) {
+            btn.textContent = 'VM error';
+            btn.style.background = '#dc2626';
+        }
+        setTimeout(() => {
+            btn.textContent = 'Test CMP';
+            btn.style.background = '#4a2a78';
+            btn.disabled = false;
+        }, 3000);
     }
 </script>
 
