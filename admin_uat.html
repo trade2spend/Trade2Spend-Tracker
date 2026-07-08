@@ -5225,46 +5225,70 @@ async function analyseChart() {
 
 function renderChartAnalysis(text) {
   const out = document.getElementById('chart-results');
-  const parts = text.split(/(?=\*\*[A-Z][A-Z\s\/]+\*\*)/);
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+  if (!lines.length) { out.innerHTML = '<div class="card"><div style="font-size:13px;color:var(--muted);">No response received.</div></div>'; out.style.display='block'; return; }
+
   let html = '';
-  for (const part of parts) {
-    if (!part.trim()) continue;
-    const hm = part.match(/^\*\*([^*]+)\*\*/);
-    if (!hm) { html += `<div class="card"><div style="font-size:13px;line-height:1.7;">${_fmtChart(part)}</div></div>`; continue; }
-    const header = hm[1].trim();
-    const content = part.replace(/^\*\*[^*]+\*\*\n?/, '').trim();
-    let cs = '', hc = 'var(--gold)';
-    if (header === 'FINAL CALL') {
-      if (/^GO\b/i.test(content))       { cs = 'border:1.5px solid var(--greenborder);background:var(--greenbg);'; hc = 'var(--green)'; }
-      else if (/^NO TRADE\b/i.test(content)) { cs = 'border:1.5px solid var(--redborder);background:var(--redbg);'; hc = 'var(--red)'; }
-      else if (/^WAIT\b/i.test(content)) { cs = 'border:1.5px solid var(--goldborder);background:var(--goldbg);'; hc = 'var(--gold)'; }
-    } else if (header === 'TIER ASSESSMENT') {
-      cs = 'border:1.5px solid var(--blueborder);';
-    } else if (header === 'TRADE SETUP') {
-      cs = 'border:1.5px solid var(--goldborder);';
-    }
-    html += `<div class="card" style="${cs}"><div class="card-title" style="color:${hc};"><span class="card-title-dot" style="background:${hc};"></span>${header}</div><div style="font-size:13px;line-height:1.7;color:var(--text);">${_fmtChart(content)}</div></div>`;
+
+  // Line 1 — verdict
+  const verdict = lines[0];
+  let vc='var(--gold)', vbg='var(--goldbg)', vbr='var(--goldborder)', vi='🟡';
+  if (/^GO\b/i.test(verdict))       { vc='var(--green)';  vbg='var(--greenbg)';  vbr='var(--greenborder)'; vi='🟢'; }
+  else if (/^NO TRADE\b/i.test(verdict)) { vc='var(--red)'; vbg='var(--redbg)'; vbr='var(--redborder)'; vi='🔴'; }
+  html += `<div class="card" style="border:2px solid ${vbr};background:${vbg};margin-bottom:10px;padding:14px 14px;">
+    <div style="font-size:17px;font-weight:800;color:${vc};line-height:1.4;">${vi} ${esc(verdict)}</div>
+  </div>`;
+
+  // Bullet points — lines starting with •
+  const bullets = lines.filter(l => l.startsWith('•'));
+  if (bullets.length) {
+    html += `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:13px;line-height:2;color:var(--text);">${bullets.map(b=>`<div>${esc(b)}</div>`).join('')}</div>
+    </div>`;
   }
-  out.innerHTML = html || '<div class="card"><div style="font-size:13px;color:var(--muted);">No structured output returned. Raw response may have formatting issues.</div></div>';
+
+  // Trade setup — lines starting with Buy: Hedge: Enter: SL:
+  const setupLines = lines.filter(l => /^(Buy|Hedge|Enter|SL)\s*:/i.test(l));
+  if (setupLines.length) {
+    const rows = setupLines.map(l => {
+      const colon = l.indexOf(':');
+      const label = l.slice(0, colon).trim();
+      const val = l.slice(colon+1).trim();
+      const highlight = /^(Buy|Hedge)/i.test(label) ? `color:var(--gold);` : '';
+      return `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:46px;padding-top:1px;">${esc(label)}</div>
+        <div style="font-size:13px;font-weight:600;${highlight}color:${/^(Buy|Hedge)/i.test(label)?'var(--gold)':'var(--text)'};">${esc(val)}</div>
+      </div>`;
+    }).join('');
+    html += `<div class="card" style="border:1.5px solid var(--goldborder);margin-bottom:10px;padding:10px 14px;">
+      <div class="card-title" style="margin-bottom:4px;"><span class="card-title-dot"></span>TRADE SETUP</div>${rows}
+    </div>`;
+  }
+
+  // Levels line
+  const lvl = lines.find(l => /^Levels\s*:/i.test(l));
+  if (lvl) {
+    const parts = lvl.replace(/^Levels\s*:/i,'').trim().split('·').map(s=>s.trim());
+    html += `<div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        ${parts.map(p=>`<div style="font-size:13px;color:var(--text);">📍 ${esc(p)}</div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // Pattern line
+  const pat = lines.find(l => /^Pattern\s*:/i.test(l));
+  if (pat) {
+    const patVal = pat.replace(/^Pattern\s*:/i,'').trim();
+    const pc = /bullish/i.test(patVal)?'var(--green)':/bearish/i.test(patVal)?'var(--red)':'var(--muted2)';
+    html += `<div class="card" style="margin-bottom:10px;"><div style="font-size:13px;color:${pc};">🕯️ ${esc(patVal)}</div></div>`;
+  }
+
+  out.innerHTML = html;
   out.style.display = 'block';
 }
 
-function _fmtChart(s) {
-  s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  s = s.replace(/\b(Tier 1)\b/g,'<span style="background:var(--goldbg);color:var(--gold);font-weight:700;padding:1px 6px;border-radius:4px;font-size:11px;">Tier 1</span>');
-  s = s.replace(/\b(Tier 2)\b/g,'<span style="background:var(--bluebg);color:var(--blue);font-weight:700;padding:1px 6px;border-radius:4px;font-size:11px;">Tier 2</span>');
-  s = s.replace(/\b(Tier 3)\b/g,'<span style="background:rgba(156,163,175,0.15);color:var(--muted2);font-weight:700;padding:1px 6px;border-radius:4px;font-size:11px;">Tier 3</span>');
-  s = s.replace(/^(GO\s*—[^\n]*)/gm,'<strong style="color:var(--green);font-size:14px;">$1</strong>');
-  s = s.replace(/^(NO TRADE\s*—[^\n]*)/gm,'<strong style="color:var(--red);font-size:14px;">$1</strong>');
-  s = s.replace(/^(WAIT\s*—[^\n]*)/gm,'<strong style="color:var(--gold);font-size:14px;">$1</strong>');
-  s = s.replace(/\b(Bullish)\b/g,'<span style="color:var(--green);font-weight:600;">$1</span>');
-  s = s.replace(/\b(Bearish)\b/g,'<span style="color:var(--red);font-weight:600;">$1</span>');
-  s = s.replace(/\b(Not visible)\b/gi,'<em style="color:var(--muted);">Not visible</em>');
-  s = s.replace(/\b(NO TRADE)\b/g,'<span style="background:var(--redbg);color:var(--red);font-weight:700;padding:1px 6px;border-radius:4px;font-size:11px;">NO TRADE</span>');
-  s = s.replace(/^-\s+/gm,'• ');
-  s = s.replace(/\n/g,'<br>');
-  return s;
-}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── iOS KEYBOARD: keep fixed topbar visible when virtual keyboard opens ─────
 // On iOS PWA, the visual viewport scrolls when keyboard appears.
