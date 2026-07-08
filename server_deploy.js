@@ -525,6 +525,7 @@ async function loginKotak(totp) {
     // Always use gw-napi — Kotak-assigned URLs (e.g. e21.*) may be unreachable from this VM
     session.baseUrl    = DATA_URL;
     session.lastLogin  = Date.now();
+    _sessionExpiryWarned = false;
     state.paperMode    = false;
 
     tgSend(
@@ -572,9 +573,7 @@ async function loginKotak(totp) {
 function isSessionValid() {
   if (!session.token) return false;
   const age = Date.now() - (session.lastLogin || 0);
-  if (age > SESSION_MAX_AGE_MS)
-    tgAlert(`⚠️ Session ${Math.round(age/3600000)}h old — re-connect via PWA Setup tab.`);
-  return true;
+  return age <= SESSION_MAX_AGE_MS;
 }
 
 // ── SPOT PRICE ────────────────────────────────────────────────────────────────
@@ -1463,7 +1462,6 @@ async function runMarketScraper(force = false) {
     _sessionExpiryWarned = true;
     tgAlert('⚠️ <b>Kotak session expires in ~30 min.</b> Re-enter TOTP now to avoid a CMP gap.').catch(()=>{});
   }
-  if (_sessAge >= SESSION_MAX_AGE_MS) _sessionExpiryWarned = false;
 
   try {
     // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX
