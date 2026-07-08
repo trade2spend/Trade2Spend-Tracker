@@ -389,6 +389,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
   <div class="tabs">
+    <button class="tab" onclick="showTab('chart')">📊 Chart</button>
     <button class="tab on" onclick="showTab('trade')">Trade</button>
     <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
     <button class="tab" onclick="showTab('posts')">📢 Posts</button>
@@ -403,6 +404,62 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 </div>
 
 <div class="app">
+<!-- CHART ANALYSIS TAB — T2S-PROD-20260708-005 -->
+<div id="tab-chart" style="display:none;">
+<div class="page" style="margin-top:12px;">
+
+  <div class="card" style="padding:10px;">
+    <div style="display:flex;gap:6px;">
+      <button id="chart-mode-upload-btn" onclick="switchChartMode('upload')" style="flex:1;padding:9px;border-radius:var(--radius-sm);border:1.5px solid var(--gold);background:var(--goldbg);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📸 Upload Screenshot</button>
+      <button id="chart-mode-paste-btn" onclick="switchChartMode('paste')" style="flex:1;padding:9px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📋 Paste from Claude</button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:7px;text-align:center;">Upload → AI analyses via API (small cost) &nbsp;·&nbsp; Paste → free, uses your Claude App</div>
+  </div>
+
+  <div id="chart-mode-upload">
+    <div class="card">
+      <div class="card-title"><span class="card-title-dot"></span>Chart Screenshot</div>
+      <div id="chart-upload-area" onclick="document.getElementById('chart-file-input').click()" style="border:1.5px dashed var(--border3);border-radius:var(--radius);padding:28px 16px;text-align:center;cursor:pointer;background:var(--bg3);margin-bottom:2px;">
+        <div style="font-size:36px;margin-bottom:8px;">📈</div>
+        <div style="font-size:14px;font-weight:500;color:var(--text);margin-bottom:4px;">Tap to upload chart screenshot</div>
+        <div style="font-size:11px;color:var(--muted);">15-min candle · EMA 9/21 · RSI · Volume preferred</div>
+      </div>
+      <input type="file" id="chart-file-input" accept="image/*" style="display:none" onchange="handleChartUpload(event)">
+      <div id="chart-preview-wrap" style="display:none;margin-top:10px;">
+        <img id="chart-preview-img" style="width:100%;border-radius:var(--radius-sm);margin-bottom:8px;display:block;">
+        <button onclick="clearChartUpload()" style="width:100%;padding:8px;background:var(--redbg);border:0.5px solid var(--redborder);color:var(--red);border-radius:var(--radius-sm);font-size:12px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif;">✕ Clear &amp; Upload Again</button>
+      </div>
+    </div>
+    <button id="chart-analyse-btn" onclick="analyseChart()" disabled style="width:100%;padding:13px;background:var(--gold);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:10px;opacity:0.4;transition:opacity .2s;">🔍 Analyse Chart</button>
+    <div id="chart-loading" style="display:none;">
+      <div class="card" style="text-align:center;padding:28px;">
+        <div style="font-size:28px;margin-bottom:10px;">⏳</div>
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">Analysing with AI…</div>
+        <div style="font-size:12px;color:var(--muted);">Reading indicators · Checking signals · Assessing tier</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="chart-mode-paste" style="display:none;">
+    <div class="card">
+      <div class="card-title"><span class="card-title-dot"></span>Paste Claude App Response</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6;">
+        1. Open claude.ai on your phone or browser<br>
+        2. Upload the chart screenshot there<br>
+        3. Ask: <em style="color:var(--text);">"Analyse this chart using the Trade2Spend strategy"</em><br>
+        4. Copy the full response and paste below
+      </div>
+      <textarea id="chart-paste-input" placeholder="Paste the full Claude response here…" style="width:100%;min-height:160px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:'Space Grotesk',sans-serif;padding:10px;resize:vertical;outline:none;line-height:1.6;" oninput="onPasteInput()"></textarea>
+    </div>
+    <button id="chart-render-btn" onclick="renderPastedAnalysis()" disabled style="width:100%;padding:13px;background:var(--blue);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:10px;opacity:0.4;transition:opacity .2s;">📊 Render Analysis</button>
+  </div>
+
+  <div id="chart-results" style="display:none;"></div>
+
+</div>
+</div>
+<!-- /CHART ANALYSIS TAB -->
+
 <!-- TRADE TAB -->
 <div id="tab-trade">
 <div class="page" style="margin-top:12px;">
@@ -1386,11 +1443,11 @@ function softRefresh() {
 }
 function showTab(t){
   _currentTab = t;
-  ['trade','algo','posts','general','campaign','results','history','setup','membership','manage'].forEach(id=>{
+  ['chart','trade','algo','posts','general','campaign','results','history','setup','membership','manage'].forEach(id=>{
     document.getElementById('tab-'+id).style.display=id===t?'block':'none';
   });
   document.querySelectorAll('.tab').forEach((b,i)=>{
-    b.classList.toggle('on',['trade','algo','posts','general','campaign','results','history','setup','membership','manage'][i]===t);
+    b.classList.toggle('on',['chart','trade','algo','posts','general','campaign','results','history','setup','membership','manage'][i]===t);
   });
   if(t==='posts') loadPostsFeed();
   if(t==='history') renderHistory();
@@ -5068,6 +5125,147 @@ async function triggerA2HS() {
   } else { document.getElementById('a2hs-guide').style.display = 'flex'; }
 }
 document.addEventListener('DOMContentLoaded', function() { initA2HS(); });
+
+// ── CHART ANALYSIS ───────────────────────────────────────────────────────────
+let _chartImageBase64 = null;
+let _chartMediaType = 'image/jpeg';
+let _chartMode = 'upload';
+
+function switchChartMode(mode) {
+  _chartMode = mode;
+  const uploadBtn = document.getElementById('chart-mode-upload-btn');
+  const pasteBtn = document.getElementById('chart-mode-paste-btn');
+  document.getElementById('chart-mode-upload').style.display = mode === 'upload' ? 'block' : 'none';
+  document.getElementById('chart-mode-paste').style.display = mode === 'paste' ? 'block' : 'none';
+  document.getElementById('chart-results').style.display = 'none';
+  document.getElementById('chart-results').innerHTML = '';
+  if (mode === 'upload') {
+    uploadBtn.style.cssText += ';background:var(--goldbg);border-color:var(--gold);color:var(--gold);font-weight:700;';
+    pasteBtn.style.cssText += ';background:transparent;border-color:var(--border2);color:var(--muted2);font-weight:600;';
+  } else {
+    pasteBtn.style.cssText += ';background:var(--bluebg);border-color:var(--blueborder);color:var(--blue);font-weight:700;';
+    uploadBtn.style.cssText += ';background:transparent;border-color:var(--border2);color:var(--muted2);font-weight:600;';
+  }
+}
+
+function handleChartUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { showToast('Image too large (max 5MB). Use a lower-res screenshot.'); event.target.value = ''; return; }
+  _chartMediaType = file.type || 'image/jpeg';
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    _chartImageBase64 = e.target.result.split(',')[1];
+    document.getElementById('chart-preview-img').src = e.target.result;
+    document.getElementById('chart-upload-area').style.display = 'none';
+    document.getElementById('chart-preview-wrap').style.display = 'block';
+    const btn = document.getElementById('chart-analyse-btn');
+    btn.disabled = false; btn.style.opacity = '1';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearChartUpload() {
+  _chartImageBase64 = null; _chartMediaType = 'image/jpeg';
+  document.getElementById('chart-file-input').value = '';
+  document.getElementById('chart-preview-img').src = '';
+  document.getElementById('chart-upload-area').style.display = 'block';
+  document.getElementById('chart-preview-wrap').style.display = 'none';
+  const btn = document.getElementById('chart-analyse-btn');
+  btn.disabled = true; btn.style.opacity = '0.4';
+  document.getElementById('chart-results').style.display = 'none';
+  document.getElementById('chart-results').innerHTML = '';
+  document.getElementById('chart-loading').style.display = 'none';
+}
+
+async function analyseChart() {
+  const secret = localStorage.getItem('t2s_execute_secret') || 'T2SMonitor2026';
+  if (!_chartImageBase64) { showToast('Please upload a chart screenshot first'); return; }
+  const btn = document.getElementById('chart-analyse-btn');
+  const loading = document.getElementById('chart-loading');
+  const results = document.getElementById('chart-results');
+  btn.disabled = true; btn.style.opacity = '0.4';
+  loading.style.display = 'block';
+  results.style.display = 'none'; results.innerHTML = '';
+  try {
+    const res = await fetch('https://api.trade2spend.com/chart-analyse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': secret },
+      body: JSON.stringify({ imageBase64: _chartImageBase64, mediaType: _chartMediaType })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Analysis failed');
+    renderChartAnalysis(data.analysis);
+  } catch(e) {
+    showToast('Analysis error: ' + e.message);
+  } finally {
+    loading.style.display = 'none';
+    btn.disabled = false; btn.style.opacity = '1';
+  }
+}
+
+function onPasteInput() {
+  const val = document.getElementById('chart-paste-input').value.trim();
+  const btn = document.getElementById('chart-render-btn');
+  btn.disabled = !val; btn.style.opacity = val ? '1' : '0.4';
+}
+
+function renderPastedAnalysis() {
+  const text = document.getElementById('chart-paste-input').value.trim();
+  if (!text) return;
+  renderChartAnalysis(text);
+}
+
+function renderChartAnalysis(text) {
+  const out = document.getElementById('chart-results');
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+  if (!lines.length) { out.innerHTML = '<div class="card"><div style="font-size:13px;color:var(--muted);">No response received.</div></div>'; out.style.display='block'; return; }
+  let html = '';
+  const verdict = lines[0];
+  let vc='var(--gold)', vbg='var(--goldbg)', vbr='var(--goldborder)', vi='🟡';
+  if (/^GO\b/i.test(verdict))            { vc='var(--green)'; vbg='var(--greenbg)'; vbr='var(--greenborder)'; vi='🟢'; }
+  else if (/^NO TRADE\b/i.test(verdict)) { vc='var(--red)';   vbg='var(--redbg)';  vbr='var(--redborder)';   vi='🔴'; }
+  html += `<div class="card" style="border:2px solid ${vbr};background:${vbg};margin-bottom:10px;padding:14px;">
+    <div style="font-size:17px;font-weight:800;color:${vc};line-height:1.4;">${vi} ${esc(verdict)}</div>
+  </div>`;
+  const bullets = lines.filter(l => l.startsWith('•'));
+  if (bullets.length) {
+    html += `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:13px;line-height:2;color:var(--text);">${bullets.map(b=>`<div>${esc(b)}</div>`).join('')}</div>
+    </div>`;
+  }
+  const setupLines = lines.filter(l => /^(Buy|Hedge|Enter|SL)\s*:/i.test(l));
+  if (setupLines.length) {
+    const rows = setupLines.map(l => {
+      const colon = l.indexOf(':');
+      const label = l.slice(0, colon).trim();
+      const val = l.slice(colon+1).trim();
+      const isStrike = /^(Buy|Hedge)/i.test(label);
+      return `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:46px;padding-top:1px;">${esc(label)}</div>
+        <div style="font-size:13px;font-weight:600;color:${isStrike?'var(--gold)':'var(--text)'};">${esc(val)}</div>
+      </div>`;
+    }).join('');
+    html += `<div class="card" style="border:1.5px solid var(--goldborder);margin-bottom:10px;padding:10px 14px;">
+      <div class="card-title" style="margin-bottom:4px;"><span class="card-title-dot"></span>TRADE SETUP</div>${rows}
+    </div>`;
+  }
+  const lvl = lines.find(l => /^Levels\s*:/i.test(l));
+  if (lvl) {
+    const parts = lvl.replace(/^Levels\s*:/i,'').trim().split('·').map(s=>s.trim());
+    html += `<div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">${parts.map(p=>`<div style="font-size:13px;color:var(--text);">📍 ${esc(p)}</div>`).join('')}</div>
+    </div>`;
+  }
+  const pat = lines.find(l => /^Pattern\s*:/i.test(l));
+  if (pat) {
+    const patVal = pat.replace(/^Pattern\s*:/i,'').trim();
+    const pc = /bullish/i.test(patVal)?'var(--green)':/bearish/i.test(patVal)?'var(--red)':'var(--muted2)';
+    html += `<div class="card" style="margin-bottom:10px;"><div style="font-size:13px;color:${pc};">🕯️ ${esc(patVal)}</div></div>`;
+  }
+  out.innerHTML = html;
+  out.style.display = 'block';
+}
 
 // ── iOS KEYBOARD: keep fixed topbar visible when virtual keyboard opens ─────
 // On iOS PWA, the visual viewport scrolls when keyboard appears.
