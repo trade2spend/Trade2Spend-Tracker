@@ -1,6 +1,7 @@
 <!-- DEPLOY: T2S-PROD-20260707-001 | Markets tab: skeleton loading for index cards, gainers/losers, advance-decline bar + stale-while-revalidate cache + parallel market fetch on init -->
 <!-- DEPLOY: T2S-PROD-20260708-001 | Trade Alert tab: free member unlock fix — SL follow-up on paid-only trade unlocks CE/PE, Expiry, Entry, SL, CMP (previously required 50%+ exit) -->
 <!-- DEPLOY: T2S-PROD-20260708-002 | Trade Alert tab: CMP regex fix — parseFollowUpContent now matches "CMP ₹X" format (₹ symbol was blocking digit match, causing CMP to show — for all members) -->
+<!-- DEPLOY: T2S-PROD-20260709-001 | Trade Alert tab: CMP fallback from root trade alert content — if no follow-up reply has CMP yet, parse CMP from the initial trade alert post content (where Admin PWA embeds "CMP 50"); guard <10000 excludes spot index values; !isClosed guard on Section 3 prevents polluting _effectiveExitPrice for partial exits -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2268,6 +2269,7 @@
                 if (fp.cmp) { latestCmp1 = fp.cmp; break; }
                 if (fp.price && (fp.type==='cmp_update'||fp.type==='status')) { latestCmp1 = fp.price; break; }
             }
+            if (!latestCmp1) { const _rf1=parseFollowUpContent(post.content||''); if(_rf1.cmp&&_rf1.cmp<10000) latestCmp1=_rf1.cmp; }
             const cumExit1 = getCumulativeExit(pubReplies_s1);
             const typeBoxS1 = showCP1 && fields.optType
                 ? `<div class="type-box ${typeClass_s1}">${fields.optType}</div>`
@@ -2403,6 +2405,7 @@
                 if (fp.cmp) { latestCmp=fp.cmp; break; }
                 if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
             }
+            if (!latestCmp) { const _rf2=parseFollowUpContent(post.content||''); if(_rf2.cmp&&_rf2.cmp<10000) latestCmp=_rf2.cmp; }
 
             const cumExit = getCumulativeExit(postReplies);
             const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : 'Holding 100%';
@@ -2577,6 +2580,7 @@
             if (fp.cmp) { latestCmp=fp.cmp; break; }
             if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
         }
+        if (!latestCmp&&!isClosed) { const _rf3=parseFollowUpContent(post.content||''); if(_rf3.cmp&&_rf3.cmp<10000) latestCmp=_rf3.cmp; }
         const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies) } : null);
         // For auto-closed partial exits, show the last known CMP as the exit price (more accurate than SL-weighted avg)
         const _cumExitDisp = getCumulativeExit(postReplies);
