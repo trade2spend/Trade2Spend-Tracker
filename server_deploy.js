@@ -1,4 +1,5 @@
 // DEPLOY: T2S-PROD-20260708-003 | server.js: Telegram notification storm fix — removed tgAlert from isSessionValid() (was firing every 5s on expired session), removed self-resetting guard, reset guard on fresh TOTP login
+// DEPLOY: T2S-PROD-20260708-004 | server.js: CMP fix — active contracts window 3→7 days (was missing Jul 1-5 trades); LTP HTTP errors now logged (were silent); added /test-cmp (dummy LTP endpoint for UAT testing) and /test-ltp (live Kotak LTP diagnostic per contract)
 /**
  * Trade2Spend Algo Bot — server.js v5.0
  * Runs on VM via PM2. No Redis — in-memory state with file backup.
