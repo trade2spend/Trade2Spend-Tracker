@@ -975,7 +975,7 @@ async function refreshActiveContracts() {
   if (Date.now() - _activeContractsTs < 60 * 1000) return; // refresh every 60s
   _activeContractsTs = Date.now();
   try {
-    const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const r = await ft(
       `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=id,content`,
       { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 8000
@@ -1039,7 +1039,11 @@ async function fetchKotakOptionLTPs() {
       const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth }
       }, 3000);
-      if (!r.ok) { console.log(`[ltp] ${identifier} ${_exchSeg} status ${r.status}`); continue; }
+      if (!r.ok) {
+        const errBody = await r.text().catch(() => '');
+        console.error(`[ltp] HTTP ${r.status} for ${identifier} (${_exchSeg}): ${errBody.slice(0,200)}`);
+        continue;
+      }
       const d = await r.json();
       const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp);
       if (ltp > 0) {
@@ -2611,6 +2615,78 @@ const server = http.createServer(async (req, res) => {
       headers: { 'Authorization': CONSUMER_KEY, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' }
     }));
     return;
+  }
+
+  // Test CMP — GET /test-cmp?key=T2SMonitor2026
+  // Returns dummy optionLTPs so UAT can verify the CMP display path without needing Kotak login
+  if (req.method === 'GET' && urlPath === '/test-cmp') {
+    const parsedUrl = new URL('https://x' + req.url);
+    if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Unauthorized' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({
+      optionLTPs: {
+        'NIFTY-24250-PE': 91.50,
+        'NIFTY-24000-CE': 148.00,
+        'NIFTY-24150-CE': 122.00,
+        'NIFTY-24300-CE': 120.00
+      },
+      note: 'Dummy test data — not real prices'
+    }));
+  }
+
+  // Test LTP — GET /test-ltp?key=T2SMonitor2026&symbol=NIFTY-24250-PE
+  // Runs a real Kotak LTP fetch for one contract and returns full diagnostics
+  if (req.method === 'GET' && urlPath === '/test-ltp') {
+    const parsedUrl = new URL('https://x' + req.url);
+    if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Unauthorized' }));
+    }
+    const sym = parsedUrl.searchParams.get('symbol') || 'NIFTY-24250-PE';
+    const parts = sym.split('-');
+    const instrument = parts[0] || 'NIFTY';
+    const strike = parts[1] || '24250';
+    const optType = parts[2] || 'PE';
+    const exchSeg = instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
+    // Try scrip master token first, then trading symbol fallback
+    const expiry = resolveExpiry('weekly', instrument);
+    const cachedToken = getOptionToken(instrument, strike, optType, expiry);
+    const tradeSym = cachedToken ? null : buildTradingSymbol(instrument, strike, optType, expiry);
+    const identifier = cachedToken || tradeSym || sym;
+    const baseUrl = session.baseUrl || DATA_URL;
+    const url = `${baseUrl}/script-details/1.0/quotes/neosymbol/${exchSeg}|${identifier}/ltp`;
+    const headers = {
+      'Authorization': CONSUMER_KEY,
+      'Content-Type': 'application/json',
+      'neo-fin-key': 'neotradeapi',
+      'Sid': session.sid || '',
+      'Auth': session.auth || ''
+    };
+    let status = 0, body = '', ltp = null;
+    try {
+      const r = await ftKotak(url, { headers }, 8000);
+      status = r.status;
+      body = await r.text();
+      const d = JSON.parse(body);
+      ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp || 'NaN');
+    } catch(e) {
+      body = String(e);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({
+      symbol: sym,
+      identifier,
+      url,
+      status,
+      ltp: isNaN(ltp) ? null : ltp,
+      sid: session.sid ? session.sid.slice(0,8)+'...' : '(empty)',
+      auth: session.auth ? session.auth.slice(0,8)+'...' : '(empty)',
+      baseUrl,
+      responsePreview: body.slice(0, 300)
+    }));
   }
 
   // Debug — GET /debug
