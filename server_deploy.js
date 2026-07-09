@@ -1138,9 +1138,10 @@ async function fetchKotakOptionLTPs() {
   if (!session.token || !session.baseUrl || !_activeContracts.length) return;
   for (const c of _activeContracts) {
     const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
-    // Fallback: trading symbol e.g. "NIFTY19JUN24000CE" — Kotak LTP API accepts both formats
-    const tradeSym = numToken ? null : buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
-    const identifier = numToken || tradeSym;
+    // Always build trading symbol — gw-napi accepts trading symbols but rejects numeric tokens;
+    // DATA_URL (mis) prefers numeric tokens. Use trading symbol when on gw-napi.
+    const tradeSym = buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
+    const identifier = (session.baseUrl !== DATA_URL && tradeSym) ? tradeSym : (numToken || tradeSym);
     if (!identifier) {
       console.log(`[ltp] Cannot build identifier for ${c.instrument}-${c.strike}-${c.type}-${c.expiry}`);
       continue;
