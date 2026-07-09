@@ -2119,12 +2119,20 @@ async function pinInit() {
 
 // ── ADMIN AUTH (TOTP + PIN TWO-LAYER) ─────────────────────────────────────
 async function adminAuthInit() {
+  // Always hide PIN overlay first — it's visible by default in HTML.
+  // pinInit() will re-show it only when TOTP session is already valid.
+  const pinOv = document.getElementById('pin-overlay');
+  if (pinOv) pinOv.classList.add('hidden');
+
   if (sessionStorage.getItem('t2s_admin_authed')) return;
+
   const exp = localStorage.getItem('t2s_admin_session_exp');
   if (exp && Date.now() < parseInt(exp)) {
-    await pinInit();
+    await pinInit(); // TOTP valid — pinInit shows PIN overlay
     return;
   }
+
+  // No TOTP session — show TOTP overlay
   const ov = document.getElementById('totp-overlay');
   if (ov) ov.style.display = 'flex';
   setTimeout(() => document.getElementById('admin-totp-inp')?.focus(), 150);
@@ -2150,6 +2158,8 @@ async function submitAdminTotp() {
       _kotakConnected = true;
       _lastKotakLoginMs = Date.now();
       document.getElementById('totp-overlay').style.display = 'none';
+      const pinOvEl = document.getElementById('pin-overlay');
+      if (pinOvEl) pinOvEl.classList.add('hidden');
       const hdrDot = document.getElementById('kotak-hdr-dot');
       const algoDot = document.getElementById('kotak-dot');
       const algoTxt = document.getElementById('kotak-status-text');
