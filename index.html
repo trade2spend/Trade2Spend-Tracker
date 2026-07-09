@@ -533,6 +533,7 @@
         </div>
         <!-- T2S-PROD-20260709-001: Live CMP from Kotak Neo — pre-market contract load + URL auto-switch (mis↔gw-napi) in server.js; CMP live status chip (admin-only) shows ● Live · HH:MM when Kotak LTPs are flowing -->
         <!-- T2S-PROD-20260709-002: Session High fix — _lastOptionHighs global added; re-applied after card rebuild (no more 30s blink); updateTradeHighs only updates DOM when new high > current (never moves down) -->
+        <!-- T2S-PROD-20260709-003: Auto-close at market end — isTradeFullyClosed() now returns true after 3:30 PM IST if no explicit holding keyword in follow-ups (covers full + partial positions); removed "Holding 100%" label from all 3 card sections -->
         <div id="cmp-live-dot" style="display:none;margin:0 0 8px;padding:4px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;font-size:0.72rem;font-weight:700;color:#15803d;width:fit-content;letter-spacing:0.02em;">● Live CMP</div>
         <div id="trade-alert-container">
             <div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading trade alerts...</div>
@@ -1948,6 +1949,8 @@
         if (!hasHolding) {
             const tz = { timeZone:'Asia/Kolkata' };
             const td = new Date(new Date().toLocaleString('en-US', tz));
+            // After market close (3:30 PM IST), all positions exit — full or partial — unless holding explicitly mentioned
+            if (td.getHours() * 60 + td.getMinutes() >= 15 * 60 + 30) return true;
             const postIST = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US', tz));
             if (reps.length > 0) {
                 const lrd = new Date(new Date(reps[0].sent_at||reps[0].created_at).toLocaleString('en-US', tz));
@@ -2316,7 +2319,7 @@
 
             const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
-            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : 'Holding 100%';
+            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : '';
             const _statePill = _trState==='yet_to_trigger'
                 ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
@@ -2439,7 +2442,7 @@
             if (!latestCmp) { const _rf2=parseFollowUpContent(post.content||''); if(_rf2.cmp&&_rf2.cmp<10000) latestCmp=_rf2.cmp; }
 
             const cumExit = getCumulativeExit(postReplies);
-            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : 'Holding 100%';
+            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : '';
 
             // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
@@ -2823,7 +2826,7 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : '';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
             : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
