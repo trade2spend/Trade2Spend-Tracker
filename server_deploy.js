@@ -327,6 +327,7 @@ let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was 
 let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper-stopped-during-market-hours
 let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
+let _ltpUrlSwitchedAt    = 0;    // timestamp of last baseUrl auto-switch (prevents rapid flip-flop)
 
 function loadHolidayState() {
   try {
@@ -649,8 +650,13 @@ async function loginKotak(totp) {
       _optionHighs     = {};
       _highPostedToday = false;
     }
-    // Download scrip master in background after login so option tokens are ready
-    downloadScripMaster().catch(e => console.error('[scrip] post-login download error:', e.message));
+    // Download scrip master, then immediately load contracts + start LTP interval (don't wait for market open)
+    downloadScripMaster()
+      .then(() => {
+        refreshActiveContracts();  // populate _activeContracts right away
+        startKotakLtpInterval();   // start 5s LTP fetch — safe, has internal guard if already running
+      })
+      .catch(e => console.error('[scrip] post-login download error:', e.message));
     // Outside market hours: fetch Kotak Nifty50 LTPs to correct yesterday's closing breadth
     // (NSE API gave wrong numbers; Kotak LTP at this time = yesterday's close vs prev close)
     if (!isMarketHours()) {
@@ -1167,7 +1173,18 @@ async function fetchKotakOptionLTPs() {
           _scripMaster[`${c.instrument}-${c.strike}-${c.type}-${c.expiry}`] = respToken;
         }
       }
-    } catch(e) { console.error(`[ltp] ${c.instrument}-${c.strike}-${c.type} fetch error: ${e.message}`); }
+    } catch(e) {
+      console.error(`[ltp] ${c.instrument}-${c.strike}-${c.type} fetch error: ${e.message}`);
+      // Network-level failure — auto-switch baseUrl to alternate (mis ↔ gw-napi), max once per 60s
+      if (Date.now() - _ltpUrlSwitchedAt > 60000) {
+        const alt = session.baseUrl === DATA_URL
+          ? 'https://gw-napi.kotaksecurities.com'
+          : DATA_URL;
+        session.baseUrl = alt;
+        _ltpUrlSwitchedAt = Date.now();
+        console.log(`[ltp] Network error — auto-switched baseUrl to ${alt}`);
+      }
+    }
   }
   // Alert when CMP has been empty for >2 min during market hours (logged to PM2 every 2 min)
   const _hasLtps = Object.keys(_optionChain).length > 0;
