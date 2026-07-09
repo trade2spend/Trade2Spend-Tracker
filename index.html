@@ -531,6 +531,8 @@
                 </div>
             </div>
         </div>
+        <!-- T2S-PROD-20260709-001: Live CMP from Kotak Neo — pre-market contract load + URL auto-switch (mis↔gw-napi) in server.js; CMP live status chip (admin-only) shows ● Live · HH:MM when Kotak LTPs are flowing -->
+        <div id="cmp-live-dot" style="display:none;margin:0 0 8px;padding:4px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;font-size:0.72rem;font-weight:700;color:#15803d;width:fit-content;letter-spacing:0.02em;">● Live CMP</div>
         <div id="trade-alert-container">
             <div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading trade alerts...</div>
         </div>
@@ -1007,6 +1009,17 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
+        // Show "● Live · HH:MM" chip (admin only) when Kotak is sending real LTPs
+        if (Object.values(optionLTPs).some(v => v > 0)) {
+            const chip = document.getElementById('cmp-live-dot');
+            if (chip && document.getElementById('admin-trade-compose')?.dataset.isAdmin === 'true') {
+                const timeStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+                chip.textContent = `● Live · ${timeStr}`;
+                chip.style.display = 'block';
+                clearTimeout(window._cmpLiveDotTimer);
+                window._cmpLiveDotTimer = setTimeout(() => { chip.style.display = 'none'; }, 90000);
+            }
+        }
     }
 
     async function fetchMarketData() {
