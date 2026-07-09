@@ -405,17 +405,17 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
   <div class="tabs">
-    <button class="tab" onclick="showTab('chart')">📊 Chart</button>
+    <button class="tab" onclick="showTab('chart')">Analysis</button>
     <button class="tab on" onclick="showTab('trade')">Trade</button>
-    <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
-    <button class="tab" onclick="showTab('posts')">📢 Posts</button>
     <button class="tab" onclick="showTab('general')">General</button>
-    <button class="tab" onclick="showTab('campaign')">Campaign</button>
-    <button class="tab" onclick="showTab('results')">Results</button>
-    <button class="tab" onclick="showTab('history')">History</button>
+    <button class="tab" onclick="showTab('posts')">📢 Posts</button>
+    <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
     <button class="tab" onclick="showTab('setup')">Setup</button>
-    <button class="tab" onclick="showTab('membership')">Cards</button>
     <button class="tab" onclick="showTab('manage')">Manage</button>
+    <button class="tab" onclick="showTab('membership')">Cards</button>
+    <button class="tab" style="display:none;" onclick="showTab('campaign')">Campaign</button>
+    <button class="tab" style="display:none;" onclick="showTab('results')">Results</button>
+    <button class="tab" style="display:none;" onclick="showTab('history')">History</button>
   </div>
 </div>
 
@@ -1485,11 +1485,11 @@ function softRefresh() {
 }
 function showTab(t){
   _currentTab = t;
-  ['chart','trade','algo','posts','general','campaign','results','history','setup','membership','manage'].forEach(id=>{
+  ['chart','trade','general','posts','algo','setup','manage','membership','campaign','results','history'].forEach(id=>{
     document.getElementById('tab-'+id).style.display=id===t?'block':'none';
   });
   document.querySelectorAll('.tab').forEach((b,i)=>{
-    b.classList.toggle('on',['chart','trade','algo','posts','general','campaign','results','history','setup','membership','manage'][i]===t);
+    b.classList.toggle('on',['chart','trade','general','posts','algo','setup','manage','membership','campaign','results','history'][i]===t);
   });
   if(t==='posts') loadPostsFeed();
   if(t==='history') renderHistory();
