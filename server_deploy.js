@@ -327,7 +327,7 @@ let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was 
 let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper-stopped-during-market-hours
 let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
-let _ltpUrlSwitchedAt    = 0;    // timestamp of last baseUrl auto-switch (prevents rapid flip-flop)
+let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
 
 function loadHolidayState() {
   try {
@@ -1167,6 +1167,7 @@ async function fetchKotakOptionLTPs() {
           _latestMarketData.optionLTPs  = { ..._optionChain };
           _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
         }
+        _ltpConsecFailures = 0; // successful fetch — current URL is working, reset failure counter
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
         // Cache returned numeric token to avoid repeated symbol-based lookups
         const respToken = String(d?.data?.[0]?.token || d?.data?.[0]?.scripToken || '').trim();
@@ -1176,14 +1177,15 @@ async function fetchKotakOptionLTPs() {
       }
     } catch(e) {
       console.error(`[ltp] ${c.instrument}-${c.strike}-${c.type} fetch error: ${e.message}`);
-      // Network-level failure — auto-switch baseUrl to alternate (mis ↔ gw-napi), max once per 60s
-      if (Date.now() - _ltpUrlSwitchedAt > 60000) {
+      // Primary/secondary failover — switch URL after 2 consecutive network failures
+      _ltpConsecFailures++;
+      if (_ltpConsecFailures >= 2) {
         const alt = session.baseUrl === DATA_URL
           ? 'https://gw-napi.kotaksecurities.com'
           : DATA_URL;
         session.baseUrl = alt;
-        _ltpUrlSwitchedAt = Date.now();
-        console.log(`[ltp] Network error — auto-switched baseUrl to ${alt}`);
+        _ltpConsecFailures = 0;
+        console.log(`[ltp] 2 consecutive failures — switched to backup: ${alt}`);
       }
     }
   }
