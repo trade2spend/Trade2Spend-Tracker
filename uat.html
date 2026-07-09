@@ -711,7 +711,8 @@
     // --- UI LOGIC ---
     let _tradeRefreshTimer = null;
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
-    let _lastOptionLTPs = null; // latest option LTPs — re-applied after trade card rebuilds
+    let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
+    let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
@@ -1032,7 +1033,7 @@
         }
         // Update live option CMPs on trade cards in-place — skip on cache renders to avoid stale flicker
         if (data.optionLTPs  && !isMarketClosedNow() && !opts.skipLTPs) updateTradeCMPs(data.optionLTPs);
-        if (data.optionHighs && !isMarketClosedNow() && !opts.skipLTPs) updateTradeHighs(data.optionHighs);
+        if (data.optionHighs && !isMarketClosedNow() && !opts.skipLTPs) { _lastOptionHighs = data.optionHighs; updateTradeHighs(data.optionHighs); }
     }
 
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
@@ -1051,7 +1052,11 @@
         document.querySelectorAll('[data-live-high]').forEach(el => {
             const key = el.dataset.liveHigh;
             const high = optionHighs[key];
-            if (high != null && high > 0) el.textContent = `₹${high.toFixed(2)}`;
+            if (high != null && high > 0) {
+                // Only update when new high is strictly greater — session high never moves down
+                const current = parseFloat((el.textContent || '').replace('₹', '')) || 0;
+                if (high > current) el.textContent = `₹${high.toFixed(2)}`;
+            }
         });
     }
 
@@ -2200,7 +2205,8 @@
         }
 
         container.innerHTML = html;
-        if (_lastOptionLTPs && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
+        if (_lastOptionLTPs  && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
+        if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs);
         initRealtimeSubscription();
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
