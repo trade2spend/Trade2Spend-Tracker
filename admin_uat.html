@@ -966,61 +966,66 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <div id="tab-setup" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
-  <!-- Kotak Neo Connection -->
-  <div class="setup-card" id="kotak-card" style="border-color:rgba(5,150,105,0.4);background:rgba(5,150,105,0.05);">
-    <div class="setup-label" style="color:#34d399;">⚡ Kotak Neo — Live CMP</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-      <div id="kotak-dot" style="width:10px;height:10px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .3s;"></div>
-      <div id="kotak-status-text" style="font-size:13px;font-weight:500;color:var(--muted);">Checking…</div>
-    </div>
-    <div id="kotak-login-section">
-      <div class="info-text" style="margin-bottom:8px;">Open your Kotak Securities app → Profile → TOTP → enter the 6-digit code below.</div>
-      <input type="tel" inputmode="numeric" maxlength="6" class="setup-input" id="totp-input"
-             placeholder="6-digit TOTP" style="letter-spacing:6px;font-size:18px;text-align:center;"
-             oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
-             onkeydown="if(event.key==='Enter')connectKotak()">
-      <button class="setup-btn" id="kotak-connect-btn" onclick="connectKotak()"
-              style="border-color:rgba(5,150,105,0.4);color:#34d399;margin-top:8px;">Connect Kotak</button>
-      <div id="kotak-msg" style="font-size:12px;margin-top:6px;display:none;"></div>
-    </div>
-    <button id="kotak-disconnect-btn" onclick="disconnectKotak()"
-      style="display:none;margin-top:8px;width:100%;padding:9px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);font-size:13px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif;">
-      Disconnect Kotak
-    </button>
-  </div>
+  <!-- Row 1: Kotak CMP + Lock App -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
 
-  <!-- Lock App -->
-  <div class="setup-card" style="border-color:rgba(220,38,38,0.3);background:rgba(220,38,38,0.04);">
-    <div class="setup-label" style="color:#dc2626;">🔒 Lock App</div>
-    <div class="info-text" style="margin-bottom:12px;">Clears your current session completely. Next time you open this app it will ask for your Google Authenticator TOTP code (not just PIN).</div>
-    <button onclick="lockAdminApp()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.08);color:#dc2626;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔒 Lock &amp; Require TOTP</button>
-  </div>
-
-  <!-- Server Status -->
-  <div class="setup-card" id="server-status-card" style="border-color:var(--blueborder);background:var(--bluebg);">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-      <div class="setup-label" style="color:#60a5fa;margin-bottom:0;">🖥 Server Status</div>
-      <button onclick="checkServerStatus()" id="server-status-refresh-btn"
-        style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;border:0.5px solid var(--blueborder);background:transparent;color:#60a5fa;cursor:pointer;font-family:'Space Grotesk',sans-serif;">
-        Refresh
+    <div class="setup-card" id="kotak-card" style="border-color:rgba(5,150,105,0.4);background:rgba(5,150,105,0.05);margin-bottom:0;">
+      <div class="setup-label" style="color:#34d399;">⚡ Kotak CMP</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <div id="kotak-dot" style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .3s;"></div>
+        <div id="kotak-status-text" style="font-size:12px;font-weight:500;color:var(--muted);">Checking…</div>
+      </div>
+      <div id="kotak-login-section">
+        <input type="tel" inputmode="numeric" maxlength="6" class="setup-input" id="totp-input"
+               placeholder="6-digit code" style="letter-spacing:4px;font-size:15px;text-align:center;padding:9px;"
+               oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
+               onkeydown="if(event.key==='Enter')connectKotak()">
+        <button class="setup-btn" id="kotak-connect-btn" onclick="connectKotak()"
+                style="border-color:rgba(5,150,105,0.4);color:#34d399;margin-top:6px;font-size:12px;padding:9px;">Connect</button>
+        <div id="kotak-msg" style="font-size:11px;margin-top:4px;display:none;"></div>
+      </div>
+      <button id="kotak-disconnect-btn" onclick="disconnectKotak()"
+        style="display:none;margin-top:6px;width:100%;padding:9px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);font-size:12px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif;">
+        Disconnect
       </button>
     </div>
-    <div id="server-status-body" style="font-size:13px;color:var(--muted);">Tap Refresh to check.</div>
-  </div>
 
-  <!-- Market Holiday Override -->
-  <div class="setup-card" id="market-holiday-card" style="border-color:var(--greenborder);background:var(--greenbg);">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-      <div class="setup-label" style="color:var(--green);margin-bottom:0;">📅 Market Status</div>
-      <div id="market-holiday-chip" style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:var(--greenbg);color:var(--green);border:1px solid var(--greenborder);">AUTO</div>
+    <div class="setup-card" style="border-color:rgba(220,38,38,0.3);background:rgba(220,38,38,0.04);margin-bottom:0;">
+      <div class="setup-label" style="color:#dc2626;">🔒 Lock App</div>
+      <div class="info-text" style="font-size:11px;margin-bottom:10px;line-height:1.4;">Clears session. Next open requires TOTP.</div>
+      <button onclick="lockAdminApp()" style="width:100%;padding:9px;border-radius:8px;border:1.5px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.08);color:#dc2626;font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔒 Lock</button>
     </div>
-    <div class="info-text" style="margin-bottom:10px;">Override when NSE is closed on a weekday (holiday, special session, etc.).</div>
-    <button id="market-holiday-btn" onclick="toggleMarketHoliday()"
-      style="width:100%;padding:11px;border-radius:var(--radius-sm);border:1px solid var(--greenborder);background:transparent;color:var(--green);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">
-      🏖 Mark Today as Holiday (Close Market)
-    </button>
+
   </div>
 
+  <!-- Row 2: Server Status + Market Status -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+
+    <div class="setup-card" id="server-status-card" style="border-color:var(--blueborder);background:var(--bluebg);margin-bottom:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="setup-label" style="color:#60a5fa;margin-bottom:0;">🖥 Server</div>
+        <button onclick="checkServerStatus()" id="server-status-refresh-btn"
+          style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;border:0.5px solid var(--blueborder);background:transparent;color:#60a5fa;cursor:pointer;font-family:'Space Grotesk',sans-serif;">
+          Refresh
+        </button>
+      </div>
+      <div id="server-status-body" style="font-size:12px;color:var(--muted);">Tap Refresh to check.</div>
+    </div>
+
+    <div class="setup-card" id="market-holiday-card" style="border-color:var(--greenborder);background:var(--greenbg);margin-bottom:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div class="setup-label" style="color:var(--green);margin-bottom:0;">📅 Market</div>
+        <div id="market-holiday-chip" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--greenbg);color:var(--green);border:1px solid var(--greenborder);">AUTO</div>
+      </div>
+      <button id="market-holiday-btn" onclick="toggleMarketHoliday()"
+        style="width:100%;padding:9px;border-radius:var(--radius-sm);border:1px solid var(--greenborder);background:transparent;color:var(--green);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">
+        🏖 Mark Holiday
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Telegram Token -->
   <div class="setup-card" style="border-color:var(--goldborder);background:var(--goldbg);">
     <div class="setup-label" style="color:var(--gold);">Telegram Bot Token</div>
     <div class="info-text" style="margin-bottom:8px;">Get from @BotFather → /newbot → add bot as Admin to @trade2spend channel</div>
@@ -1028,6 +1033,8 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <button class="setup-btn" onclick="saveTGKey()">Save Token</button>
     <div class="setup-saved" id="tg-saved">✓ Saved</div>
   </div>
+
+  <!-- Anthropic Key -->
   <div class="setup-card" style="border-color:var(--blueborder);background:var(--bluebg);">
     <div class="setup-label" style="color:#60a5fa;">Anthropic API Key (Claude)</div>
     <div class="info-text" style="margin-bottom:8px;">For AI message polishing using Claude. Get from console.anthropic.com → API Keys</div>
@@ -1035,39 +1042,45 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <button class="setup-btn" style="border-color:var(--blueborder);color:#60a5fa;" onclick="saveAPIKey()">Save Claude Key</button>
     <div class="setup-saved" id="api-saved">✓ Saved</div>
   </div>
-  <div class="setup-card" style="border-color:var(--redborder);">
-    <div class="setup-label" style="color:var(--red);margin-bottom:10px;">API Rate Limiter</div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text);" id="rate-limit-display">0 / 50 calls used today</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Resets automatically at midnight</div>
+
+  <!-- Row 5: Rate Limiter + Paper Trade -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+
+    <div class="setup-card" style="border-color:var(--redborder);margin-bottom:0;">
+      <div class="setup-label" style="color:var(--red);margin-bottom:8px;">⚡ Rate Limit</div>
+      <div style="font-size:12px;font-weight:600;color:var(--text);" id="rate-limit-display">0 / 50 today</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;margin-bottom:8px;">Resets at midnight</div>
+      <div style="background:var(--bg3);border-radius:20px;height:6px;margin-bottom:8px;overflow:hidden;">
+        <div id="rate-limit-bar" style="height:100%;border-radius:20px;background:#0f6e56;transition:width .3s;width:0%;"></div>
       </div>
-      <div style="font-size:22px;font-weight:700;color:var(--text);" id="rate-limit-pct">0%</div>
+      <button id="reset-limit-btn" onclick="resetRateLimit()" style="width:100%;padding:9px;border-radius:var(--radius-sm);border:0.5px solid var(--goldborder);background:var(--goldbg);color:var(--gold);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Reset</button>
     </div>
-    <div style="background:var(--bg3);border-radius:20px;height:8px;margin-bottom:12px;overflow:hidden;">
-      <div id="rate-limit-bar" style="height:100%;border-radius:20px;background:#0f6e56;transition:width .3s;width:0%;"></div>
+
+    <div class="setup-card" style="border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.04);margin-bottom:0;">
+      <div class="setup-label" style="color:#a78bfa;">📝 Paper Trade</div>
+      <div class="info-text" style="font-size:11px;margin-bottom:10px;line-height:1.4;">Simulates trades. Turn OFF to go live.</div>
+      <div class="toggle-row" style="margin-top:4px;">
+        <label class="tog"><input type="checkbox" id="paper-mode-toggle" checked onchange="savePaperMode()"><span class="tog-sl"></span></label>
+        <span class="tog-label" id="paper-mode-label" style="color:#f59e0b;font-size:11px;">📝 Paper ON</span>
+      </div>
     </div>
-    <button id="reset-limit-btn" onclick="resetRateLimit()" style="width:100%;padding:11px;border-radius:var(--radius-sm);border:0.5px solid var(--goldborder);background:var(--goldbg);color:var(--gold);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Reset Counter</button>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center;">Button turns red &amp; highlights when daily limit is reached</div>
+
   </div>
 
+  <!-- Trading Bot (info) -->
   <div class="setup-card" style="border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.04);">
     <div class="setup-label" style="color:#a78bfa;">🤖 Trading Bot</div>
     <div class="info-text">Bot token is stored securely on the server (VM). All trade alerts and notifications are handled automatically — no token needed here.</div>
   </div>
-  <div class="setup-card" style="border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.04);">
-    <div class="setup-label" style="color:#a78bfa;">🤖 Paper Trading Mode</div>
-    <div class="info-text" style="margin-bottom:8px;">When ON — bot simulates trades without placing real orders. Turn OFF only when ready to go live.</div>
-    <div class="toggle-row" style="margin-top:4px;">
-      <label class="tog"><input type="checkbox" id="paper-mode-toggle" checked onchange="savePaperMode()"><span class="tog-sl"></span></label>
-      <span class="tog-label" id="paper-mode-label" style="color:#f59e0b;">📝 Paper Trading — ON (Safe)</span>
-    </div>
-  </div>
+
+  <!-- GitHub Backup -->
   <div class="setup-card" style="border-color:rgba(5,150,105,0.3);background:rgba(5,150,105,0.04);">
     <div class="setup-label" style="color:#34d399;">🐙 GitHub Backup</div>
     <div class="info-text" style="margin-bottom:12px;">Every post you send is automatically backed up to GitHub via the server. No token needed here — it's stored securely on the server.<br><br>If Supabase ever loses data, tap below to restore all posts from backup.</div>
     <button id="restore-backup-btn" onclick="restoreFromBackup()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(5,150,105,0.4);background:rgba(5,150,105,0.08);color:#059669;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔄 Restore from Backup</button>
   </div>
+
+  <!-- App PIN Lock -->
   <div class="setup-card">
     <div class="setup-label">🔐 App PIN Lock</div>
     <div class="info-text" style="margin-bottom:8px;">Set a 4-digit PIN — asked every time you reopen the app within your 8-hour TOTP session.</div>
@@ -1085,16 +1098,19 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div class="setup-saved" id="pin-saved">✓ PIN saved</div>
     <div style="font-size:11px;color:var(--red);margin-top:4px;" id="pin-err-setup"></div>
   </div>
+
+  <!-- Emergency Unlock -->
   <div class="setup-card" style="border-color:rgba(234,179,8,0.3);background:rgba(234,179,8,0.04);">
     <div class="setup-label" style="color:#fbbf24;">🔑 Emergency Unlock</div>
     <div class="info-text">If the app locks after 3 wrong PIN attempts, tap <em>email unlock link</em> on the lock screen. A one-time link is sent to <strong>tusharsood.2010@gmail.com</strong> — open it from any device to unlock automatically.</div>
   </div>
-    <div class="info-text">
-      <strong>Telegram:</strong> https://t.me/tusharview<br><br>
-      <strong>Add to iPhone home screen:</strong><br>
-      Open file in Safari → Share → Add to Home Screen
-    </div>
+
+  <div class="info-text">
+    <strong>Telegram:</strong> https://t.me/tusharview<br><br>
+    <strong>Add to iPhone home screen:</strong><br>
+    Open file in Safari → Share → Add to Home Screen
   </div>
+</div>
 </div>
 
 
