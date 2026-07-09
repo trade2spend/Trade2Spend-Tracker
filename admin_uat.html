@@ -989,6 +989,13 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </button>
   </div>
 
+  <!-- Lock App -->
+  <div class="setup-card" style="border-color:rgba(220,38,38,0.3);background:rgba(220,38,38,0.04);">
+    <div class="setup-label" style="color:#dc2626;">🔒 Lock App</div>
+    <div class="info-text" style="margin-bottom:12px;">Clears your current session completely. Next time you open this app it will ask for your Google Authenticator TOTP code (not just PIN).</div>
+    <button onclick="lockAdminApp()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.08);color:#dc2626;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔒 Lock &amp; Require TOTP</button>
+  </div>
+
   <!-- Server Status -->
   <div class="setup-card" id="server-status-card" style="border-color:var(--blueborder);background:var(--bluebg);">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -1081,11 +1088,6 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   <div class="setup-card" style="border-color:rgba(234,179,8,0.3);background:rgba(234,179,8,0.04);">
     <div class="setup-label" style="color:#fbbf24;">🔑 Emergency Unlock</div>
     <div class="info-text">If the app locks after 3 wrong PIN attempts, tap <em>email unlock link</em> on the lock screen. A one-time link is sent to <strong>tusharsood.2010@gmail.com</strong> — open it from any device to unlock automatically.</div>
-  </div>
-  <div class="setup-card" style="border-color:rgba(220,38,38,0.3);background:rgba(220,38,38,0.04);">
-    <div class="setup-label" style="color:#dc2626;">🔒 Lock App</div>
-    <div class="info-text" style="margin-bottom:12px;">Clears your current session completely. Next time you open this app it will ask for your Google Authenticator TOTP code (not just PIN).</div>
-    <button onclick="lockAdminApp()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.08);color:#dc2626;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔒 Lock &amp; Require TOTP</button>
   </div>
     <div class="info-text">
       <strong>Telegram:</strong> https://t.me/tusharview<br><br>
