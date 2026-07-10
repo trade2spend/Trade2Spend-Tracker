@@ -451,7 +451,7 @@
             </div>
         </div>
         <!-- Expiry Strip -->
-        <div id="expiry-strip" style="display:none;flex-direction:row;gap:8px;padding:6px 0 8px;"></div>
+        <div id="expiry-strip" style="display:none;padding:6px 0 8px;"></div>
         <!-- Gainers / Losers -->
         <div class="movers-section" id="movers-section" style="display:block;">
             <div class="movers-grid">
@@ -975,13 +975,16 @@
       if (expiry.BANKNIFTY && expiry.BANKNIFTY.monthly) add('NIFTY/Stocks', expiry.BANKNIFTY.monthly, 'Monthly');
       const sorted = [...dateMap.values()].sort((a, b) => a.d - b.d).slice(0, 2);
       if (!sorted.length) { el.style.display = 'none'; return; }
-      el.innerHTML = sorted.map(e => {
-        const isToday = e.d.toDateString() === todayStr;
-        const name = [...e.names].join('/');
-        const text = isToday ? `📅 Today · ${name} (${e.type})` : `${name} · ${fmtDate(e.d)} (${e.type})`;
-        return `<div class="expiry-chip${isToday ? ' today' : ''}">${text}</div>`;
-      }).join('');
-      el.style.display = 'flex';
+      el.innerHTML = `<div style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">F&amp;O Expiry</div>`
+        + `<div style="display:flex;gap:8px;">`
+        + sorted.map(e => {
+            const isToday = e.d.toDateString() === todayStr;
+            const name = [...e.names].join('/');
+            const text = isToday ? `📅 Today · ${name} (${e.type})` : `${name} · ${fmtDate(e.d)} (${e.type})`;
+            return `<div class="expiry-chip${isToday ? ' today' : ''}">${text}</div>`;
+          }).join('')
+        + `</div>`;
+      el.style.display = 'block';
     }
 
     function renderMarketUI(data, opts = {}) {
