@@ -93,6 +93,8 @@
         /* --- MARKET CARDS --- */
         .market-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
         .market-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 10px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,0.03); }
+        .expiry-chip { flex: 1; text-align: center; background: var(--primary-light); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 0.72rem; font-weight: 700; color: var(--primary); line-height: 1.4; }
+        .expiry-chip.today { background: #fff3e0; border-color: var(--accent); color: var(--accent); }
         .market-title { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.3px; }
         .market-price { font-size: 1.1rem; font-weight: 700; margin-bottom: 5px; color: var(--text-main); }
         .trend-icon { position: absolute; top: 10px; right: 10px; font-size: 0.75rem; }
@@ -438,6 +440,8 @@
                 <div class="change-pill skel-pulse"> </div>
             </div>
         </div>
+        <!-- Expiry Strip -->
+        <div id="expiry-strip" style="display:none;padding:6px 0 8px;"></div>
         <!-- Gainers / Losers -->
         <div class="movers-section" id="movers-section" style="display:block;">
             <div class="movers-grid">
@@ -873,6 +877,40 @@
         return d === 0 || d === 6 || mins < 9 * 60 + 15 || mins >= 15 * 60 + 35;
     }
 
+    function renderExpiryStrip(expiry) {
+      const el = document.getElementById('expiry-strip');
+      if (!el || !expiry) { if (el) el.style.display = 'none'; return; }
+      const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+      const todayStr = new Date().toDateString();
+      const parseDate = s => { if (!s) return null; const d = new Date(s); return isNaN(d) ? null : d; };
+      const fmtDate = d => d.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+      const dateMap = new Map();
+      const add = (name, dateStr, type) => {
+        const d = parseDate(dateStr);
+        if (!d || d < todayMidnight) return;
+        const key = d.toDateString();
+        if (!dateMap.has(key)) dateMap.set(key, { d, names: new Set(), type: 'Weekly' });
+        const e = dateMap.get(key);
+        if (type === 'Monthly') { e.type = 'Monthly'; e.names.clear(); e.names.add(name); }
+        else if (e.type !== 'Monthly') e.names.add(name);
+      };
+      if (expiry.NIFTY) { add('NIFTY', expiry.NIFTY.current, 'Weekly'); add('NIFTY', expiry.NIFTY.next, 'Weekly'); if (expiry.NIFTY.monthly) add('NIFTY/Stocks', expiry.NIFTY.monthly, 'Monthly'); }
+      if (expiry.SENSEX) { add('SENSEX', expiry.SENSEX.current, 'Weekly'); add('SENSEX', expiry.SENSEX.next, 'Weekly'); }
+      if (expiry.BANKNIFTY && expiry.BANKNIFTY.monthly) add('NIFTY/Stocks', expiry.BANKNIFTY.monthly, 'Monthly');
+      const sorted = [...dateMap.values()].sort((a, b) => a.d - b.d).slice(0, 2);
+      if (!sorted.length) { el.style.display = 'none'; return; }
+      el.innerHTML = `<div style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Upcoming F&amp;O Expiry</div>`
+        + `<div style="display:flex;gap:8px;">`
+        + sorted.map(e => {
+            const isToday = e.d.toDateString() === todayStr;
+            const name = [...e.names].join('/');
+            const text = isToday ? `📅 Today · ${name} (${e.type})` : `${name} · ${fmtDate(e.d)} (${e.type})`;
+            return `<div class="expiry-chip${isToday ? ' today' : ''}">${text}</div>`;
+          }).join('')
+        + `</div>`;
+      el.style.display = 'block';
+    }
+
     function renderMarketUI(data, opts = {}) {
         const isOpen = data.marketOpen === true && !isMarketClosedNow();
 
@@ -933,6 +971,8 @@
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
             if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
         }
+
+        renderExpiryStrip(data.expiry);
 
         const moversEl = document.getElementById('movers-section');
         if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
