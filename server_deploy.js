@@ -2827,6 +2827,32 @@ const server = http.createServer(async (req, res) => {
 
   // Test CMP — GET /test-cmp?key=T2SMonitor2026
   // Returns dummy optionLTPs so UAT can verify the CMP display path without needing Kotak login
+  if (req.method === 'GET' && urlPath === '/test-nse-chain') {
+    const parsedUrl2 = new URL('https://x' + req.url);
+    if (parsedUrl2.searchParams.get('key') !== 'T2SMonitor2026') {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Unauthorized' }));
+    }
+    let result = {};
+    try {
+      if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+      result.cookiesOk = !!_nseCookies;
+      result.cookiesPreview = _nseCookies ? _nseCookies.slice(0, 80) : '(empty)';
+      const r = await ft('https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY',
+        { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
+      result.httpStatus = r.status;
+      const txt = await r.text();
+      result.bodyPreview = txt.slice(0, 300);
+      if (r.ok) {
+        const d = JSON.parse(txt);
+        result.recordsCount = d?.records?.data?.length || 0;
+        result.sampleStrikes = (d?.records?.data || []).slice(0, 3).map(x => ({ strike: x.strikePrice, exp: x.expiryDate, ce: x.CE?.lastPrice, pe: x.PE?.lastPrice }));
+      }
+    } catch(e) { result.error = e.message; }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify(result));
+  }
+
   if (req.method === 'GET' && urlPath === '/test-cmp') {
     const parsedUrl = new URL('https://x' + req.url);
     if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
