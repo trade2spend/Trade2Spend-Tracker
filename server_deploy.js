@@ -1186,6 +1186,15 @@ async function fetchKotakOptionLTPs() {
       if (!r.ok) {
         const errBody = await r.text().catch(() => '');
         console.error(`[ltp] HTTP ${r.status} for ${identifier} (${_exchSeg}): ${errBody.slice(0,200)}`);
+        // Count 5xx errors (gateway issues) as failures for failover — same as network errors
+        if (r.status >= 500) {
+          _ltpConsecFailures++;
+          if (_ltpConsecFailures >= 2) {
+            const alt = session.baseUrl === DATA_URL ? 'https://gw-napi.kotaksecurities.com' : DATA_URL;
+            session.baseUrl = alt; _ltpConsecFailures = 0;
+            console.log(`[ltp] ${r.status} x2 — switched to: ${alt}`);
+          }
+        }
         continue;
       }
       const d = await r.json();
@@ -1670,7 +1679,8 @@ async function runMarketScraper(force = false) {
       losers:  movers?.losers  || _kotakMoversCache?.losers  || existing.losers  || []
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
-    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, expiry: _expiryDates };
+    const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
+    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, optionHighs: _highsSnap, expiry: _expiryDates };
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
