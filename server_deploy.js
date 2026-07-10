@@ -352,6 +352,16 @@ function loadState() {
       if (data.session) session = { ...session, ...data.session };
       session.baseUrl = 'https://gw-napi.kotaksecurities.com'; // gw-napi is the working LTP endpoint (mis.kotaksecurities.com broken)
       if (data.state)   state   = { ...state,   ...data.state };
+      // Restore intraday option highs — only if from same IST trading day
+      if (data.optionHighs && data.optionHighsDate) {
+        const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+        if (data.optionHighsDate === todayIST) {
+          Object.entries(data.optionHighs).forEach(([k,v]) => {
+            _optionHighs[k] = { high: v, postId: null };
+          });
+          console.log(`Restored ${Object.keys(_optionHighs).length} option highs from state`);
+        }
+      }
       console.log(`State loaded: ${Object.keys(state.trades).length} trades`);
     }
   } catch (e) { console.error('loadState error:', e.message); }
@@ -359,7 +369,9 @@ function loadState() {
 
 async function saveState() {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state }, null, 2));
+    const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+    const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST }, null, 2));
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -2813,6 +2825,33 @@ const server = http.createServer(async (req, res) => {
 
   // Browser LTP relay — GET /active-contracts-for-ltp?key=...
   // Returns active contracts + session headers so Admin PWA browser can fetch LTPs directly
+  // Manual session-high override — POST /set-high?key=T2SMonitor2026
+  // Body: { "NIFTY-24200-CE": 127, "NIFTY-24250-PE": 145 }
+  if (req.method === 'POST' && urlPath === '/set-high') {
+    const _shKey = new URL('https://x' + req.url).searchParams.get('key');
+    if (_shKey !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
+    let _shBody = '';
+    req.on('data', c => _shBody += c);
+    req.on('end', async () => {
+      try {
+        const overrides = JSON.parse(_shBody || '{}');
+        Object.entries(overrides).forEach(([k, v]) => {
+          const h = parseFloat(v);
+          if (h > 0) {
+            const cur = _optionHighs[k]?.high || 0;
+            _optionHighs[k] = { high: Math.max(h, cur), postId: _optionHighs[k]?.postId || null };
+          }
+        });
+        if (_latestMarketData)
+          _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
+        await saveState();
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true, highs: Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high])) }));
+      } catch(e) { res.writeHead(400); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
   if (req.method === 'GET' && urlPath === '/active-contracts-for-ltp') {
     const k = new URL('https://x' + req.url).searchParams.get('key');
     if (k !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
