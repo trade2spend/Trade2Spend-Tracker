@@ -2872,16 +2872,17 @@ const server = http.createServer(async (req, res) => {
     if (urlObj.searchParams.get('key') !== 'T2SMonitor2026') { res.writeHead(403); res.end('forbidden'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     const results = [];
-    const testUrls = [`${DATA_URL}/Dist/master/bse_fo.csv`, 'https://gw-napi.kotaksecurities.com/Dist/master/bse_fo.csv'];
-    for (const url of testUrls) {
-      for (const authHdr of [`Bearer ${session.token}`, session.token]) {
-        try {
-          const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 7000);
-          const t = r.ok ? (await r.text()).slice(0, 300) : await r.text().catch(()=>'').then(x=>x.slice(0,100));
-          results.push({ url, auth: authHdr.slice(0,10)+'...', status: r.status, ok: r.ok, len: t.length, preview: t.slice(0, 200) });
-          if (r.ok && t.length > 100) break;
-        } catch(e) { results.push({ url, auth: authHdr.slice(0,10)+'...', error: e.message }); }
-      }
+    const attempts = [
+      { url: `${DATA_URL}/Dist/master/bse_fo.csv`,             authHdr: `Bearer ${session.token}` },
+      { url: 'https://gw-napi.kotaksecurities.com/Dist/master/bse_fo.csv', authHdr: `Bearer ${session.token}` },
+    ];
+    for (const { url, authHdr } of attempts) {
+      try {
+        const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 5000);
+        const t = await r.text().catch(() => '');
+        results.push({ url, status: r.status, ok: r.ok, len: t.length, preview: t.slice(0, 150) });
+        break; // stop after first attempt regardless of result
+      } catch(e) { results.push({ url, error: e.message }); }
     }
     res.end(JSON.stringify({ hasToken: !!session.token, sid: !!session.sid, results }, null, 2));
     return;
