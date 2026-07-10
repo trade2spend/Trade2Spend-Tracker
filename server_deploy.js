@@ -1075,9 +1075,11 @@ async function downloadScripMaster() {
 
 // Look up Kotak numeric token for a specific option contract
 function getOptionToken(instrument, strike, type, expiry) {
-  // expiry from resolveExpiry() is already "DDMMMYYYY" e.g. "19JUN2025"
-  const key = `${instrument.toUpperCase()}-${strike}-${type.toUpperCase()}-${expiry.toUpperCase()}`;
-  return _scripMaster[key] || null;
+  const instr = instrument.toUpperCase(), t = type.toUpperCase(), e = expiry.toUpperCase();
+  // Try rupee scale first, then paise scale (×100) — scrip master format varies by CSV source
+  return _scripMaster[`${instr}-${strike}-${t}-${e}`]
+      || _scripMaster[`${instr}-${strike * 100}-${t}-${e}`]
+      || null;
 }
 
 // Build expiry date map from scrip master — actual dates from Kotak, no guessing
@@ -1168,10 +1170,9 @@ async function fetchKotakOptionLTPs() {
   if (!session.token || !session.baseUrl || !_activeContracts.length) return;
   for (const c of _activeContracts) {
     const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
-    // Always build trading symbol — gw-napi accepts trading symbols but rejects numeric tokens;
-    // DATA_URL (mis) prefers numeric tokens. Use trading symbol when on gw-napi.
+    // Numeric token (from scrip master) works on both mis and gw-napi; trading symbol is fallback
     const tradeSym = buildTradingSymbol(c.instrument, c.strike, c.type, c.expiry);
-    const identifier = (session.baseUrl !== DATA_URL && tradeSym) ? tradeSym : (numToken || tradeSym);
+    const identifier = numToken || tradeSym;
     if (!identifier) {
       console.log(`[ltp] Cannot build identifier for ${c.instrument}-${c.strike}-${c.type}-${c.expiry}`);
       continue;
