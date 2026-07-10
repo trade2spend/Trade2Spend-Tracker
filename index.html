@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260710-001 | Trade Alert tab: CMP follow-up card now shows full message text below the structured CMP ₹XX row — advisory text after the price was being dropped; rawText is now appended as reply-body inside the cmp_update card. Rollback: revert renderFollowUpCard cmp_update branch to single-line fu-body return (remove _cmpExtra). -->
 <!-- DEPLOY: T2S-PROD-20260707-001 | Markets tab: skeleton loading for index cards, gainers/losers, advance-decline bar + stale-while-revalidate cache + parallel market fetch on init -->
 <!-- DEPLOY: T2S-PROD-20260708-001 | Trade Alert tab: free member unlock fix — SL follow-up on paid-only trade unlocks CE/PE, Expiry, Entry, SL, CMP (previously required 50%+ exit) -->
 <!-- DEPLOY: T2S-PROD-20260708-002 | Trade Alert tab: CMP regex fix — parseFollowUpContent now matches "CMP ₹X" format (₹ symbol was blocking digit match, causing CMP to show — for all members) -->
@@ -2081,7 +2082,8 @@
         }
 
         if (parsed.type==='cmp_update'&&parsed.price) {
-            return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div></div></div>`;
+            const _cmpExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
+            return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div></div>${_cmpExtra}</div>`;
         }
 
         // Free text / status
