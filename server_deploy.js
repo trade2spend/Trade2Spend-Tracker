@@ -2867,6 +2867,26 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
+  // BSE test — GET /bse-test?key=T2SMonitor2026
+  if (req.method === 'GET' && urlPath === '/bse-test') {
+    if (urlObj.searchParams.get('key') !== 'T2SMonitor2026') { res.writeHead(403); res.end('forbidden'); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    const results = [];
+    const testUrls = [`${DATA_URL}/Dist/master/bse_fo.csv`, 'https://gw-napi.kotaksecurities.com/Dist/master/bse_fo.csv'];
+    for (const url of testUrls) {
+      for (const authHdr of [`Bearer ${session.token}`, session.token]) {
+        try {
+          const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 15000);
+          const t = r.ok ? (await r.text()).slice(0, 300) : '';
+          results.push({ url, auth: authHdr.slice(0,10)+'...', status: r.status, ok: r.ok, len: t.length, preview: t.slice(0, 200) });
+          if (r.ok && t.length > 100) break;
+        } catch(e) { results.push({ url, auth: authHdr.slice(0,10)+'...', error: e.message }); }
+      }
+    }
+    res.end(JSON.stringify({ hasToken: !!session.token, sid: !!session.sid, results }, null, 2));
+    return;
+  }
+
   // Debug — GET /debug
   if (req.method === 'GET' && urlPath === '/debug') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
