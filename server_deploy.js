@@ -1180,7 +1180,7 @@ async function fetchKotakOptionLTPs() {
       const _exchSeg = c.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
       const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${_exchSeg}|${identifier}/ltp`;
       const r = await ftKotak(url, {
-        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.auth }
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
       if (!r.ok) {
         const errBody = await r.text().catch(() => '');
@@ -2869,9 +2869,7 @@ const server = http.createServer(async (req, res) => {
     const headers = {
       'Authorization': CONSUMER_KEY,
       'Content-Type': 'application/json',
-      'neo-fin-key': 'neotradeapi',
-      'Sid': session.sid || '',
-      'Auth': session.auth || ''
+      'neo-fin-key': 'neotradeapi'
     };
     let status = 0, body = '', ltp = null;
     try {
