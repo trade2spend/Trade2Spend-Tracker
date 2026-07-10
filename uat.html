@@ -975,7 +975,7 @@
       if (expiry.BANKNIFTY && expiry.BANKNIFTY.monthly) add('NIFTY/Stocks', expiry.BANKNIFTY.monthly, 'Monthly');
       const sorted = [...dateMap.values()].sort((a, b) => a.d - b.d).slice(0, 2);
       if (!sorted.length) { el.style.display = 'none'; return; }
-      el.innerHTML = `<div style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">F&amp;O Expiry</div>`
+      el.innerHTML = `<div style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Upcoming F&amp;O Expiry</div>`
         + `<div style="display:flex;gap:8px;">`
         + sorted.map(e => {
             const isToday = e.d.toDateString() === todayStr;
