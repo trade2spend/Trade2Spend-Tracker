@@ -2876,8 +2876,8 @@ const server = http.createServer(async (req, res) => {
     for (const url of testUrls) {
       for (const authHdr of [`Bearer ${session.token}`, session.token]) {
         try {
-          const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 15000);
-          const t = r.ok ? (await r.text()).slice(0, 300) : '';
+          const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 7000);
+          const t = r.ok ? (await r.text()).slice(0, 300) : await r.text().catch(()=>'').then(x=>x.slice(0,100));
           results.push({ url, auth: authHdr.slice(0,10)+'...', status: r.status, ok: r.ok, len: t.length, preview: t.slice(0, 200) });
           if (r.ok && t.length > 100) break;
         } catch(e) { results.push({ url, auth: authHdr.slice(0,10)+'...', error: e.message }); }
