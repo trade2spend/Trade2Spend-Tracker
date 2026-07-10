@@ -1016,8 +1016,9 @@ async function downloadScripMaster() {
     for (const authHdr of [`Bearer ${session.token}`, session.token]) {
       try {
         const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 60000);
-        if (r.ok) { const t = await r.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; break; } }
-      } catch {}
+        if (r.ok) { const t = await r.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; break; } else { console.warn(`[scrip] BSE ${url}: ok but bad body len=${t?.length}`); } }
+        else { console.warn(`[scrip] BSE ${url}: HTTP ${r.status}`); }
+      } catch(e) { console.warn(`[scrip] BSE ${url}: ${e.message}`); }
       if (bseCsvText) break;
     }
     if (bseCsvText) break;
@@ -2867,27 +2868,6 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
-  // BSE test — GET /bse-test?key=T2SMonitor2026
-  if (req.method === 'GET' && urlPath === '/bse-test') {
-    if (urlObj.searchParams.get('key') !== 'T2SMonitor2026') { res.writeHead(403); res.end('forbidden'); return; }
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-    const results = [];
-    const attempts = [
-      { url: `${DATA_URL}/Dist/master/bse_fo.csv`,             authHdr: `Bearer ${session.token}` },
-      { url: 'https://gw-napi.kotaksecurities.com/Dist/master/bse_fo.csv', authHdr: `Bearer ${session.token}` },
-    ];
-    for (const { url, authHdr } of attempts) {
-      try {
-        const r = await ftKotak(url, { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 5000);
-        const t = await r.text().catch(() => '');
-        results.push({ url, status: r.status, ok: r.ok, len: t.length, preview: t.slice(0, 150) });
-        break; // stop after first attempt regardless of result
-      } catch(e) { results.push({ url, error: e.message }); }
-    }
-    res.end(JSON.stringify({ hasToken: !!session.token, sid: !!session.sid, results }, null, 2));
-    return;
-  }
-
   // Debug — GET /debug
   if (req.method === 'GET' && urlPath === '/debug') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -2922,6 +2902,7 @@ const server = http.createServer(async (req, res) => {
       } else { ltpTest = { note: 'no scrip master, no active contracts' }; }
     }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
+    const smSensexSample = Object.keys(_scripMaster).filter(k => k.startsWith('SENSEX-')).slice(0, 3);
     const debugVars = { tokenOk: !!session.token, sidOk: !!session.sid, authOk: !!session.auth, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
     res.end(JSON.stringify({
       hasToken: !!session.token,
@@ -2933,6 +2914,9 @@ const server = http.createServer(async (req, res) => {
       activeContractsTs: _activeContractsTs ? Math.round((Date.now()-_activeContractsTs)/1000)+'s ago' : 'never',
       scripMasterSize: Object.keys(_scripMaster).length,
       scripMasterNiftySample: smNiftySample,
+      scripMasterSensexLoaded: smSensexSample.length > 0,
+      scripMasterSensexSample: smSensexSample,
+      expiryDates: Object.keys(_expiryDates).length > 0 ? _expiryDates : null,
       debugVars,
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
