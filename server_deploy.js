@@ -310,6 +310,7 @@ let _latestMarketData    = null;
 let _marketHoliday       = false; // manual holiday override — set via /market-holiday endpoint
 let _kotakLotSizes       = {};    // lot sizes extracted from Kotak scrip master — keyed by instrument (NIFTY/BANKNIFTY/SENSEX)
 let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, NSE fallback)
+let _bseDownloadLog      = []; // last BSE scrip master download attempt results
 let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
 let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
 let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min when stale
@@ -1012,25 +1013,30 @@ async function downloadScripMaster() {
 
   // Also download BSE F&O scrip master — SENSEX & BANKEX options are BSE-listed (bse_fo exchange)
   let bseCsvText = null;
+  _bseDownloadLog = [];
+  const bseLog = (msg) => { console.log('[bse]', msg); _bseDownloadLog.push(msg); };
   // Approach A: file-paths API (same one used for NSE — may also return BSE paths)
   for (const authHdr of [session.token, CONSUMER_KEY]) {
     try {
       const r1 = await ftKotak(`${DATA_URL}/script-details/1.0/masterscrip/file-paths`, {
         headers: { 'Authorization': authHdr, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'sid': session.sid, 'Auth': session.token }
       }, 10000);
+      const status1 = r1.status;
       if (r1.ok) {
         const d1 = await r1.json();
         const allPaths = d1?.data?.filesPaths || [];
-        console.log('[scrip] BSE file-paths candidates:', JSON.stringify(allPaths.filter(p => typeof p === 'string' && p.toLowerCase().includes('bse'))));
-        const bfoPaths = allPaths.filter(p => typeof p === 'string' && p.toLowerCase().includes('bse_fo'));
+        const bseCandidates = allPaths.filter(p => typeof p === 'string' && p.toLowerCase().includes('bse'));
+        bseLog(`file-paths(${authHdr.slice(0,10)}) HTTP ${status1}: ${allPaths.length} paths, bse candidates: ${JSON.stringify(bseCandidates)}`);
+        const bfoPaths = bseCandidates.filter(p => p.toLowerCase().includes('bse_fo'));
         for (const url of [...bfoPaths].reverse()) {
           try {
             const r2 = await ftKotak(url, {}, 60000);
-            if (r2.ok) { const t = await r2.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; console.log(`[scrip] BSE via file-paths: ${t.length} bytes`); break; } }
-          } catch {}
+            if (r2.ok) { const t = await r2.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; bseLog(`file-paths BSE URL OK: ${t.length} bytes`); break; } else { bseLog(`file-paths BSE URL ok but bad body: ${t?.length}b`); } }
+            else { bseLog(`file-paths BSE URL HTTP ${r2.status}`); }
+          } catch(e) { bseLog(`file-paths BSE URL error: ${e.message}`); }
         }
-      }
-    } catch(e) { console.warn(`[scrip] BSE file-paths (${authHdr.slice(0,10)}): ${e.message}`); }
+      } else { bseLog(`file-paths(${authHdr.slice(0,10)}) HTTP ${status1}`); }
+    } catch(e) { bseLog(`file-paths(${authHdr.slice(0,10)}) error: ${e.message}`); }
     if (bseCsvText) break;
   }
   // Approach B: direct gw-napi bse_fo.csv
@@ -1038,9 +1044,9 @@ async function downloadScripMaster() {
     for (const authHdr of [`Bearer ${session.token}`, session.token]) {
       try {
         const r = await ftKotak('https://gw-napi.kotaksecurities.com/Dist/master/bse_fo.csv', { headers: { 'Authorization': authHdr, 'Sid': session.sid, 'Auth': session.auth, 'neo-fin-key': 'neotradeapi', 'Content-Type': 'application/json' } }, 60000);
-        if (r.ok) { const t = await r.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; console.log(`[scrip] BSE via gw-napi: ${t.length} bytes`); break; } else { console.warn(`[scrip] BSE gw-napi: ok but bad body len=${t?.length}`); } }
-        else { console.warn(`[scrip] BSE gw-napi: HTTP ${r.status}`); }
-      } catch(e) { console.warn(`[scrip] BSE gw-napi: ${e.message}`); }
+        if (r.ok) { const t = await r.text(); if (t && t.length > 1000 && t.includes(',')) { bseCsvText = t; bseLog(`gw-napi direct OK: ${t.length} bytes`); break; } else { bseLog(`gw-napi direct ok but bad body: ${t?.length}b`); } }
+        else { bseLog(`gw-napi direct HTTP ${r.status}`); }
+      } catch(e) { bseLog(`gw-napi direct error: ${e.message}`); }
       if (bseCsvText) break;
     }
   }
@@ -1049,9 +1055,9 @@ async function downloadScripMaster() {
     for (const dateStr of dates) {
       try {
         const r = await ftKotak(`${cdnBase}/${dateStr}/bfo/transformed/scrip_master.csv`, {}, 30000);
-        if (r.ok) { const t = await r.text(); if (t && t.length > 1000) { bseCsvText = t; console.log(`[scrip] BSE via CDN ${dateStr}: ${t.length} bytes`); break; } }
-        else { console.warn(`[scrip] BSE CDN ${dateStr}: HTTP ${r.status}`); }
-      } catch(e) { console.warn(`[scrip] BSE CDN ${dateStr}: ${e.message}`); }
+        if (r.ok) { const t = await r.text(); if (t && t.length > 1000) { bseCsvText = t; bseLog(`CDN ${dateStr} OK: ${t.length} bytes`); break; } }
+        else { bseLog(`CDN ${dateStr} HTTP ${r.status}`); }
+      } catch(e) { bseLog(`CDN ${dateStr} error: ${e.message}`); }
     }
   }
   if (bseCsvText) {
@@ -2939,6 +2945,7 @@ const server = http.createServer(async (req, res) => {
       scripMasterNiftySample: smNiftySample,
       scripMasterSensexLoaded: smSensexSample.length > 0,
       scripMasterSensexSample: smSensexSample,
+      bseDownloadLog: _bseDownloadLog,
       expiryDates: Object.keys(_expiryDates).length > 0 ? _expiryDates : null,
       debugVars,
       marketScraperRunning: !!marketScraperInterval,
