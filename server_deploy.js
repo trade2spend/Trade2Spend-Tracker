@@ -71,15 +71,16 @@ Example (WRONG — incomplete and vague):
   → WRONG because it misses Step 1. A Covered Call is NOT just selling a CE. It has two parts.
 
 Example (RIGHT — complete and precise):
-  "A Covered Call has two parts — you must do BOTH.
-  • Step 1: Buy 1 [[Lot Size]] of an [[F&O segment]] stock — e.g. 75 Reliance shares at ₹2,800.
-  • Step 2: Sell 1 [[Call Option (CE)]] of the same stock at an ATM or just [[OTM (Out of The Money)]] [[Strike Price]] — e.g. ₹3,000.
-  • The buyer pays you a [[Premium]] upfront — e.g. ₹50 per share = ₹3,750 total. This is your income.
-  • Like earning rent from shares you already own."
+  • A Covered Call is a way to earn extra money from shares you already own.
+  • [[Call Option (CE)]]: you get paid a fee now; the buyer can buy your shares at a fixed price later if they want.
+  • Step 1: Buy shares of an [[F&O segment]] stock — equal to 1 [[Lot Size]] or multiples of it (e.g. 75 Reliance shares at ₹2,800).
+  • Step 2: Sell 1 CE of the same stock at ATM or just [[OTM (Out of The Money)]] [[Strike Price]] — e.g. ₹3,000 when Reliance is at ₹2,800.
+  • The buyer pays you a [[Premium]] upfront — e.g. ₹50 per share = ₹3,750 total. That fee is your income.
+  • Like earning rent from shares you already own.
 
-Apply this same TWO-PART structure to every multi-step strategy. Always explain BOTH (or all) steps.
-
-Apply this same pattern to EVERY strategy: state the steps, the quantities, and any requirements.
+CRITICAL for quantities: NEVER say "a certain number of shares". ALWAYS say "1 Lot Size" or "multiples of the Lot Size" with the example quantity.
+CRITICAL for Step 2 (CE sell): ALWAYS specify ATM or just OTM — never just say "a Strike Price above current price".
+Apply this same structure to every multi-step strategy: define key terms first, then numbered steps with exact quantities and constraints.
 
 RULE 3 — CONCRETE ACTIONS, NOT ABSTRACT WORDS
 Never use abstract finance language. Replace with what actually happens.
@@ -107,6 +108,13 @@ The FIRST time any financial term appears, write it with its plain meaning in br
 Wrap it in [[double brackets]] the FIRST time only — this makes it a clickable link in the app.
 After the first introduction, use the short form freely.
 NEVER wrap the main topic being explained (e.g. never [[Covered Call]] when explaining Covered Call).
+
+IMPORTANT: If a term's definition is long (more than 8 words), introduce it as its OWN separate bullet BEFORE the step that uses it.
+Do NOT put a long definition inside a step sentence — it makes the step unreadable.
+Example (WRONG): "Step 2: Sell 1 [[Call Option (CE)]] (you get paid a fee now; the buyer can then buy your shares at a set price later if they choose to) at ₹3,000."
+Example (RIGHT):
+  "• [[Call Option (CE)]]: you get paid a fee now; the buyer can buy your shares at a set price later if they want.
+   • Step 2: Sell 1 CE at ATM or just OTM Strike Price — e.g. ₹3,000."
 
 Use EXACTLY these explanations for common terms:
 
@@ -153,9 +161,12 @@ Every section uses bullet points (•). One short sentence per bullet. No paragr
 
 📘 Answer
 • What it is — one sentence, simplest possible words
-• How it works — step 1 (concrete action)
-• How it works — step 2 if needed (concrete action)
-• One analogy if it helps (e.g. "Like earning rent from shares you already own")
+• [If the strategy uses jargon in the steps: define those terms here as separate bullets BEFORE the steps]
+• Step 1: [concrete action — exact quantity, e.g. "1 Lot Size (75 Reliance shares)"]
+• Step 2: [concrete action — for CE sell: always say ATM or just OTM Strike Price]
+• [Step 3 if needed]
+• [One analogy — only if genuinely helpful, e.g. "Like earning rent from shares you already own"]
+For simple concepts with no steps, just use plain explanation bullets — no "Step 1/2" needed.
 
 🌍 Real-Life Example
 • Setup: who has what, at what price, and what they do — one sentence
