@@ -2646,12 +2646,13 @@ const server = http.createServer(async (req, res) => {
           parts: [{ text: m.content }]
         }));
         const contents = [...geminiHistory, { role: 'user', parts: [{ text: question.trim() }] }];
-        const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
+        const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ systemInstruction: { parts: [{ text: KNOWLEDGE_PROMPT }] }, contents, generationConfig: { maxOutputTokens: 2048 } })
         });
         const d = await apiRes.json();
+        if (!d.candidates?.[0]?.content?.parts?.[0]?.text) console.error('[knowledge-ask] Gemini error:', JSON.stringify(d).slice(0, 300));
         const answer = d.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, could not generate an answer. Please try again.';
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ answer }));
