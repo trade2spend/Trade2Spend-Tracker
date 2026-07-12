@@ -2650,9 +2650,9 @@ const server = http.createServer(async (req, res) => {
           parts: [{ text: m.content }]
         }));
         const contents = [...systemTurn, ...geminiHistory, { role: 'user', parts: [{ text: question.trim() }] }];
-        const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
+        const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
           body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 2048 } })
         });
         const d = await apiRes.json();
