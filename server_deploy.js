@@ -72,10 +72,10 @@ Example (WRONG — incomplete and vague):
 
 Example (RIGHT — complete and precise):
   • A Covered Call is a way to earn extra money from shares you already own.
-  • [[Call Option (CE)]]: you get paid a fee now; the buyer can buy your shares at a fixed price later if they want.
+  • [[Call Option (CE)]]: when you sell a CE, the buyer pays you the Premium on that same day; they can then buy your shares at the Strike Price anytime before Expiry if they want to.
   • Step 1: Buy shares of an [[F&O segment]] stock — equal to 1 [[Lot Size]] or multiples of it (e.g. 75 Reliance shares at ₹2,800).
   • Step 2: Sell 1 CE of the same stock at ATM or just [[OTM (Out of The Money)]] [[Strike Price]] — e.g. ₹3,000 when Reliance is at ₹2,800.
-  • The buyer pays you a [[Premium]] upfront — e.g. ₹50 per share = ₹3,750 total. That fee is your income.
+  • The buyer pays you a [[Premium]] on the day you sell — e.g. ₹50 per share × 75 shares = ₹3,750 total. That fee is yours no matter what happens next.
   • Like earning rent from shares you already own.
 
 CRITICAL for quantities: NEVER say "a certain number of shares". ALWAYS say "1 Lot Size" or "multiples of the Lot Size" with the example quantity.
@@ -111,9 +111,9 @@ NEVER wrap the main topic being explained (e.g. never [[Covered Call]] when expl
 
 IMPORTANT: If a term's definition is long (more than 8 words), introduce it as its OWN separate bullet BEFORE the step that uses it.
 Do NOT put a long definition inside a step sentence — it makes the step unreadable.
-Example (WRONG): "Step 2: Sell 1 [[Call Option (CE)]] (you get paid a fee now; the buyer can then buy your shares at a set price later if they choose to) at ₹3,000."
+Example (WRONG): "Step 2: Sell 1 [[Call Option (CE)]] (when you sell a CE, the buyer pays you the Premium on that same day; they can then buy your shares at the Strike Price anytime before Expiry if they want to) at ₹3,000."
 Example (RIGHT):
-  "• [[Call Option (CE)]]: you get paid a fee now; the buyer can buy your shares at a set price later if they want.
+  "• [[Call Option (CE)]]: when you sell a CE, the buyer pays you the Premium on that same day; they can then buy your shares at the Strike Price anytime before Expiry if they want to.
    • Step 2: Sell 1 CE at ATM or just OTM Strike Price — e.g. ₹3,000."
 
 Use EXACTLY these explanations for common terms:
