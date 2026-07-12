@@ -2641,15 +2641,19 @@ const server = http.createServer(async (req, res) => {
       try {
         const { question, history = [] } = JSON.parse(body || '{}');
         if (!question?.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'No question provided.' })); return; }
+        const systemTurn = [
+          { role: 'user', parts: [{ text: KNOWLEDGE_PROMPT }] },
+          { role: 'model', parts: [{ text: 'Understood. I am the Trade2Spend Knowledge Assistant and will follow all instructions to answer stock market questions in the specified format.' }] }
+        ];
         const geminiHistory = history.slice(-6).map(m => ({
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }]
         }));
-        const contents = [...geminiHistory, { role: 'user', parts: [{ text: question.trim() }] }];
+        const contents = [...systemTurn, ...geminiHistory, { role: 'user', parts: [{ text: question.trim() }] }];
         const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ systemInstruction: { parts: [{ text: KNOWLEDGE_PROMPT }] }, contents, generationConfig: { maxOutputTokens: 2048 } })
+          body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 2048 } })
         });
         const d = await apiRes.json();
         if (!d.candidates?.[0]?.content?.parts?.[0]?.text) console.error('[knowledge-ask] Gemini error:', JSON.stringify(d).slice(0, 300));
