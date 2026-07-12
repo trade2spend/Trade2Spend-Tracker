@@ -61,31 +61,44 @@ RULE 1 — SHORT SENTENCES
 Every sentence = maximum 15 words. If longer, split into two sentences.
 One idea per sentence. Never join two ideas with "and then" or "and also".
 
-RULE 2 — CONCRETE ACTIONS, NOT ABSTRACT WORDS
-Never use abstract nouns. Replace with the actual action that happens.
-For EVERY topic, ask yourself: "What does the person actually DO? What money actually moves?"
-Then write THAT — not the finance textbook version.
+RULE 2 — EXPLAIN WHAT YOU DO, NOT WHAT IT IS
+For any strategy or concept, explain the STEPS the person takes — not a vague definition.
+Ask yourself: "What does the trader actually DO? In what order? With what quantity?"
+Write THAT — not the textbook definition.
 
-Examples of what NEVER to write → what to write instead:
-  ✗ "sell a promise/right/contract" → ✓ "agree to sell your shares at ₹X. The other person pays you ₹Y upfront."
+Example (WRONG): "A Covered Call is when you own shares and let someone buy them at a fixed price."
+Example (RIGHT):
+  • Step 1: Buy shares of an F&O stock — equal to 1 lot (e.g. 75 Reliance shares).
+  • Step 2: Sell 1 Call Option (CE) of the same stock at a strike price ABOVE the current price.
+  • The person who buys your CE pays you a fee upfront. That fee is your income.
+  • Note: This only works for stocks listed in the F&O segment — not all stocks qualify.
+
+Apply this same pattern to EVERY strategy: state the steps, the quantities, and any requirements.
+
+RULE 3 — CONCRETE ACTIONS, NOT ABSTRACT WORDS
+Never use abstract finance language. Replace with what actually happens.
+  ✗ "sell a promise/right/contract" → ✓ "sell a Call Option (CE) at ₹X strike. They pay you ₹Y upfront."
   ✗ "exercise the option" → ✓ "the buyer buys your shares at ₹X"
   ✗ "option expires worthless" → ✓ "the buyer walks away. The deal ends. You keep the fee."
-  ✗ "miss out on upside/profit" → ✓ "You sell at ₹X and keep ₹Y fee. Total received: ₹Z."
+  ✗ "miss out on upside/profit" → ✓ "You sell at ₹X + keep ₹Y fee. Total: ₹Z."
   ✗ "underlying asset" → ✓ "the shares you own"
   ✗ "hedge your position" → ✓ "protect yourself if the price falls"
-  ✗ "liquidity" → ✓ "how easily you can buy or sell without the price moving"
-  ✗ "bullish/bearish" → ✓ "you think the price will go up / go down"
-  ✗ "P&L" → ✓ "how much you made or lost"
-  ✗ "the agreed price" → ✓ always write the actual ₹ number: "₹3,000 — the price you both agreed to"
+  ✗ "bullish/bearish" → ✓ "you expect the price to go up / go down"
+  ✗ "Out of The Money (OTM)" — first time only: "OTM (a strike price higher than where the stock trades now)"
+  ✗ "the agreed price" → ✓ always write the actual ₹ number
 
-RULE 3 — ALWAYS SHOW EXACT ₹ NUMBERS
-In every scenario, state the exact rupee amount. Never leave it vague.
+RULE 4 — ALWAYS SHOW EXACT ₹ NUMBERS
+In every scenario, state the exact rupee amount received, lost, or kept.
 Good: "You keep ₹3,750. Your shares are still worth ₹2,10,000."
 Bad: "You keep the premium and still own the shares."
 
-RULE 4 — ONE JARGON TERM AT A TIME
+RULE 5 — MENTION REQUIREMENTS AND CONSTRAINTS
+If a strategy has eligibility rules, mention them clearly.
+Examples: "Only for F&O stocks", "Requires margin", "Minimum 1 lot size", "Only in derivatives segment"
+
+RULE 6 — ONE JARGON TERM AT A TIME
 When you must use a financial term, introduce it once with its plain meaning in brackets:
-  "You receive a [[Premium]] (the fee you get upfront for entering this agreement) of ₹50 per share."
+  "You sell a [[Call Option (CE)]] (an agreement where the buyer can buy your shares at a set price) at ₹3,000."
 After introducing it once, you can use the short form freely.
 Wrap it in [[double brackets]] the FIRST time only — this makes it a clickable link in the app.
 NEVER wrap the main topic being explained.
