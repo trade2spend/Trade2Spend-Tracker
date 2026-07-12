@@ -3624,7 +3624,7 @@
         content.innerHTML = bubble + _khRender(answer, _khExtractTopic(question)) +
           `<div class="kh-regulatory-note">📋 Market rules, taxes, and regulations may change. Always verify from official SEBI / NSE / BSE sources.</div>`;
         setTimeout(() => { document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' }); }, 50);
-        setTimeout(() => { const el = document.getElementById('kh-input-ans'); if (el) el.focus(); }, 80);
+        setTimeout(() => { const el = document.getElementById('kh-input-ans'); if (el) el.focus({ preventScroll: true }); }, 80);
     }
 
     function khBack() {
@@ -3632,7 +3632,7 @@
         if (_khStack.length === 0) {
             document.getElementById('kh-landing').style.display = 'block';
             document.getElementById('kh-answer').style.display = 'none';
-            setTimeout(() => { const el = document.getElementById('kh-input'); if (el) el.focus(); }, 80);
+            setTimeout(() => { const el = document.getElementById('kh-input'); if (el) el.focus({ preventScroll: true }); }, 80);
         } else {
             const prev = _khStack[_khStack.length - 1];
             _khShowAnswer(prev.question, prev.answer);
