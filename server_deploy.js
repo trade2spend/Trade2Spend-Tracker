@@ -66,12 +66,18 @@ For any strategy or concept, explain the STEPS the person takes — not a vague 
 Ask yourself: "What does the trader actually DO? In what order? With what quantity?"
 Write THAT — not the textbook definition.
 
-Example (WRONG): "A Covered Call is when you own shares and let someone buy them at a fixed price."
-Example (RIGHT):
-  • Step 1: Buy shares of an F&O stock — equal to 1 lot (e.g. 75 Reliance shares).
-  • Step 2: Sell 1 Call Option (CE) of the same stock at a strike price ABOVE the current price.
-  • The person who buys your CE pays you a fee upfront. That fee is your income.
-  • Note: This only works for stocks listed in the F&O segment — not all stocks qualify.
+Example (WRONG — incomplete and vague):
+  "A Covered Call is selling a Call Option (CE)."
+  → WRONG because it misses Step 1. A Covered Call is NOT just selling a CE. It has two parts.
+
+Example (RIGHT — complete and precise):
+  "A Covered Call has two parts — you must do BOTH.
+  • Step 1: Buy 1 [[Lot Size]] of an [[F&O segment]] stock — e.g. 75 Reliance shares at ₹2,800.
+  • Step 2: Sell 1 [[Call Option (CE)]] of the same stock at an ATM or just [[OTM (Out of The Money)]] [[Strike Price]] — e.g. ₹3,000.
+  • The buyer pays you a [[Premium]] upfront — e.g. ₹50 per share = ₹3,750 total. This is your income.
+  • Like earning rent from shares you already own."
+
+Apply this same TWO-PART structure to every multi-step strategy. Always explain BOTH (or all) steps.
 
 Apply this same pattern to EVERY strategy: state the steps, the quantities, and any requirements.
 
@@ -104,16 +110,17 @@ NEVER wrap the main topic being explained (e.g. never [[Covered Call]] when expl
 
 Use EXACTLY these explanations for common terms:
 
-[[Call Option (CE)]] → (an agreement where the buyer gets the right to buy your shares at a fixed price)
-[[Strike Price]] → (the fixed price at which you agree to sell — e.g. ₹3,000 when Reliance trades at ₹2,800)
-[[Premium]] → (the market price of the CE you sold — e.g. CE trading at ₹50 means you receive ₹50 × 75 shares = ₹3,750 upfront)
-[[Lot Size]] → (the minimum number of shares in one trade — e.g. 75 for Reliance)
-[[OTM (Out of The Money)]] → (a Strike Price set ABOVE the current market price — e.g. ₹3,000 strike when stock is at ₹2,800)
-[[Put Option (PE)]] → (an agreement where the buyer gets the right to sell shares at a fixed price)
-[[Expiry]] → (the date the agreement ends — if unused, it simply expires)
-[[Open Interest]] → (total number of active option contracts in the market right now)
-[[Stop Loss]] → (a price level where you exit a trade to limit your loss)
-[[F&O segment]] → (Futures & Options — a part of the stock market where you can trade options; not all stocks qualify)
+[[Call Option (CE)]] → (you get paid a fee now; the buyer can then buy your shares at a set price later if they choose to)
+[[Put Option (PE)]] → (you get paid a fee now; the buyer can then sell their shares to you at a set price later if they choose to)
+[[Strike Price]] → (the fixed price at which the shares will be bought or sold — e.g. ₹3,000 when Reliance currently trades at ₹2,800)
+[[Premium]] → (the fee the buyer pays you upfront — e.g. ₹50 per share × 75 shares = ₹3,750 received by you on day one)
+[[Lot Size]] → (the minimum number of shares required for one trade — e.g. 75 shares for Reliance, 50 for Nifty)
+[[ATM (At The Money)]] → (a Strike Price equal to or very close to the current market price)
+[[OTM (Out of The Money)]] → (a Strike Price set above the current market price for CE, or below for PE — e.g. ₹3,000 strike when stock is at ₹2,800)
+[[Expiry]] → (the date the agreement ends — if the buyer does not act, it simply expires and you keep the fee)
+[[Open Interest]] → (total number of active option agreements in the market right now)
+[[Stop Loss]] → (a price level where you exit a trade to limit how much you can lose)
+[[F&O segment]] → (Futures & Options — a part of the stock market for options trading; only selected stocks qualify)
 
 For any term NOT listed above: create a similar plain-language bracket explanation on first use.
 
