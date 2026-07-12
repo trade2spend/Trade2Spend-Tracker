@@ -3682,16 +3682,29 @@
                 bodyHtml = topics.map(t =>
                     `<span class="kh-related-chip" onclick="khAskTerm('${_khEscapeAttr(t)}')">${_khEscape(t)}</span>`
                 ).join('');
-            } else if (s.key === 'Why It Matters') {
-                const pts = body.split('\n').map(l => l.replace(/^[\-•*]+\s*/,'').trim()).filter(Boolean);
-                bodyHtml = '<ul>' + pts.map(p => `<li>${lk(p)}</li>`).join('') + '</ul>';
             } else {
-                bodyHtml = body.split('\n\n').map(para => {
-                    const lines = para.split('\n').map(l => l.replace(/^[\-•*]+\s*/,'').trim()).filter(Boolean);
-                    if (lines.length > 1 && /^[\-•*]/m.test(para))
-                        return '<ul>' + lines.map(l => `<li>${lk(l)}</li>`).join('') + '</ul>';
-                    return `<p style="margin:0 0 6px 0;">${lk(lines.join(' '))}</p>`;
-                }).join('');
+                // Detect bullets (•, -, *) or scenario emoji (📈/📉/➡️) on their own lines
+                const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
+                const hasBulletLines = lines.some(l => /^[•\-*]/.test(l) || /^(📈|📉|➡️)/.test(l));
+                if (hasBulletLines) {
+                    bodyHtml = '<ul>' + lines.map(l => {
+                        const clean = l.replace(/^[•\-*]\s*/, '');
+                        return `<li>${lk(clean)}</li>`;
+                    }).join('') + '</ul>';
+                } else if (/📈|📉|➡️/.test(body)) {
+                    // Fallback: inline scenario emoji — split on them
+                    const parts = body.split(/(?=📈|📉|➡️)/).map(p => p.trim()).filter(Boolean);
+                    if (parts.length > 1) {
+                        bodyHtml = '<ul>' + parts.map(p => `<li>${lk(p)}</li>`).join('') + '</ul>';
+                    } else {
+                        bodyHtml = `<p style="margin:0 0 6px 0;">${lk(body.replace(/\n+/g,' ').trim())}</p>`;
+                    }
+                } else {
+                    bodyHtml = body.split('\n\n').map(para => {
+                        const pl = para.split('\n').map(l => l.trim()).filter(Boolean);
+                        return `<p style="margin:0 0 6px 0;">${lk(pl.join(' '))}</p>`;
+                    }).join('');
+                }
             }
             html += `<div class="kh-section" style="background:${s.bg};border-color:${s.color}22;">
                 <div class="kh-section-label" style="color:${s.color};">${s.emoji} ${s.key}</div>
