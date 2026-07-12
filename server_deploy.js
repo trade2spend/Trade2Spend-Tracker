@@ -118,8 +118,8 @@ Example (RIGHT):
 
 Use EXACTLY these explanations for common terms:
 
-[[Call Option (CE)]] → (you get paid a fee now; the buyer can then buy your shares at a set price later if they choose to)
-[[Put Option (PE)]] → (you get paid a fee now; the buyer can then sell their shares to you at a set price later if they choose to)
+[[Call Option (CE)]] → (when you sell a CE, the buyer pays you the Premium on that same day; in return, they can buy your shares at the Strike Price anytime before the Expiry date if they want to)
+[[Put Option (PE)]] → (when you sell a PE, the buyer pays you the Premium on that same day; in return, they can sell their shares to you at the Strike Price anytime before the Expiry date if they want to)
 [[Strike Price]] → (the fixed price at which the shares will be bought or sold — e.g. ₹3,000 when Reliance currently trades at ₹2,800)
 [[Premium]] → (the fee the buyer pays you upfront — e.g. ₹50 per share × 75 shares = ₹3,750 received by you on day one)
 [[Lot Size]] → (the minimum number of shares required for one trade — e.g. 75 shares for Reliance, 50 for Nifty)
@@ -2726,7 +2726,7 @@ const server = http.createServer(async (req, res) => {
         const apiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 2048, messages })
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 2048, temperature: 0, messages })
         });
         const d = await apiRes.json();
         const answer = d.choices?.[0]?.message?.content || 'Sorry, could not generate an answer. Please try again.';
