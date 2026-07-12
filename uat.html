@@ -365,6 +365,7 @@
         .kh-loading-dot:nth-child(2){animation-delay:.2s;} .kh-loading-dot:nth-child(3){animation-delay:.4s;}
         @keyframes kh-pulse { 0%,80%,100%{opacity:.2;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
         .kh-q-bubble { background:var(--primary);color:#fff;border-radius:12px 12px 4px 12px;padding:10px 14px;font-size:0.84rem;line-height:1.5;margin-bottom:14px;display:inline-block;max-width:90%; }
+        .kh-regulatory-note { font-size:0.68rem;color:#9ca3af;font-style:italic;text-align:center;padding:10px 16px 4px;line-height:1.5; }
         /* ── PRODUCT TOUR ──────────────────────────────────────── */
         #tour-overlay { display:none; position:fixed; inset:0; z-index:19000; }
         #tour-backdrop { position:fixed; inset:0; z-index:19000; background:rgba(0,0,0,0.72); pointer-events:all; }
@@ -3620,7 +3621,8 @@
                 <div class="kh-section-body" style="color:#dc2626;">⚠ ${_khEscape(error)}</div></div>`;
             return;
         }
-        content.innerHTML = bubble + _khRender(answer, _khExtractTopic(question));
+        content.innerHTML = bubble + _khRender(answer, _khExtractTopic(question)) +
+          `<div class="kh-regulatory-note">📋 Market rules, taxes, and regulations may change. Always verify from official SEBI / NSE / BSE sources.</div>`;
         setTimeout(() => { const el = document.getElementById('kh-input-ans'); if (el) el.focus(); }, 80);
     }
 
