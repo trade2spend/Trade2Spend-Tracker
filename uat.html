@@ -3584,13 +3584,19 @@
             { role: 'user', content: s.apiQ },
             { role: 'assistant', content: s.answer }
         ]);
+        const memberId = localStorage.getItem('t2s_member_id') || '';
         try {
             const res = await fetch(KH_API, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question: apiQ, history })
+                body: JSON.stringify({ question: apiQ, history, memberId })
             });
             const d = await res.json();
+            if (d.limitReached) {
+                const mins = d.minutesUntilReset || 60;
+                _khShowAnswer(display, null, `You've used your ${d.limit} Learning searches for this hour. Next batch available in ${mins} minute${mins !== 1 ? 's' : ''}.`);
+                return;
+            }
             if (d.error) throw new Error(d.error);
             _khStack.push({ question: display, apiQ, answer: d.answer });
             _khShowAnswer(display, d.answer);
