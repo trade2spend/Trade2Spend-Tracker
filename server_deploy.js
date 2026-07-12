@@ -38,6 +38,7 @@ const GH_TOKEN       = process.env.GH_TOKEN || '';
 const GH_REPO        = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker';
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
 const GEMINI_KEY     = process.env.GEMINI_KEY     || '';
+const GROQ_KEY       = process.env.GROQ_KEY       || '';
 
 if (!BOT_TOKEN || !CHAT_ID) {
   console.warn('WARNING: TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set — Telegram notifications disabled, server starting anyway');
@@ -2630,7 +2631,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' }));
       return;
     }
-    if (!ANTHROPIC_KEY) {
+    if (!GROQ_KEY) {
       res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: 'Knowledge Hub not configured.' }));
       return;
@@ -2641,14 +2642,18 @@ const server = http.createServer(async (req, res) => {
       try {
         const { question, history = [] } = JSON.parse(body || '{}');
         if (!question?.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'No question provided.' })); return; }
-        const messages = [...history.slice(-6), { role: 'user', content: question.trim() }];
-        const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        const messages = [
+          { role: 'system', content: KNOWLEDGE_PROMPT },
+          ...history.slice(-6),
+          { role: 'user', content: question.trim() }
+        ];
+        const apiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
-          headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2048, system: KNOWLEDGE_PROMPT, messages })
+          headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 2048, messages })
         });
         const d = await apiRes.json();
-        const answer = d.content?.[0]?.text || 'Sorry, could not generate an answer. Please try again.';
+        const answer = d.choices?.[0]?.message?.content || 'Sorry, could not generate an answer. Please try again.';
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ answer }));
       } catch(e) {
