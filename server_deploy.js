@@ -47,7 +47,21 @@ if (!BOT_TOKEN || !CHAT_ID) {
 }
 
 // ── KNOWLEDGE HUB ─────────────────────────────────────────────────────────────
-const _khRate = new Map(); // IP → { count, reset } for rate limiting
+const _khRate = new Map();       // IP → { count, reset }
+const _khMemberRate  = new Map(); // memberId → { count, windowStart }
+const _khMemberTiers = new Map(); // memberId → { tier, ts } (1-hour cache)
+
+async function khGetMemberTier(memberId) {
+  const CACHE_MS = 60 * 60 * 1000;
+  const cached = _khMemberTiers.get(memberId);
+  if (cached && (Date.now() - cached.ts < CACHE_MS)) return cached.tier;
+  try {
+    const rows = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin`, { method: 'GET' });
+    const tier = rows?.[0]?.is_admin ? 'admin' : (rows?.[0]?.tier || 'free');
+    _khMemberTiers.set(memberId, { tier, ts: Date.now() });
+    return tier;
+  } catch(e) { return 'free'; }
+}
 
 const KNOWLEDGE_PROMPT = `You are the Trade2Spend Knowledge Assistant. You explain Indian stock market concepts to complete beginners.
 
@@ -2716,8 +2730,27 @@ const server = http.createServer(async (req, res) => {
     req.on('data', c => body += c);
     req.on('end', async () => {
       try {
-        const { question, history = [] } = JSON.parse(body || '{}');
+        const { question, history = [], memberId = '' } = JSON.parse(body || '{}');
         if (!question?.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'No question provided.' })); return; }
+        // Per-member hourly quota
+        if (memberId) {
+          const HOUR_MS = 60 * 60 * 1000;
+          const tier = await khGetMemberTier(memberId);
+          if (tier !== 'admin') {
+            const limit = tier === 'paid' ? 10 : 5;
+            const ts = Date.now();
+            if (!_khMemberRate.has(memberId)) _khMemberRate.set(memberId, { count: 0, windowStart: ts });
+            const m = _khMemberRate.get(memberId);
+            if (ts - m.windowStart >= HOUR_MS) { m.count = 0; m.windowStart = ts; }
+            if (m.count >= limit) {
+              const minutesUntilReset = Math.ceil((HOUR_MS - (ts - m.windowStart)) / 60000);
+              res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              res.end(JSON.stringify({ limitReached: true, minutesUntilReset, limit }));
+              return;
+            }
+            m.count++;
+          }
+        }
         const messages = [
           { role: 'system', content: KNOWLEDGE_PROMPT },
           ...history.slice(-6),
@@ -3141,7 +3174,8 @@ const server = http.createServer(async (req, res) => {
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
-      yahooMoversStatus: _yahooMoversStatus
+      yahooMoversStatus: _yahooMoversStatus,
+      khMemberRateSize: _khMemberRate.size
     }));
     return;
   }
