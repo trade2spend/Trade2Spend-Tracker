@@ -2630,7 +2630,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' }));
       return;
     }
-    if (!GEMINI_KEY) {
+    if (!ANTHROPIC_KEY) {
       res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: 'Knowledge Hub not configured.' }));
       return;
@@ -2641,23 +2641,14 @@ const server = http.createServer(async (req, res) => {
       try {
         const { question, history = [] } = JSON.parse(body || '{}');
         if (!question?.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'No question provided.' })); return; }
-        const systemTurn = [
-          { role: 'user', parts: [{ text: KNOWLEDGE_PROMPT }] },
-          { role: 'model', parts: [{ text: 'Understood. I am the Trade2Spend Knowledge Assistant and will follow all instructions to answer stock market questions in the specified format.' }] }
-        ];
-        const geminiHistory = history.slice(-6).map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        }));
-        const contents = [...systemTurn, ...geminiHistory, { role: 'user', parts: [{ text: question.trim() }] }];
-        const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`, {
+        const messages = [...history.slice(-6), { role: 'user', content: question.trim() }];
+        const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
-          body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 2048 } })
+          headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2048, system: KNOWLEDGE_PROMPT, messages })
         });
         const d = await apiRes.json();
-        if (!d.candidates?.[0]?.content?.parts?.[0]?.text) console.error('[knowledge-ask] Gemini error:', JSON.stringify(d).slice(0, 300));
-        const answer = d.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, could not generate an answer. Please try again.';
+        const answer = d.content?.[0]?.text || 'Sorry, could not generate an answer. Please try again.';
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ answer }));
       } catch(e) {
