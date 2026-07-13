@@ -63,6 +63,27 @@ async function khGetMemberTier(memberId) {
   } catch(e) { return 'free'; }
 }
 
+const KH_OUT_OF_SCOPE = '📘 **Answer**\nI only answer questions about the Indian stock market — topics like Nifty, Sensex, CE/PE options, SIP, mutual funds, stop loss, and investing concepts.\n\nTry asking: "What is a Stop Loss?" or "How does SIP work?" 📈';
+
+function khIsFinanceQuery(q) {
+  const s = q.toLowerCase().replace(/['"]/g, '');
+  const longTerms = [
+    'stock', 'share', 'nifty', 'sensex', 'banknifty', 'bankex', 'equity',
+    'demat', 'broker', 'mutual fund', 'portfolio', 'dividend', 'intraday',
+    'candlestick', 'volatility', 'technical analysis', 'fundamental',
+    'zerodha', 'upstox', 'groww', 'fyers', 'ltcg', 'stcg',
+    'midcap', 'smallcap', 'largecap', 'bluechip', 'index fund',
+    'open interest', 'stop loss', 'lot size', 'market cap', 'strike price',
+    'option chain', 'option premium', 'expiry date', 'expiry',
+    'trading', 'investing', 'invest', 'trader', 'investor'
+  ];
+  if (longTerms.some(t => s.includes(t))) return true;
+  const shortTerms = ['pe', 'ce', 'sl', 'nse', 'bse', 'oi', 'atm', 'otm', 'itm',
+                      'vix', 'pcr', 'sip', 'ipo', 'etf', 'sebi', 'hedge',
+                      'option', 'futures', 'swing', 'index', 'sector'];
+  return shortTerms.some(t => new RegExp('\\b' + t + '\\b').test(s));
+}
+
 const KNOWLEDGE_PROMPT = `You are the Trade2Spend Knowledge Assistant. You explain Indian stock market concepts to complete beginners.
 
 TARGET READER: A 12-year-old who has never invested before. Assume zero prior knowledge of finance, markets, or trading.
@@ -2732,6 +2753,12 @@ const server = http.createServer(async (req, res) => {
       try {
         const { question, history = [], memberId = '' } = JSON.parse(body || '{}');
         if (!question?.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'No question provided.' })); return; }
+        // Scope pre-filter — reject non-finance queries before hitting Groq (no quota used)
+        if (!khIsFinanceQuery(question)) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ answer: KH_OUT_OF_SCOPE }));
+          return;
+        }
         // Per-member hourly quota
         if (memberId) {
           const HOUR_MS = 60 * 60 * 1000;
