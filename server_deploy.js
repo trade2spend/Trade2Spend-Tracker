@@ -3518,8 +3518,8 @@ const server = http.createServer(async (req, res) => {
         const subs = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId || 'web')}&select=id,subscription_json`);
         if (!subs || !subs.length) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'No subscription found — try tapping the bell again.' })); return; }
         const sc = await sendWebPush(subs[0].subscription_json, JSON.stringify({
-          title: 'Trade2Spend ✓',
-          body: 'Notifications are working! You\'ll get instant trade alerts.',
+          title: '✅ Notifications enabled',
+          body: 'You are all set. Trade alerts will come here.',
           tag: 't2s-test',
           url: 'https://app.trade2spend.com/#updates'
         }));
