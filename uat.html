@@ -1526,8 +1526,11 @@
       return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
     }
 
+    let _subscribing = false;
     async function subscribeToPush() {
+      if (_subscribing) return;
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      _subscribing = true;
       try {
         const reg = await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
@@ -1543,6 +1546,7 @@
         await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
         await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
       } catch (e) { console.log('Push subscribe failed:', e.message); }
+      finally { _subscribing = false; }
     }
 
     async function sbFetch(path, opts={}) {
