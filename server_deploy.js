@@ -3505,6 +3505,37 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Test push — sends a single notification to one specific device (no secret needed, member-targeted)
+  if (req.method === 'POST' && urlPath === '/test-push') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      try {
+        const { memberId, deviceId } = JSON.parse(rawBody || '{}');
+        if (!memberId) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'memberId required' })); return; }
+        const subs = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId || 'web')}&select=id,subscription_json`);
+        if (!subs || !subs.length) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'No subscription found — try tapping the bell again.' })); return; }
+        const sc = await sendWebPush(subs[0].subscription_json, JSON.stringify({
+          title: 'Trade2Spend ✓',
+          body: 'Notifications are working! You\'ll get instant trade alerts.',
+          tag: 't2s-test',
+          url: 'https://app.trade2spend.com/#updates'
+        }));
+        if (sc === 410 || sc === 404) {
+          await sbFetch(`push_subscriptions?id=eq.${subs[0].id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
+          res.writeHead(410); res.end(JSON.stringify({ ok: false, error: 'Subscription expired — please tap the bell again.' })); return;
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        console.error('/test-push error:', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
   // Immediate contract refresh — called by admin PWA after posting a new trade alert
   if (req.method === 'POST' && urlPath === '/refresh-contracts') {
     const key = new URL('https://x' + req.url).searchParams.get('key');
