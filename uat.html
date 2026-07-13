@@ -403,7 +403,7 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
-                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:0.9rem;cursor:pointer;padding:0;line-height:1;color:#9ca3af;">🔔</button>
+                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;"></span></button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -1529,14 +1529,14 @@
         const reg = await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
         if (!sub) {
-          const perm = await Notification.requestPermission();
-          if (perm !== 'granted') return;
+          // Never call requestPermission() here — Chrome Android blocks it without a user gesture.
+          // Only create a new subscription if the user already granted permission (e.g. re-subscribe after browser cleared it).
+          if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
           sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
         }
         const memberId = localStorage.getItem('t2s_member_id');
         const deviceId = localStorage.getItem('t2s_device_id') || 'web';
         if (!memberId) return;
-        // Remove old subscription for this device then insert fresh one
         await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
         await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
       } catch (e) { console.log('Push subscribe failed:', e.message); }
@@ -3302,14 +3302,11 @@
     }
 
     function updateNotifBell() {
-        const bell = document.getElementById('notif-bell-btn');
-        if (!bell) return;
-        // Hide when granted — show for default (never asked) or denied (user disabled from settings)
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            bell.style.display = 'none';
-        } else {
-            bell.style.display = 'inline-block';
-        }
+        const bell   = document.getElementById('notif-bell-btn');
+        const banner = document.getElementById('notif-banner');
+        const isEnabled = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+        if (bell)   bell.style.display   = isEnabled ? 'none' : 'inline-block';
+        if (banner) banner.style.display = isEnabled ? 'none' : '';
     }
 
     function logout(){
