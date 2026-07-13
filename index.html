@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260713-001 | Push notifications: valid VAPID EC P-256 key (old key first byte 0x8F was invalid, Chrome rejected silently); subscribeToPush() no longer calls requestPermission (gesture-gate fix for Android Chrome); bell always visible — grayscale when granted, orange dot when not; _bellToast() for user feedback; _sendTestPush() after subscribe; first-login nudge banner (shown once via t2s_notif_nudged localStorage flag). Rollback: revert VAPID_PUBLIC_KEY, subscribeToPush, enableNotifications, updateNotifBell, and remove helper functions + nudge system. -->
 <!-- DEPLOY: T2S-PROD-20260710-001 | Trade Alert tab: CMP follow-up card now shows full message text below the structured CMP ₹XX row — advisory text after the price was being dropped; rawText is now appended as reply-body inside the cmp_update card. Rollback: revert renderFollowUpCard cmp_update branch to single-line fu-body return (remove _cmpExtra). -->
 <!-- DEPLOY: T2S-PROD-20260707-001 | Markets tab: skeleton loading for index cards, gainers/losers, advance-decline bar + stale-while-revalidate cache + parallel market fetch on init -->
 <!-- DEPLOY: T2S-PROD-20260708-001 | Trade Alert tab: free member unlock fix — SL follow-up on paid-only trade unlocks CE/PE, Expiry, Entry, SL, CMP (previously required 50%+ exit) -->
@@ -393,7 +394,7 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
-                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:0.9rem;cursor:pointer;padding:0;line-height:1;color:#9ca3af;">🔔</button>
+                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;" id="notif-bell-dot"></span></button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -1462,7 +1463,7 @@
     // --- SUPABASE CONFIG ---
     const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
-    const VAPID_PUBLIC_KEY = 'jyMeYNEtZyQ7qaJVeeroanUIn0TUhmRRdzVnVvlPYi2nvlGqLgG1m714pD02fF6gJmlwlpPwjBO8ZeJM_X4lyg';
+    const VAPID_PUBLIC_KEY = 'BMVcAP6cf_uh6aCRXruTXZsnFdraj6fI7mRjPWLjhVPGkdGYTGYqxpyipQC0kNfZqVRJ79UOybp4whv-QSlQkxA';
 
     function _urlB64ToUint8(b64) {
       const pad = '='.repeat((4 - b64.length % 4) % 4);
@@ -1470,23 +1471,25 @@
       return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
     }
 
+    let _subscribing = false;
     async function subscribeToPush() {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (_subscribing) return;
+      _subscribing = true;
       try {
+        if (Notification.permission !== 'granted') return;
         const reg = await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
         if (!sub) {
-          const perm = await Notification.requestPermission();
-          if (perm !== 'granted') return;
           sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
         }
         const memberId = localStorage.getItem('t2s_member_id');
         const deviceId = localStorage.getItem('t2s_device_id') || 'web';
         if (!memberId) return;
-        // Remove old subscription for this device then insert fresh one
         await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
         await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
       } catch (e) { console.log('Push subscribe failed:', e.message); }
+      finally { _subscribing = false; }
     }
 
     async function sbFetch(path, opts={}) {
@@ -3306,30 +3309,45 @@
 
     async function enableNotifications() {
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
-            alert('To receive trade alerts, open this app in Safari and install it to your home screen first.');
+            _bellToast('To receive alerts, install this app to your home screen first (iOS: Safari → Share → Add to Home Screen).');
             return;
         }
         if (Notification.permission === 'denied') {
-            alert('Notifications are blocked. Go to Settings → your browser → Notifications and allow Trade2Spend, then try again.');
+            _bellToast('Notifications blocked. Allow in Settings → browser → Notifications, then tap again.');
+            return;
+        }
+        if (Notification.permission === 'granted') {
+            _bellToast('🔔 Syncing…');
+            await subscribeToPush();
+            updateNotifBell();
+            await _sendTestPush();
             return;
         }
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
             await subscribeToPush();
             updateNotifBell();
-            alert('✅ Notifications enabled! You\'ll get instant trade alerts.');
+            _bellToast('✓ Notification sent! Check your screen.');
+            await _sendTestPush();
         } else {
             updateNotifBell();
+            _bellToast('Notifications not allowed. You can enable in browser settings.');
         }
     }
 
     function updateNotifBell() {
         const bell = document.getElementById('notif-bell-btn');
+        const dot  = document.getElementById('notif-bell-dot');
         if (!bell) return;
+        bell.style.display = 'inline-block';
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            bell.style.display = 'none';
+            bell.style.filter  = 'grayscale(1)';
+            bell.style.opacity = '0.45';
+            if (dot) dot.style.display = 'none';
         } else {
-            bell.style.display = 'inline-block';
+            bell.style.filter  = '';
+            bell.style.opacity = '1';
+            if (dot) dot.style.display = 'block';
         }
     }
 
@@ -3550,6 +3568,59 @@
     }
     setInterval(checkPwaResolveAlert, 30_000);
     setTimeout(updateNotifBell, 1000);
+
+    function _bellToast(msg) {
+        let t = document.getElementById('_bell-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = '_bell-toast';
+            t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:10px 18px;border-radius:20px;font-size:0.82rem;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;transition:opacity 0.3s;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.opacity = '1';
+        clearTimeout(t._timer);
+        t._timer = setTimeout(() => { t.style.opacity = '0'; }, 3000);
+    }
+
+    async function _sendTestPush() {
+        try {
+            const memberId = localStorage.getItem('t2s_member_id');
+            const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+            if (!memberId) return;
+            const res = await fetch('https://api.trade2spend.com/test-push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ memberId, deviceId })
+            });
+            const d = await res.json();
+            if (d.ok) _bellToast('✓ Notification sent! Check your screen.');
+        } catch(e) { console.log('Test push failed:', e.message); }
+    }
+
+    function _showNotifNudge() {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
+        if (localStorage.getItem('t2s_notif_nudged') === '1') return;
+        localStorage.setItem('t2s_notif_nudged', '1');
+        const n = document.createElement('div');
+        n.id = '_notif-nudge';
+        n.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #4a2a78;border-radius:14px;padding:12px 16px;max-width:320px;width:90%;z-index:8888;box-shadow:0 4px 20px rgba(74,42,120,0.15);display:flex;align-items:center;gap:10px;font-family:inherit;';
+        n.innerHTML = `<span style="font-size:1.4rem;">🔔</span><div style="flex:1;"><div style="font-size:0.82rem;font-weight:700;color:#1a2030;">Get instant trade alerts</div><div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">Enable notifications to never miss a trade update</div></div><button onclick="_nudgeEnable()" style="background:#4a2a78;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:inherit;">Enable</button><button onclick="_nudgeDismiss()" style="background:none;border:none;color:#9ca3af;font-size:1.1rem;cursor:pointer;padding:0 0 0 4px;line-height:1;">×</button>`;
+        document.body.appendChild(n);
+        setTimeout(_nudgeDismiss, 6000);
+    }
+
+    function _nudgeDismiss() {
+        const n = document.getElementById('_notif-nudge');
+        if (n) n.remove();
+    }
+
+    async function _nudgeEnable() {
+        _nudgeDismiss();
+        await enableNotifications();
+    }
+
+    setTimeout(_showNotifNudge, 3500);
 
     // ── PRODUCT TOUR ──────────────────────────────────────────────────────────
     let _tourIdx = 0, _tourVisible = [];
