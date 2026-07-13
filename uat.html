@@ -3295,8 +3295,11 @@
             return;
         }
         if (Notification.permission === 'granted') {
-            // Already enabled — silently re-subscribe in case subscription was lost. No dialog shown.
-            await subscribeToPush().catch(() => {});
+            // Already enabled — show feedback, then silently re-subscribe in case subscription was lost
+            _bellToast('🔔 Syncing notifications…');
+            subscribeToPush()
+                .then(() => _bellToast('✓ Notifications active! You\'ll get instant trade alerts.'))
+                .catch(() => _bellToast('Notifications are on. If alerts aren\'t arriving, try refreshing the app.'));
             return;
         }
         const perm = await Notification.requestPermission();
@@ -3309,20 +3312,30 @@
         }
     }
 
+    function _bellToast(msg) {
+        const t = document.createElement('div');
+        t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:10px 20px;border-radius:20px;font-size:0.8rem;font-weight:600;z-index:9999;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.2);';
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 3000);
+    }
+
     function updateNotifBell() {
         const bell   = document.getElementById('notif-bell-btn');
         const banner = document.getElementById('notif-banner');
         const isEnabled = typeof Notification !== 'undefined' && Notification.permission === 'granted';
         if (bell) {
-            bell.style.display = 'inline-block'; // always visible — grey when enabled, purple+dot when not
+            bell.style.display = 'inline-block'; // always visible
             const dot = bell.querySelector('span');
             if (isEnabled) {
-                bell.style.color = '#9ca3af';
-                bell.style.fontSize = '0.9rem';
+                // Greyscale + dimmed = already set up, nothing to do
+                bell.style.filter  = 'grayscale(1)';
+                bell.style.opacity = '0.45';
                 if (dot) dot.style.display = 'none';
             } else {
-                bell.style.color = '#4a2a78';
-                bell.style.fontSize = '1.15rem';
+                // Full colour + orange dot = action needed
+                bell.style.filter  = 'none';
+                bell.style.opacity = '1';
                 if (dot) dot.style.display = 'block';
             }
         }
