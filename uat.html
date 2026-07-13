@@ -3586,11 +3586,9 @@
     // Safety: ensure bell state is set even if session init took a different path
     setTimeout(updateNotifBell, 1000);
 
-    // First-login notification nudge — shown once until member enables notifications
+    // First-login notification nudge — UAT: shows every load for testing; prod will use localStorage flag
     function _showNotifNudge() {
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
-        if (localStorage.getItem('t2s_notif_nudged') === '1') return;
-        localStorage.setItem('t2s_notif_nudged', '1');
         const el = document.createElement('div');
         el.id = 'notif-nudge';
         el.style.cssText = 'position:fixed;bottom:76px;left:12px;right:12px;z-index:200;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 20px rgba(74,42,120,0.2);border:1px solid #e8e0f5;display:flex;align-items:center;gap:12px;animation:fadeIn 0.35s ease;';
