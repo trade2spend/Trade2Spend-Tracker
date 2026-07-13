@@ -370,8 +370,8 @@ async function sbFetch(path, opts = {}) {
 // ── WEB PUSH — native implementation (RFC 8291 + RFC 8292, no npm dep) ───────
 import crypto from 'crypto';
 const { subtle } = crypto.webcrypto;
-const VAPID_PUB  = process.env.VAPID_PUBLIC_KEY  || 'jyMeYNEtZyQ7qaJVeeroanUIn0TUhmRRdzVnVvlPYi2nvlGqLgG1m714pD02fF6gJmlwlpPwjBO8ZeJM_X4lyg';
-const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || '7aRPkRJKJT5RlkA4_XAhFy2nZwi2HdRmzp8HBkppGOo';
+const VAPID_PUB  = 'BMVcAP6cf_uh6aCRXruTXZsnFdraj6fI7mRjPWLjhVPGkdGYTGYqxpyipQC0kNfZqVRJ79UOybp4whv-QSlQkxA';
+const VAPID_PRIV = 'McOnJkFaCJ2hZ76hBzEcuX8kGlvfHEMgN6hUUhW6alU';
 
 function b64uDec(s) { const p='='.repeat((4-s.length%4)%4); return Buffer.from((s+p).replace(/-/g,'+').replace(/_/g,'/'),'base64'); }
 function b64uEnc(b) { return Buffer.from(b).toString('base64url'); }
