@@ -1036,7 +1036,8 @@
         if(!anyIndex) {
             container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
         } else if (!document.getElementById('mcard-src')) {
-            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">Source: NSE India &amp; BSE India</div>`;
+            const _srcLbl = data.dataSource === 'broker' ? 'Market Feed' : 'NSE Data';
+            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">${_srcLbl}</div>`;
         }
 
         if(data.breadth && data.breadth.nifty50) {
@@ -1046,7 +1047,8 @@
             const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            if(noteEl) noteEl.textContent = isOpen ? 'Kotak Neo · live' : 'Kotak Neo · 3:35 PM close';
+            const _bSrc = data.dataSource === 'broker' ? 'Market Feed' : 'NSE Data';
+            if(noteEl) noteEl.textContent = isOpen ? `${_bSrc} · live` : `${_bSrc} · 3:35 PM close`;
         }
 
         renderExpiryStrip(data.expiry);
@@ -1056,12 +1058,13 @@
             moversEl.style.display = 'block';
             const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
+            const _mSrcLabel = data.dataSource === 'broker' ? 'Market Feed' : 'NSE Data';
             document.getElementById('gainers-list').innerHTML = gainers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_mSrcLabel}</div>`;
             document.getElementById('losers-list').innerHTML = losers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">NSE India</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_mSrcLabel}</div>`;
         } else if (moversEl) {
             moversEl.style.display = 'none';
         }
@@ -3291,6 +3294,11 @@
             alert('Notifications are blocked. Go to Settings → your browser → Notifications and allow Trade2Spend, then try again.');
             return;
         }
+        if (Notification.permission === 'granted') {
+            // Already enabled — silently re-subscribe in case subscription was lost. No dialog shown.
+            await subscribeToPush().catch(() => {});
+            return;
+        }
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
             await subscribeToPush();
@@ -3305,7 +3313,19 @@
         const bell   = document.getElementById('notif-bell-btn');
         const banner = document.getElementById('notif-banner');
         const isEnabled = typeof Notification !== 'undefined' && Notification.permission === 'granted';
-        if (bell)   bell.style.display   = isEnabled ? 'none' : 'inline-block';
+        if (bell) {
+            bell.style.display = 'inline-block'; // always visible — grey when enabled, purple+dot when not
+            const dot = bell.querySelector('span');
+            if (isEnabled) {
+                bell.style.color = '#9ca3af';
+                bell.style.fontSize = '0.9rem';
+                if (dot) dot.style.display = 'none';
+            } else {
+                bell.style.color = '#4a2a78';
+                bell.style.fontSize = '1.15rem';
+                if (dot) dot.style.display = 'block';
+            }
+        }
         if (banner) banner.style.display = isEnabled ? 'none' : '';
     }
 
