@@ -3285,6 +3285,19 @@
         }
     }
 
+    async function _sendTestPush() {
+        const memberId = localStorage.getItem('t2s_member_id') || '';
+        const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+        if (!memberId) return;
+        const r = await fetch('https://api.trade2spend.com/test-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memberId, deviceId })
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Push failed');
+    }
+
     async function enableNotifications() {
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
             alert('To receive trade alerts, open this app in Safari and install it to your home screen first.');
@@ -3295,18 +3308,21 @@
             return;
         }
         if (Notification.permission === 'granted') {
-            // Already enabled — show feedback, then silently re-subscribe in case subscription was lost
-            _bellToast('🔔 Syncing notifications…');
-            subscribeToPush()
-                .then(() => _bellToast('✓ Notifications active! You\'ll get instant trade alerts.'))
-                .catch(() => _bellToast('Notifications are on. If alerts aren\'t arriving, try refreshing the app.'));
+            // Already enabled — re-sync subscription then fire a test push so member sees confirmation
+            _bellToast('🔔 Syncing…');
+            await subscribeToPush().catch(() => {});
+            const ok = await _sendTestPush().then(() => true).catch(() => false);
+            _bellToast(ok ? '✓ Notification sent! Check your screen.' : '🔔 Notifications are on. Test notification failed — try refreshing.');
             return;
         }
+        // First time — request permission
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
-            await subscribeToPush();
+            _bellToast('🔔 Setting up…');
+            await subscribeToPush().catch(() => {});
             updateNotifBell();
-            alert('✅ Notifications enabled! You\'ll get instant trade alerts.');
+            const ok = await _sendTestPush().then(() => true).catch(() => false);
+            _bellToast(ok ? '✓ Notification sent! Check your screen.' : '✓ Notifications enabled! You\'ll get instant trade alerts.');
         } else {
             updateNotifBell();
         }
