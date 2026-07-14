@@ -5043,7 +5043,7 @@ async function confirmPushToMembers(){
     });
     const _savedPost = Array.isArray(_savedArr) ? _savedArr[0] : _savedArr;
     if (_savedPost) writeBackup(_savedPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
-    if (_savedPost) scheduleDummyLikes(_savedPost.id);
+    if (_savedPost && pushMsgType !== 'trade') scheduleDummyLikes(_savedPost.id);
     // Clear Why field after posting
     const whyEl = document.getElementById('trade-why');
     if (whyEl) whyEl.value = '';
