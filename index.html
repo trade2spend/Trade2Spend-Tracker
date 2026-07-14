@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260714-002 | Updates tab: dummy likes display — fetchLikes() now accepts postsArr and layers post.dummy_likes on top of real post_shares likes after server reconciliation; call site passes parent posts array. Rollback: revert fetchLikes signature to (postIds) only, remove postsArr block, revert call site to single-arg. -->
 <!-- DEPLOY: T2S-PROD-20260714-001 | Trade Alert tab: (1) Follow-up exit % cumulative now calculated chronological oldest→newest before rendering newest-first — fixes wrong REMAINING % shown on partial-exit cards. (2) Exit Update and SL Update cards now show full advisory text below structured rows (matching CMP Update behaviour). (3) Closed trade card shows live Session High (data-live-high) between trade close and 3:30 PM market close; switches to Max possible after [HIGH:XXX] is posted. Rollback: revert follow-up rendering loop to cumExitR forEach, remove _exitExtra/_slExtra lines, revert _maxPoss3 ternary to single-line. -->
 <!-- DEPLOY: T2S-PROD-20260713-001 | Push notifications: valid VAPID EC P-256 key (old key first byte 0x8F was invalid, Chrome rejected silently); subscribeToPush() no longer calls requestPermission (gesture-gate fix for Android Chrome); bell always visible — grayscale when granted, orange dot when not; _bellToast() for user feedback; _sendTestPush() after subscribe; first-login nudge banner (shown once via t2s_notif_nudged localStorage flag). Rollback: revert VAPID_PUBLIC_KEY, subscribeToPush, enableNotifications, updateNotifBell, and remove helper functions + nudge system. -->
 <!-- DEPLOY: T2S-PROD-20260710-001 | Trade Alert tab: CMP follow-up card now shows full message text below the structured CMP ₹XX row — advisory text after the price was being dropped; rawText is now appended as reply-body inside the cmp_update card. Rollback: revert renderFollowUpCard cmp_update branch to single-line fu-body return (remove _cmpExtra). -->
@@ -685,7 +686,7 @@
         document.body.appendChild(t);
         setTimeout(() => t.remove(), 4000);
     }
-    async function fetchLikes(postIds) {
+    async function fetchLikes(postIds, postsArr) {
         if (!postIds || !postIds.length) return;
         const memberId = localStorage.getItem('t2s_member_id');
         try {
@@ -711,6 +712,15 @@
                 }
                 updateLikeUI(id);
             });
+            // Layer dummy likes on top of real likes
+            if (postsArr) {
+                postsArr.forEach(p => {
+                    if (p.dummy_likes) {
+                        _likeCounts[p.id] = (_likeCounts[p.id] || 0) + p.dummy_likes;
+                        updateLikeUI(p.id);
+                    }
+                });
+            }
         } catch(e) { console.error('[Likes fetch]', e.message); }
     }
     async function toggleLike(postId, btnEl) {
@@ -2986,7 +2996,7 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
-            fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id));
+            fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
             initRealtimeSubscription();
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
