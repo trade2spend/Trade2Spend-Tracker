@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260714-004 | server.js: POST /schedule-dummy-likes?key=T2SMonitor2026 — accepts {postId}, schedules 5-8 staggered setTimeout PATCHes to posts.dummy_likes over 3-45 min. Zero impact on existing routes. Rollback: remove the /schedule-dummy-likes block (lines after /set-high endpoint).
 // DEPLOY: T2S-PROD-20260708-003 | server.js: Telegram notification storm fix — removed tgAlert from isSessionValid() (was firing every 5s on expired session), removed self-resetting guard, reset guard on fresh TOTP login
 // DEPLOY: T2S-PROD-20260708-004 | server.js: CMP fix — active contracts window 3→7 days (was missing Jul 1-5 trades); LTP HTTP errors now logged (were silent); added /test-cmp (dummy LTP endpoint for UAT testing) and /test-ltp (live Kotak LTP diagnostic per contract)
 /**
@@ -3024,6 +3025,35 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ ok: true, highs: Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high])) }));
       } catch(e) { res.writeHead(400); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
+  // Dummy like drip — POST /schedule-dummy-likes?key=T2SMonitor2026
+  // Body: { "postId": "<uuid>" }
+  // Schedules 5–8 PATCH calls to posts table at random intervals over 3–45 mins
+  if (req.method === 'POST' && urlPath === '/schedule-dummy-likes') {
+    const _dlKey = new URL('https://x' + req.url).searchParams.get('key');
+    if (_dlKey !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false })); return; }
+    let _dlBody = '';
+    req.on('data', c => _dlBody += c);
+    req.on('end', () => {
+      try {
+        const { postId } = JSON.parse(_dlBody || '{}');
+        if (!postId) { res.writeHead(400, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false, error: 'missing postId' })); return; }
+        const total = 5 + Math.floor(Math.random() * 4); // 5–8 likes
+        const delays = Array.from({ length: total }, () => 3 * 60 * 1000 + Math.random() * 42 * 60 * 1000);
+        delays.sort((a, b) => a - b);
+        delays.forEach((delay, i) => {
+          setTimeout(async () => {
+            try {
+              await sbFetch(`posts?id=eq.${postId}`, { method: 'PATCH', body: JSON.stringify({ dummy_likes: i + 1 }) });
+            } catch(e) { console.error('[dummy-likes] patch failed:', e.message); }
+          }, delay);
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true, scheduled: total }));
+      } catch(e) { res.writeHead(400, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     });
     return;
   }
