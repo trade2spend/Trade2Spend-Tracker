@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260714-001 | Trade Alert tab: (1) Follow-up exit % cumulative now calculated chronological oldest→newest before rendering newest-first — fixes wrong REMAINING % shown on partial-exit cards. (2) Exit Update and SL Update cards now show full advisory text below structured rows (matching CMP Update behaviour). (3) Closed trade card shows live Session High (data-live-high) between trade close and 3:30 PM market close; switches to Max possible after [HIGH:XXX] is posted. Rollback: revert follow-up rendering loop to cumExitR forEach, remove _exitExtra/_slExtra lines, revert _maxPoss3 ternary to single-line. -->
 <!-- DEPLOY: T2S-PROD-20260713-001 | Push notifications: valid VAPID EC P-256 key (old key first byte 0x8F was invalid, Chrome rejected silently); subscribeToPush() no longer calls requestPermission (gesture-gate fix for Android Chrome); bell always visible — grayscale when granted, orange dot when not; _bellToast() for user feedback; _sendTestPush() after subscribe; first-login nudge banner (shown once via t2s_notif_nudged localStorage flag). Rollback: revert VAPID_PUBLIC_KEY, subscribeToPush, enableNotifications, updateNotifBell, and remove helper functions + nudge system. -->
 <!-- DEPLOY: T2S-PROD-20260710-001 | Trade Alert tab: CMP follow-up card now shows full message text below the structured CMP ₹XX row — advisory text after the price was being dropped; rawText is now appended as reply-body inside the cmp_update card. Rollback: revert renderFollowUpCard cmp_update branch to single-line fu-body return (remove _cmpExtra). -->
 <!-- DEPLOY: T2S-PROD-20260707-001 | Markets tab: skeleton loading for index cards, gainers/losers, advance-decline bar + stale-while-revalidate cache + parallel market fetch on init -->
@@ -2072,7 +2073,8 @@
             }
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
-            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div></div>`;
+            const _exitExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
+            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_exitExtra}</div>`;
         }
 
         if (parsed.type==='sl_update'&&parsed.slRevised) {
@@ -2081,7 +2083,8 @@
             let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
-            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div></div>`;
+            const _slExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
+            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_slExtra}</div>`;
         }
 
         if (parsed.type==='cmp_update'&&parsed.price) {
@@ -2750,19 +2753,26 @@
         // Follow-ups
         let repliesHtml = '';
         if (postReplies.length > 0) {
-            let cumExitR=0;
-            let currentSL = initSL3 || null;
             const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||''));
             if (visibleReplies.length > 0) {
+                // Pre-calc cumulative exit + prevSL per reply in chronological order (oldest→newest)
+                const _chrono=[...visibleReplies].sort((a,b)=>new Date(a.sent_at||a.created_at)-new Date(b.sent_at||b.created_at));
+                const _cumMap={},_slMap={};
+                let _cumC=0,_slC=initSL3||null;
+                _chrono.forEach(r=>{
+                    const _p=parseFollowUpContent(r.content||'');
+                    _slMap[r.id]=_slC;
+                    if(_p.slRevised)_slC=_p.slRevised;
+                    if(_p.exitPct)_cumC+=_p.exitPct;
+                    if(_p.isFullExit&&!_p.exitPct)_cumC=100;
+                    _cumMap[r.id]=_cumC;
+                });
                 const tid=`ta-replies-${post.id}`, n=visibleReplies.length;
                 repliesHtml=`<button class="replies-toggle" id="btn-${tid}" data-count="${n}" onclick="toggleReplies('${tid}')">↳ ${n} follow-up${n>1?'s':''} — tap to view</button>
                     <div class="thread-replies" id="${tid}" style="display:none;">`;
-                visibleReplies.forEach(reply => {
+                visibleReplies.forEach(reply=>{
                     const parsed=parseFollowUpContent(reply.content||'');
-                    const prevSL=currentSL;
-                    if (parsed.slRevised) currentSL=parsed.slRevised;
-                    if (parsed.exitPct) cumExitR+=parsed.exitPct;
-                    repliesHtml+=renderFollowUpCard(reply,parsed,cumExitR,prevSL);
+                    repliesHtml+=renderFollowUpCard(reply,parsed,_cumMap[reply.id],_slMap[reply.id]);
                 });
                 repliesHtml+=`</div>`;
             }
@@ -2858,7 +2868,11 @@
                             <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">✅ Closed Trade</span>
                             ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
                         </div>
-                        ${_maxPoss3!==null?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`:''}
+                        ${_maxPoss3!==null
+                            ?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`
+                            :(!isMarketClosedNow()&&liveCmpKey)
+                                ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span></div>`
+                                :''}
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div>
                 </div>
