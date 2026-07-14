@@ -1696,7 +1696,7 @@
         _rtSocket.onopen = () => {
             _rtSocket.send(JSON.stringify({
                 topic: 'realtime:*', event: 'phx_join',
-                payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] } },
+                payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'posts' }] } },
                 ref: String(++_rtRef)
             }));
             clearInterval(_rtHeartbeatTimer);
@@ -2928,7 +2928,7 @@
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
         const _uc = _cLoad('t2s_upd_posts');
-        if (_uc && _uc.posts && _cachedTier) renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+        if (_uc && _uc.posts && _cachedTier) { renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache); _userInteracted.forEach(id => updateLikeUI(id)); }
         else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
         try {
@@ -2979,6 +2979,7 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            _userInteracted.forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
