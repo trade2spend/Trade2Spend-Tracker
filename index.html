@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260714-007 | Updates tab follow-up notifications: (1) sendReply() button in renderUpdates now passes 'updates' as fromTab arg. (2) else-if branch added in sendReply() fires /send-push with title "📢 Trade2Spend Update" when fromTab==='updates'. Previously only fromTab==='trades' triggered a push — Updates tab follow-ups were silently skipped. Rollback: revert onclick to sendReply('${post.id}') and remove else-if block. -->
 <!-- DEPLOY: T2S-PROD-20260714-006 | Member chip race condition fix: added synchronous inline script right after chip element to render FREE/PAID chip immediately from localStorage on first paint — no async Supabase wait. Fixes free-tier chip never showing on non-Trade-Alert tabs, and paid-tier chip 1s delay. Admin chip still rendered by _renderMemberChip after Supabase confirms is_admin. Rollback: remove inline <script> block after member-tier-chip span. -->
 <!-- DEPLOY: T2S-PROD-20260714-005 | Updates tab: Realtime subscription changed from event:'*' to event:'INSERT' — dummy_likes PATCHes were triggering UPDATE events, busting cache and rebuilding DOM every few minutes causing real likes to flash to 0. Also added _userInteracted.forEach(updateLikeUI) after renderUpdates in both cache and full-fetch paths so liked hearts are restored immediately after DOM rebuild (same pattern as Trade Alert tab). Rollback: revert event:'INSERT' to event:'*', remove two _userInteracted.forEach lines. -->
 <!-- DEPLOY: T2S-PROD-20260714-002 | Updates tab: dummy likes display — fetchLikes() now accepts postsArr and layers post.dummy_likes on top of real post_shares likes after server reconciliation; call site passes parent posts array. Rollback: revert fetchLikes signature to (postIds) only, remove postsArr block, revert call site to single-arg. -->
@@ -3131,7 +3132,7 @@
                         <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
                         <div class="admin-compose-row">
                             <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
-                            <button class="admin-compose-send" onclick="sendReply('${post.id}')">Send Follow-up →</button>
+                            <button class="admin-compose-send" onclick="sendReply('${post.id}','updates')">Send Follow-up →</button>
                         </div>
                     </div>` : '';
 
@@ -3326,12 +3327,18 @@
             // Refresh the correct tab
             if (fromTab === 'trades') fetchTradeAlerts();
             else fetchUpdates();
-            // Push notification for trade alert follow-ups
+            // Push notification for follow-ups
             if (fromTab === 'trades') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
                     body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades' })
+                }).catch(() => {});
+            } else if (fromTab === 'updates') {
+                fetch('https://api.trade2spend.com/send-push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    body: JSON.stringify({ title: '📢 Trade2Spend Update', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates' })
                 }).catch(() => {});
             }
 
