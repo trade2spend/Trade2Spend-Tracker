@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260714-005 | Updates tab: Realtime subscription changed from event:'*' to event:'INSERT' — dummy_likes PATCHes were triggering UPDATE events, busting cache and rebuilding DOM every few minutes causing real likes to flash to 0. Also added _userInteracted.forEach(updateLikeUI) after renderUpdates in both cache and full-fetch paths so liked hearts are restored immediately after DOM rebuild (same pattern as Trade Alert tab). Rollback: revert event:'INSERT' to event:'*', remove two _userInteracted.forEach lines. -->
 <!-- DEPLOY: T2S-PROD-20260714-002 | Updates tab: dummy likes display — fetchLikes() now accepts postsArr and layers post.dummy_likes on top of real post_shares likes after server reconciliation; call site passes parent posts array. Rollback: revert fetchLikes signature to (postIds) only, remove postsArr block, revert call site to single-arg. -->
 <!-- DEPLOY: T2S-PROD-20260714-001 | Trade Alert tab: (1) Follow-up exit % cumulative now calculated chronological oldest→newest before rendering newest-first — fixes wrong REMAINING % shown on partial-exit cards. (2) Exit Update and SL Update cards now show full advisory text below structured rows (matching CMP Update behaviour). (3) Closed trade card shows live Session High (data-live-high) between trade close and 3:30 PM market close; switches to Max possible after [HIGH:XXX] is posted. Rollback: revert follow-up rendering loop to cumExitR forEach, remove _exitExtra/_slExtra lines, revert _maxPoss3 ternary to single-line. -->
 <!-- DEPLOY: T2S-PROD-20260713-001 | Push notifications: valid VAPID EC P-256 key (old key first byte 0x8F was invalid, Chrome rejected silently); subscribeToPush() no longer calls requestPermission (gesture-gate fix for Android Chrome); bell always visible — grayscale when granted, orange dot when not; _bellToast() for user feedback; _sendTestPush() after subscribe; first-login nudge banner (shown once via t2s_notif_nudged localStorage flag). Rollback: revert VAPID_PUBLIC_KEY, subscribeToPush, enableNotifications, updateNotifBell, and remove helper functions + nudge system. -->
@@ -1545,7 +1546,7 @@
                     config: {
                         broadcast: { self: false },
                         presence: { key: '' },
-                        postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }]
+                        postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'posts' }]
                     }
                 },
                 ref: String(++_rtRef)
@@ -2936,6 +2937,7 @@
         const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000); // 30-min TTL — Realtime handles freshness
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+            _userInteracted.forEach(id => updateLikeUI(id));
             return; // cache is fresh and tier known — skip Supabase fetch
         }
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
@@ -2996,6 +2998,7 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            _userInteracted.forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
             initRealtimeSubscription();
         } catch(e) {
