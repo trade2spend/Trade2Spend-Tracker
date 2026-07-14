@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260714-003: Admin PWA — scheduleDummyLikes() fires POST /schedule-dummy-likes on VM after every Push to Members (parent posts only); client-side setTimeout chain removed; server handles 5-8 staggered PATCHes to dummy_likes column over 3-45 min. Rollback: remove scheduleDummyLikes() and the call after writeBackup(). -->
 <!-- T2S-PROD-20260709-002: TOTP+PIN two-layer auth, Setup tab grid layout, tab reorder/rename/hide, tab button styling -->
 <!DOCTYPE html>
 <html lang="en">
@@ -5003,6 +5004,14 @@ function setPushAud(val){
   paidBtn.style.cssText = val === 'paid_only' ? active : inactive;
 }
 
+function scheduleDummyLikes(postId) {
+  fetch(`https://api.trade2spend.com/schedule-dummy-likes?key=T2SMonitor2026`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ postId })
+  }).catch(() => {});
+}
+
 async function confirmPushToMembers(){
   const msg = pushMsgType === 'trade' ? lastTradeMsg : lastGenMsg;
   if(!msg){ showToast('No message to send.'); return; }
@@ -5027,6 +5036,7 @@ async function confirmPushToMembers(){
     });
     const _savedPost = Array.isArray(_savedArr) ? _savedArr[0] : _savedArr;
     if (_savedPost) writeBackup(_savedPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
+    if (_savedPost) scheduleDummyLikes(_savedPost.id);
     // Clear Why field after posting
     const whyEl = document.getElementById('trade-why');
     if (whyEl) whyEl.value = '';
