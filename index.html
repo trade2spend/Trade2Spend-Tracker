@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260714-006 | Member chip race condition fix: added synchronous inline script right after chip element to render FREE/PAID chip immediately from localStorage on first paint — no async Supabase wait. Fixes free-tier chip never showing on non-Trade-Alert tabs, and paid-tier chip 1s delay. Admin chip still rendered by _renderMemberChip after Supabase confirms is_admin. Rollback: remove inline <script> block after member-tier-chip span. -->
 <!-- DEPLOY: T2S-PROD-20260714-005 | Updates tab: Realtime subscription changed from event:'*' to event:'INSERT' — dummy_likes PATCHes were triggering UPDATE events, busting cache and rebuilding DOM every few minutes causing real likes to flash to 0. Also added _userInteracted.forEach(updateLikeUI) after renderUpdates in both cache and full-fetch paths so liked hearts are restored immediately after DOM rebuild (same pattern as Trade Alert tab). Rollback: revert event:'INSERT' to event:'*', remove two _userInteracted.forEach lines. -->
 <!-- DEPLOY: T2S-PROD-20260714-002 | Updates tab: dummy likes display — fetchLikes() now accepts postsArr and layers post.dummy_likes on top of real post_shares likes after server reconciliation; call site passes parent posts array. Rollback: revert fetchLikes signature to (postIds) only, remove postsArr block, revert call site to single-arg. -->
 <!-- DEPLOY: T2S-PROD-20260714-001 | Trade Alert tab: (1) Follow-up exit % cumulative now calculated chronological oldest→newest before rendering newest-first — fixes wrong REMAINING % shown on partial-exit cards. (2) Exit Update and SL Update cards now show full advisory text below structured rows (matching CMP Update behaviour). (3) Closed trade card shows live Session High (data-live-high) between trade close and 3:30 PM market close; switches to Max possible after [HIGH:XXX] is posted. Rollback: revert follow-up rendering loop to cumExitR forEach, remove _exitExtra/_slExtra lines, revert _maxPoss3 ternary to single-line. -->
@@ -397,7 +398,8 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
-                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;" id="notif-bell-dot"></span></button>
+                    <script>(function(){var mid=localStorage.getItem('t2s_member_id');var m=localStorage.getItem('t2s_mode');var c=document.getElementById('member-tier-chip');if(!c||!mid)return;if(m==='paid'){c.textContent='PAID';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';}else{c.textContent='FREE';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';}})()</script>
+                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:inline-block;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;" id="notif-bell-dot"></span></button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -2107,6 +2109,25 @@
         return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">💬 Update</span><span class="update-time">${ts}</span></div><div class="reply-body">${rawText}</div></div>`;
     }
 
+    // ── MEMBER TIER CHIP ─────────────────────────────────────────────────────
+    // Called immediately after _cachedMember is populated (in init) AND after
+    // fetchTradeAlerts resolves — whichever comes first wins; subsequent calls
+    // are instant because they read the same DOM element.
+    function _renderMemberChip(member) {
+        const _tierChip = document.getElementById('member-tier-chip');
+        if (!_tierChip || !member) return;
+        if (member.is_admin === true) {
+            _tierChip.textContent = 'ADMIN';
+            _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);';
+        } else if (member.tier === 'paid') {
+            _tierChip.textContent = 'PAID';
+            _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';
+        } else {
+            _tierChip.textContent = 'FREE';
+            _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';
+        }
+    }
+
     // ── TRADE ALERT TAB (Supabase posts) ─────────────────────────────────────
     async function fetchTradeAlerts() {
         const container = document.getElementById('trade-alert-container');
@@ -2139,20 +2160,8 @@
         }
         const reauthBtn = document.getElementById('admin-reauth-btn');
         if (reauthBtn) reauthBtn.style.display = isAdmin ? 'inline-block' : 'none';
-        // Tier chip in header
-        const _tierChip = document.getElementById('member-tier-chip');
-        if (_tierChip) {
-            if (isAdmin) {
-                _tierChip.textContent = 'ADMIN';
-                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);';
-            } else if (memberTier === 'paid') {
-                _tierChip.textContent = 'PAID';
-                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';
-            } else {
-                _tierChip.textContent = 'FREE';
-                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';
-            }
-        }
+        // Tier chip in header — delegated to shared helper
+        _renderMemberChip({ is_admin: isAdmin, tier: memberTier });
 
         try {
             const [tradeParents, allFollowUps] = await Promise.all([
@@ -3366,7 +3375,7 @@
         const bell = document.getElementById('notif-bell-btn');
         const dot  = document.getElementById('notif-bell-dot');
         if (!bell) return;
-        bell.style.display = 'inline-block';
+        // Bell is always visible from HTML — only update filter/dot based on permission state
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             bell.style.filter  = 'grayscale(1)';
             bell.style.opacity = '0.45';
@@ -3433,7 +3442,18 @@
                     window.location.href='login.html'; return;
                 }
                 window._cachedMember = members[0];
+                // Render tier chip immediately — before any tab fetch completes
+                _renderMemberChip(members[0]);
             } catch(e){ console.warn('Auth check failed',e); }
+        }
+        // Fallback chip render — runs even if sbFetch above failed or was skipped (free-mode visitors).
+        // Guarantees the FREE/PAID/ADMIN chip is visible on every tab, not just Trade Alert.
+        if (!window._cachedMember) {
+            // sbFetch failed or mode==='free' — synthesize minimal member object from localStorage
+            _renderMemberChip({ tier: localStorage.getItem('t2s_mode') || 'free', is_admin: false });
+        } else {
+            // Ensure chip is shown even if the call inside try{} was a no-op (defensive)
+            _renderMemberChip(window._cachedMember);
         }
         // Idle auto-lock: update last_active on real user interactions
         const IDLE_MS = 30 * 60 * 1000;
