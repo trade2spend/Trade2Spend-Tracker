@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260716-001 | Trade Alert tab + Performance tab: "not triggered" trades now excluded from Closed Trades display and Performance P&L calculation. Trades with _STATUS_ONLY_RE-matching follow-ups (e.g. "Not triggered. Now avoiding...") and no valid trigger/exit data are correctly hidden after market close — were rendering as "✅ Closed Trade" with no exit since T2S-PROD-20260709-003 auto-close. Two-line fix: closedPosts gets a getTradeState!=='not_triggered' filter; closedTrades gets same guard. Rollback: revert closedPosts to single isTradeFullyClosed filter; revert closedTrades to single isTradeFullyClosed filter. -->
 <!-- DEPLOY: T2S-PROD-20260715-010 | Member PWA — fetchUpdates() stale-while-revalidate: removed early return on cache hit so Supabase is always fetched fresh in background. Cached content still shows instantly for UX. Fixes: new post not appearing when cache was < 30 min old (Realtime race), CUG posts not visible on first tab visit. Rollback: add back `return;` after _userInteracted.forEach on cache hit block. -->
 <!-- DEPLOY: T2S-PROD-20260715-009 | Member PWA — Realtime: (1) subscription changed INSERT→* so UPDATE/DELETE events fire (deleted posts now disappear instantly); (2) fetchUpdates() always called on any Realtime event, not just when on Updates tab; (3) _updatesRefreshTimer added — 60s polling while on Updates tab as fallback if Realtime misses. No other logic changed. Rollback: revert event:* to INSERT, revert always-fetchUpdates to tab-gated, remove _updatesRefreshTimer var + 2 usages. -->
 <!-- DEPLOY: T2S-PROD-20260715-005 | Member PWA — cug_test posts filtered: trade alerts and updates with audience=cug_test are hidden from all members except mobile 8888888888 and admins. One line filter added after each post-fetch in fetchTradeAlerts() and fetchUpdates(). Rollback: remove the two _isCug + filter lines. -->
@@ -1343,7 +1344,7 @@
             const replyMap = {};
             allReplies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
-            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]));
+            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]) && getTradeState(p, replyMap[p.id]||[]) !== 'not_triggered');
 
             const tz = {timeZone:'Asia/Kolkata'};
             const tradeData = closedTrades.map(p => {
@@ -2266,6 +2267,7 @@
             });
         const closedPosts = _recentPosts
             .filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]))
+            .filter(p => getTradeState(p, _pubReplies(p)) !== 'not_triggered')
             .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
 
         let html = '';
