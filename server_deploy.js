@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260715-003 | server.js: CUG routing — /send-push now routes audience=cug_test posts only to CUG_MOBILES devices. CUG_MOBILES=['+918888888888']. All other audiences unchanged. Rollback: remove CUG_MOBILES constant + cug_test branch in /send-push.
 // DEPLOY: T2S-PROD-20260714-007 | server.js: dummy likes made organic — 25% posts get 0 likes, 1–6 likes when fired (skewed towards 1–3 via random×random), first like 1–20 min after post, each subsequent 1–15 min apart. No fixed window, no predictable count.
 // DEPLOY: T2S-PROD-20260714-004 | server.js: POST /schedule-dummy-likes?key=T2SMonitor2026 — accepts {postId}, schedules 5-8 staggered setTimeout PATCHes to posts.dummy_likes over 3-45 min. Zero impact on existing routes. Rollback: remove the /schedule-dummy-likes block (lines after /set-high endpoint).
 // DEPLOY: T2S-PROD-20260708-003 | server.js: Telegram notification storm fix — removed tgAlert from isSessionValid() (was firing every 5s on expired session), removed self-resetting guard, reset guard on fresh TOTP login
@@ -374,6 +375,7 @@ import crypto from 'crypto';
 const { subtle } = crypto.webcrypto;
 const VAPID_PUB  = 'BMVcAP6cf_uh6aCRXruTXZsnFdraj6fI7mRjPWLjhVPGkdGYTGYqxpyipQC0kNfZqVRJ79UOybp4whv-QSlQkxA';
 const VAPID_PRIV = 'McOnJkFaCJ2hZ76hBzEcuX8kGlvfHEMgN6hUUhW6alU';
+const CUG_MOBILES = ['+918888888888']; // T2S-PROD-20260715-003: CUG test numbers — only these devices get audience=cug_test push notifications
 
 function b64uDec(s) { const p='='.repeat((4-s.length%4)%4); return Buffer.from((s+p).replace(/-/g,'+').replace(/_/g,'/'),'base64'); }
 function b64uEnc(b) { return Buffer.from(b).toString('base64url'); }
@@ -3532,7 +3534,16 @@ const server = http.createServer(async (req, res) => {
       _lastPushBody = msgBody;
       _lastPushTs   = _pNow;
       try {
-        const subs = await sbFetch('push_subscriptions?select=id,subscription_json');
+        // T2S-PROD-20260715-003: CUG routing — audience=cug_test sends only to CUG member devices
+        let subs;
+        if (payload.audience === 'cug_test') {
+          const cugMembers = await sbFetch(`members?mobile=in.(${CUG_MOBILES.join(',')})&select=id`);
+          const cugIds = (cugMembers || []).map(m => m.id);
+          if (!cugIds.length) { res.writeHead(200); res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'no_cug_members' })); return; }
+          subs = await sbFetch(`push_subscriptions?member_id=in.(${cugIds.join(',')})&select=id,subscription_json`);
+        } else {
+          subs = await sbFetch('push_subscriptions?select=id,subscription_json');
+        }
         // T2S-PROD-20260715-002: parallel delivery — all notifications fire simultaneously so browser tag-dedup works correctly
         const _pResults = await Promise.all(subs.map(async sub => {
           try {
