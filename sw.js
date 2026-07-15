@@ -33,12 +33,13 @@ self.addEventListener('push', e => {
 });
 
 self.addEventListener('notificationclick', e => {
+  // T2S-PROD-20260715-008: navigate existing window to notification URL (was just focusing without navigating — updates tab never loaded)
   e.notification.close();
   const url = (e.notification.data || {}).url || './';
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
       const w = ws.find(c => c.url.includes('trade2spend') || c.url.includes('app.trade2spend'));
-      if (w) { w.focus(); return; }
+      if (w) { w.navigate(url).then(() => w.focus()); return; }
       return clients.openWindow(url);
     })
   );
