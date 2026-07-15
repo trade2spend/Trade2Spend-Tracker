@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260715-006 | server.js: CUG mobile lookup — encode + as %2B in Supabase URL (+ in query string = space, caused 0 CUG members found → no push sent). Rollback: revert .replace(/\+/g,'%2B') to .join(',').
 // DEPLOY: T2S-PROD-20260715-003 | server.js: CUG routing — /send-push now routes audience=cug_test posts only to CUG_MOBILES devices. CUG_MOBILES=['+918888888888']. All other audiences unchanged. Rollback: remove CUG_MOBILES constant + cug_test branch in /send-push.
 // DEPLOY: T2S-PROD-20260714-007 | server.js: dummy likes made organic — 25% posts get 0 likes, 1–6 likes when fired (skewed towards 1–3 via random×random), first like 1–20 min after post, each subsequent 1–15 min apart. No fixed window, no predictable count.
 // DEPLOY: T2S-PROD-20260714-004 | server.js: POST /schedule-dummy-likes?key=T2SMonitor2026 — accepts {postId}, schedules 5-8 staggered setTimeout PATCHes to posts.dummy_likes over 3-45 min. Zero impact on existing routes. Rollback: remove the /schedule-dummy-likes block (lines after /set-high endpoint).
@@ -3537,7 +3538,7 @@ const server = http.createServer(async (req, res) => {
         // T2S-PROD-20260715-003: CUG routing — audience=cug_test sends only to CUG member devices
         let subs;
         if (payload.audience === 'cug_test') {
-          const cugMembers = await sbFetch(`members?mobile=in.(${CUG_MOBILES.join(',')})&select=id`);
+          const cugMembers = await sbFetch(`members?mobile=in.(${CUG_MOBILES.map(m => m.replace(/\+/g, '%2B')).join(',')})&select=id`);
           const cugIds = (cugMembers || []).map(m => m.id);
           if (!cugIds.length) { res.writeHead(200); res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'no_cug_members' })); return; }
           subs = await sbFetch(`push_subscriptions?member_id=in.(${cugIds.join(',')})&select=id,subscription_json`);
