@@ -1810,11 +1810,13 @@ async function loadFollowUpData() {
 }
 
 async function sendFollowUp() {
+    if (_fuSending) return;
+    _fuSending = true;
     const text     = document.getElementById('fu-text').value.trim();
     const parentId = document.getElementById('fu-post-select').value;
     const statusEl = document.getElementById('fu-status');
 
-    if (text.length < 3) { showToast('Type a message first.'); return; }
+    if (text.length < 3) { _fuSending = false; showToast('Type a message first.'); return; }
 
     statusEl.style.display = 'block';
     statusEl.style.color = 'var(--muted)';
@@ -1850,6 +1852,8 @@ async function sendFollowUp() {
     } catch(e) {
         statusEl.style.color = 'var(--red)';
         statusEl.textContent = 'Failed: ' + e.message.slice(0,80);
+    } finally {
+        _fuSending = false;
     }
 }
 
@@ -3059,6 +3063,8 @@ function copyMsg(type){
   if(!msg){showToast('Generate a message first.');return;}
   navigator.clipboard.writeText(msg).then(()=>showToast('Copied to clipboard!')).catch(()=>showToast('Copy failed.'));
 }
+
+let _fuSending = false; // T2S-UAT-20260715-B: guard against double-click on Send Follow-up
 
 // ── KOTAK CONNECTION ──
 let _kotakConnected = false;
