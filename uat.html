@@ -1711,11 +1711,13 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
+                // T2S-UAT-20260715-002: fix (1) clear correct cache key for uat.html; (2) always refresh updates so post appears regardless of which tab is active
                 localStorage.removeItem('t2s_upd_posts_v2');
+                localStorage.removeItem('t2s_upd_posts');
                 const _rtActiveEl = document.querySelector('.tab.active');
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
-                if (_rtTabId === 'updates') fetchUpdates();
-                else if (_rtTabId === 'trades') fetchTradeAlerts();
+                fetchUpdates();
+                if (_rtTabId === 'trades') fetchTradeAlerts();
             } catch(_) {}
         };
         _rtSocket.onclose = () => {
