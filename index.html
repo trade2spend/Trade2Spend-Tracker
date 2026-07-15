@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260715-005 | Member PWA — cug_test posts filtered: trade alerts and updates with audience=cug_test are hidden from all members except mobile 8888888888 and admins. One line filter added after each post-fetch in fetchTradeAlerts() and fetchUpdates(). Rollback: remove the two _isCug + filter lines. -->
 <!-- DEPLOY: T2S-PROD-20260715-001 | Trade Alert + Performance tab calculation fixes: (1) extractHighFromReplies now returns MAX of all [HIGH:XXX] replies (VM posts one per trading day — first-found was picking wrong/stale value). (2) parseFollowUpContent: when SL hit already detected (isFullExit=true), "exiting with N as SL" now extracts N as exit price — fixes 10 Jul loss showing as profit. (3) Performance tab P&L now uses actual exit price as primary (not HIGH) — HIGH used only as fallback when no exit exists. (4) "Max possible" display: falls back to calculateMaxProfit (highest price in follow-up text) when [HIGH:XXX] is below entry or absent — fixes missing Max possible on 6 Jul, 13 Jul cards. (5) Both Section 2.5 and Section 3 "Max possible" show best available high (VM HIGH if valid, else highest exit seen). Rollback: revert extractHighFromReplies to first-found, remove slHitExitM block, revert maxPrice order, revert _calcMax+_bestHigh lines to original _maxPoss single-line, revert display to _optHighX. -->
 <!-- DEPLOY: T2S-PROD-20260714-007 | Updates tab follow-up notifications: (1) sendReply() button in renderUpdates now passes 'updates' as fromTab arg. (2) else-if branch added in sendReply() fires /send-push with title "📢 Trade2Spend Update" when fromTab==='updates'. Previously only fromTab==='trades' triggered a push — Updates tab follow-ups were silently skipped. Rollback: revert onclick to sendReply('${post.id}') and remove else-if block. -->
 <!-- DEPLOY: T2S-PROD-20260714-006 | Member chip race condition fix: added synchronous inline script right after chip element to render FREE/PAID chip immediately from localStorage on first paint — no async Supabase wait. Fixes free-tier chip never showing on non-Trade-Alert tabs, and paid-tier chip 1s delay. Admin chip still rendered by _renderMemberChip after Supabase confirms is_admin. Rollback: remove inline <script> block after member-tier-chip span. -->
@@ -2194,6 +2195,9 @@
                     }
                 } catch(e) {}
             }
+            // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
+            const _isCugMember = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            if (!_isCugMember) tradeParents.splice(0, tradeParents.length, ...tradeParents.filter(p => p.audience !== 'cug_test'));
             const replyMap = {};
             allFollowUps.forEach(r => {
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
@@ -2995,6 +2999,9 @@
                     }
                 } catch(e) {}
             }
+            // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
+            const _isCugUpd = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            if (!_isCugUpd) posts.splice(0, posts.length, ...posts.filter(p => p.audience !== 'cug_test'));
 
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
