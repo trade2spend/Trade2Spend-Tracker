@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260715-009 | Member PWA — Realtime: (1) subscription changed INSERT→* so UPDATE/DELETE events fire (deleted posts now disappear instantly); (2) fetchUpdates() always called on any Realtime event, not just when on Updates tab; (3) _updatesRefreshTimer added — 60s polling while on Updates tab as fallback if Realtime misses. No other logic changed. Rollback: revert event:* to INSERT, revert always-fetchUpdates to tab-gated, remove _updatesRefreshTimer var + 2 usages. -->
 <!-- DEPLOY: T2S-PROD-20260715-005 | Member PWA — cug_test posts filtered: trade alerts and updates with audience=cug_test are hidden from all members except mobile 8888888888 and admins. One line filter added after each post-fetch in fetchTradeAlerts() and fetchUpdates(). Rollback: remove the two _isCug + filter lines. -->
 <!-- DEPLOY: T2S-PROD-20260715-001 | Trade Alert + Performance tab calculation fixes: (1) extractHighFromReplies now returns MAX of all [HIGH:XXX] replies (VM posts one per trading day — first-found was picking wrong/stale value). (2) parseFollowUpContent: when SL hit already detected (isFullExit=true), "exiting with N as SL" now extracts N as exit price — fixes 10 Jul loss showing as profit. (3) Performance tab P&L now uses actual exit price as primary (not HIGH) — HIGH used only as fallback when no exit exists. (4) "Max possible" display: falls back to calculateMaxProfit (highest price in follow-up text) when [HIGH:XXX] is below entry or absent — fixes missing Max possible on 6 Jul, 13 Jul cards. (5) Both Section 2.5 and Section 3 "Max possible" show best available high (VM HIGH if valid, else highest exit seen). Rollback: revert extractHighFromReplies to first-found, remove slHitExitM block, revert maxPrice order, revert _calcMax+_bestHigh lines to original _maxPoss single-line, revert display to _optHighX. -->
 <!-- DEPLOY: T2S-PROD-20260714-007 | Updates tab follow-up notifications: (1) sendReply() button in renderUpdates now passes 'updates' as fromTab arg. (2) else-if branch added in sendReply() fires /send-push with title "📢 Trade2Spend Update" when fromTab==='updates'. Previously only fromTab==='trades' triggered a push — Updates tab follow-ups were silently skipped. Rollback: revert onclick to sendReply('${post.id}') and remove else-if block. -->
@@ -655,7 +656,8 @@
 
 <script>
     // --- UI LOGIC ---
-    let _tradeRefreshTimer = null;
+    let _tradeRefreshTimer   = null;
+    let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
@@ -835,8 +837,9 @@
         document.getElementById(tabId).classList.add('active');
         document.querySelector('.app-container').scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
-        if (_tradeRefreshTimer) { clearInterval(_tradeRefreshTimer); _tradeRefreshTimer = null; }
-        if (tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => setTabBadge('updates', 0), 2500); fetchUpdates(); }
+        if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
+        if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; } // T2S-PROD-20260715-009
+        if (tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => setTabBadge('updates', 0), 2500); fetchUpdates(); _updatesRefreshTimer = setInterval(fetchUpdates, 60000); }
         if (tabId === 'trades') {
             setTabBadge('trades', 0);
             fetchTradeAlerts();
@@ -1553,7 +1556,7 @@
                     config: {
                         broadcast: { self: false },
                         presence: { key: '' },
-                        postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'posts' }]
+                        postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
                     }
                 },
                 ref: String(++_rtRef)
@@ -1572,8 +1575,8 @@
                 localStorage.removeItem('t2s_upd_posts_v2'); // bust cache so next fetchUpdates() goes to Supabase
                 const _rtActiveEl = document.querySelector('.tab.active');
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
-                if (_rtTabId === 'updates') fetchUpdates();
-                else if (_rtTabId === 'trades') fetchTradeAlerts();
+                fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
+                if (_rtTabId === 'trades') fetchTradeAlerts();
             } catch(_) {}
         };
 
