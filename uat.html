@@ -1698,7 +1698,7 @@
         _rtSocket.onopen = () => {
             _rtSocket.send(JSON.stringify({
                 topic: 'realtime:*', event: 'phx_join',
-                payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'posts' }] } },
+                payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] } }, // T2S-UAT-20260715-001: * catches INSERT+UPDATE+DELETE so deleted posts disappear instantly
                 ref: String(++_rtRef)
             }));
             clearInterval(_rtHeartbeatTimer);
@@ -2185,6 +2185,9 @@
                 sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
                 sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', {method:'GET'})
             ]);
+            // T2S-UAT-20260715-001: hide cug_test posts from non-CUG members
+            const _isCugTA = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            if (!_isCugTA) tradeParents.splice(0, tradeParents.length, ...tradeParents.filter(p => p.audience !== 'cug_test'));
             const replyMap = {};
             allFollowUps.forEach(r => {
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
@@ -2966,6 +2969,9 @@
                 posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
             }
 
+            // T2S-UAT-20260715-001: hide cug_test posts from non-CUG members
+            const _isCugUpd = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            if (!_isCugUpd) posts.splice(0, posts.length, ...posts.filter(p => p.audience !== 'cug_test'));
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
                 const receipts = await sbFetch(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
