@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260715-008 | server.js: CUG push URL changed to uat.html#updates (was index.html#updates — wrong PWA for CUG testing). Rollback: revert url override line.
 // DEPLOY: T2S-PROD-20260715-007 | server.js: endpoint dedup in /send-push — before sending, filter subs to unique endpoints only. Prevents multiple pushes when same device has registered multiple subscription rows in DB. Applies to both CUG and broadcast paths. Rollback: remove the _seenEps dedup block and change _dedupedSubs back to subs.
 // DEPLOY: T2S-PROD-20260715-006 | server.js: CUG mobile lookup — encode + as %2B in Supabase URL (+ in query string = space, caused 0 CUG members found → no push sent). Rollback: revert .replace(/\+/g,'%2B') to .join(',').
 // DEPLOY: T2S-PROD-20260715-003 | server.js: CUG routing — /send-push now routes audience=cug_test posts only to CUG_MOBILES devices. CUG_MOBILES=['+918888888888']. All other audiences unchanged. Rollback: remove CUG_MOBILES constant + cug_test branch in /send-push.
@@ -3525,7 +3526,8 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json');
       let payload = {};
       try { payload = JSON.parse(rawBody); } catch {}
-      const { title = 'Trade2Spend', body: msgBody = 'New update', tag = 't2s-notif', url = 'https://app.trade2spend.com/#updates' } = payload;
+      let { title = 'Trade2Spend', body: msgBody = 'New update', tag = 't2s-notif', url = 'https://app.trade2spend.com/#updates' } = payload;
+      if (payload.audience === 'cug_test') url = 'https://app.trade2spend.com/uat.html#updates'; // T2S-PROD-20260715-008: CUG notifications open uat.html
       // T2S-PROD-20260715-002: dedup guard — skip if identical body sent within 30s
       const _pNow = Date.now();
       if (msgBody === _lastPushBody && _pNow - _lastPushTs < 30000) {
