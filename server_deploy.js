@@ -478,6 +478,8 @@ let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper
 let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
 let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
+let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent
+let _lastPushTs          = 0;    // dedup guard: timestamp of last broadcast push sent
 
 function loadHolidayState() {
   try {
@@ -3520,16 +3522,27 @@ const server = http.createServer(async (req, res) => {
       let payload = {};
       try { payload = JSON.parse(rawBody); } catch {}
       const { title = 'Trade2Spend', body: msgBody = 'New update', tag = 't2s-notif', url = 'https://app.trade2spend.com/#updates' } = payload;
+      // T2S-PROD-20260715-002: dedup guard — skip if identical body sent within 30s
+      const _pNow = Date.now();
+      if (msgBody === _lastPushBody && _pNow - _lastPushTs < 30000) {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'dedup' }));
+        return;
+      }
+      _lastPushBody = msgBody;
+      _lastPushTs   = _pNow;
       try {
         const subs = await sbFetch('push_subscriptions?select=id,subscription_json');
-        let sent = 0, failed = 0;
-        const toDelete = [];
-        for (const sub of subs) {
+        // T2S-PROD-20260715-002: parallel delivery — all notifications fire simultaneously so browser tag-dedup works correctly
+        const _pResults = await Promise.all(subs.map(async sub => {
           try {
             const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
-            if (sc === 410 || sc === 404) toDelete.push(sub.id); else sent++;
-          } catch (e) { failed++; }
-        }
+            return { id: sub.id, expired: sc === 410 || sc === 404 };
+          } catch(e) { return { id: sub.id, failed: true }; }
+        }));
+        const sent    = _pResults.filter(r => !r.expired && !r.failed).length;
+        const failed  = _pResults.filter(r => r.failed).length;
+        const toDelete = _pResults.filter(r => r.expired).map(r => r.id);
         for (const id of toDelete) {
           await sbFetch(`push_subscriptions?id=eq.${id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
         }
