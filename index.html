@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260715-001 | Trade Alert + Performance tab calculation fixes: (1) extractHighFromReplies now returns MAX of all [HIGH:XXX] replies (VM posts one per trading day — first-found was picking wrong/stale value). (2) parseFollowUpContent: when SL hit already detected (isFullExit=true), "exiting with N as SL" now extracts N as exit price — fixes 10 Jul loss showing as profit. (3) Performance tab P&L now uses actual exit price as primary (not HIGH) — HIGH used only as fallback when no exit exists. (4) "Max possible" display: falls back to calculateMaxProfit (highest price in follow-up text) when [HIGH:XXX] is below entry or absent — fixes missing Max possible on 6 Jul, 13 Jul cards. (5) Both Section 2.5 and Section 3 "Max possible" show best available high (VM HIGH if valid, else highest exit seen). Rollback: revert extractHighFromReplies to first-found, remove slHitExitM block, revert maxPrice order, revert _calcMax+_bestHigh lines to original _maxPoss single-line, revert display to _optHighX. -->
 <!-- DEPLOY: T2S-PROD-20260714-007 | Updates tab follow-up notifications: (1) sendReply() button in renderUpdates now passes 'updates' as fromTab arg. (2) else-if branch added in sendReply() fires /send-push with title "📢 Trade2Spend Update" when fromTab==='updates'. Previously only fromTab==='trades' triggered a push — Updates tab follow-ups were silently skipped. Rollback: revert onclick to sendReply('${post.id}') and remove else-if block. -->
 <!-- DEPLOY: T2S-PROD-20260714-006 | Member chip race condition fix: added synchronous inline script right after chip element to render FREE/PAID chip immediately from localStorage on first paint — no async Supabase wait. Fixes free-tier chip never showing on non-Trade-Alert tabs, and paid-tier chip 1s delay. Admin chip still rendered by _renderMemberChip after Supabase confirms is_admin. Rollback: remove inline <script> block after member-tier-chip span. -->
 <!-- DEPLOY: T2S-PROD-20260714-005 | Updates tab: Realtime subscription changed from event:'*' to event:'INSERT' — dummy_likes PATCHes were triggering UPDATE events, busting cache and rebuilding DOM every few minutes causing real likes to flash to 0. Also added _userInteracted.forEach(updateLikeUI) after renderUpdates in both cache and full-fetch paths so liked hearts are restored immediately after DOM rebuild (same pattern as Trade Alert tab). Rollback: revert event:'INSERT' to event:'*', remove two _userInteracted.forEach lines. -->
@@ -1029,11 +1030,12 @@
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
     // Extract the VM-tracked intraday high from [HIGH:X] follow-up posted at close
     function extractHighFromReplies(replies) {
+        let max = null;
         for (const r of replies) {
             const m = (r.content || '').match(/^\[HIGH:([\d.]+)\]$/);
-            if (m) return parseFloat(m[1]);
+            if (m) { const v = parseFloat(m[1]); if (max === null || v > max) max = v; }
         }
-        return null;
+        return max;
     }
 
     // Update Day High spans on active trade cards (live, from VM /market optionHighs)
@@ -1346,7 +1348,8 @@
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies) });
                 const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
-                const maxPrice = dayHighPerf || exitPricePerf || (mp ? mp.max : null);
+                const validDayHigh = (dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
+                const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
                 let pnlPts = null, pnlRs = null, isWin = false;
                 // Extract latest CMP from replies (same logic as trade card — replies are newest-first)
@@ -1797,6 +1800,11 @@
                     r.isFullExit = true; r.type = 'exit'; r.price = exitVal;
                 }
             }
+        }
+        // When SL hit is detected (e.g. "SL gone") but price still null, extract from "exiting with/at N"
+        if (r.isFullExit && !r.price && !r.exitPct) {
+            const slHitExitM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
+            if (slHitExitM) r.price = parseFloat(slHitExitM[1]);
         }
         // Leading option price
         const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\+?\s*(?:[,\n\r\s]|$)/);
@@ -2639,7 +2647,9 @@
             const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
             const _optHigh25 = extractHighFromReplies(postReplies);
-            const _maxPoss25 = (_optHigh25 && fields.entry) ? Math.round(_optHigh25 - fields.entry) : null;
+            const _calcMax25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
+            const _bestHigh25 = (_optHigh25 && fields.entry && _optHigh25 >= fields.entry) ? _optHigh25 : (_calcMax25 ? _calcMax25.max : null);
+            const _maxPoss25 = (_bestHigh25 && fields.entry) ? Math.round(_bestHigh25 - fields.entry) : null;
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -2667,7 +2677,7 @@
                             <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
                             ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
                         </div>
-                        ${_maxPoss25!==null?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh25})</span></div>`:''}
+                        ${_maxPoss25!==null?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_bestHigh25})</span></div>`:''}
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}<button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>
                 </div>
@@ -2856,7 +2866,9 @@
             const _badgeStyle3 = _loss3 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
             const _optHigh3 = extractHighFromReplies(postReplies);
-            const _maxPoss3 = (_optHigh3 && fields.entry) ? Math.round(_optHigh3 - fields.entry) : null;
+            const _calcMax3 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
+            const _bestHigh3 = (_optHigh3 && fields.entry && _optHigh3 >= fields.entry) ? _optHigh3 : (_calcMax3 ? _calcMax3.max : null);
+            const _maxPoss3 = (_bestHigh3 && fields.entry) ? Math.round(_bestHigh3 - fields.entry) : null;
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -2890,7 +2902,7 @@
                             ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
                         </div>
                         ${_maxPoss3!==null
-                            ?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`
+                            ?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_bestHigh3})</span></div>`
                             :(!isMarketClosedNow()&&liveCmpKey)
                                 ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span></div>`
                                 :''}
