@@ -1409,7 +1409,7 @@
             const replyMap = {};
             allReplies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
-            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]));
+            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]) && getTradeState(p, replyMap[p.id]||[]) !== 'not_triggered');
 
             const tz = {timeZone:'Asia/Kolkata'};
             const tradeData = closedTrades.map(p => {
@@ -2256,12 +2256,7 @@
             });
         const closedPosts = _recentPosts
             .filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]))
-            .filter(p => {
-                // Same T+2 rule as active: hide "not triggered" trades after 2 days
-                const st = getTradeState(p, _pubReplies(p));
-                if (st === 'not_triggered') return Date.now() - new Date(p.sent_at || p.created_at).getTime() < _twoDay;
-                return true;
-            })
+            .filter(p => getTradeState(p, _pubReplies(p)) !== 'not_triggered')
             .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
 
         let html = '';
