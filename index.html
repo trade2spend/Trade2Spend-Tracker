@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260715-010 | Member PWA — fetchUpdates() stale-while-revalidate: removed early return on cache hit so Supabase is always fetched fresh in background. Cached content still shows instantly for UX. Fixes: new post not appearing when cache was < 30 min old (Realtime race), CUG posts not visible on first tab visit. Rollback: add back `return;` after _userInteracted.forEach on cache hit block. -->
 <!-- DEPLOY: T2S-PROD-20260715-009 | Member PWA — Realtime: (1) subscription changed INSERT→* so UPDATE/DELETE events fire (deleted posts now disappear instantly); (2) fetchUpdates() always called on any Realtime event, not just when on Updates tab; (3) _updatesRefreshTimer added — 60s polling while on Updates tab as fallback if Realtime misses. No other logic changed. Rollback: revert event:* to INSERT, revert always-fetchUpdates to tab-gated, remove _updatesRefreshTimer var + 2 usages. -->
 <!-- DEPLOY: T2S-PROD-20260715-005 | Member PWA — cug_test posts filtered: trade alerts and updates with audience=cug_test are hidden from all members except mobile 8888888888 and admins. One line filter added after each post-fetch in fetchTradeAlerts() and fetchUpdates(). Rollback: remove the two _isCug + filter lines. -->
 <!-- DEPLOY: T2S-PROD-20260715-001 | Trade Alert + Performance tab calculation fixes: (1) extractHighFromReplies now returns MAX of all [HIGH:XXX] replies (VM posts one per trading day — first-found was picking wrong/stale value). (2) parseFollowUpContent: when SL hit already detected (isFullExit=true), "exiting with N as SL" now extracts N as exit price — fixes 10 Jul loss showing as profit. (3) Performance tab P&L now uses actual exit price as primary (not HIGH) — HIGH used only as fallback when no exit exists. (4) "Max possible" display: falls back to calculateMaxProfit (highest price in follow-up text) when [HIGH:XXX] is below entry or absent — fixes missing Max possible on 6 Jul, 13 Jul cards. (5) Both Section 2.5 and Section 3 "Max possible" show best available high (VM HIGH if valid, else highest exit seen). Rollback: revert extractHighFromReplies to first-found, remove slHitExitM block, revert maxPrice order, revert _calcMax+_bestHigh lines to original _maxPoss single-line, revert display to _optHighX. -->
@@ -2963,11 +2964,11 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000); // 30-min TTL — Realtime handles freshness
+        const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000);
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
             _userInteracted.forEach(id => updateLikeUI(id));
-            return; // cache is fresh and tier known — skip Supabase fetch
+            // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
         }
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
