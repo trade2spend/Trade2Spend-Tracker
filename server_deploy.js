@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260715-007 | server.js: endpoint dedup in /send-push — before sending, filter subs to unique endpoints only. Prevents multiple pushes when same device has registered multiple subscription rows in DB. Applies to both CUG and broadcast paths. Rollback: remove the _seenEps dedup block and change _dedupedSubs back to subs.
 // DEPLOY: T2S-PROD-20260715-006 | server.js: CUG mobile lookup — encode + as %2B in Supabase URL (+ in query string = space, caused 0 CUG members found → no push sent). Rollback: revert .replace(/\+/g,'%2B') to .join(',').
 // DEPLOY: T2S-PROD-20260715-003 | server.js: CUG routing — /send-push now routes audience=cug_test posts only to CUG_MOBILES devices. CUG_MOBILES=['+918888888888']. All other audiences unchanged. Rollback: remove CUG_MOBILES constant + cug_test branch in /send-push.
 // DEPLOY: T2S-PROD-20260714-007 | server.js: dummy likes made organic — 25% posts get 0 likes, 1–6 likes when fired (skewed towards 1–3 via random×random), first like 1–20 min after post, each subsequent 1–15 min apart. No fixed window, no predictable count.
@@ -3545,8 +3546,18 @@ const server = http.createServer(async (req, res) => {
         } else {
           subs = await sbFetch('push_subscriptions?select=id,subscription_json');
         }
+        // T2S-PROD-20260715-007: deduplicate by endpoint — one push per unique browser registration, even if DB has multiple rows for same device
+        const _seenEps = new Set();
+        const _dedupedSubs = subs.filter(sub => {
+          try {
+            const ep = (typeof sub.subscription_json === 'string' ? JSON.parse(sub.subscription_json) : sub.subscription_json).endpoint;
+            if (_seenEps.has(ep)) return false;
+            _seenEps.add(ep);
+            return true;
+          } catch { return true; }
+        });
         // T2S-PROD-20260715-002: parallel delivery — all notifications fire simultaneously so browser tag-dedup works correctly
-        const _pResults = await Promise.all(subs.map(async sub => {
+        const _pResults = await Promise.all(_dedupedSubs.map(async sub => {
           try {
             const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
             return { id: sub.id, expired: sc === 410 || sc === 404 };
