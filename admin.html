@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260715-004: Admin PWA — CUG Test audience option added to Push to Members modal. Sets audience=cug_test on post; /send-push receives audience param and routes to CUG devices only. Rollback: remove aud-cug-btn HTML, cug_test branch in setPushAud(), and audience param from /send-push fetch body. -->
 <!-- T2S-PROD-20260714-007: Admin PWA follow-up notifications: (1) sendFollowUp() fires /send-push after successful Supabase save. (2) sendPostsReply() fires /send-push after showToast. Both calls are non-blocking (.catch(()=>{})). No change to save logic, backup, or toast. Rollback: remove the two fetch('/send-push'...) blocks from each function. -->
 <!-- T2S-PROD-20260714-006: Admin PWA — scheduleDummyLikes now skipped for trade_alert posts (pushMsgType !== 'trade' guard); dummy likes only drip on general/market_update posts which are the only post types shown in Updates tab. Prevents unnecessary posts-table PATCHes on trade alerts. -->
 <!-- T2S-PROD-20260714-003: Admin PWA — scheduleDummyLikes() fires POST /schedule-dummy-likes on VM after every Push to Members (parent posts only); client-side setTimeout chain removed; server handles 5-8 staggered PATCHes to dummy_likes column over 3-45 min. Rollback: remove scheduleDummyLikes() and the call after writeBackup(). -->
@@ -1384,9 +1385,12 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Message Preview</div>
     <div id="push-preview" style="background:#f9f7ff;border:1px solid #ede8f5;border-radius:10px;padding:12px;font-size:12px;line-height:1.7;color:#1a2030;max-height:140px;overflow-y:auto;white-space:pre-wrap;margin-bottom:14px;"></div>
     <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Audience</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
       <button id="aud-all-btn" onclick="setPushAud('all')" style="padding:10px;border-radius:10px;border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All Members</button>
       <button id="aud-paid-btn" onclick="setPushAud('paid_only')" style="padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
+    </div>
+    <div style="margin-bottom:16px;">
+      <button id="aud-cug-btn" onclick="setPushAud('cug_test')" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🧪 CUG Test</button>
     </div>
     <button id="push-confirm-btn" onclick="confirmPushToMembers()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#4a2a78;color:#fff;font-size:15px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send to Members →</button>
     <div style="font-size:10px;color:#c4b8d8;text-align:center;margin-top:8px;">Members will see this immediately in the Updates tab</div>
@@ -5005,10 +5009,12 @@ function setPushAud(val){
   pushAudience = val;
   const allBtn  = document.getElementById('aud-all-btn');
   const paidBtn = document.getElementById('aud-paid-btn');
+  const cugBtn  = document.getElementById('aud-cug-btn');
   const active  = 'padding:10px;border-radius:10px;border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:13px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
   const inactive= 'padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
   allBtn.style.cssText  = val === 'all'       ? active : inactive;
   paidBtn.style.cssText = val === 'paid_only' ? active : inactive;
+  if (cugBtn) cugBtn.style.cssText = val === 'cug_test' ? active : inactive;
 }
 
 function scheduleDummyLikes(postId) {
@@ -5055,7 +5061,7 @@ async function confirmPushToMembers(){
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates' })
+      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', audience: pushAudience })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
       fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
