@@ -4035,30 +4035,87 @@ async function checkMorning() {
   if (_morningCheckDone === todayStr) return;
   _morningCheckDone = todayStr;
 
-  const kotakOk    = isSessionValid();
-  const ltpCount   = Object.keys(_optionChain).length;
-  const scraperOn  = !!marketScraperInterval;
-  const ageMs      = session.lastLogin ? Date.now() - session.lastLogin : null;
-  const ageHrs     = ageMs ? (ageMs / 3600000).toFixed(1) : null;
-  const remMins    = ageMs ? Math.round((SESSION_MAX_AGE_MS - ageMs) / 60000) : null;
+  const dateStr = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', weekday: 'short' });
+
+  // ── MESSAGE 1: System health ─────────────────────────────────────────────
+  const kotakOk   = isSessionValid();
+  const ltpCount  = Object.keys(_optionChain).length;
+  const scraperOn = !!marketScraperInterval;
+  const remMins   = session.lastLogin ? Math.round((SESSION_MAX_AGE_MS - (Date.now() - session.lastLogin)) / 60000) : null;
 
   const kotakLine  = kotakOk
     ? `✅ Kotak: Connected (${remMins}m remaining)`
     : `❌ Kotak: Not logged in — enter TOTP now`;
   const ltpLine    = ltpCount > 0
     ? `✅ CMP tracking: ${ltpCount} contract${ltpCount > 1 ? 's' : ''} live`
-    : `⚠️ CMP tracking: No option LTPs yet${kotakOk ? ' (will populate on first trade alert)' : ''}`;
-  const scraperLine = scraperOn
-    ? `✅ Scraper: Running`
-    : `❌ Scraper: Not running${kotakOk ? ' — will auto-start' : ''}`;
-
+    : `⚠️ CMP tracking: No LTPs yet${kotakOk ? ' (populates after first trade)' : ''}`;
+  const scraperLine = scraperOn ? `✅ Scraper: Running` : `❌ Scraper: Not running${kotakOk ? ' — will auto-start at 9:15' : ''}`;
   const allOk = kotakOk && scraperOn;
-  const dateStr = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', weekday: 'short' });
 
   await tgSend(
     `🌅 <b>Morning Check — ${dateStr}</b>\n\n${kotakLine}\n${ltpLine}\n${scraperLine}\n\n` +
-    (allOk ? `All systems ready 👍` : `⚠️ Action needed — open Admin PWA → Setup → Enter TOTP`)
+    (allOk ? `All systems ready 👍` : `⚠️ Open Admin PWA → Setup → Enter TOTP`)
   );
+
+  // ── MESSAGE 2: Open positions performance ────────────────────────────────
+  try {
+    const since = new Date(ist); since.setDate(since.getDate() - 30); // last 30 days
+    const posts = await sbFetch(
+      `posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&select=id,content,sent_at&order=sent_at.desc`,
+      { method: 'GET' }
+    );
+    if (!posts.length) { await tgSend(`📊 <b>Open Positions</b>\n\nNo trade alerts in the last 30 days.`); return; }
+
+    const reps = await sbFetch(
+      `posts?is_deleted=eq.false&parent_id=in.(${posts.map(p => `"${p.id}"`).join(',')})&order=sent_at.asc&select=id,parent_id,content`,
+      { method: 'GET' }
+    );
+    const rMap = {};
+    reps.forEach(r => { (rMap[r.parent_id] = rMap[r.parent_id] || []).push(r); });
+
+    const openLines = [], closedLines = [];
+    for (const post of posts) {
+      const t = (post.content || '').toUpperCase();
+      const im = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
+      const sm = t.match(/\b(\d{4,6})\b/);
+      const om = t.match(/\b(CE|PE)\b/);
+      const em = (post.content || '').match(/(?:entry|buy(?:ing)?|at)\s*[₹@]?\s*(\d+(?:\.\d+)?)/i);
+      const label = (im ? im[1] : '?') + (sm ? ' ' + sm[1] : '') + (om ? ' ' + om[1] : '');
+      const entry = em ? parseFloat(em[1]) : null;
+      const replies = rMap[post.id] || [];
+      const exited  = sbTradeFullyExited(replies);
+      let cum = 0;
+      for (const r of replies) { const pm = (r.content || '').match(/exiting\s+(\d+)\s*%/i); if (pm) cum += parseInt(pm[1]); }
+      const key = (im && sm && om) ? `${im[1]}-${sm[1]}-${om[1]}` : null;
+      const cmp = key ? (_optionChain[key] || null) : null;
+      const lot  = im ? ((_kotakLotSizes && _kotakLotSizes[im[1]]) || LOT_SIZES[im[1]] || 65) : 65;
+      const postDate = new Date(post.sent_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+      if (exited || cum >= 100) {
+        closedLines.push(`• <b>${label}</b> — Closed (${postDate})`);
+      } else {
+        let line = `• <b>${label}</b> @₹${entry || '?'}`;
+        if (cum > 0) line += ` — ${cum}% exited`;
+        if (cmp && entry) {
+          const pts = om && om[1] === 'PE' ? entry - cmp : cmp - entry;
+          const pnl = Math.round(pts * lot * (1 - cum / 100));
+          line += ` | CMP ₹${cmp} | P&L ${pts >= 0 ? '+' : ''}${pts.toFixed(0)}pts (${pnl >= 0 ? '+' : ''}₹${Math.abs(pnl)})`;
+        }
+        openLines.push(line);
+      }
+    }
+
+    let msg = `📊 <b>Open Positions — ${dateStr}</b>\n\n`;
+    if (openLines.length) {
+      msg += openLines.join('\n');
+    } else {
+      msg += `No open positions going into today.`;
+    }
+    if (closedLines.length) {
+      msg += `\n\n<i>Recently closed:</i>\n` + closedLines.slice(0, 3).join('\n');
+    }
+    await tgSend(msg);
+  } catch(e) { console.error('[morning-perf]', e.message); }
 }
 
 // Periodic check every 30s: SL monitor + market scraper auto-start/stop
