@@ -1,3 +1,4 @@
+// DEPLOY: T2S-CUG-20260716-001 | server.js: /refresh-contracts endpoint added — bypasses 60s throttle so new trade CMP starts immediately. Rollback: remove the /refresh-contracts block.
 // DEPLOY: T2S-PROD-20260715-008 | server.js: CUG push URL changed to uat.html#updates (was index.html#updates — wrong PWA for CUG testing). Rollback: revert url override line.
 // DEPLOY: T2S-PROD-20260715-007 | server.js: endpoint dedup in /send-push — before sending, filter subs to unique endpoints only. Prevents multiple pushes when same device has registered multiple subscription rows in DB. Applies to both CUG and broadcast paths. Rollback: remove the _seenEps dedup block and change _dedupedSubs back to subs.
 // DEPLOY: T2S-PROD-20260715-006 | server.js: CUG mobile lookup — encode + as %2B in Supabase URL (+ in query string = space, caused 0 CUG members found → no push sent). Rollback: revert .replace(/\+/g,'%2B') to .join(',').
@@ -3038,6 +3039,59 @@ const server = http.createServer(async (req, res) => {
     const count = Object.keys(_scripMaster).length;
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ ok: true, scripMasterSize: count, sample: Object.keys(_scripMaster).filter(k=>k.startsWith('NIFTY-')).slice(0,5) }));
+    return;
+  }
+
+  // T2S-CUG-20260716-001: Force-refresh active contracts — bypasses 60s throttle so new trade CMP tracking starts immediately
+  if (req.method === 'GET' && urlPath === '/refresh-contracts') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    _activeContractsTs = 0; // reset throttle timestamp so refreshActiveContracts runs immediately
+    await refreshActiveContracts();
+    const contracts = _activeContracts.map(c => `${c.instrument}-${c.strike}-${c.type}`);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ ok: true, activeContracts: contracts, count: contracts.length }));
+    return;
+  }
+
+  // T2S-CUG-20260716-003: Push UAT to Prod — fetches uat.html from GitHub, strips UAT elements, pushes as index.html
+  if (req.method === 'GET' && urlPath === '/push-uat-to-prod') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    if (!GH_TOKEN) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on VM' })); return; }
+    try {
+      // 1. Fetch the current UAT file from GitHub
+      const rawUrl = `https://raw.githubusercontent.com/${GH_REPO}/main/uat.html?t=${Date.now()}`;
+      const fetchRes = await ft(rawUrl, {}, 20000);
+      if (!fetchRes.ok) { res.writeHead(502); res.end(JSON.stringify({ ok: false, error: `GitHub fetch HTTP ${fetchRes.status}` })); return; }
+      let uatContent = await fetchRes.text();
+      if (!uatContent || uatContent.length < 50000) { res.writeHead(502); res.end(JSON.stringify({ ok: false, error: 'UAT file too short — aborting' })); return; }
+      // 2. Strip UAT-only elements — the red badge + Test CMP button wrapper div
+      const uatBadgeRe = /\s*<div style="position:fixed;top:6px;left:50%;transform:translateX\(-50%\);display:flex;align-items:center;gap:6px;z-index:9999;">[\s\S]*?<\/div>/;
+      uatContent = uatContent.replace(uatBadgeRe, '');
+      // Strip the UAT-only testDummyCmp JS function block
+      const uatJsRe = /\n\s*\/\/ UAT-only: inject dummy LTPs[\s\S]*?\n\s*\}\n\s*<\/script>/;
+      uatContent = uatContent.replace(uatJsRe, '\n</script>');
+      // Strip CUG tag comments from deployed code
+      uatContent = uatContent.replace(/\s*\/\/ T2S-CUG-[^\n]+\n/g, '\n');
+      // Validate before pushing
+      if (!uatContent.includes('<!DOCTYPE html>') || !uatContent.includes('SEBI') || uatContent.length < 50000) {
+        res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'Validation failed — aborting push' })); return;
+      }
+      // 3. Push as index.html to Trade2Spend-Tracker repo
+      const api = `https://api.github.com/repos/${GH_REPO}/contents/index.html`;
+      const hdrs = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+      const shaR = await ft(api, { headers: hdrs }, 8000);
+      const sha = (await shaR.json()).sha || '';
+      const encoded = Buffer.from(uatContent).toString('base64');
+      const pushR = await ft(api, { method: 'PUT', headers: hdrs, body: JSON.stringify({ message: 'prod: promote UAT to prod via Admin PWA', content: encoded, sha, branch: 'main' }) }, 20000);
+      if (!pushR.ok) { const t = await pushR.text(); res.writeHead(502); res.end(JSON.stringify({ ok: false, error: `GitHub push ${pushR.status}: ${t.slice(0,150)}` })); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ ok: true, message: 'UAT promoted to prod. Live at app.trade2spend.com in ~60s.' }));
+      tgAlert('🚀 <b>UAT promoted to Prod</b> via Admin PWA button. Live in ~60s.').catch(() => {});
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
     return;
   }
 
