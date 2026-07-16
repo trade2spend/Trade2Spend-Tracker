@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260716-002 | Member PWA Updates tab — compose box text preserved across auto-refresh. renderUpdates() saves open compose box state (postId, typed text, audience) before container.innerHTML = html, then restores it after. Fixes: admin follow-up message lost when 60s poll or Realtime event triggered re-render while typing. No other logic touched. Rollback: remove the 13 lines around container.innerHTML = html in renderUpdates() (save block before + restore block after). -->
 <!-- DEPLOY: T2S-PROD-20260716-001 | Trade Alert tab + Performance tab: "not triggered" trades now excluded from Closed Trades display and Performance P&L calculation. Trades with _STATUS_ONLY_RE-matching follow-ups (e.g. "Not triggered. Now avoiding...") and no valid trigger/exit data are correctly hidden after market close — were rendering as "✅ Closed Trade" with no exit since T2S-PROD-20260709-003 auto-close. Two-line fix: closedPosts gets a getTradeState!=='not_triggered' filter; closedTrades gets same guard. Rollback: revert closedPosts to single isTradeFullyClosed filter; revert closedTrades to single isTradeFullyClosed filter. -->
 <!-- DEPLOY: T2S-PROD-20260715-010 | Member PWA — fetchUpdates() stale-while-revalidate: removed early return on cache hit so Supabase is always fetched fresh in background. Cached content still shows instantly for UX. Fixes: new post not appearing when cache was < 30 min old (Realtime race), CUG posts not visible on first tab visit. Rollback: add back `return;` after _userInteracted.forEach on cache hit block. -->
 <!-- DEPLOY: T2S-PROD-20260715-009 | Member PWA — Realtime: (1) subscription changed INSERT→* so UPDATE/DELETE events fire (deleted posts now disappear instantly); (2) fetchUpdates() always called on any Realtime event, not just when on Updates tab; (3) _updatesRefreshTimer added — 60s polling while on Updates tab as fallback if Realtime misses. No other logic changed. Rollback: revert event:* to INSERT, revert always-fetchUpdates to tab-gated, remove _updatesRefreshTimer var + 2 usages. -->
@@ -3181,7 +3182,27 @@
             }
         });
 
+        // Save compose box state if open (prevents loss of typed message on auto-refresh)
+        let _savedCompose = null;
+        const _openBox = container.querySelector('.admin-compose-box.open');
+        if (_openBox) {
+            const _pId = _openBox.id.replace('compose-', '');
+            const _ta = document.getElementById('reply-text-' + _pId);
+            _savedCompose = { postId: _pId, text: _ta ? _ta.value : '', audience: replyAudience[_pId] || 'all' };
+        }
+
         container.innerHTML = html;
+
+        // Restore compose box state after re-render
+        if (_savedCompose) {
+            const _box = document.getElementById('compose-' + _savedCompose.postId);
+            if (_box) {
+                _box.classList.add('open');
+                const _ta2 = document.getElementById('reply-text-' + _savedCompose.postId);
+                if (_ta2) _ta2.value = _savedCompose.text;
+                selectReplyAud(_savedCompose.postId, _savedCompose.audience);
+            }
+        }
 
         // Auto mark as read after 2s — only when Updates tab is actually visible
         setTimeout(() => {
