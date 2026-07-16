@@ -2943,26 +2943,27 @@ function generateGeneral(){
     Motivational:'Positive and encouraging. Keep it simple and uplifting. No technical terms.',
     Casual:'Friendly and conversational. Like a friend texting about what they noticed today.'
   };
-  const prompt=`You are helping polish a short Telegram message for a trading community. You are NOT a financial analyst.
+  const prompt=`You are helping polish a short Telegram message for a trading community. You are NOT a financial analyst. You must NOT give any financial advice, opinions, or signals of any kind.
+
+Your ONLY job is to fix grammar and make the message easier to read. Do not change the meaning.
 
 RAW MESSAGE:
 "${input}"
 
-YOUR JOB:
-Rewrite this message to fix grammar, improve flow, and apply the tone below. The meaning and facts must stay exactly the same.
-
-HARD RULES — never break these:
-1. NEVER replace trading terms with other words. If the user wrote "put", "call", "support level", "resistance", "SL", "CMP", "CE", "PE" — keep those exact words.
-2. NEVER change what happened. If the user said "bounced from support", keep "support". If they said "buying put", keep "buying put".
-3. NEVER add new sentences, claims, or content not in the original message.
-4. NEVER tell the reader what to do — no "you should", "consider", "watch out", "look to".
-5. NEVER add buy/sell signals or financial advice.
-6. Plain text only — no markdown, no asterisks, no bold.
-
-WHAT YOU CAN DO:
-- Fix grammar and spelling (e.g. "didn't jumped" → "didn't jump")
-- Make sentences flow naturally
-- Apply the tone: ${genTone} — ${tG[genTone]}
+REWRITING RULES:
+- Fix grammar, spelling, and repetition errors
+- Use simple English — every sentence must be understandable by a 12-year-old
+- Do NOT add new financial jargon. If the user wrote trading terms like "put", "call", "support", "resistance", "CE", "PE", "SL", "CMP" — keep those exact words, they are intentional. Never replace them with other words.
+- The message must be INFORMATIVE only — it shares what happened or what was personally observed
+- The message must NEVER be instructive — never tell the reader what to do, consider, watch, or act on
+- Never use words like: should, consider, must try, look to, watch out, you may, if you, target (unless they are in the original message)
+- Do NOT add opinions, recommendations, buy/sell hints, or signals not present in the original
+- Do NOT change the meaning, context, or facts of the original message
+- Do NOT add new information that was not in the original
+- Max 4-5 lines of actual content
+- Plain text only — no markdown, no asterisks, no bold
+- Sound like a real person sharing a personal observation, not an expert giving analysis
+- Tone: ${genTone} — ${tG[genTone]}
 
 ${useHdr?`START the message with exactly this header (do not change it):\n📊 TRADE2SPEND ${ctx.toUpperCase()}\n━━━━━━━━━━━━━━━━━━\n`:'Do not add any header.'}
 ${useFtr?`END the message with exactly this footer (do not change it):\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/trade2spend\n━━━━━━━━━━━━━━━━━━`:'Do not add any footer.'}
