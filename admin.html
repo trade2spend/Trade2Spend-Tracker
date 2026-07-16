@@ -5543,8 +5543,8 @@ async function submitBugReport() {
       <option value="Backend — VM / API">Backend — VM / API</option>
     </select>
     <div class="bug-lbl">What's broken?</div>
-    <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="300" placeholder="Describe what happened and what you expected..."></textarea>
-    <input type="file" id="bug-file" accept="image/*" capture="environment" style="display:none" onchange="bugFileSelected(this)">
+    <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="2000" placeholder="Describe what happened and what you expected..."></textarea>
+    <input type="file" id="bug-file" accept="image/*" style="display:none" onchange="bugFileSelected(this)">
     <button class="bug-attach" onclick="document.getElementById('bug-file').click()">
       <span id="bug-attach-lbl">📷 Attach Screenshot (optional)</span>
     </button>
