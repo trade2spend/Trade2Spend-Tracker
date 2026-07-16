@@ -2968,11 +2968,6 @@ ${useHdr?`START the message with exactly this header (do not change it):\n📊 T
 ${useFtr?`END the message with exactly this footer (do not change it):\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/trade2spend\n━━━━━━━━━━━━━━━━━━`:'Do not add any footer.'}
 
 Now rewrite the message:`;
-
-${useHdr?`START the message with exactly this header (do not change it):\n📊 TRADE2SPEND ${ctx.toUpperCase()}\n━━━━━━━━━━━━━━━━━━\n`:'Do not add any header.'}
-${useFtr?`END the message with exactly this footer (do not change it):\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/trade2spend\n━━━━━━━━━━━━━━━━━━`:'Do not add any footer.'}
-
-Now rewrite the message:`;
   callAPI(prompt,400)
     .then(raw=>renderGenOutput(raw))
     .catch((e)=>{err.textContent='Error: '+(e.message||e);err.style.display='block';})
