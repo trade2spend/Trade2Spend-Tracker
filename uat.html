@@ -2718,7 +2718,6 @@
             }
             const adminHtmlNT = isAdmin ? `
                 <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-                    <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
                     <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
                 </div>
                 <div class="admin-compose-box" id="compose-${post.id}">
@@ -2810,7 +2809,6 @@
 
         const adminHtml3 = isAdmin ? `
             <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-                <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
                 <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
             </div>
             <div class="admin-compose-box" id="compose-${post.id}">
@@ -3102,7 +3100,6 @@
                 // Admin compose
                 const adminHtml = isAdmin ? `
                     <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-                        <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
                         <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
                     </div>
                     <div class="admin-compose-box" id="compose-${post.id}">
