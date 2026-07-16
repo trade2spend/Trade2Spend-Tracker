@@ -3599,19 +3599,88 @@ Rules for PATCH: "find" must be unique in the file and minimal. If patch cannot 
             if (pIdx !== -1) {
               try { patchData = JSON.parse(suggestion.slice(pIdx + 8).trim()); } catch {}
             }
-            // Send Telegram with inline button if patch is actionable
+            // Map "Broken in" selection to target file
+            const fileMap2 = {
+              'admin': 'admin.html', 'member': 'index.html',
+              'backend': 'server.js', 'vm': 'server.js', 'login': 'index.html'
+            };
+            const tabLower = tab.toLowerCase();
+            let targetFile = patchData?.file || 'admin.html';
+            for (const [k, v] of Object.entries(fileMap2)) { if (tabLower.includes(k)) { targetFile = v; break; } }
+
+            // If Claude produced a precise patch, offer one-tap apply
             if (patchData?.find && GH_TOKEN) {
               const uuid = Date.now().toString(36);
-              _pendingBugFixes[uuid] = { file: patchData.file, find: patchData.find, replace: patchData.replace || '', summary: analysis };
+              _pendingBugFixes[uuid] = { file: targetFile, find: patchData.find, replace: patchData.replace || '', summary: analysis };
               await tgSend(
-                `🤖 <b>Claude's Fix</b>\n\n${analysis}\n\n<b>File:</b> ${patchData.file}\n<b>Patch ready</b> — tap to apply:`,
+                `🤖 <b>Claude's Fix</b>\n\n${analysis}\n\n<b>File:</b> ${targetFile}\n<b>Patch ready</b> — tap to apply:`,
                 { inline_keyboard: [[
                   { text: '✅ Apply Fix', callback_data: `bugfix_apply:${uuid}` },
                   { text: '❌ Skip',      callback_data: `bugfix_skip:${uuid}` }
                 ]]}
               );
-            } else if (analysis) {
-              await tgSend(`🤖 <b>Claude's Analysis</b>\n\n${analysis}\n\n<i>Patch couldn't be auto-generated — manual fix needed.</i>`);
+            } else {
+              // Fallback: fetch real code from GitHub and retry Claude with context
+              if (analysis) await tgSend(`🤖 <b>Claude's initial read:</b>\n${analysis}\n\n⏳ Fetching code context for a precise fix...`);
+              try {
+                const ghFileMap3 = { 'admin.html': 'admin.html', 'index.html': 'index.html', 'server.js': 'server_deploy.js' };
+                const rawUrl = `https://raw.githubusercontent.com/${GH_REPO}/main/${ghFileMap3[targetFile] || targetFile}?t=${Date.now()}`;
+                const codeRes = await ft(rawUrl, {}, 15000);
+                const fullCode = await codeRes.text();
+                // Extract up to 400 relevant lines using keywords from description
+                const keywords = description.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+                const lines = fullCode.split('\n');
+                const matchedLines = new Set();
+                lines.forEach((l, i) => { if (keywords.some(k => l.toLowerCase().includes(k))) { for (let j = Math.max(0,i-10); j <= Math.min(lines.length-1,i+10); j++) matchedLines.add(j); } });
+                const snippet = matchedLines.size > 0
+                  ? [...matchedLines].sort((a,b)=>a-b).slice(0, 400).map(i => `${i+1}: ${lines[i]}`).join('\n')
+                  : lines.slice(0, 300).join('\n');
+                // Retry Claude with code context
+                const retry = await fetch('https://api.anthropic.com/v1/messages', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+                  body: JSON.stringify({
+                    model: 'claude-sonnet-4-6', max_tokens: 800,
+                    system: `You are a bug-triage assistant for the Trade2Spend PWA. You are given a relevant code snippet from ${targetFile}. Respond in EXACTLY this format:
+
+ANALYSIS:
+<root cause in 1-2 sentences>
+
+PATCH:
+{"file":"${targetFile}","find":"<exact unique string from the snippet>","replace":"<fixed string>"}
+
+Rules: "find" must appear exactly once in the snippet. Minimal change only. If still uncertain, use "find":null.`,
+                    messages: [{ role: 'user', content: [
+                      ...(screenshot ? [{ type: 'image', source: { type: 'base64', media_type: screenshotType, data: screenshot } }] : []),
+                      { type: 'text', text: `Bug: Tab=${tab}\n${description}\n\nCode snippet from ${targetFile}:\n\`\`\`\n${snippet}\n\`\`\`` }
+                    ]}]
+                  })
+                });
+                const retryData = await retry.json();
+                const retryText = retryData?.content?.[0]?.text || '';
+                const rAIdx = retryText.indexOf('ANALYSIS:\n');
+                const rPIdx = retryText.indexOf('\nPATCH:\n');
+                const retryAnalysis = rAIdx !== -1 ? retryText.slice(rAIdx + 10, rPIdx !== -1 ? rPIdx : undefined).trim() : retryText;
+                let retryPatch = null;
+                if (rPIdx !== -1) { try { retryPatch = JSON.parse(retryText.slice(rPIdx + 8).trim()); } catch {} }
+
+                if (retryPatch?.find) {
+                  const uuid = Date.now().toString(36);
+                  _pendingBugFixes[uuid] = { file: targetFile, find: retryPatch.find, replace: retryPatch.replace || '', summary: retryAnalysis };
+                  await tgSend(
+                    `🤖 <b>Claude's Fix (with code context)</b>\n\n${retryAnalysis}\n\n<b>File:</b> ${targetFile}\n<b>Patch ready</b> — tap to apply:`,
+                    { inline_keyboard: [[
+                      { text: '✅ Apply Fix', callback_data: `bugfix_apply:${uuid}` },
+                      { text: '❌ Skip',      callback_data: `bugfix_skip:${uuid}` }
+                    ]]}
+                  );
+                } else {
+                  await tgSend(`⚠️ <b>Auto-fix not possible</b>\n\n${retryAnalysis || analysis || 'Claude could not determine the exact fix.'}\n\nThe bug report has been saved. Describe it again at the start of your next Claude Code session — it will be fixed immediately with full code access.`);
+                }
+              } catch(e) {
+                console.error('[report-issue] fallback retry:', e.message);
+                await tgSend(`⚠️ <b>Auto-fix not possible</b>\n\n${analysis || 'Claude could not determine the fix.'}\n\nDescribe this issue at the start of your next Claude Code session — it will be fixed immediately.`);
+              }
             }
           } catch(e) { console.error('[report-issue] Claude:', e.message); }
         }
