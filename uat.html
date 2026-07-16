@@ -3135,7 +3135,27 @@
             }
         });
 
+        // Save compose box state if open (prevents loss of typed message on auto-refresh)
+        let _savedCompose = null;
+        const _openBox = container.querySelector('.admin-compose-box.open');
+        if (_openBox) {
+            const _pId = _openBox.id.replace('compose-', '');
+            const _ta = document.getElementById('reply-text-' + _pId);
+            _savedCompose = { postId: _pId, text: _ta ? _ta.value : '', audience: replyAudience[_pId] || 'all' };
+        }
+
         container.innerHTML = html;
+
+        // Restore compose box state after re-render
+        if (_savedCompose) {
+            const _box = document.getElementById('compose-' + _savedCompose.postId);
+            if (_box) {
+                _box.classList.add('open');
+                const _ta2 = document.getElementById('reply-text-' + _savedCompose.postId);
+                if (_ta2) _ta2.value = _savedCompose.text;
+                selectReplyAud(_savedCompose.postId, _savedCompose.audience);
+            }
+        }
 
         // Auto mark as read after 2s — only when Updates tab is actually visible
         setTimeout(() => {
