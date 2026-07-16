@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260716-002: Admin PWA — Bug Reporter "Broken in" field changed from free-text input to locked dropdown (Admin PWA tabs + Member PWA sections + Backend). openBugReport() auto-selects matching option from active tab. No free typing possible. Rollback: replace <select> with <input type="text"> and revert openBugReport() to use .value = tabName. -->
 <!-- T2S-PROD-20260716-001: Admin PWA — Bug Reporter added. Floating "📋 Report Issue" button (bottom-left, z-index:150, below all modals). Tap opens bottom-sheet: tab name (auto-filled), description, optional screenshot (compressed to 800px via canvas). On submit: POST /report-issue on VM → Telegram alert + screenshot + Claude analysis with ✅ Apply Fix / ❌ Skip inline buttons. Rollback: remove .bug-* CSS block, JS block (openBugReport/closeBugReport/bugFileSelected/submitBugReport), and HTML block (BUG REPORT FAB comment to closing </div></div>). -->
 <!-- T2S-PROD-20260715-004: Admin PWA — CUG Test audience option added to Push to Members modal. Sets audience=cug_test on post; /send-push receives audience param and routes to CUG devices only. Rollback: remove aud-cug-btn HTML, cug_test branch in setPushAud(), and audience param from /send-push fetch body. -->
 <!-- T2S-PROD-20260714-007: Admin PWA follow-up notifications: (1) sendFollowUp() fires /send-push after successful Supabase save. (2) sendPostsReply() fires /send-push after showToast. Both calls are non-blocking (.catch(()=>{})). No change to save logic, backup, or toast. Rollback: remove the two fetch('/send-push'...) blocks from each function. -->
@@ -5434,7 +5435,10 @@ function renderChartAnalysis(text) {
 let _bugB64 = null, _bugMime = 'image/jpeg';
 function openBugReport() {
   const activeTab = document.querySelector('.tab.on');
-  document.getElementById('bug-tab').value = activeTab ? activeTab.textContent.trim() : '';
+  const tabName = activeTab ? activeTab.textContent.trim() : '';
+  const sel = document.getElementById('bug-tab');
+  const match = Array.from(sel.options).find(o => o.value.toLowerCase().includes(tabName.toLowerCase()));
+  if (match) sel.value = match.value;
   document.getElementById('bug-desc').value = '';
   document.getElementById('bug-preview').style.display = 'none';
   document.getElementById('bug-preview').src = '';
@@ -5516,8 +5520,22 @@ async function submitBugReport() {
   <div class="bug-sheet">
     <div class="bug-title">📋 Report an Issue</div>
     <div class="bug-sub">Screenshot + description helps Claude diagnose it faster</div>
-    <div class="bug-lbl">Tab / Area</div>
-    <input class="bug-inp" id="bug-tab" type="text" placeholder="e.g. Posts, Trade, Setup">
+    <div class="bug-lbl">Broken in</div>
+    <select class="bug-inp" id="bug-tab">
+      <option value="Admin PWA — Trade">Admin PWA — Trade</option>
+      <option value="Admin PWA — Posts">Admin PWA — Posts</option>
+      <option value="Admin PWA — Chart">Admin PWA — Chart</option>
+      <option value="Admin PWA — Algo">Admin PWA — Algo</option>
+      <option value="Admin PWA — Manage">Admin PWA — Manage</option>
+      <option value="Admin PWA — Setup">Admin PWA — Setup</option>
+      <option value="Admin PWA — Cards">Admin PWA — Cards</option>
+      <option value="Member PWA — Markets">Member PWA — Markets</option>
+      <option value="Member PWA — Trade Alert">Member PWA — Trade Alert</option>
+      <option value="Member PWA — Updates">Member PWA — Updates</option>
+      <option value="Member PWA — Performance">Member PWA — Performance</option>
+      <option value="Member PWA — Login">Member PWA — Login</option>
+      <option value="Backend — VM / API">Backend — VM / API</option>
+    </select>
     <div class="bug-lbl">What's broken?</div>
     <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="300" placeholder="Describe what happened and what you expected..."></textarea>
     <input type="file" id="bug-file" accept="image/*" capture="environment" style="display:none" onchange="bugFileSelected(this)">
