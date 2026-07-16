@@ -713,6 +713,8 @@
 </div>
 
 <script>
+    // T2S-CUG-20260716-001: refresh-contracts call after new trade alert posted — fixes CMP lag on initial post
+    // T2S-CUG-20260716-002: session high display changed from toFixed(2) to toFixed(1) — cleaner "₹170" not "₹169.75"
     // --- UI LOGIC ---
     let _tradeRefreshTimer = null;
     let _updatesRefreshTimer = null; // T2S-UAT-20260715-003: 60s polling for Updates tab
@@ -1118,7 +1120,7 @@
             if (high != null && high > 0) {
                 // Only update when new high is strictly greater — session high never moves down
                 const current = parseFloat((el.textContent || '').replace('₹', '')) || 0;
-                if (high > current) el.textContent = `₹${high.toFixed(2)}`;
+                if (high > current) el.textContent = `₹${parseFloat(high.toFixed(1))}`;
             }
         });
     }
@@ -3267,6 +3269,8 @@
             selectNaType('CE');
             toggleNewAlertBox();
             btn.disabled = false; btn.textContent = 'Post Alert →';
+            // T2S-CUG-20260716-001: tell VM to refresh active contracts immediately so live CMP starts without 60s lag
+            fetch(`${VM_BASE}/refresh-contracts?key=T2SMonitor2026`).catch(() => {});
             fetchTradeAlerts();
             checkAndPromptTotp();
         } catch(e) {
