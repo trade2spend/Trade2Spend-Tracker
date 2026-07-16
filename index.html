@@ -2764,15 +2764,18 @@
         const tradeState3 = getTradeState(post, postReplies);
         const cumExit3    = getCumulativeExit(postReplies);
 
-        // SL — same strikethrough logic as free member
+        // T2S-PROD-20260716-005: SL strikethrough for admin/paid — mirrors Section 1 & 2 logic; previously only fired on spot→option (>5000→<5000), missing Cost case
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
+        const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
         let slDisplay3, slLabel3 = 'SL';
         if (revSL3) {
-            const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
-            if (initSL3 && initSL3 > 5000 && revNum3 < 5000) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
-            } else { slDisplay3 = revSL3; slLabel3 = slLabelFor(revSL3); }
+            const revNum3  = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
+            const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
+            const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
+            if (slChanged3) {
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+            } else { slDisplay3 = revSL3Display; slLabel3 = slLabelFor(revSL3Display); }
         } else if (initSL3) {
             slDisplay3 = `₹${initSL3}`;
             slLabel3 = slLabelFor(initSL3);
