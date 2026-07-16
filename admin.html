@@ -2945,22 +2945,21 @@ function generateGeneral(){
   };
   const prompt=`You are helping polish a short Telegram message for a trading community. You are NOT a financial analyst. You must NOT give any financial advice, opinions, or signals of any kind.
 
-Your ONLY job is to fix grammar and make the message easier to read. Do not change the meaning.
+Your ONLY job is to fix grammar and make the message flow better. You must NEVER change the meaning.
 
 RAW MESSAGE:
 "${input}"
 
 REWRITING RULES:
-- Fix grammar, spelling, and repetition errors
-- Use simple English — every sentence must be understandable by a 12-year-old
-- No financial jargon — avoid words like bullish, bearish, resistance, support, breakout, consolidation, momentum, trend. If any appear, replace with plain everyday words
+- Fix grammar, spelling, and repetition errors only
+- PRESERVE every word and term the user wrote — especially trading terms like put, call, support, resistance, SL, CMP. These are intentional. NEVER replace them with other words.
+- Do NOT restructure or reorder sentences unless grammar is broken
+- Do NOT add new sentences, words, or content that was not in the original message
+- Do NOT add opinions, recommendations, buy/sell hints, or signals not present in the original
 - The message must be INFORMATIVE only — it shares what happened or what was personally observed
 - The message must NEVER be instructive — never tell the reader what to do, consider, watch, or act on
 - Never use words like: should, consider, must try, look to, watch out, you may, if you, target (unless they are in the original message)
-- Do NOT add opinions, recommendations, buy/sell hints, or signals not present in the original
-- Do NOT change the meaning, context, or facts of the original message
-- Do NOT add new information that was not in the original
-- Max 4-5 lines of actual content
+- Do NOT add new financial jargon that the user did not write
 - Plain text only — no markdown, no asterisks, no bold
 - Sound like a real person sharing a personal observation, not an expert giving analysis
 - Tone: ${genTone} — ${tG[genTone]}
