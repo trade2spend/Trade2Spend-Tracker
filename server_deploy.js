@@ -481,6 +481,7 @@ let _sbTrigAlertedToday  = new Set(); // post IDs where trigger auto-follow-up a
 let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was sent
 let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper-stopped-during-market-hours
 let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
+let _morningCheckDone    = null; // date string when morning health check was sent today
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
 let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
 let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent
@@ -4023,6 +4024,43 @@ async function checkResolveAlert() {
   } catch(e) { console.error('[resolve-alert]', e.message); }
 }
 
+// Daily morning health check — runs at 9:30 AM IST on weekdays (VM-side, no Mac needed)
+async function checkMorning() {
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day = ist.getDay();
+  if (day === 0 || day === 6) return; // skip weekends
+  const mins = ist.getHours() * 60 + ist.getMinutes();
+  if (mins < 9 * 60 + 30 || mins > 9 * 60 + 32) return; // only fire in the 9:30–9:32 AM window
+  const todayStr = ist.toDateString();
+  if (_morningCheckDone === todayStr) return;
+  _morningCheckDone = todayStr;
+
+  const kotakOk    = isSessionValid();
+  const ltpCount   = Object.keys(_optionChain).length;
+  const scraperOn  = !!marketScraperInterval;
+  const ageMs      = session.lastLogin ? Date.now() - session.lastLogin : null;
+  const ageHrs     = ageMs ? (ageMs / 3600000).toFixed(1) : null;
+  const remMins    = ageMs ? Math.round((SESSION_MAX_AGE_MS - ageMs) / 60000) : null;
+
+  const kotakLine  = kotakOk
+    ? `✅ Kotak: Connected (${remMins}m remaining)`
+    : `❌ Kotak: Not logged in — enter TOTP now`;
+  const ltpLine    = ltpCount > 0
+    ? `✅ CMP tracking: ${ltpCount} contract${ltpCount > 1 ? 's' : ''} live`
+    : `⚠️ CMP tracking: No option LTPs yet${kotakOk ? ' (will populate on first trade alert)' : ''}`;
+  const scraperLine = scraperOn
+    ? `✅ Scraper: Running`
+    : `❌ Scraper: Not running${kotakOk ? ' — will auto-start' : ''}`;
+
+  const allOk = kotakOk && scraperOn;
+  const dateStr = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', weekday: 'short' });
+
+  await tgSend(
+    `🌅 <b>Morning Check — ${dateStr}</b>\n\n${kotakLine}\n${ltpLine}\n${scraperLine}\n\n` +
+    (allOk ? `All systems ready 👍` : `⚠️ Action needed — open Admin PWA → Setup → Enter TOTP`)
+  );
+}
+
 // Periodic check every 30s: SL monitor + market scraper auto-start/stop
 setInterval(() => {
   if (isMarketHours()) {
@@ -4040,6 +4078,7 @@ setInterval(() => {
     _scraperStopAlerted = false; // reset so alert fires again next session if needed
   }
   checkResolveAlert().catch(e => console.error('[resolve-alert]', e.message));
+  checkMorning().catch(e => console.error('[morning-check]', e.message));
 }, 30_000);
 
 tgAlert(`🟢 <b>Trade2Spend Bot v5.0 started</b>\nServer: api.trade2spend.com\nLoaded: ${Object.keys(state.trades).length} trades`).catch(() => {});
