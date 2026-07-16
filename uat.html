@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260717-001 | Member PWA Trade Alert + Updates tab: "↳ Add follow-up" button removed from all admin card sections (adminHtmlNT, adminHtml3, adminHtml). Admin still sees 🗑 Delete button. Compose box stays in DOM but is unreachable without the trigger button. No other logic touched. Rollback: add back <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button> before the Delete button in all 3 adminHtml blocks. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
