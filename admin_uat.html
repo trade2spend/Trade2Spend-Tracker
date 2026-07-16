@@ -5448,7 +5448,10 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 let _bugB64 = null, _bugMime = 'image/jpeg';
 function openBugReport() {
   const activeTab = document.querySelector('.tab.on');
-  document.getElementById('bug-tab').value = activeTab ? activeTab.textContent.trim() : '';
+  const tabName = activeTab ? activeTab.textContent.trim() : '';
+  const sel = document.getElementById('bug-tab');
+  const match = Array.from(sel.options).find(o => o.value.toLowerCase().includes(tabName.toLowerCase()));
+  if (match) sel.value = match.value;
   document.getElementById('bug-desc').value = '';
   document.getElementById('bug-preview').style.display = 'none';
   document.getElementById('bug-preview').src = '';
@@ -5531,8 +5534,22 @@ async function submitBugReport() {
   <div class="bug-sheet">
     <div class="bug-title">📋 Report an Issue</div>
     <div class="bug-sub">Screenshot + description helps Claude diagnose it faster</div>
-    <div class="bug-lbl">Tab / Area</div>
-    <input class="bug-inp" id="bug-tab" type="text" placeholder="e.g. Posts, Trade, Setup">
+    <div class="bug-lbl">Broken in</div>
+    <select class="bug-inp" id="bug-tab">
+      <option value="Admin PWA — Trade">Admin PWA — Trade</option>
+      <option value="Admin PWA — Posts">Admin PWA — Posts</option>
+      <option value="Admin PWA — Chart">Admin PWA — Chart</option>
+      <option value="Admin PWA — Algo">Admin PWA — Algo</option>
+      <option value="Admin PWA — Manage">Admin PWA — Manage</option>
+      <option value="Admin PWA — Setup">Admin PWA — Setup</option>
+      <option value="Admin PWA — Cards">Admin PWA — Cards</option>
+      <option value="Member PWA — Markets">Member PWA — Markets</option>
+      <option value="Member PWA — Trade Alert">Member PWA — Trade Alert</option>
+      <option value="Member PWA — Updates">Member PWA — Updates</option>
+      <option value="Member PWA — Performance">Member PWA — Performance</option>
+      <option value="Member PWA — Login">Member PWA — Login</option>
+      <option value="Backend — VM / API">Backend — VM / API</option>
+    </select>
     <div class="bug-lbl">What's broken?</div>
     <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="300" placeholder="Describe what happened and what you expected..."></textarea>
     <input type="file" id="bug-file" accept="image/*" capture="environment" style="display:none" onchange="bugFileSelected(this)">
