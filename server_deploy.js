@@ -600,6 +600,16 @@ async function tgSend(text, keyboard = null) {
   return null;
 }
 
+async function tgSendPhoto(photoUrl, caption) {
+  if (!BOT_TOKEN || !CHAT_ID) return;
+  try {
+    await ft(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: CHAT_ID, photo: photoUrl, caption: caption || '', parse_mode: 'HTML' })
+    }, 8000);
+  } catch(e) { console.error('tgSendPhoto error:', e.message); }
+}
+
 async function tgEdit(msgId, text, keyboard = null) {
   if (!msgId) return;
   const body = { chat_id: CHAT_ID, message_id: msgId, text, parse_mode: 'HTML' };
@@ -3466,6 +3476,72 @@ const server = http.createServer(async (req, res) => {
           } catch(e) { console.warn('[restore] skip', post.id, e.message); }
         }
         res.writeHead(200); res.end(JSON.stringify({ ok: true, restored, total: backupPosts.length }));
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    });
+    return;
+  }
+
+  // ── BUG REPORT — POST /report-issue ─────────────────────────────────────────
+  if (req.method === 'OPTIONS' && urlPath === '/report-issue') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-secret' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/report-issue') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    const secret = req.headers['x-t2s-secret'];
+    if (secret !== 'T2SMonitor2026') {
+      res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
+    }
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', async () => {
+      let data = {};
+      try { data = JSON.parse(body); } catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' })); return; }
+      const { tab = 'Unknown', description = '', screenshot = null, screenshotType = 'image/jpeg', reportedAt } = data;
+      const istTime = new Date(reportedAt || Date.now()).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      try {
+        // 1. Telegram text message
+        await tgSend(`🐛 <b>Bug Report</b>\n<b>Tab:</b> ${tab}\n<b>Time:</b> ${istTime} IST\n\n${description}`);
+
+        // 2. Upload screenshot to GitHub + send Telegram photo
+        if (screenshot && GH_TOKEN) {
+          const filename = `bug_screenshots/${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`;
+          const api = `https://api.github.com/repos/${GH_REPO}/contents/${filename}`;
+          const hdrs = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+          try {
+            await ft(api, { method: 'PUT', headers: hdrs, body: JSON.stringify({ message: `bug: ${tab}`, content: screenshot, branch: 'main' }) }, 15000);
+            const rawUrl = `https://raw.githubusercontent.com/${GH_REPO}/main/${filename}`;
+            await tgSendPhoto(rawUrl, `📸 ${tab}`);
+          } catch(e) { console.error('[report-issue] screenshot upload:', e.message); }
+        }
+
+        // 3. Claude API analysis
+        let suggestion = '';
+        if (ANTHROPIC_KEY) {
+          try {
+            const userContent = screenshot
+              ? [
+                  { type: 'image', source: { type: 'base64', media_type: screenshotType, data: screenshot } },
+                  { type: 'text', text: `Bug report — Tab: ${tab}\n${description}\nIdentify root cause and give the minimal code fix (file, function, exact change).` }
+                ]
+              : `Bug report — Tab: ${tab}\n${description}\nIdentify root cause and give the minimal code fix (file, function, exact change).`;
+            const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-6', max_tokens: 600,
+                system: 'You are a bug-triage assistant for the Trade2Spend PWA. Two apps: Member PWA (Paid_and_free_members_update/index.html, app.trade2spend.com), Admin PWA (Trading_Bot/index.html, app.trade2spend.com/admin.html). Backend: Trading_Bot/server.js at api.trade2spend.com. Given a bug report from the admin on mobile, identify the root cause and give the minimal code fix. Name the function, the file, and the exact change. Under 150 words.',
+                messages: [{ role: 'user', content: userContent }]
+              })
+            });
+            const aiData = await aiRes.json();
+            suggestion = aiData?.content?.[0]?.text || '';
+            if (suggestion) await tgSend(`🤖 <b>Claude's analysis:</b>\n\n${suggestion}`);
+          } catch(e) { console.error('[report-issue] Claude:', e.message); }
+        }
+
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, suggestion }));
       } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })); }
     });
     return;
