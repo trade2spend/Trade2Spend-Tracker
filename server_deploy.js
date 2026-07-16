@@ -4030,7 +4030,7 @@ async function checkMorning() {
   const day = ist.getDay();
   if (day === 0 || day === 6) return; // skip weekends
   const mins = ist.getHours() * 60 + ist.getMinutes();
-  if (mins < 9 * 60 + 30 || mins > 9 * 60 + 32) return; // only fire in the 9:30–9:32 AM window
+  if (mins < 8 * 60 + 30 || mins > 8 * 60 + 32) return; // only fire in the 8:30–8:32 AM window
   const todayStr = ist.toDateString();
   if (_morningCheckDone === todayStr) return;
   _morningCheckDone = todayStr;
