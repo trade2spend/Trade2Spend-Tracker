@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260716-001: Admin PWA — Bug Reporter added. Floating "📋 Report Issue" button (bottom-left, z-index:150, below all modals). Tap opens bottom-sheet: tab name (auto-filled), description, optional screenshot (compressed to 800px via canvas). On submit: POST /report-issue on VM → Telegram alert + screenshot + Claude analysis with ✅ Apply Fix / ❌ Skip inline buttons. Rollback: remove .bug-* CSS block, JS block (openBugReport/closeBugReport/bugFileSelected/submitBugReport), and HTML block (BUG REPORT FAB comment to closing </div></div>). -->
 <!-- T2S-PROD-20260715-004: Admin PWA — CUG Test audience option added to Push to Members modal. Sets audience=cug_test on post; /send-push receives audience param and routes to CUG devices only. Rollback: remove aud-cug-btn HTML, cug_test branch in setPushAud(), and audience param from /send-push fetch body. -->
 <!-- T2S-PROD-20260714-007: Admin PWA follow-up notifications: (1) sendFollowUp() fires /send-push after successful Supabase save. (2) sendPostsReply() fires /send-push after showToast. Both calls are non-blocking (.catch(()=>{})). No change to save logic, backup, or toast. Rollback: remove the two fetch('/send-push'...) blocks from each function. -->
 <!-- T2S-PROD-20260714-006: Admin PWA — scheduleDummyLikes now skipped for trade_alert posts (pushMsgType !== 'trade' guard); dummy likes only drip on general/market_update posts which are the only post types shown in Updates tab. Prevents unnecessary posts-table PATCHes on trade alerts. -->
@@ -284,6 +285,22 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 .slider-row{display:flex;align-items:center;gap:10px;margin-top:8px;}
 .slider-label{font-size:11px;color:var(--muted);white-space:nowrap;}
 .slider-val{font-size:11px;font-weight:600;color:var(--text);min-width:28px;text-align:right;}
+
+/* ── BUG REPORT — T2S-PROD-20260716-001 ─────────────────────────────────── */
+.bug-fab{position:fixed;bottom:22px;left:16px;z-index:150;background:#1a2030;border-radius:20px;padding:8px 13px;display:flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.28);font-size:12px;font-weight:600;color:#fff;font-family:'Space Grotesk',sans-serif;border:none;}
+.bug-fab:active{opacity:0.7;}
+.bug-overlay{display:none;position:fixed;inset:0;z-index:11002;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);align-items:flex-end;justify-content:center;}
+.bug-overlay.open{display:flex;}
+.bug-sheet{background:#fff;border-radius:20px 20px 0 0;padding:22px 18px 36px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,0.2);}
+.bug-title{font-size:15px;font-weight:700;color:#1a2030;margin-bottom:3px;}
+.bug-sub{font-size:12px;color:#6b7280;margin-bottom:16px;}
+.bug-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;margin-bottom:5px;}
+.bug-inp{width:100%;border:0.5px solid rgba(0,0,0,0.14);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'Space Grotesk',sans-serif;color:#1a2030;background:#f4f6f9;outline:none;margin-bottom:12px;display:block;}
+.bug-ta{resize:none;height:80px;line-height:1.5;}
+.bug-attach{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#f4f6f9;border:0.5px solid rgba(0,0,0,0.14);border-radius:10px;font-size:13px;font-family:'Space Grotesk',sans-serif;color:#1a2030;cursor:pointer;width:100%;margin-bottom:10px;}
+.bug-preview{width:100%;max-height:110px;object-fit:cover;border-radius:10px;margin-bottom:12px;display:none;}
+.bug-send{width:100%;padding:12px;background:#1a2030;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:8px;}
+.bug-cancel{width:100%;padding:10px;background:none;color:#6b7280;border:none;font-size:13px;cursor:pointer;font-family:'Space Grotesk',sans-serif;}
 
 </style>
 </head>
@@ -5413,6 +5430,69 @@ function renderChartAnalysis(text) {
   out.style.display = 'block';
 }
 
+// ── BUG REPORT — T2S-PROD-20260716-001 ──────────────────────────────────────
+let _bugB64 = null, _bugMime = 'image/jpeg';
+function openBugReport() {
+  const activeTab = document.querySelector('.tab.on');
+  document.getElementById('bug-tab').value = activeTab ? activeTab.textContent.trim() : '';
+  document.getElementById('bug-desc').value = '';
+  document.getElementById('bug-preview').style.display = 'none';
+  document.getElementById('bug-preview').src = '';
+  document.getElementById('bug-attach-lbl').textContent = '📷 Attach Screenshot (optional)';
+  document.getElementById('bug-file').value = '';
+  _bugB64 = null;
+  document.getElementById('bug-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('bug-desc').focus(), 200);
+}
+function closeBugReport() {
+  document.getElementById('bug-overlay').classList.remove('open');
+}
+function bugFileSelected(inp) {
+  const file = inp.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const maxW = 800;
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * scale);
+      cv.height = Math.round(img.height * scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      _bugB64 = cv.toDataURL('image/jpeg', 0.82).split(',')[1];
+      _bugMime = 'image/jpeg';
+      const prev = document.getElementById('bug-preview');
+      prev.src = 'data:image/jpeg;base64,' + _bugB64;
+      prev.style.display = 'block';
+      document.getElementById('bug-attach-lbl').textContent = '✓ Screenshot attached';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function submitBugReport() {
+  const tab = document.getElementById('bug-tab').value.trim() || 'Unknown';
+  const desc = document.getElementById('bug-desc').value.trim();
+  if (!desc) { showToast('Describe the issue first'); return; }
+  const btn = document.querySelector('.bug-send');
+  btn.disabled = true; btn.textContent = 'Sending...';
+  try {
+    const res = await fetch('https://api.trade2spend.com/report-issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+      body: JSON.stringify({ tab, description: desc, screenshot: _bugB64 || null, screenshotType: _bugMime, reportedAt: new Date().toISOString() })
+    });
+    const data = await res.json();
+    closeBugReport();
+    showToast(data.ok ? '✓ Sent — check Telegram for Claude\'s fix suggestion' : '⚠️ ' + (data.error || 'Send failed'));
+  } catch(e) {
+    showToast('Network error — try again');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send Report →';
+  }
+}
+
 // ── iOS KEYBOARD: keep fixed topbar visible when virtual keyboard opens ─────
 // On iOS PWA, the visual viewport scrolls when keyboard appears.
 // position:fixed is relative to the layout viewport, so it drifts off screen.
@@ -5429,6 +5509,26 @@ function renderChartAnalysis(text) {
 })();
 </script>
 
+
+<!-- BUG REPORT FAB — T2S-PROD-20260716-001 -->
+<button class="bug-fab" onclick="openBugReport()">📋 Report Issue</button>
+<div class="bug-overlay" id="bug-overlay" onclick="if(event.target===this)closeBugReport()">
+  <div class="bug-sheet">
+    <div class="bug-title">📋 Report an Issue</div>
+    <div class="bug-sub">Screenshot + description helps Claude diagnose it faster</div>
+    <div class="bug-lbl">Tab / Area</div>
+    <input class="bug-inp" id="bug-tab" type="text" placeholder="e.g. Posts, Trade, Setup">
+    <div class="bug-lbl">What's broken?</div>
+    <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="300" placeholder="Describe what happened and what you expected..."></textarea>
+    <input type="file" id="bug-file" accept="image/*" capture="environment" style="display:none" onchange="bugFileSelected(this)">
+    <button class="bug-attach" onclick="document.getElementById('bug-file').click()">
+      <span id="bug-attach-lbl">📷 Attach Screenshot (optional)</span>
+    </button>
+    <img id="bug-preview" class="bug-preview" alt="preview">
+    <button class="bug-send" onclick="submitBugReport()">Send Report →</button>
+    <button class="bug-cancel" onclick="closeBugReport()">Cancel</button>
+  </div>
+</div>
 
 <!-- A2HS FAB -->
 <div id="a2hs-fab" onclick="triggerA2HS()" style="display:none;position:fixed;bottom:20px;right:16px;z-index:500;background:#4a2a78;border-radius:50%;width:40px;height:40px;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(74,42,120,0.35);cursor:pointer;" title="Add to Home Screen">
