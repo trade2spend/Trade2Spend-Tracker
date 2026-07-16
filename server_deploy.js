@@ -482,6 +482,7 @@ let _resolveAlertSentDate = null; // date string when 3:20 PM resolve alert was 
 let _scraperStopAlerted  = false; // prevents repeat Telegram alerts for scraper-stopped-during-market-hours
 let _sessionExpiryWarned = false; // prevents repeat Telegram alerts for session near expiry
 let _morningCheckDone    = null; // date string when morning health check was sent today
+let _pendingBugFixes     = {};   // uuid → { file, find, replace, summary } awaiting Telegram approval
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
 let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
 let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent
@@ -2109,6 +2110,39 @@ async function processTrade(text) {
 }
 
 // ── CALLBACKS ─────────────────────────────────────────────────────────────────
+async function applyBugFix(uuid, cbMsgId) {
+  const fix = _pendingBugFixes[uuid];
+  if (!fix) { await tgSend('⚠️ Fix expired — re-report the issue.'); return; }
+  const ghFileMap = { 'admin.html': 'admin.html', 'index.html': 'index.html', 'server.js': 'server_deploy.js', 'admin_uat.html': 'admin_uat.html', 'uat.html': 'uat.html' };
+  const ghFile = ghFileMap[fix.file] || fix.file;
+  try {
+    const rawUrl = `https://raw.githubusercontent.com/${GH_REPO}/main/${ghFile}?t=${Date.now()}`;
+    const r = await ft(rawUrl, {}, 15000);
+    const current = await r.text();
+    if (!current.includes(fix.find)) {
+      await tgSend(`❌ Fix failed — the exact code pattern was not found in <b>${fix.file}</b>.\nMay already be fixed, or Claude's patch was imprecise.`);
+      return;
+    }
+    const updated = current.replace(fix.find, fix.replace);
+    const api = `https://api.github.com/repos/${GH_REPO}/contents/${ghFile}`;
+    const hdrs = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+    const shaR = await ft(api, { headers: hdrs }, 8000);
+    const sha = (await shaR.json()).sha || '';
+    const encoded = Buffer.from(updated).toString('base64');
+    const pushR = await ft(api, { method: 'PUT', headers: hdrs, body: JSON.stringify({ message: `auto-fix: ${(fix.summary || 'bug report').slice(0, 60)}`, content: encoded, sha, branch: 'main' }) }, 15000);
+    if (!pushR.ok) throw new Error(`GitHub push HTTP ${pushR.status}`);
+    delete _pendingBugFixes[uuid];
+    if (fix.file === 'server.js') {
+      await tgSend(`✅ <b>Fix applied to server.js</b>\n\n${fix.summary || ''}\n\nVM restarting in 5s...`);
+      setTimeout(() => ft(`https://api.trade2spend.com/http-update?key=T2SMonitor2026`, {}, 10000).catch(() => {}), 5000);
+    } else {
+      await tgSend(`✅ <b>Fix applied to ${fix.file}</b>\n\n${fix.summary || ''}\n\n<i>Live at app.trade2spend.com in ~60s (GitHub Pages)</i>`);
+    }
+  } catch(e) {
+    await tgSend(`❌ Auto-fix error: ${e.message}`);
+  }
+}
+
 async function handleCallback(cb) {
   const cbId = cb.id, action = cb.data, msgId = cb.message.message_id;
 
@@ -2339,6 +2373,18 @@ async function handleCallback(cb) {
   if (action === 'confirm_live') { state.paperMode = false; await tgAnswer(cbId, 'LIVE ON'); await tgSend('🔴 <b>LIVE mode ON</b>'); await saveState(); return; }
   if (action === 'stay_paper')   { await tgAnswer(cbId, 'Staying Paper'); return; }
   if (action === 'confirm_kill') { await tgAnswer(cbId, 'Executing...'); await killSwitch(); return; }
+  if (action.startsWith('bugfix_apply:')) {
+    await tgAnswer(cbId, 'Applying fix...');
+    await tgEdit(msgId, '⏳ Applying fix — please wait...', { inline_keyboard: [] });
+    await applyBugFix(action.slice('bugfix_apply:'.length), msgId);
+    return;
+  }
+  if (action.startsWith('bugfix_skip:')) {
+    await tgAnswer(cbId, 'Skipped');
+    await tgEdit(msgId, (cb.message.text || '') + '\n\n<i>Fix skipped.</i>', { inline_keyboard: [] });
+    delete _pendingBugFixes[action.slice('bugfix_skip:'.length)];
+    return;
+  }
   await tgAnswer(cbId, '');
 }
 
@@ -3517,28 +3563,56 @@ const server = http.createServer(async (req, res) => {
           } catch(e) { console.error('[report-issue] screenshot upload:', e.message); }
         }
 
-        // 3. Claude API analysis
-        let suggestion = '';
+        // 3. Claude API — structured analysis + auto-fix patch
+        let suggestion = '', patchData = null;
         if (ANTHROPIC_KEY) {
           try {
+            const userText = `Bug report — Tab: ${tab}\n${description}`;
             const userContent = screenshot
-              ? [
-                  { type: 'image', source: { type: 'base64', media_type: screenshotType, data: screenshot } },
-                  { type: 'text', text: `Bug report — Tab: ${tab}\n${description}\nIdentify root cause and give the minimal code fix (file, function, exact change).` }
-                ]
-              : `Bug report — Tab: ${tab}\n${description}\nIdentify root cause and give the minimal code fix (file, function, exact change).`;
+              ? [{ type: 'image', source: { type: 'base64', media_type: screenshotType, data: screenshot } }, { type: 'text', text: userText }]
+              : userText;
             const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
               body: JSON.stringify({
-                model: 'claude-sonnet-4-6', max_tokens: 600,
-                system: 'You are a bug-triage assistant for the Trade2Spend PWA. Two apps: Member PWA (Paid_and_free_members_update/index.html, app.trade2spend.com), Admin PWA (Trading_Bot/index.html, app.trade2spend.com/admin.html). Backend: Trading_Bot/server.js at api.trade2spend.com. Given a bug report from the admin on mobile, identify the root cause and give the minimal code fix. Name the function, the file, and the exact change. Under 150 words.',
+                model: 'claude-sonnet-4-6', max_tokens: 800,
+                system: `You are a bug-triage assistant for the Trade2Spend PWA.
+Files: admin.html (Admin PWA at app.trade2spend.com/admin.html), index.html (Member PWA at app.trade2spend.com), server.js (Node.js VM at api.trade2spend.com).
+Respond in EXACTLY this format — two sections, nothing else:
+
+ANALYSIS:
+<root cause in 1-2 sentences — name the specific function/CSS class/variable>
+
+PATCH:
+{"file":"<filename>","find":"<exact unique short string from source to replace>","replace":"<fixed string>"}
+
+Rules for PATCH: "find" must be unique in the file and minimal. If patch cannot be determined precisely, use "find":null.`,
                 messages: [{ role: 'user', content: userContent }]
               })
             });
             const aiData = await aiRes.json();
             suggestion = aiData?.content?.[0]?.text || '';
-            if (suggestion) await tgSend(`🤖 <b>Claude's analysis:</b>\n\n${suggestion}`);
+            // Parse structured response
+            const aIdx = suggestion.indexOf('ANALYSIS:\n');
+            const pIdx = suggestion.indexOf('\nPATCH:\n');
+            const analysis = aIdx !== -1 ? suggestion.slice(aIdx + 10, pIdx !== -1 ? pIdx : undefined).trim() : suggestion;
+            if (pIdx !== -1) {
+              try { patchData = JSON.parse(suggestion.slice(pIdx + 8).trim()); } catch {}
+            }
+            // Send Telegram with inline button if patch is actionable
+            if (patchData?.find && GH_TOKEN) {
+              const uuid = Date.now().toString(36);
+              _pendingBugFixes[uuid] = { file: patchData.file, find: patchData.find, replace: patchData.replace || '', summary: analysis };
+              await tgSend(
+                `🤖 <b>Claude's Fix</b>\n\n${analysis}\n\n<b>File:</b> ${patchData.file}\n<b>Patch ready</b> — tap to apply:`,
+                { inline_keyboard: [[
+                  { text: '✅ Apply Fix', callback_data: `bugfix_apply:${uuid}` },
+                  { text: '❌ Skip',      callback_data: `bugfix_skip:${uuid}` }
+                ]]}
+              );
+            } else if (analysis) {
+              await tgSend(`🤖 <b>Claude's Analysis</b>\n\n${analysis}\n\n<i>Patch couldn't be auto-generated — manual fix needed.</i>`);
+            }
           } catch(e) { console.error('[report-issue] Claude:', e.message); }
         }
 
