@@ -1103,6 +1103,14 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <button id="restore-backup-btn" onclick="restoreFromBackup()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(5,150,105,0.4);background:rgba(5,150,105,0.08);color:#059669;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔄 Restore from Backup</button>
   </div>
 
+  <!-- T2S-PROD-20260716-004: Push UAT to Prod -->
+  <div class="setup-card" style="border-color:rgba(220,38,38,0.4);background:rgba(220,38,38,0.04);">
+    <div class="setup-label" style="color:#dc2626;">🚀 Push UAT to Production</div>
+    <div class="info-text" style="margin-bottom:12px;">Deploys the current CUG/UAT version to all members. UAT badge and test buttons are automatically stripped. Takes ~60s to go live.</div>
+    <div id="push-to-prod-status" style="font-size:11px;color:var(--muted);margin-bottom:8px;display:none;"></div>
+    <button id="push-to-prod-btn" onclick="pushUatToProd()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.08);color:#dc2626;font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🚀 Push to Production</button>
+  </div>
+
   <!-- App PIN Lock -->
   <div class="setup-card">
     <div class="setup-label">🔐 App PIN Lock</div>
@@ -3046,6 +3054,34 @@ function recallHistory(i){
     document.getElementById('gen-preview').textContent=t.msg;
     document.getElementById('gen-preview').classList.remove('empty');
     showTab('general');
+  }
+}
+
+// T2S-PROD-20260716-004: Push UAT → Prod
+async function pushUatToProd() {
+  const btn = document.getElementById('push-to-prod-btn');
+  const status = document.getElementById('push-to-prod-status');
+  if (!confirm('This will deploy the UAT version to ALL members at app.trade2spend.com.\n\nAre you sure?')) return;
+  btn.disabled = true;
+  btn.textContent = 'Pushing...';
+  if (status) { status.style.display = 'block'; status.textContent = 'Contacting server...'; status.style.color = 'var(--muted)'; }
+  try {
+    const r = await fetch('https://api.trade2spend.com/push-uat-to-prod?key=T2SMonitor2026', { signal: AbortSignal.timeout(30000) });
+    const d = await r.json();
+    if (d.ok) {
+      if (status) { status.textContent = 'Done! Live at app.trade2spend.com in ~60s.'; status.style.color = 'var(--green)'; }
+      btn.textContent = 'Pushed!';
+      btn.style.color = 'var(--green)';
+      btn.style.borderColor = 'var(--greenborder)';
+    } else {
+      if (status) { status.textContent = 'Error: ' + (d.error || 'Unknown'); status.style.color = 'var(--red)'; }
+      btn.disabled = false;
+      btn.textContent = 'Push to Production';
+    }
+  } catch(e) {
+    if (status) { status.textContent = 'Failed: ' + e.message; status.style.color = 'var(--red)'; }
+    btn.disabled = false;
+    btn.textContent = 'Push to Production';
   }
 }
 
