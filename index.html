@@ -1,3 +1,5 @@
+<!-- DEPLOY: T2S-PROD-20260717-002 | Member PWA Updates tab — compose box preserved across fetchUpdates() loading wipe. _fudCompose snapshots open box (postId, text, audience) before container.innerHTML wipe; restored after renderUpdates(). Fixes: follow-up compose box vanishing on Realtime/60s poll refresh. renderFollowUpCard/parseFollowUpContent untouched. Rollback: remove 7-line snapshot block before loading wipe + 8-line restore block after renderUpdates(). -->
+<!-- DEPLOY: T2S-PROD-20260717-001 | Member PWA — Active-member tracking heartbeat. Added _pingLastActive() in init() that PATCHes sessions.last_active for the current member+device on page open and every 5 min. Fire-and-forget (.catch(()=>{})) — never blocks UI. Only runs for authenticated (non-free) members. Enables "online now / active today / active this month" metrics in Admin PWA. Rollback: remove the 11-line `if(mode !== 'free' && memberId)` block with _pingLastActive and its setInterval in init(). -->
 <!-- DEPLOY: T2S-PROD-20260716-002 | Member PWA Updates tab — compose box text preserved across auto-refresh. renderUpdates() saves open compose box state (postId, typed text, audience) before container.innerHTML = html, then restores it after. Fixes: admin follow-up message lost when 60s poll or Realtime event triggered re-render while typing. No other logic touched. Rollback: remove the 13 lines around container.innerHTML = html in renderUpdates() (save block before + restore block after). -->
 <!-- DEPLOY: T2S-PROD-20260716-001 | Trade Alert tab + Performance tab: "not triggered" trades now excluded from Closed Trades display and Performance P&L calculation. Trades with _STATUS_ONLY_RE-matching follow-ups (e.g. "Not triggered. Now avoiding...") and no valid trigger/exit data are correctly hidden after market close — were rendering as "✅ Closed Trade" with no exit since T2S-PROD-20260709-003 auto-close. Two-line fix: closedPosts gets a getTradeState!=='not_triggered' filter; closedTrades gets same guard. Rollback: revert closedPosts to single isTradeFullyClosed filter; revert closedTrades to single isTradeFullyClosed filter. -->
 <!-- DEPLOY: T2S-PROD-20260715-010 | Member PWA — fetchUpdates() stale-while-revalidate: removed early return on cache hit so Supabase is always fetched fresh in background. Cached content still shows instantly for UX. Fixes: new post not appearing when cache was < 30 min old (Realtime race), CUG posts not visible on first tab visit. Rollback: add back `return;` after _userInteracted.forEach on cache hit block. -->
@@ -2976,6 +2978,14 @@
             _userInteracted.forEach(id => updateLikeUI(id));
             // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
         }
+        // Preserve any open compose box across the loading wipe
+        let _fudCompose = null;
+        const _fudOpenBox = container.querySelector('.admin-compose-box.open');
+        if (_fudOpenBox) {
+            const _fudPId = _fudOpenBox.id.replace('compose-', '');
+            const _fudTa  = document.getElementById('reply-text-' + _fudPId);
+            _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
+        }
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
         try {
@@ -3037,6 +3047,15 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            if (_fudCompose) {
+                const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
+                if (_fudBox) {
+                    _fudBox.classList.add('open');
+                    const _fudTa2 = document.getElementById('reply-text-' + _fudCompose.postId);
+                    if (_fudTa2) _fudTa2.value = _fudCompose.text;
+                    selectReplyAud(_fudCompose.postId, _fudCompose.audience);
+                }
+            }
             _userInteracted.forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
             initRealtimeSubscription();
@@ -3501,6 +3520,17 @@
                 // Render tier chip immediately — before any tab fetch completes
                 _renderMemberChip(members[0]);
             } catch(e){ console.warn('Auth check failed',e); }
+        }
+        // Active-member tracking: update last_active in Supabase on open + every 5 min (fire-and-forget, never blocks UI)
+        if(mode !== 'free' && memberId){
+            const _did = localStorage.getItem('t2s_device_id');
+            const _pingLastActive = () => {
+                if(!_did) return;
+                sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
+                    {method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString()})}).catch(()=>{});
+            };
+            _pingLastActive();
+            setInterval(_pingLastActive, 300000);
         }
         // Fallback chip render — runs even if sbFetch above failed or was skipped (free-mode visitors).
         // Guarantees the FREE/PAID/ADMIN chip is visible on every tab, not just Trade Alert.
