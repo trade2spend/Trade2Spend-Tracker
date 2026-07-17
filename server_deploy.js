@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260715-009 | server.js: per-member dedup in /send-push — max 1 notification per member_id (keeps most-recently-used subscription). Both CUG and broadcast queries now fetch member_id+order by last_used.desc. Rollback: remove _seenMembers/_finalSubs block, change _finalSubs.map back to _dedupedSubs.map, revert select queries to not include member_id.
 // DEPLOY: T2S-CUG-20260716-001 | server.js: /refresh-contracts endpoint added — bypasses 60s throttle so new trade CMP starts immediately. Rollback: remove the /refresh-contracts block.
 // DEPLOY: T2S-PROD-20260715-008 | server.js: CUG push URL changed to uat.html#updates (was index.html#updates — wrong PWA for CUG testing). Rollback: revert url override line.
 // DEPLOY: T2S-PROD-20260715-007 | server.js: endpoint dedup in /send-push — before sending, filter subs to unique endpoints only. Prevents multiple pushes when same device has registered multiple subscription rows in DB. Applies to both CUG and broadcast paths. Rollback: remove the _seenEps dedup block and change _dedupedSubs back to subs.
@@ -3818,9 +3819,9 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           const cugMembers = await sbFetch(`members?mobile=in.(${CUG_MOBILES.map(m => m.replace(/\+/g, '%2B')).join(',')})&select=id`);
           const cugIds = (cugMembers || []).map(m => m.id);
           if (!cugIds.length) { res.writeHead(200); res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'no_cug_members' })); return; }
-          subs = await sbFetch(`push_subscriptions?member_id=in.(${cugIds.join(',')})&select=id,subscription_json`);
+          subs = await sbFetch(`push_subscriptions?member_id=in.(${cugIds.join(',')})&select=id,member_id,subscription_json&order=last_used.desc`);
         } else {
-          subs = await sbFetch('push_subscriptions?select=id,subscription_json');
+          subs = await sbFetch('push_subscriptions?select=id,member_id,subscription_json&order=last_used.desc');
         }
         // T2S-PROD-20260715-007: deduplicate by endpoint — one push per unique browser registration, even if DB has multiple rows for same device
         const _seenEps = new Set();
@@ -3832,8 +3833,16 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             return true;
           } catch { return true; }
         });
+        // T2S-PROD-20260715-009: per-member dedup — max 1 notification per member regardless of how many devices they subscribed from
+        const _seenMembers = new Set();
+        const _finalSubs = _dedupedSubs.filter(sub => {
+          if (!sub.member_id) return true;
+          if (_seenMembers.has(sub.member_id)) return false;
+          _seenMembers.add(sub.member_id);
+          return true;
+        });
         // T2S-PROD-20260715-002: parallel delivery — all notifications fire simultaneously so browser tag-dedup works correctly
-        const _pResults = await Promise.all(_dedupedSubs.map(async sub => {
+        const _pResults = await Promise.all(_finalSubs.map(async sub => {
           try {
             const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
             return { id: sub.id, expired: sc === 410 || sc === 404 };
