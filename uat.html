@@ -1543,22 +1543,28 @@
     }
 
     let _subscribing = false;
-    async function subscribeToPush() {
+    async function subscribeToPush(forceNew = false) {
       if (_subscribing) return;
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
       _subscribing = true;
       try {
-        const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-          // Never call requestPermission() here — Chrome Android blocks it without a user gesture.
-          // Only create a new subscription if the user already granted permission (e.g. re-subscribe after browser cleared it).
-          if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
-        }
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
         const memberId = localStorage.getItem('t2s_member_id');
         const deviceId = localStorage.getItem('t2s_device_id') || 'web';
         if (!memberId) return;
+        const reg = await navigator.serviceWorker.ready;
+        // If no forceNew, check if our DB row was deleted (means VM got 410 — endpoint expired)
+        // If row is gone, force-fresh so we get a valid endpoint
+        if (!forceNew) {
+          const rows = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&select=id`).catch(() => []);
+          if (!rows || !rows.length) forceNew = true;
+        }
+        if (forceNew) {
+          const old = await reg.pushManager.getSubscription();
+          if (old) await old.unsubscribe();
+        }
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
         await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
         await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
       } catch (e) { console.log('Push subscribe failed:', e.message); }
@@ -3369,9 +3375,9 @@
             return;
         }
         if (Notification.permission === 'granted') {
-            // Already enabled — re-sync subscription then fire a test push so member sees confirmation
-            _bellToast('🔔 Syncing…');
-            await subscribeToPush().catch(() => {});
+            // Already enabled — force fresh subscription (old endpoint may have expired/been deleted by server)
+            _bellToast('🔔 Refreshing…');
+            await subscribeToPush(true).catch(() => {});
             const ok = await _sendTestPush().then(() => true).catch(() => false);
             _bellToast(ok ? '✓ Notification sent! Check your screen.' : '🔔 Notifications are on. Test notification failed — try refreshing.');
             return;
@@ -3380,7 +3386,7 @@
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
             _bellToast('🔔 Setting up…');
-            await subscribeToPush().catch(() => {});
+            await subscribeToPush(true).catch(() => {});
             updateNotifBell();
             const ok = await _sendTestPush().then(() => true).catch(() => false);
             _bellToast(ok ? '✓ Notification sent! Check your screen.' : '✓ Notifications enabled! You\'ll get instant trade alerts.');
