@@ -5185,7 +5185,7 @@ function renderPostsFeed() {
       <button onclick="togglePostsReplies('${p.id}')" id="prf-btn-${p.id}" style="background:none;border:none;padding:0;font-size:11px;color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''} ▶</button>
       <div id="prf-list-${p.id}" style="display:none;margin-bottom:6px;">${repliesHtml}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button onclick="openPostsReplyBox('${p.id}')" style="flex:1;padding:7px;border-radius:var(--radius-sm);border:0.5px solid rgba(74,42,120,0.4);background:rgba(74,42,120,0.06);color:#4a2a78;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add Follow-up</button>
+        <!-- Add Follow-up trigger hidden — T2S-PROD-20260717-001: disabled temporarily, re-enable when needed -->
         <button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>
         <button onclick="deleteAdminPost('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid #fca5a5;background:transparent;color:#dc2626;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Delete post">🗑</button>
       </div>
