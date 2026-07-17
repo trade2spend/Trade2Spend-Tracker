@@ -1384,7 +1384,9 @@ async function fetchKotakOptionLTPs() {
       if (ltp > 0) {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
-        _optionHighs[key] = { high: Math.max((_optionHighs[key]?.high || 0), ltp), postId: c.postId || _optionHighs[key]?.postId };
+        const _prevHigh = _optionHighs[key]?.high || 0;
+        _optionHighs[key] = { high: Math.max(_prevHigh, ltp), postId: c.postId || _optionHighs[key]?.postId };
+        if (_optionHighs[key].high > _prevHigh) saveState().catch(() => {}); // persist new high so VM restart doesn't lose it
         if (_latestMarketData) {
           _latestMarketData.optionLTPs  = { ..._optionChain };
           _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
