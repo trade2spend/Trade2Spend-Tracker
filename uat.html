@@ -2941,6 +2941,14 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
+        // Preserve any open compose box across the loading wipe
+        let _fudCompose = null;
+        const _fudOpenBox = container.querySelector('.admin-compose-box.open');
+        if (_fudOpenBox) {
+            const _fudPId = _fudOpenBox.id.replace('compose-', '');
+            const _fudTa  = document.getElementById('reply-text-' + _fudPId);
+            _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
+        }
         const _uc = _cLoad('t2s_upd_posts');
         if (_uc && _uc.posts && _cachedTier) { renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache); _userInteracted.forEach(id => updateLikeUI(id)); }
         else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
@@ -2989,6 +2997,15 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            if (_fudCompose) {
+                const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
+                if (_fudBox) {
+                    _fudBox.classList.add('open');
+                    const _fudTa2 = document.getElementById('reply-text-' + _fudCompose.postId);
+                    if (_fudTa2) _fudTa2.value = _fudCompose.text;
+                    selectReplyAud(_fudCompose.postId, _fudCompose.audience);
+                }
+            }
             _userInteracted.forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
         } catch(e) {
@@ -3482,6 +3499,17 @@
                     showUatLoginMsg(); return;
                 }
             } catch(e){ console.warn('Auth check failed',e); }
+        }
+        // Active-member tracking: update last_active in Supabase on open + every 5 min (fire-and-forget)
+        if(mode !== 'free' && memberId){
+            const _did = localStorage.getItem('t2s_device_id');
+            const _pingLastActive = () => {
+                if(!_did) return;
+                sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
+                    {method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString()})}).catch(()=>{});
+            };
+            _pingLastActive();
+            setInterval(_pingLastActive, 300000);
         }
         // Idle auto-lock: update last_active on real user interactions
         const IDLE_MS = 30 * 60 * 1000;
