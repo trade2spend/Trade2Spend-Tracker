@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260717-004 | Admin PWA Posts tab: (1) Restored "↳ Add follow-up" button (was disabled in T2S-PROD-20260717-001). (2) Restored "Send Follow-up →" button in reply box. (3) Unlock button now only shows for paid_only non-trade_alert posts — hidden for all-audience posts and trade alerts (trade alerts use their own unlock mechanism). Rollback: remove Add follow-up button, remove Send Follow-up button, revert Unlock condition to unconditional. -->
 <!-- T2S-PROD-20260717-001: Admin PWA — "Send Follow-up →" button hidden in Trade tab and Posts tab. JS functions sendFollowUp() and sendPostsReply() untouched. Rollback: restore the two <button> lines (Trade tab ~line 692, Posts tab ~line 5201). -->
 <!-- T2S-PROD-20260716-002: Admin PWA — Bug Reporter "Broken in" field changed from free-text input to locked dropdown (Admin PWA tabs + Member PWA sections + Backend). openBugReport() auto-selects matching option from active tab. No free typing possible. Rollback: replace <select> with <input type="text"> and revert openBugReport() to use .value = tabName. -->
 <!-- T2S-PROD-20260716-001: Admin PWA — Bug Reporter added. Floating "📋 Report Issue" button (bottom-left, z-index:150, below all modals). Tap opens bottom-sheet: tab name (auto-filled), description, optional screenshot (compressed to 800px via canvas). On submit: POST /report-issue on VM → Telegram alert + screenshot + Claude analysis with ✅ Apply Fix / ❌ Skip inline buttons. Rollback: remove .bug-* CSS block, JS block (openBugReport/closeBugReport/bugFileSelected/submitBugReport), and HTML block (BUG REPORT FAB comment to closing </div></div>). -->
@@ -5253,8 +5254,8 @@ function renderPostsFeed() {
       <button onclick="togglePostsReplies('${p.id}')" id="prf-btn-${p.id}" style="background:none;border:none;padding:0;font-size:11px;color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''} ▶</button>
       <div id="prf-list-${p.id}" style="display:none;margin-bottom:6px;">${repliesHtml}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <!-- Add Follow-up trigger hidden — T2S-PROD-20260717-001: disabled temporarily, re-enable when needed -->
-        <button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>
+        <button onclick="openPostsReplyBox('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add follow-up</button>
+        ${p.audience==='paid_only'&&p.post_type!=='trade_alert'?`<button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>`:''}
         <button onclick="deleteAdminPost('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid #fca5a5;background:transparent;color:#dc2626;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Delete post">🗑</button>
       </div>
       <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
@@ -5265,7 +5266,7 @@ function renderPostsFeed() {
         <textarea id="posts-reply-text-${p.id}" placeholder="e.g. 180 Exiting 50%, holding rest at cost…" style="width:100%;background:var(--bg);border:0.5px solid rgba(74,42,120,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:9px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;"></textarea>
         <div style="display:flex;gap:6px;">
           <button onclick="openPostsReplyBox('${p.id}')" style="padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Cancel</button>
-          <!-- Send Follow-up button hidden — T2S-PROD-20260717-001: disabled temporarily, re-enable when needed -->
+          <button onclick="sendPostsReply('${p.id}',this)" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:none;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
         </div>
       </div>
     </div>`;
