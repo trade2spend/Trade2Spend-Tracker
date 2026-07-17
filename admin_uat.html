@@ -5249,7 +5249,7 @@ function renderPostsFeed() {
       <div id="prf-list-${p.id}" style="display:none;margin-bottom:6px;">${repliesHtml}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <!-- Add Follow-up trigger hidden — T2S-PROD-20260717-001: disabled temporarily, re-enable when needed -->
-        <button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>
+        ${p.audience==='paid_only'?`<button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>`:''}
         <button onclick="deleteAdminPost('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid #fca5a5;background:transparent;color:#dc2626;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Delete post">🗑</button>
       </div>
       <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
