@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260717-003 | Member PWA: (1) sendReply() now receives clicked button as 3rd arg (btnEl) and scopes getElementById/querySelector to that button's compose box — fixes follow-up posting failing on general posts that appear in both Trade Alert and Updates tabs (duplicate IDs caused getElementById to return wrong/empty textarea). (2) Unlock button hidden on audience='all' posts (no unlock needed, everyone sees it). (3) Unlock button hidden on closed trades (free members already see all details per existing logic). Rollback: revert sendReply signature + 2 lookup lines + btn line, revert 3 button onclick attrs to remove ',this', revert 2 forceUnlock buttons to unconditional. -->
 <!-- DEPLOY: T2S-PROD-20260717-002 | Member PWA Updates tab — compose box preserved across fetchUpdates() loading wipe. _fudCompose snapshots open box (postId, text, audience) before container.innerHTML wipe; restored after renderUpdates(). Fixes: follow-up compose box vanishing on Realtime/60s poll refresh. renderFollowUpCard/parseFollowUpContent untouched. Rollback: remove 7-line snapshot block before loading wipe + 8-line restore block after renderUpdates(). -->
 <!-- DEPLOY: T2S-PROD-20260717-001 | Member PWA — Active-member tracking heartbeat. Added _pingLastActive() in init() that PATCHes sessions.last_active for the current member+device on page open and every 5 min. Fire-and-forget (.catch(()=>{})) — never blocks UI. Only runs for authenticated (non-free) members. Enables "online now / active today / active this month" metrics in Admin PWA. Rollback: remove the 11-line `if(mode !== 'free' && memberId)` block with _pingLastActive and its setInterval in init(). -->
 <!-- DEPLOY: T2S-PROD-20260716-002 | Member PWA Updates tab — compose box text preserved across auto-refresh. renderUpdates() saves open compose box state (postId, typed text, audience) before container.innerHTML = html, then restores it after. Fixes: admin follow-up message lost when 60s poll or Realtime event triggered re-render while typing. No other logic touched. Rollback: remove the 13 lines around container.innerHTML = html in renderUpdates() (save block before + restore block after). -->
@@ -2745,8 +2746,8 @@
                     <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
                     <div class="admin-compose-row">
                         <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
-                        <button style="padding:9px 10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit;" onclick="forceUnlock('${post.id}')">🔓 Unlock</button>
-                        <button class="admin-compose-send" onclick="sendReply('${post.id}','trades')">Send →</button>
+                        ${post.audience==='paid_only'?`<button style="padding:9px 10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit;" onclick="forceUnlock('${post.id}')">🔓 Unlock</button>`:''}
+                        <button class="admin-compose-send" onclick="sendReply('${post.id}','trades',this)">Send →</button>
                     </div>
                 </div>` : '';
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
@@ -2838,8 +2839,8 @@
                 <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
                 <div class="admin-compose-row">
                     <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
-                    <button style="padding:9px 10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit;" onclick="forceUnlock('${post.id}')">🔓 Unlock</button>
-                    <button class="admin-compose-send" onclick="sendReply('${post.id}','trades')">Send →</button>
+                    ${post.audience==='paid_only'&&!isClosed?`<button style="padding:9px 10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit;" onclick="forceUnlock('${post.id}')">🔓 Unlock</button>`:''}
+                    <button class="admin-compose-send" onclick="sendReply('${post.id}','trades',this)">Send →</button>
                 </div>
             </div>` : '';
 
@@ -3180,7 +3181,7 @@
                         <textarea class="admin-compose-textarea" id="reply-text-${post.id}" placeholder="Type your follow-up..."></textarea>
                         <div class="admin-compose-row">
                             <button class="admin-compose-cancel" onclick="toggleReplyBox('${post.id}')">Cancel</button>
-                            <button class="admin-compose-send" onclick="sendReply('${post.id}','updates')">Send Follow-up →</button>
+                            <button class="admin-compose-send" onclick="sendReply('${post.id}','updates',this)">Send Follow-up →</button>
                         </div>
                     </div>` : '';
 
@@ -3365,8 +3366,9 @@
         document.getElementById(`aud-paid-${postId}`).classList.toggle('selected', val === 'paid_only');
     }
 
-    async function sendReply(parentId, fromTab) {
-        const text     = document.getElementById(`reply-text-${parentId}`).value.trim();
+    async function sendReply(parentId, fromTab, btnEl) {
+        const _cBox    = btnEl ? btnEl.closest('.admin-compose-box') : document.getElementById(`compose-${parentId}`);
+        const text     = (_cBox ? _cBox.querySelector('.admin-compose-textarea') : document.getElementById(`reply-text-${parentId}`))?.value.trim() || '';
         const audience = replyAudience[parentId] || 'all';
 
         if(!text || text.length < 3) {
@@ -3374,7 +3376,7 @@
             return;
         }
 
-        const btn = document.querySelector(`#compose-${parentId} .admin-compose-send`);
+        const btn = btnEl || document.querySelector(`#compose-${parentId} .admin-compose-send`);
         btn.disabled    = true;
         btn.textContent = 'Sending...';
 
