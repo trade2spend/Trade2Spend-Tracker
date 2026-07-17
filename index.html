@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260717-004 | Member PWA push notifications: subscribeToPush() now takes forceNew param. Bell tap always unsubscribes old endpoint + creates fresh (forceNew=true). Auto page-load checks if DB row was deleted by server (expired 410) — if missing, force-fresh instead of re-saving stale endpoint. Fixes: notification loop where expired endpoint kept being re-saved then deleted. Rollback: revert subscribeToPush to no param + original body, revert two subscribeToPush(true) calls in enableNotifications() back to subscribeToPush(). -->
 <!-- DEPLOY: T2S-PROD-20260717-003 | Member PWA: (1) sendReply() now receives clicked button as 3rd arg (btnEl) and scopes getElementById/querySelector to that button's compose box — fixes follow-up posting failing on general posts that appear in both Trade Alert and Updates tabs (duplicate IDs caused getElementById to return wrong/empty textarea). (2) Unlock button hidden on audience='all' posts (no unlock needed, everyone sees it). (3) Unlock button hidden on closed trades (free members already see all details per existing logic). Rollback: revert sendReply signature + 2 lookup lines + btn line, revert 3 button onclick attrs to remove ',this', revert 2 forceUnlock buttons to unconditional. -->
 <!-- DEPLOY: T2S-PROD-20260717-002 | Member PWA Updates tab — compose box preserved across fetchUpdates() loading wipe. _fudCompose snapshots open box (postId, text, audience) before container.innerHTML wipe; restored after renderUpdates(). Fixes: follow-up compose box vanishing on Realtime/60s poll refresh. renderFollowUpCard/parseFollowUpContent untouched. Rollback: remove 7-line snapshot block before loading wipe + 8-line restore block after renderUpdates(). -->
 <!-- DEPLOY: T2S-PROD-20260717-001 | Member PWA — Active-member tracking heartbeat. Added _pingLastActive() in init() that PATCHes sessions.last_active for the current member+device on page open and every 5 min. Fire-and-forget (.catch(()=>{})) — never blocks UI. Only runs for authenticated (non-free) members. Enables "online now / active today / active this month" metrics in Admin PWA. Rollback: remove the 11-line `if(mode !== 'free' && memberId)` block with _pingLastActive and its setInterval in init(). -->
@@ -1500,20 +1501,27 @@
     }
 
     let _subscribing = false;
-    async function subscribeToPush() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    async function subscribeToPush(forceNew = false) {
       if (_subscribing) return;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
       _subscribing = true;
       try {
-        if (Notification.permission !== 'granted') return;
-        const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
-        }
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
         const memberId = localStorage.getItem('t2s_member_id');
         const deviceId = localStorage.getItem('t2s_device_id') || 'web';
         if (!memberId) return;
+        const reg = await navigator.serviceWorker.ready;
+        // If DB row was deleted by server (expired 410), force-fresh to get a valid endpoint
+        if (!forceNew) {
+          const rows = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&select=id`).catch(() => []);
+          if (!rows || !rows.length) forceNew = true;
+        }
+        if (forceNew) {
+          const old = await reg.pushManager.getSubscription();
+          if (old) await old.unsubscribe();
+        }
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
         await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
         await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
       } catch (e) { console.log('Push subscribe failed:', e.message); }
@@ -3430,15 +3438,15 @@
             return;
         }
         if (Notification.permission === 'granted') {
-            _bellToast('🔔 Syncing…');
-            await subscribeToPush();
+            _bellToast('🔔 Refreshing…');
+            await subscribeToPush(true);
             updateNotifBell();
             await _sendTestPush();
             return;
         }
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
-            await subscribeToPush();
+            await subscribeToPush(true);
             updateNotifBell();
             _bellToast('✓ Notification sent! Check your screen.');
             await _sendTestPush();
