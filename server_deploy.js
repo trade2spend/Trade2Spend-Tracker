@@ -4166,7 +4166,7 @@ async function checkSupabaseTriggers() {
         await sbFetch('posts', {
           method: 'POST',
           body: JSON.stringify({
-            content: `✅ Buying triggered at ₹${ep}`,
+            content: `✅ Buying triggered at ₹${entry}`,
             post_type: 'follow_up', audience: 'all',
             allow_sharing: false, is_deleted: false,
             parent_id: post.id, sent_at: new Date().toISOString()
