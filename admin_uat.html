@@ -1289,6 +1289,14 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <div id="tab-membership" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
+  <!-- ── ACTIVE MEMBERS STATS ── T2S-UAT-20260717-001 -->
+  <div id="mem-stats-card" style="background:var(--bg2);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;border:0.5px solid var(--border2);">
+    <div style="font-size:11px;font-weight:700;color:var(--muted2);letter-spacing:0.05em;margin-bottom:10px;">ACTIVE MEMBERS</div>
+    <div id="mem-stats-body" style="display:grid;grid-template-columns:110px 1fr 1fr;gap:4px;align-items:center;">
+      <div style="font-size:11px;color:var(--muted2);grid-column:1/-1;">Loading…</div>
+    </div>
+  </div>
+
   <!-- sub-tab switcher -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
     <button id="mem-tab-renewal" onclick="memSwitchTab('renewal')" style="padding:9px;border-radius:var(--radius-sm);border:0.5px solid var(--goldborder);background:var(--goldbg);color:var(--gold);font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔔 Renewal Reminder</button>
@@ -1527,6 +1535,61 @@ function showTab(t){
   if(t==='campaign'){if(typeof updateCanvas==='function')updateCanvas();if(typeof updateCaption==='function')updateCaption();}
   if(t==='campaign') updateCampaignPreview();
   if(t==='manage') loadMembers();
+  if(t==='membership') fetchMemberStats();
+}
+
+// ── ACTIVE MEMBER STATS ──────────────────────────────────────────────────────
+async function fetchMemberStats(){
+  const el = document.getElementById('mem-stats-body');
+  if(!el) return;
+  el.style.gridTemplateColumns = '110px 1fr 1fr';
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted2);grid-column:1/-1;">Loading…</div>';
+  try {
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(Date.now() + IST_OFFSET);
+    const todayIST  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()) - IST_OFFSET);
+    const monthIST  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET);
+    const nowMinus15 = new Date(Date.now() - 15 * 60 * 1000);
+    async function querySessions(since){
+      const res = await fetch(`${SB_URL}/rest/v1/sessions?is_active=eq.true&last_active=gte.${since.toISOString()}&select=member_id,members(tier,status)`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      });
+      const text = await res.text();
+      return (text ? JSON.parse(text) : []);
+    }
+    function countByTier(rows){
+      const seen = new Set(); let paid = 0, free = 0;
+      for(const r of rows){
+        if(!r.members || r.members.status !== 'enabled') continue;
+        if(seen.has(r.member_id)) continue;
+        seen.add(r.member_id);
+        r.members.tier === 'paid' ? paid++ : free++;
+      }
+      return { paid, free };
+    }
+    const [nowRows, todayRows, monthRows] = await Promise.all([
+      querySessions(nowMinus15), querySessions(todayIST), querySessions(monthIST)
+    ]);
+    const nowC = countByTier(nowRows);
+    const todC = countByTier(todayRows);
+    const monC = countByTier(monthRows);
+    el.innerHTML =
+      `<div style="font-size:10px;font-weight:600;color:var(--muted2);padding-bottom:5px;border-bottom:0.5px solid var(--border2);">WINDOW</div>` +
+      `<div style="font-size:10px;font-weight:600;color:var(--muted2);padding-bottom:5px;border-bottom:0.5px solid var(--border2);text-align:center;">PAID</div>` +
+      `<div style="font-size:10px;font-weight:600;color:var(--muted2);padding-bottom:5px;border-bottom:0.5px solid var(--border2);text-align:center;">FREE</div>` +
+      `<div style="font-size:11px;color:var(--muted2);padding:6px 0 2px;">🟢 Online now</div>` +
+      `<div style="font-size:18px;font-weight:700;color:var(--green);text-align:center;">${nowC.paid}</div>` +
+      `<div style="font-size:18px;font-weight:700;color:var(--muted2);text-align:center;">${nowC.free}</div>` +
+      `<div style="font-size:11px;color:var(--muted2);padding:2px 0;">📅 Today (IST)</div>` +
+      `<div style="font-size:18px;font-weight:700;color:var(--gold);text-align:center;">${todC.paid}</div>` +
+      `<div style="font-size:18px;font-weight:700;color:var(--muted2);text-align:center;">${todC.free}</div>` +
+      `<div style="font-size:11px;color:var(--muted2);padding:2px 0;">📆 This month</div>` +
+      `<div style="font-size:18px;font-weight:700;color:var(--blue);text-align:center;">${monC.paid}</div>` +
+      `<div style="font-size:18px;font-weight:700;color:var(--muted2);text-align:center;">${monC.free}</div>`;
+  } catch(e){
+    const eb = document.getElementById('mem-stats-body');
+    if(eb) eb.innerHTML = `<div style="font-size:11px;color:var(--red);grid-column:1/-1;">Failed to load — ${e.message}</div>`;
+  }
 }
 
 // ── MEMBER MANAGEMENT ────────────────────────────────────────────────────────
