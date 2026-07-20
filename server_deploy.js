@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260720-001 | server.js: CMP wrong value fix — Fix 1: refreshActiveContracts() dedup now ignores expiry (was per-expiry, caused same strike/type with different expiry labels to both enter _activeContracts → loop wrote wrong contract's LTP under correct key). Fix 2: _latestMarketData.optionLTPs snapshot moved to after the for...of loop in fetchKotakOptionLTPs() (was inside loop → partial poisoned snapshots served mid-cycle). Rollback: revert dedup line to include &&c.expiry===expiry, move optionLTPs/optionHighs snapshot back inside if(ltp>0) block.
 // DEPLOY: T2S-PROD-20260715-009 | server.js: per-member dedup in /send-push — max 1 notification per member_id (keeps most-recently-used subscription). Both CUG and broadcast queries now fetch member_id+order by last_used.desc. Rollback: remove _seenMembers/_finalSubs block, change _finalSubs.map back to _dedupedSubs.map, revert select queries to not include member_id.
 // DEPLOY: T2S-CUG-20260716-001 | server.js: /refresh-contracts endpoint added — bypasses 60s throttle so new trade CMP starts immediately. Rollback: remove the /refresh-contracts block.
 // DEPLOY: T2S-PROD-20260715-008 | server.js: CUG push URL changed to uat.html#updates (was index.html#updates — wrong PWA for CUG testing). Rollback: revert url override line.
@@ -1327,8 +1328,10 @@ async function refreshActiveContracts() {
       const type = typeMatch[1];
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
       const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
-      // Deduplicate
-      if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type && c.expiry===expiry))
+      // Deduplicate by instrument-strike-type only (not expiry) — two posts with the same
+      // strike but different expiry labels both resolve to the same _optionChain key, so
+      // allowing both would cause the loop to overwrite the correct LTP with the wrong one.
+      if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type))
         contracts.push({ instrument: instr, strike, type, expiry, postId: p.id });
     });
     _activeContracts = contracts;
@@ -1387,10 +1390,6 @@ async function fetchKotakOptionLTPs() {
         const _prevHigh = _optionHighs[key]?.high || 0;
         _optionHighs[key] = { high: Math.max(_prevHigh, ltp), postId: c.postId || _optionHighs[key]?.postId };
         if (_optionHighs[key].high > _prevHigh) saveState().catch(() => {}); // persist new high so VM restart doesn't lose it
-        if (_latestMarketData) {
-          _latestMarketData.optionLTPs  = { ..._optionChain };
-          _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
-        }
         _ltpConsecFailures = 0; // successful fetch — current URL is working, reset failure counter
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
         // Cache returned numeric token to avoid repeated symbol-based lookups
@@ -1412,6 +1411,12 @@ async function fetchKotakOptionLTPs() {
         console.log(`[ltp] 2 consecutive failures — switched to backup: ${alt}`);
       }
     }
+  }
+  // Snapshot after all contracts processed — never mid-loop (prevents partial poisoned state
+  // from being served to member PWA during the fetch cycle).
+  if (_latestMarketData) {
+    _latestMarketData.optionLTPs  = { ..._optionChain };
+    _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
   }
   // Alert when CMP has been empty for >2 min during market hours (logged to PM2 every 2 min)
   const _hasLtps = Object.keys(_optionChain).length > 0;
