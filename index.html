@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260720-003 | Spot SL exit condition display: extractTradeAlertFields() now captures slDirection (above/below) and slSustainMinutes from post content. New spotSLNote() helper appends direction word inline after spot SL value. slLabelFor() label updated to "SL (15 min candle)". All 4 card sections (S1/S2/S2.5/S3) show direction for spot SL (>5000); price-based SL unchanged. Zero schema/server/logic changes. Rollback: remove spotSLNote(), revert slLabelFor label, revert 8 slDisplay lines, revert extractTradeAlertFields SL regex to (?:below|above) non-capturing + remove slDirection/slSustainMinutes lines. -->
 <!-- DEPLOY: T2S-PROD-20260720-001 | Notification guided tour: single-screen overlay highlights bell button, shown every browser session until member enables push. Two functions added (initNotifGuide, _closeNotifGuide) + 1 guard in _showNotifNudge + setTimeout trigger. Zero existing code modified. Also: server.js test-push congratulations message updated. Rollback: remove initNotifGuide + _closeNotifGuide functions, remove setTimeout(initNotifGuide,2500) line, remove guard line in _showNotifNudge. -->
 <!-- DEPLOY: T2S-PROD-20260717-004 | Member PWA push notifications: subscribeToPush() now takes forceNew param. Bell tap always unsubscribes old endpoint + creates fresh (forceNew=true). Auto page-load checks if DB row was deleted by server (expired 410) — if missing, force-fresh instead of re-saving stale endpoint. Fixes: notification loop where expired endpoint kept being re-saved then deleted. Rollback: revert subscribeToPush to no param + original body, revert two subscribeToPush(true) calls in enableNotifications() back to subscribeToPush(). -->
 <!-- DEPLOY: T2S-PROD-20260717-003 | Member PWA: (1) sendReply() now receives clicked button as 3rd arg (btnEl) and scopes getElementById/querySelector to that button's compose box — fixes follow-up posting failing on general posts that appear in both Trade Alert and Updates tabs (duplicate IDs caused getElementById to return wrong/empty textarea). (2) Unlock button hidden on audience='all' posts (no unlock needed, everyone sees it). (3) Unlock button hidden on closed trades (free members already see all details per existing logic). Rollback: revert sendReply signature + 2 lookup lines + btn line, revert 3 button onclick attrs to remove ',this', revert 2 forceUnlock buttons to unconditional. -->
@@ -811,7 +812,11 @@
     }
     function slLabelFor(val) {
         const n = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
-        return n > 5000 ? '<span style="font-size:0.56rem;white-space:nowrap;letter-spacing:0;">SL (15 Min Candle)</span>' : 'SL';
+        return n > 5000 ? '<span style="font-size:0.56rem;white-space:nowrap;letter-spacing:0;">SL (15 min candle)</span>' : 'SL';
+    }
+    function spotSLNote(direction) {
+        if (!direction) return '';
+        return ` ${direction}`;
     }
     const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', learning:'Learning', about:'About' };
     function setTabBadge(tabKey, count) {
@@ -1879,8 +1884,10 @@
         if (!f.expiry) { const dm=content.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i); if(dm) f.expiry=`${dm[1]} ${dm[2].charAt(0).toUpperCase()+dm[2].slice(1).toLowerCase()} ${dm[3]}`; }
         const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
-        const slm = content.match(/(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
-        if (slm) f.sl = parseFloat(slm[1]);
+        const slm = content.match(/(below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
+        if (slm) { f.sl = parseFloat(slm[2]); f.slDirection = slm[1].toLowerCase(); }
+        const sustM = content.match(/for\s+(\d+)\s+min/i);
+        if (sustM) f.slSustainMinutes = parseInt(sustM[1]);
         return f;
     }
 
@@ -2440,9 +2447,10 @@
             const _slS1InitSL = fields.sl;
             const _slS1RevNum = parseFloat(String(_slS1Val||'').replace(/[^0-9.]/g,''));
             const _slS1Changed = _slS1InitSL && (_slS1Val === 'Cost (No Loss)' || (_slS1RevNum > 0 && Math.round(_slS1RevNum) !== Math.round(_slS1InitSL)));
+            const _slS1RevNum2 = parseFloat(String(_slS1Display||'').replace(/[^0-9.]/g,''));
             const _slS1HtmlVal = _slS1Changed
-                ? `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${_slS1InitSL}</s> → ${_slS1Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`
-                : (_slS1Display || '—');
+                ? `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${_slS1InitSL}</s> → ${_slS1Display}${_slS1RevNum2 > 5000 ? spotSLNote(fields.slDirection) : ''}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`
+                : ((_slS1Display || '—') + (_slS1Display && _slS1InitSL > 5000 ? spotSLNote(fields.slDirection) : ''));
             const _slS1Html = showSL1 ? _slS1HtmlVal : lockBtn;
             const _slS1Label = (showSL1 && _slS1Display) ? slLabelFor(_slS1Display) : 'SL';
             return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
@@ -2520,13 +2528,13 @@
                 const initNum2 = typeof initialSL2 === 'number' ? initialSL2 : 0;
                 const slChanged2 = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
                 if (slChanged2) {
-                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+                    slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2Display}${revNum2 > 5000 ? spotSLNote(fields.slDirection) : ''}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else {
-                    slDisplay2 = revisedSL2Display;
+                    slDisplay2 = revisedSL2Display + (revNum2 > 5000 ? spotSLNote(fields.slDirection) : '');
                     slLabel2 = slLabelFor(revisedSL2Display);
                 }
             } else if (initialSL2) {
-                slDisplay2 = `₹${initialSL2}`;
+                slDisplay2 = `₹${initialSL2}` + (initialSL2 > 5000 ? spotSLNote(fields.slDirection) : '');
                 slLabel2 = slLabelFor(initialSL2);
             } else {
                 slDisplay2 = '—';
@@ -2649,7 +2657,7 @@
                     slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
                 } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
             } else if (initSL25) {
-                slDisp25 = `₹${initSL25}`;
+                slDisp25 = `₹${initSL25}` + (initSL25 > 5000 ? spotSLNote(fields.slDirection) : '');
                 slLabel25 = slLabelFor(initSL25);
             }
             // follow-ups visible to free members on closed trades
@@ -2786,10 +2794,10 @@
             const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
             if (slChanged3) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
-            } else { slDisplay3 = revSL3Display; slLabel3 = slLabelFor(revSL3Display); }
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3Display}${revNum3 > 5000 ? spotSLNote(fields.slDirection) : ''}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+            } else { slDisplay3 = revSL3Display + (revNum3 > 5000 ? spotSLNote(fields.slDirection) : ''); slLabel3 = slLabelFor(revSL3Display); }
         } else if (initSL3) {
-            slDisplay3 = `₹${initSL3}`;
+            slDisplay3 = `₹${initSL3}` + (initSL3 > 5000 ? spotSLNote(fields.slDirection) : '');
             slLabel3 = slLabelFor(initSL3);
         } else { slDisplay3 = '—'; }
 
