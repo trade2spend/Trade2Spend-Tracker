@@ -667,6 +667,7 @@
     let _tradeRefreshTimer   = null;
     let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
+    let _marketRefreshTimer = null; // live market polling timer
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
