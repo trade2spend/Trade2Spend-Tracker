@@ -2122,7 +2122,7 @@
         if (parsed.type==='sl_update'&&parsed.slRevised) {
             const nsl=parsed.slRevised==='cost'?'Entry (Cost)':parsed.slRevised;
             const osl=prevSL?(prevSL==='cost'?`<s class="sl-old-val">Entry</s> → `:`<s class="sl-old-val">${prevSL}</s> → `):'';
-            let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
+            let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="sl-basis"> · 15 min basis</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             const _slExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
