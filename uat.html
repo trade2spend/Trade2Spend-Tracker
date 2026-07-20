@@ -1,4 +1,26 @@
-<!-- DEPLOY: T2S-PROD-20260717-001 | Member PWA Trade Alert + Updates tab: "↳ Add follow-up" button removed from all admin card sections (adminHtmlNT, adminHtml3, adminHtml). Admin still sees 🗑 Delete button. Compose box stays in DOM but is unreachable without the trigger button. No other logic touched. Rollback: add back <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button> before the Delete button in all 3 adminHtml blocks. -->
+<!-- DEPLOY: T2S-PROD-20260720-001 | Notification guided tour: single-screen overlay highlights bell button, shown every browser session until member enables push. Two functions added (initNotifGuide, _closeNotifGuide) + 1 guard in _showNotifNudge + setTimeout trigger. Zero existing code modified. Also: server.js test-push congratulations message updated. Rollback: remove initNotifGuide + _closeNotifGuide functions, remove setTimeout(initNotifGuide,2500) line, remove guard line in _showNotifNudge. -->
+<!-- DEPLOY: T2S-PROD-20260717-004 | Member PWA push notifications: subscribeToPush() now takes forceNew param. Bell tap always unsubscribes old endpoint + creates fresh (forceNew=true). Auto page-load checks if DB row was deleted by server (expired 410) — if missing, force-fresh instead of re-saving stale endpoint. Fixes: notification loop where expired endpoint kept being re-saved then deleted. Rollback: revert subscribeToPush to no param + original body, revert two subscribeToPush(true) calls in enableNotifications() back to subscribeToPush(). -->
+<!-- DEPLOY: T2S-PROD-20260717-003 | Member PWA: (1) sendReply() now receives clicked button as 3rd arg (btnEl) and scopes getElementById/querySelector to that button's compose box — fixes follow-up posting failing on general posts that appear in both Trade Alert and Updates tabs (duplicate IDs caused getElementById to return wrong/empty textarea). (2) Unlock button hidden on audience='all' posts (no unlock needed, everyone sees it). (3) Unlock button hidden on closed trades (free members already see all details per existing logic). Rollback: revert sendReply signature + 2 lookup lines + btn line, revert 3 button onclick attrs to remove ',this', revert 2 forceUnlock buttons to unconditional. -->
+<!-- DEPLOY: T2S-PROD-20260717-002 | Member PWA Updates tab — compose box preserved across fetchUpdates() loading wipe. _fudCompose snapshots open box (postId, text, audience) before container.innerHTML wipe; restored after renderUpdates(). Fixes: follow-up compose box vanishing on Realtime/60s poll refresh. renderFollowUpCard/parseFollowUpContent untouched. Rollback: remove 7-line snapshot block before loading wipe + 8-line restore block after renderUpdates(). -->
+<!-- DEPLOY: T2S-PROD-20260717-001 | Member PWA — Active-member tracking heartbeat. Added _pingLastActive() in init() that PATCHes sessions.last_active for the current member+device on page open and every 5 min. Fire-and-forget (.catch(()=>{})) — never blocks UI. Only runs for authenticated (non-free) members. Enables "online now / active today / active this month" metrics in Admin PWA. Rollback: remove the 11-line `if(mode !== 'free' && memberId)` block with _pingLastActive and its setInterval in init(). -->
+<!-- DEPLOY: T2S-PROD-20260716-002 | Member PWA Updates tab — compose box text preserved across auto-refresh. renderUpdates() saves open compose box state (postId, typed text, audience) before container.innerHTML = html, then restores it after. Fixes: admin follow-up message lost when 60s poll or Realtime event triggered re-render while typing. No other logic touched. Rollback: remove the 13 lines around container.innerHTML = html in renderUpdates() (save block before + restore block after). -->
+<!-- DEPLOY: T2S-PROD-20260716-001 | Trade Alert tab + Performance tab: "not triggered" trades now excluded from Closed Trades display and Performance P&L calculation. Trades with _STATUS_ONLY_RE-matching follow-ups (e.g. "Not triggered. Now avoiding...") and no valid trigger/exit data are correctly hidden after market close — were rendering as "✅ Closed Trade" with no exit since T2S-PROD-20260709-003 auto-close. Two-line fix: closedPosts gets a getTradeState!=='not_triggered' filter; closedTrades gets same guard. Rollback: revert closedPosts to single isTradeFullyClosed filter; revert closedTrades to single isTradeFullyClosed filter. -->
+<!-- DEPLOY: T2S-PROD-20260715-010 | Member PWA — fetchUpdates() stale-while-revalidate: removed early return on cache hit so Supabase is always fetched fresh in background. Cached content still shows instantly for UX. Fixes: new post not appearing when cache was < 30 min old (Realtime race), CUG posts not visible on first tab visit. Rollback: add back `return;` after _userInteracted.forEach on cache hit block. -->
+<!-- DEPLOY: T2S-PROD-20260715-009 | Member PWA — Realtime: (1) subscription changed INSERT→* so UPDATE/DELETE events fire (deleted posts now disappear instantly); (2) fetchUpdates() always called on any Realtime event, not just when on Updates tab; (3) _updatesRefreshTimer added — 60s polling while on Updates tab as fallback if Realtime misses. No other logic changed. Rollback: revert event:* to INSERT, revert always-fetchUpdates to tab-gated, remove _updatesRefreshTimer var + 2 usages. -->
+<!-- DEPLOY: T2S-PROD-20260715-005 | Member PWA — cug_test posts filtered: trade alerts and updates with audience=cug_test are hidden from all members except mobile 8888888888 and admins. One line filter added after each post-fetch in fetchTradeAlerts() and fetchUpdates(). Rollback: remove the two _isCug + filter lines. -->
+<!-- DEPLOY: T2S-PROD-20260715-001 | Trade Alert + Performance tab calculation fixes: (1) extractHighFromReplies now returns MAX of all [HIGH:XXX] replies (VM posts one per trading day — first-found was picking wrong/stale value). (2) parseFollowUpContent: when SL hit already detected (isFullExit=true), "exiting with N as SL" now extracts N as exit price — fixes 10 Jul loss showing as profit. (3) Performance tab P&L now uses actual exit price as primary (not HIGH) — HIGH used only as fallback when no exit exists. (4) "Max possible" display: falls back to calculateMaxProfit (highest price in follow-up text) when [HIGH:XXX] is below entry or absent — fixes missing Max possible on 6 Jul, 13 Jul cards. (5) Both Section 2.5 and Section 3 "Max possible" show best available high (VM HIGH if valid, else highest exit seen). Rollback: revert extractHighFromReplies to first-found, remove slHitExitM block, revert maxPrice order, revert _calcMax+_bestHigh lines to original _maxPoss single-line, revert display to _optHighX. -->
+<!-- DEPLOY: T2S-PROD-20260714-007 | Updates tab follow-up notifications: (1) sendReply() button in renderUpdates now passes 'updates' as fromTab arg. (2) else-if branch added in sendReply() fires /send-push with title "📢 Trade2Spend Update" when fromTab==='updates'. Previously only fromTab==='trades' triggered a push — Updates tab follow-ups were silently skipped. Rollback: revert onclick to sendReply('${post.id}') and remove else-if block. -->
+<!-- DEPLOY: T2S-PROD-20260714-006 | Member chip race condition fix: added synchronous inline script right after chip element to render FREE/PAID chip immediately from localStorage on first paint — no async Supabase wait. Fixes free-tier chip never showing on non-Trade-Alert tabs, and paid-tier chip 1s delay. Admin chip still rendered by _renderMemberChip after Supabase confirms is_admin. Rollback: remove inline <script> block after member-tier-chip span. -->
+<!-- DEPLOY: T2S-PROD-20260714-005 | Updates tab: Realtime subscription changed from event:'*' to event:'INSERT' — dummy_likes PATCHes were triggering UPDATE events, busting cache and rebuilding DOM every few minutes causing real likes to flash to 0. Also added _userInteracted.forEach(updateLikeUI) after renderUpdates in both cache and full-fetch paths so liked hearts are restored immediately after DOM rebuild (same pattern as Trade Alert tab). Rollback: revert event:'INSERT' to event:'*', remove two _userInteracted.forEach lines. -->
+<!-- DEPLOY: T2S-PROD-20260714-002 | Updates tab: dummy likes display — fetchLikes() now accepts postsArr and layers post.dummy_likes on top of real post_shares likes after server reconciliation; call site passes parent posts array. Rollback: revert fetchLikes signature to (postIds) only, remove postsArr block, revert call site to single-arg. -->
+<!-- DEPLOY: T2S-PROD-20260714-001 | Trade Alert tab: (1) Follow-up exit % cumulative now calculated chronological oldest→newest before rendering newest-first — fixes wrong REMAINING % shown on partial-exit cards. (2) Exit Update and SL Update cards now show full advisory text below structured rows (matching CMP Update behaviour). (3) Closed trade card shows live Session High (data-live-high) between trade close and 3:30 PM market close; switches to Max possible after [HIGH:XXX] is posted. Rollback: revert follow-up rendering loop to cumExitR forEach, remove _exitExtra/_slExtra lines, revert _maxPoss3 ternary to single-line. -->
+<!-- DEPLOY: T2S-PROD-20260713-001 | Push notifications: valid VAPID EC P-256 key (old key first byte 0x8F was invalid, Chrome rejected silently); subscribeToPush() no longer calls requestPermission (gesture-gate fix for Android Chrome); bell always visible — grayscale when granted, orange dot when not; _bellToast() for user feedback; _sendTestPush() after subscribe; first-login nudge banner (shown once via t2s_notif_nudged localStorage flag). Rollback: revert VAPID_PUBLIC_KEY, subscribeToPush, enableNotifications, updateNotifBell, and remove helper functions + nudge system. -->
+<!-- DEPLOY: T2S-PROD-20260710-001 | Trade Alert tab: CMP follow-up card now shows full message text below the structured CMP ₹XX row — advisory text after the price was being dropped; rawText is now appended as reply-body inside the cmp_update card. Rollback: revert renderFollowUpCard cmp_update branch to single-line fu-body return (remove _cmpExtra). -->
+<!-- DEPLOY: T2S-PROD-20260707-001 | Markets tab: skeleton loading for index cards, gainers/losers, advance-decline bar + stale-while-revalidate cache + parallel market fetch on init -->
+<!-- DEPLOY: T2S-PROD-20260708-001 | Trade Alert tab: free member unlock fix — SL follow-up on paid-only trade unlocks CE/PE, Expiry, Entry, SL, CMP (previously required 50%+ exit) -->
+<!-- DEPLOY: T2S-PROD-20260708-002 | Trade Alert tab: CMP regex fix — parseFollowUpContent now matches "CMP ₹X" format (₹ symbol was blocking digit match, causing CMP to show — for all members) -->
+<!-- DEPLOY: T2S-PROD-20260709-001 | Trade Alert tab: CMP fallback from root trade alert content — if no follow-up reply has CMP yet, parse CMP from the initial trade alert post content (where Admin PWA embeds "CMP 50"); guard <10000 excludes spot index values; !isClosed guard on Section 3 prevents polluting _effectiveExitPrice for partial exits -->
+<!-- DEPLOY: T2S-PROD-20260709-002 | Trade Alert tab: SL strikethrough fix for free members — Section 1 (free viewer of paid-only active trade) now shows old SL with strikethrough and new SL when SL is updated; Section 2 (free viewer of public active trade) condition broadened from spot→option only (>5000→<5000) to any numeric SL change; both sections handle "Cost (No Loss)" SL type; label changed to "Revised" for clarity. Rollback: revert Section 1 lines 2314-2316 to 3-line block and Section 2 condition back to >5000 check. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -18,6 +40,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Trade2Spend">
+    <link rel="preconnect" href="https://keuzqxoxtlozlqjjjqvr.supabase.co">
+    <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="logo.png">
     <title>Trade2Spend | Live Tracker</title>
@@ -97,8 +121,6 @@
         .change-pill { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 5px; font-size: 0.68rem; font-weight: 700; gap: 3px; }
         .change-pill.up { background: var(--green-light); color: #15803d; }
         .change-pill.down { background: var(--red-light); color: #b91c1c; }
-        .skel-pulse { background: linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; color:transparent!important; border-radius:5px; min-height:14px; min-width:40px; }
-        @keyframes t2s-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         /* Gainers / Losers */
         .movers-section { margin-top: 14px; }
         .movers-title { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
@@ -113,6 +135,8 @@
         .mover-pct { font-weight: 700; font-size: 0.72rem; }
         .mover-pct.up { color: var(--green); }
         .mover-pct.dn { color: var(--red); }
+        .skel-pulse { background: linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; color:transparent!important; border-radius:5px; min-height:14px; min-width:40px; }
+        @keyframes t2s-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
         /* --- TRADE CARDS --- */
         .trade-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02);}
@@ -353,20 +377,6 @@
         .alert-popup-actions { display:flex; gap:8px; padding:0 22px 22px; }
         .alert-btn-view  { flex:1; padding:13px; border-radius:11px; border:none; background:var(--primary); color:#fff; font-size:0.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
         .alert-btn-later { padding:13px 18px; border-radius:11px; border:1.5px solid var(--border); background:transparent; color:var(--text-muted); font-size:0.84rem; font-weight:600; cursor:pointer; font-family:inherit; }
-        /* ── KNOWLEDGE HUB ────────────────────────────────────── */
-        .kh-section { background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px; }
-        .kh-section-label { font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px; }
-        .kh-section-body { font-size:0.85rem;color:var(--text-main);line-height:1.7; }
-        .kh-section-body ul { padding-left:18px;margin:0; }
-        .kh-section-body li { margin-bottom:4px; }
-        .kh-jargon { color:var(--primary);text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-weight:600;touch-action:manipulation; }
-        .kh-related-chip { display:inline-block;background:var(--primary-light);color:var(--primary);border-radius:20px;padding:5px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;margin:4px 4px 0 0;touch-action:manipulation;border:1px solid #d5c8f0; }
-        .kh-loading { text-align:center;padding:40px 20px;color:var(--text-muted);font-size:0.85rem; }
-        .kh-loading-dot { display:inline-block;animation:kh-pulse 1.2s ease-in-out infinite; }
-        .kh-loading-dot:nth-child(2){animation-delay:.2s;} .kh-loading-dot:nth-child(3){animation-delay:.4s;}
-        @keyframes kh-pulse { 0%,80%,100%{opacity:.2;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
-        .kh-q-bubble { background:var(--primary);color:#fff;border-radius:12px 12px 4px 12px;padding:10px 14px;font-size:0.84rem;line-height:1.5;margin-bottom:14px;display:inline-block;max-width:90%; }
-        .kh-regulatory-note { font-size:0.68rem;color:#9ca3af;font-style:italic;text-align:center;padding:10px 16px 4px;line-height:1.5; }
         /* ── PRODUCT TOUR ──────────────────────────────────────── */
         #tour-overlay { display:none; position:fixed; inset:0; z-index:19000; }
         #tour-backdrop { position:fixed; inset:0; z-index:19000; background:rgba(0,0,0,0.72); pointer-events:all; }
@@ -383,10 +393,6 @@
 
 <div class="app-container">
     <!-- STICKY HEADER -->
-    <div style="position:fixed;top:6px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;z-index:9999;">
-        <div onclick="restartTour()" style="background:rgba(220,38,38,0.9);color:#fff;font-size:0.55rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;padding:3px 12px;border-radius:20px;white-space:nowrap;cursor:pointer;">UAT · Tap to replay tour</div>
-        <button id="test-cmp-btn" onclick="testDummyCmp()" style="padding:3px 10px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap;">Test CMP</button>
-    </div>
     <div id="header-wrapper" class="sticky-header">
         <div class="header-top">
             <div class="header-brand">
@@ -404,7 +410,8 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
-                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:none;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;"></span></button>
+                    <script>(function(){var mid=localStorage.getItem('t2s_member_id');var m=localStorage.getItem('t2s_mode');var c=document.getElementById('member-tier-chip');if(!c||!mid)return;if(m==='paid'){c.textContent='PAID';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';}else{c.textContent='FREE';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';}})()</script>
+                    <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:inline-block;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;" id="notif-bell-dot"></span></button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px;">
@@ -547,6 +554,9 @@
                 </div>
             </div>
         </div>
+        <!-- T2S-PROD-20260709-001: Live CMP from Kotak Neo — pre-market contract load + URL auto-switch (mis↔gw-napi) in server.js; CMP live status chip (admin-only) shows ● Live · HH:MM when Kotak LTPs are flowing -->
+        <!-- T2S-PROD-20260709-002: Session High fix — _lastOptionHighs global added; re-applied after card rebuild (no more 30s blink); updateTradeHighs only updates DOM when new high > current (never moves down) -->
+        <!-- T2S-PROD-20260709-003: Auto-close at market end — isTradeFullyClosed() now returns true after 3:30 PM IST if no explicit holding keyword in follow-ups (covers full + partial positions); removed "Holding 100%" label from all 3 card sections -->
         <div id="cmp-live-dot" style="display:none;margin:0 0 8px;padding:4px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;font-size:0.72rem;font-weight:700;color:#15803d;width:fit-content;letter-spacing:0.02em;">● Live CMP</div>
         <div id="trade-alert-container">
             <div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading trade alerts...</div>
@@ -572,8 +582,8 @@
                     <span class="metric-value" id="perf-total">--</span>
                 </div>
                 <div class="metric-col">
-                    <span class="metric-label">MAX P&L (PER LOT)</span>
-                    <span class="metric-value">₹<span id="perf-max">--</span></span>
+                    <span class="metric-label">NET P&amp;L (MONTH)</span>
+                    <span class="metric-value" id="perf-max" style="">--</span>
                 </div>
             </div>
             <div id="curr-month-detail" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);"></div>
@@ -595,72 +605,12 @@
     </div>
 
     <!-- LEARNING TAB -->
-    <div id="learning" class="content-section" style="padding:0;">
-
-      <!-- ── LANDING ─────────────────────────────────────────────── -->
-      <div id="kh-landing" style="padding:20px 16px 100px;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-          <span style="font-size:1.6rem;">📚</span>
-          <div>
-            <div style="font-size:1.05rem;font-weight:800;color:var(--text-main);line-height:1.2;">Knowledge Hub</div>
-            <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.5px;text-transform:uppercase;">Stock Market Education</div>
-          </div>
+    <div id="learning" class="content-section">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;">
+            <div style="font-size:2.8rem;margin-bottom:16px;">📚</div>
+            <h2 style="font-size:1.2rem;font-weight:800;color:var(--text-main);margin-bottom:10px;">Coming Soon</h2>
+            <p style="font-size:0.85rem;color:var(--text-muted);line-height:1.65;max-width:280px;">Learning resources, trade breakdowns, and options education — curated for Indian retail traders.</p>
         </div>
-
-        <p style="font-size:0.84rem;color:var(--text-main);line-height:1.65;margin-bottom:14px;">
-          Ask any stock market question. Get a clear, jargon-free answer with a real-life example — in plain English.
-        </p>
-
-        <div style="background:#fff8f0;border:1px solid #fde8cc;border-radius:10px;padding:12px 14px;margin-bottom:20px;">
-          <div style="font-size:0.72rem;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">This is NOT</div>
-          <div style="font-size:0.8rem;color:#6b7280;line-height:1.8;">
-            ✗ &nbsp;Investment advice or trading tips<br>
-            ✗ &nbsp;Buy / sell recommendations<br>
-            ✗ &nbsp;Broker or platform guidance<br>
-            ✗ &nbsp;A substitute for a SEBI-registered advisor
-          </div>
-        </div>
-
-        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-          <div style="font-size:0.72rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Ask anything</div>
-          <div style="display:flex;gap:8px;align-items:flex-end;">
-            <textarea id="kh-input" placeholder="e.g. What is a Stop Loss? What is Open Interest? How does F&O work?"
-              style="flex:1;background:#f8f6ff;border:1.5px solid #e0d9f5;border-radius:10px;padding:10px 12px;font-size:0.84rem;color:var(--text-main);resize:none;min-height:70px;font-family:inherit;outline:none;line-height:1.5;"
-              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();khAsk();}"></textarea>
-            <button onclick="khAsk()" id="kh-send-btn"
-              style="background:var(--primary);color:#fff;border:none;border-radius:10px;width:42px;height:42px;font-size:1.1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;touch-action:manipulation;">→</button>
-          </div>
-          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;">Press Enter to ask · Shift+Enter for new line</div>
-        </div>
-      </div>
-
-      <!-- ── ANSWER SCREEN ───────────────────────────────────────── -->
-      <div id="kh-answer" style="display:none;padding:0 0 100px;">
-
-        <!-- Nav bar -->
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg-color);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;">
-          <button onclick="khBack()" style="background:var(--primary-light);border:none;border-radius:8px;padding:6px 12px;font-size:0.82rem;font-weight:600;color:var(--primary);cursor:pointer;font-family:inherit;touch-action:manipulation;white-space:nowrap;">← Back</button>
-          <div id="kh-nav-q" style="font-size:0.78rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"></div>
-          <div id="kh-depth" style="font-size:0.68rem;color:var(--text-muted);white-space:nowrap;"></div>
-        </div>
-
-        <!-- Answer content -->
-        <div id="kh-content" style="padding:16px;"></div>
-
-        <!-- Follow-up ask widget -->
-        <div style="padding:0 16px 16px;">
-          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:12px;">
-            <div style="font-size:0.7rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Ask a follow-up or new question</div>
-            <div style="display:flex;gap:8px;align-items:flex-end;">
-              <textarea id="kh-input-ans" placeholder="Type your next question..."
-                style="flex:1;background:#f8f6ff;border:1.5px solid #e0d9f5;border-radius:10px;padding:10px 12px;font-size:0.84rem;color:var(--text-main);resize:none;min-height:52px;font-family:inherit;outline:none;line-height:1.5;"
-                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();khAskNext();}"></textarea>
-              <button onclick="khAskNext()" style="background:var(--primary);color:#fff;border:none;border-radius:10px;width:42px;height:42px;font-size:1.1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;touch-action:manipulation;">→</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
     </div>
 
     <!-- ABOUT TAB -->
@@ -675,7 +625,6 @@
             </div>
             <p style="color:var(--text-muted);font-size:0.84rem;line-height:1.65;margin-bottom:20px;">An independent educational platform where we share real trade setups, entries, exits and P&L — verified against live market data. Not investment advice.</p>
 
-            <!-- Social channels -->
             <p style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Follow us</p>
             <div style="display:flex;gap:10px;margin-bottom:20px;">
                 <a href="https://www.youtube.com/@trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#fff0f0;border:1px solid #fecaca;border-radius:12px;text-decoration:none;">
@@ -714,11 +663,9 @@
 </div>
 
 <script>
-    // T2S-CUG-20260716-001: refresh-contracts call after new trade alert posted — fixes CMP lag on initial post
-    // T2S-CUG-20260716-002: session high display changed from toFixed(2) to toFixed(1) — cleaner "₹170" not "₹169.75"
     // --- UI LOGIC ---
-    let _tradeRefreshTimer = null;
-    let _updatesRefreshTimer = null; // T2S-UAT-20260715-003: 60s polling for Updates tab
+    let _tradeRefreshTimer   = null;
+    let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
@@ -781,7 +728,7 @@
                 }
                 updateLikeUI(id);
             });
-            // Layer dummy likes (stored on posts row) on top of real likes
+            // Layer dummy likes on top of real likes
             if (postsArr) {
                 postsArr.forEach(p => {
                     if (p.dummy_likes) {
@@ -898,8 +845,8 @@
         document.getElementById(tabId).classList.add('active');
         document.querySelector('.app-container').scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_last_tab', tabId);
-        if (_tradeRefreshTimer) { clearInterval(_tradeRefreshTimer); _tradeRefreshTimer = null; }
-        if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
+        if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
+        if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; } // T2S-PROD-20260715-009
         if (tabId === 'updates') { _updatesTabViewed = true; setTimeout(() => setTabBadge('updates', 0), 2500); fetchUpdates(); _updatesRefreshTimer = setInterval(fetchUpdates, 60000); }
         if (tabId === 'trades') {
             setTabBadge('trades', 0);
@@ -914,7 +861,6 @@
         }
         if (tabId === 'performance') fetchPerformance();
         if (tabId === 'markets') fetchMarketData();
-        if (tabId === 'learning') setTimeout(() => { const el = document.getElementById('kh-input'); if (el) el.focus(); }, 80);
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -978,15 +924,8 @@
         if (type === 'Monthly') { e.type = 'Monthly'; e.names.clear(); e.names.add(name); }
         else if (e.type !== 'Monthly') e.names.add(name);
       };
-      if (expiry.NIFTY) {
-        add('NIFTY', expiry.NIFTY.current, 'Weekly');
-        add('NIFTY', expiry.NIFTY.next, 'Weekly');
-        if (expiry.NIFTY.monthly) add('NIFTY/Stocks', expiry.NIFTY.monthly, 'Monthly');
-      }
-      if (expiry.SENSEX) {
-        add('SENSEX', expiry.SENSEX.current, 'Weekly');
-        add('SENSEX', expiry.SENSEX.next, 'Weekly');
-      }
+      if (expiry.NIFTY) { add('NIFTY', expiry.NIFTY.current, 'Weekly'); add('NIFTY', expiry.NIFTY.next, 'Weekly'); if (expiry.NIFTY.monthly) add('NIFTY/Stocks', expiry.NIFTY.monthly, 'Monthly'); }
+      if (expiry.SENSEX) { add('SENSEX', expiry.SENSEX.current, 'Weekly'); add('SENSEX', expiry.SENSEX.next, 'Weekly'); }
       if (expiry.BANKNIFTY && expiry.BANKNIFTY.monthly) add('NIFTY/Stocks', expiry.BANKNIFTY.monthly, 'Monthly');
       const sorted = [...dateMap.values()].sort((a, b) => a.d - b.d).slice(0, 2);
       if (!sorted.length) { el.style.display = 'none'; return; }
@@ -1050,8 +989,7 @@
         if(!anyIndex) {
             container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
         } else if (!document.getElementById('mcard-src')) {
-            const _srcLbl = data.dataSource === 'broker' ? 'Market Feed' : 'NSE Data';
-            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">${_srcLbl}</div>`;
+            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">${data.dataSource==='broker' ? 'Market Feed' : 'NSE Data'}</div>`;
         }
 
         if(data.breadth && data.breadth.nifty50) {
@@ -1061,8 +999,7 @@
             const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
             if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            const _bSrc = data.dataSource === 'broker' ? 'Market Feed' : 'NSE Data';
-            if(noteEl) noteEl.textContent = isOpen ? `${_bSrc} · live` : `${_bSrc} · 3:35 PM close`;
+            if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
         }
 
         renderExpiryStrip(data.expiry);
@@ -1070,15 +1007,16 @@
         const moversEl = document.getElementById('movers-section');
         if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
             moversEl.style.display = 'block';
+
             const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
-            const _mSrcLabel = data.dataSource === 'broker' ? 'Market Feed' : 'NSE Data';
+            const _srcLabel = data.dataSource==='broker' ? 'Market Feed' : 'NSE Data';
             document.getElementById('gainers-list').innerHTML = gainers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct up">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_mSrcLabel}</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_srcLabel}</div>`;
             document.getElementById('losers-list').innerHTML = losers.map(s=>
                 `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct dn">${Math.abs(s.change).toFixed(2)}%</span></div>`).join('')
-                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_mSrcLabel}</div>`;
+                + `<div style="font-size:0.6rem;color:#c4b8d8;padding-top:4px;text-align:right;">${_srcLabel}</div>`;
         } else if (moversEl) {
             moversEl.style.display = 'none';
         }
@@ -1121,7 +1059,7 @@
             if (high != null && high > 0) {
                 // Only update when new high is strictly greater — session high never moves down
                 const current = parseFloat((el.textContent || '').replace('₹', '')) || 0;
-                if (high > current) el.textContent = `₹${parseFloat(high.toFixed(1))}`;
+                if (high > current) el.textContent = `₹${high.toFixed(2)}`;
             }
         });
     }
@@ -1149,7 +1087,7 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
-        // Show "● Live CMP" chip (admin only) when Kotak is sending real LTPs
+        // Show "● Live · HH:MM" chip (admin only) when Kotak is sending real LTPs
         if (Object.values(optionLTPs).some(v => v > 0)) {
             const chip = document.getElementById('cmp-live-dot');
             if (chip && document.getElementById('admin-trade-compose')?.dataset.isAdmin === 'true') {
@@ -1364,7 +1302,7 @@
         const valid = trades.filter(t => t.pnlPts !== null && t.pnlPts !== 0);
         const wins = valid.filter(t => t.isWin).length;
         const losses = valid.filter(t => !t.isWin).length;
-        const total = wins + losses;
+        const total = wins + losses || trades.length;
         const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
         const maxPnlRs = trades.reduce((mx, t) => t.pnlRs !== null ? Math.max(mx, Math.abs(t.pnlRs)) : mx, 0);
         const totalPnlRs = trades.reduce((s, t) => t.pnlRs !== null ? s + t.pnlRs : s, 0);
@@ -1392,7 +1330,7 @@
 
     async function fetchPerformance() {
         const container = document.getElementById('history-container');
-        const _pc = _cLoad('t2s_perf_state', 5*60*1000);
+        const _pc = _cLoad('t2s_perf_state_v2', 5*60*1000);
         if (_pc) {
             container.innerHTML = _pc.histHtml || '';
             document.getElementById('curr-month-name').innerText = (_pc.currName && !/invalid|undefined|nan/i.test(_pc.currName)) ? _pc.currName : 'CURRENT MONTH';
@@ -1418,8 +1356,7 @@
             const tradeData = closedTrades.map(p => {
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
-                // Weighted average across all partial exits (50%@180 + 50%@158 → avg 169, not just 158)
-                // P&L priority: VM Day High ([HIGH:XXX]) > weighted exit > calculateMaxProfit
+                // P&L priority: adjusted-entry (partial exit + CMP) > VM Day High > weighted exit > calculateMaxProfit
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies) });
                 const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
@@ -1427,8 +1364,26 @@
                 const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
                 let pnlPts = null, pnlRs = null, isWin = false;
-                if (f.entry && maxPrice) {
-                    // For buying options (CE or PE), P&L = exit_price - entry_price
+                // Extract latest CMP from replies (same logic as trade card — replies are newest-first)
+                let latestCmpPerf = null;
+                for (const _rr of replies) {
+                    const _fp2 = parseFollowUpContent(_rr.content||'');
+                    if (_fp2.cmp) { latestCmpPerf = _fp2.cmp; break; }
+                    if (_fp2.price && (_fp2.type==='cmp_update'||_fp2.type==='status')) { latestCmpPerf = _fp2.price; break; }
+                }
+                const _cumExitPerf = getCumulativeExit(replies);
+                if (f.entry && _cumExitPerf > 0 && _cumExitPerf < 100 && latestCmpPerf) {
+                    // Adjusted-entry method: same formula as trade card for partial-exit + CMP trades
+                    let _bankedPerf = 0;
+                    [...replies].reverse().forEach(_rr => {
+                        const _fp2 = parseFollowUpContent(_rr.content||'');
+                        if (_fp2.exitPct && _fp2.price) _bankedPerf += (_fp2.price - f.entry) * _fp2.exitPct;
+                    });
+                    const _adjEntryPerf = f.entry - _bankedPerf / (100 - _cumExitPerf);
+                    pnlPts = Math.round(latestCmpPerf - _adjEntryPerf);
+                    pnlRs = pnlPts * lotSize;
+                    isWin = pnlPts > 0;
+                } else if (f.entry && maxPrice) {
                     pnlPts = Math.round(maxPrice - f.entry);
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
@@ -1487,7 +1442,11 @@
             if (currS && currS.total > 0) {
                 document.getElementById('perf-winrate').innerText = currS.winRate + '%';
                 document.getElementById('perf-total').innerText = `${currS.total} (${currS.wins}W · ${currS.losses}L)`;
-                document.getElementById('perf-max').innerText = currS.maxPnlRs.toLocaleString();
+                const _perfNetEl = document.getElementById('perf-max');
+                _perfNetEl.innerText = (currS.totalPnlRs >= 0 ? '+₹' : '-₹') + Math.abs(currS.totalPnlRs).toLocaleString();
+                _perfNetEl.style.color = currS.totalPnlRs >= 0 ? 'var(--green)' : 'var(--red)';
+                const _wrBadge = document.querySelector('.win-rate-badge');
+                if (_wrBadge) { _wrBadge.style.background = currS.winRate < 50 ? '#fee2e2' : 'var(--green-light)'; _wrBadge.style.color = currS.winRate < 50 ? '#dc2626' : 'var(--green)'; }
             } else {
                 document.getElementById('perf-winrate').innerText = '--%';
                 document.getElementById('perf-total').innerText = 'No closed trades yet';
@@ -1517,14 +1476,14 @@
                         <div id="${detailId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
                             <div class="perf-grid" style="margin-bottom:12px;gap:8px;">
                                 <div class="metric-col"><span class="metric-label">TRADES</span><span class="metric-value" style="font-size:0.9rem;">${s.total+' ('+s.wins+'W · '+s.losses+'L)'}</span></div>
-                                <div class="metric-col"><span class="metric-label">MAX P&L / LOT</span><span class="metric-value" style="font-size:0.9rem;">₹${s.maxPnlRs.toLocaleString()}</span></div>
+                                <div class="metric-col"><span class="metric-label">NET P&amp;L</span><span class="metric-value" style="font-size:0.9rem;color:${s.totalPnlRs>=0?'var(--green)':'var(--red)'};">${s.totalPnlRs>=0?'+₹':'-₹'}${Math.abs(s.totalPnlRs).toLocaleString()}</span></div>
                             </div>
                             ${renderPerfTradeRows(m.trades)}
                         </div>
                     </div>`;
             });
             if (months.length === 0) container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">No closed trades yet. Completed trades will appear here.</div>';
-            _cSave('t2s_perf_state', {histHtml:container.innerHTML, currName:document.getElementById('curr-month-name').innerText, currWinrate:document.getElementById('perf-winrate').innerText, currTotal:document.getElementById('perf-total').innerText, currMax:document.getElementById('perf-max').innerText, currDetailHtml:(document.getElementById('curr-month-detail')||{}).innerHTML||''});
+            _cSave('t2s_perf_state_v2', {histHtml:container.innerHTML, currName:document.getElementById('curr-month-name').innerText, currWinrate:document.getElementById('perf-winrate').innerText, currTotal:document.getElementById('perf-total').innerText, currMax:document.getElementById('perf-max').innerText, currDetailHtml:(document.getElementById('curr-month-detail')||{}).innerHTML||''});
         } catch(e) {
             console.error('Performance fetch failed', e);
             container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Unable to load. Check connection.</div>';
@@ -1553,8 +1512,7 @@
         const deviceId = localStorage.getItem('t2s_device_id') || 'web';
         if (!memberId) return;
         const reg = await navigator.serviceWorker.ready;
-        // If no forceNew, check if our DB row was deleted (means VM got 410 — endpoint expired)
-        // If row is gone, force-fresh so we get a valid endpoint
+        // If DB row was deleted by server (expired 410), force-fresh to get a valid endpoint
         if (!forceNew) {
           const rows = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&select=id`).catch(() => []);
           if (!rows || !rows.length) forceNew = true;
@@ -1590,6 +1548,60 @@
             const text = await res.text();
             return text ? JSON.parse(text) : [];
         } finally { clearTimeout(timer); }
+    }
+
+    // ── SUPABASE REALTIME ─────────────────────────────────────────────────────
+    // Subscribes to postgres_changes on the posts table via WebSocket.
+    // Supabase pushes INSERT/UPDATE/DELETE events to all open member browsers —
+    // no polling needed. Cache is busted on each event so the next fetchUpdates()
+    // hits Supabase fresh. Auto-reconnects after 5s on disconnect.
+    let _rtSocket = null, _rtRef = 0, _rtHeartbeatTimer = null, _rtReconnectTimer = null;
+
+    function initRealtimeSubscription() {
+        if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
+        clearTimeout(_rtReconnectTimer);
+        const wsUrl = SUPABASE_URL.replace('https://', 'wss://') +
+            '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
+        _rtSocket = new WebSocket(wsUrl);
+
+        _rtSocket.onopen = () => {
+            _rtSocket.send(JSON.stringify({
+                topic: 'realtime:*', event: 'phx_join',
+                payload: {
+                    config: {
+                        broadcast: { self: false },
+                        presence: { key: '' },
+                        postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
+                    }
+                },
+                ref: String(++_rtRef)
+            }));
+            clearInterval(_rtHeartbeatTimer);
+            _rtHeartbeatTimer = setInterval(() => {
+                if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN)
+                    _rtSocket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++_rtRef) }));
+            }, 30000);
+        };
+
+        _rtSocket.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.event !== 'postgres_changes') return;
+                localStorage.removeItem('t2s_upd_posts_v2'); // bust cache so next fetchUpdates() goes to Supabase
+                const _rtActiveEl = document.querySelector('.tab.active');
+                const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
+                fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
+                if (_rtTabId === 'trades') fetchTradeAlerts();
+            } catch(_) {}
+        };
+
+        _rtSocket.onclose = () => {
+            clearInterval(_rtHeartbeatTimer);
+            _rtSocket = null;
+            _rtReconnectTimer = setTimeout(initRealtimeSubscription, 5000);
+        };
+
+        _rtSocket.onerror = () => { if (_rtSocket) _rtSocket.close(); };
     }
 
     function formatPostTime(ts) {
@@ -1698,47 +1710,6 @@
         } catch(e) { alert('Failed to delete. Try again.'); }
     }
 
-    // Supabase Realtime WebSocket — instant notification when any post is inserted/updated
-    let _rtSocket = null, _rtRef = 0, _rtHeartbeatTimer = null, _rtReconnectTimer = null;
-    function initRealtimeSubscription() {
-        if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
-        clearTimeout(_rtReconnectTimer);
-        const wsUrl = SUPABASE_URL.replace('https://', 'wss://') +
-            '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
-        _rtSocket = new WebSocket(wsUrl);
-        _rtSocket.onopen = () => {
-            _rtSocket.send(JSON.stringify({
-                topic: 'realtime:*', event: 'phx_join',
-                payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] } }, // T2S-UAT-20260715-001: * catches INSERT+UPDATE+DELETE so deleted posts disappear instantly
-                ref: String(++_rtRef)
-            }));
-            clearInterval(_rtHeartbeatTimer);
-            _rtHeartbeatTimer = setInterval(() => {
-                if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN)
-                    _rtSocket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++_rtRef) }));
-            }, 30000);
-        };
-        _rtSocket.onmessage = (e) => {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.event !== 'postgres_changes') return;
-                // T2S-UAT-20260715-002: fix (1) clear correct cache key for uat.html; (2) always refresh updates so post appears regardless of which tab is active
-                localStorage.removeItem('t2s_upd_posts_v2');
-                localStorage.removeItem('t2s_upd_posts');
-                const _rtActiveEl = document.querySelector('.tab.active');
-                const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
-                fetchUpdates();
-                if (_rtTabId === 'trades') fetchTradeAlerts();
-            } catch(_) {}
-        };
-        _rtSocket.onclose = () => {
-            clearInterval(_rtHeartbeatTimer);
-            _rtSocket = null;
-            _rtReconnectTimer = setTimeout(initRealtimeSubscription, 5000);
-        };
-        _rtSocket.onerror = () => { if (_rtSocket) _rtSocket.close(); };
-    }
-
     async function markPostRead(postId) {
         const memberId = localStorage.getItem('t2s_member_id');
         if(!memberId) return;
@@ -1817,7 +1788,11 @@
         if (/\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(loNoFuture)) { r.isFullExit=true; r.type='exit'; }
         if (/fully\s+exit|full\s+exit|position\s+clos|clos.*position|booked?\s+full|100\s*%\s*exit|exiting\s+full|exit\s+all/.test(lo)) { r.isFullExit=true; r.type='exit'; }
         if (/\bfully\s+out\b|trade\s+(?:is\s+)?(?:done|over|closed?)\b|exit(?:ed|ing)\s+(?:all|full(?:y)?|everything)|position\s+(?:done|over|exited?)|\ball\s+(?:closed?|out|done|exited?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
-        if (/exit(?:ed|ing)\s+remaining|remaining\s+(?:exited?|booked?|clos(?:ed|ing)?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
+        if (/exit(?:ed|ing)\s+remaining|remaining\s+(?:exited?|booked?|clos(?:ed|ing)?)/.test(lo)) {
+            // "Exiting remaining with 163 as SL" = trailing SL update, not an actual full exit
+            const _hasSLSuffix = /\d+\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss)\b/.test(lo);
+            if (!_hasSLSuffix) { r.isFullExit=true; r.type='exit'; }
+        }
         // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+")
         if (!r.price) {
             const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
@@ -1869,6 +1844,7 @@
                 /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
                 /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
                 /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i,
+                /(\d+(?:\.\d+)?)\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/i,  // "163 as SL" / "163 as my SL"
                 /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
             ];
             for (const p of slPats) { const m=text.match(p); if(m&&m[1]){ r.slRevised=parseFloat(m[1]); if(!r.exitPct) r.type='sl_update'; break; } }
@@ -1903,8 +1879,8 @@
         if (!f.expiry) { const dm=content.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i); if(dm) f.expiry=`${dm[1]} ${dm[2].charAt(0).toUpperCase()+dm[2].slice(1).toLowerCase()} ${dm[3]}`; }
         const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
-        const slm = content.match(/\bsl\b\s*(?:(?:below|above|at|@|₹)\s*)?(\d{2,6}(?:\.\d+)?)|stop[\s-]?loss\s*(?:(?:below|above|at|@|₹)\s*)?(\d{2,6}(?:\.\d+)?)|(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
-        if (slm) { const _sv=parseFloat(slm[1]||slm[2]||slm[3]); if(_sv>0&&!isNaN(_sv)) f.sl=_sv; }
+        const slm = content.match(/(?:below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
+        if (slm) f.sl = parseFloat(slm[1]);
         return f;
     }
 
@@ -2066,8 +2042,21 @@
                 const lrd = new Date(new Date(reps[0].sent_at||reps[0].created_at).toLocaleString('en-US', tz));
                 if (lrd.toDateString() !== td.toDateString()) return true; // reply from prev day → closed
             }
-            // No replies + posted on a previous calendar day → expired (never triggered)
-            if (reps.length === 0 && postIST.toDateString() !== td.toDateString()) return true;
+            // No replies + posted on a previous calendar day → auto-close ONLY if expiry has passed
+            if (reps.length === 0 && postIST.toDateString() !== td.toDateString()) {
+                const _f = extractTradeAlertFields(post.content || '');
+                if (_f.expiry && _f.instrument && /weekly|current\s*week/i.test(_f.expiry)) {
+                    const _isSensex = (_f.instrument||'').toUpperCase().includes('SENSEX');
+                    const _wDow = _isSensex ? 4 : 2; // NIFTY=Tuesday(2), SENSEX=Thursday(4)
+                    const _base = new Date(post.sent_at || post.created_at);
+                    const _diff = (_wDow - _base.getDay() + 7) % 7;
+                    const _expD = new Date(_base);
+                    _expD.setDate(_base.getDate() + _diff);
+                    _expD.setHours(0, 0, 0, 0); // start of expiry day
+                    if (td < _expD) return false; // expiry day not reached yet → keep active
+                }
+                return true;
+            }
             // Intraday auto-close: trade posted today + market closed (pre-market or post-market) + no overnight hold
             if (postIST.toDateString() === td.toDateString()) {
                 const nowMins = td.getHours() * 60 + td.getMinutes();
@@ -2125,7 +2114,7 @@
             }
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
-            const _exitExtra=rawText?`<div class="reply-body" style="margin-top:4px;">${rawText}</div>`:'';
+            const _exitExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
             return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_exitExtra}</div>`;
         }
 
@@ -2135,17 +2124,36 @@
             let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
-            const _slExtra=rawText?`<div class="reply-body" style="margin-top:4px;">${rawText}</div>`:'';
+            const _slExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
             return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_slExtra}</div>`;
         }
 
         if (parsed.type==='cmp_update'&&parsed.price) {
-            const _cmpExtra=rawText?`<div class="reply-body" style="margin-top:4px;">${rawText}</div>`:'';
-            return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div>${_cmpExtra}</div></div>`;
+            const _cmpExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
+            return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div></div>${_cmpExtra}</div>`;
         }
 
         // Free text / status
         return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">💬 Update</span><span class="update-time">${ts}</span></div><div class="reply-body">${rawText}</div></div>`;
+    }
+
+    // ── MEMBER TIER CHIP ─────────────────────────────────────────────────────
+    // Called immediately after _cachedMember is populated (in init) AND after
+    // fetchTradeAlerts resolves — whichever comes first wins; subsequent calls
+    // are instant because they read the same DOM element.
+    function _renderMemberChip(member) {
+        const _tierChip = document.getElementById('member-tier-chip');
+        if (!_tierChip || !member) return;
+        if (member.is_admin === true) {
+            _tierChip.textContent = 'ADMIN';
+            _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);';
+        } else if (member.tier === 'paid') {
+            _tierChip.textContent = 'PAID';
+            _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';
+        } else {
+            _tierChip.textContent = 'FREE';
+            _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';
+        }
     }
 
     // ── TRADE ALERT TAB (Supabase posts) ─────────────────────────────────────
@@ -2162,11 +2170,13 @@
         let isAdmin = false, memberTier = 'free';
         if (memberId) {
             try {
-                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, {method:'GET'});
+                const cached = window._cachedMember;
+                const members = cached ? [cached] : await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, {method:'GET'});
                 if (members?.length) {
                     if (members[0].status === 'disabled') { window.location.href='login.html'; return; }
                     isAdmin = members[0].is_admin === true;
                     memberTier = members[0].tier || 'free';
+                    if (!cached) window._cachedMember = members[0];
                 }
             } catch(e) {}
         }
@@ -2178,29 +2188,34 @@
         }
         const reauthBtn = document.getElementById('admin-reauth-btn');
         if (reauthBtn) reauthBtn.style.display = isAdmin ? 'inline-block' : 'none';
-        // Tier chip in header
-        const _tierChip = document.getElementById('member-tier-chip');
-        if (_tierChip) {
-            if (isAdmin) {
-                _tierChip.textContent = 'ADMIN';
-                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);';
-            } else if (memberTier === 'paid') {
-                _tierChip.textContent = 'PAID';
-                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';
-            } else {
-                _tierChip.textContent = 'FREE';
-                _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';
-            }
-        }
+        // Tier chip in header — delegated to shared helper
+        _renderMemberChip({ is_admin: isAdmin, tier: memberTier });
 
         try {
             const [tradeParents, allFollowUps] = await Promise.all([
                 sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=50', {method:'GET'}),
                 sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', {method:'GET'})
             ]);
-            // T2S-UAT-20260715-001: hide cug_test posts from non-CUG members
-            const _isCugTA = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
-            if (!_isCugTA) tradeParents.splice(0, tradeParents.length, ...tradeParents.filter(p => p.audience !== 'cug_test'));
+            // Supplement from GitHub backup if follow-ups are missing from Supabase
+            if (!allFollowUps.length) {
+                try {
+                    const _bk = await fetch('https://raw.githubusercontent.com/Trade2spend/Trade2Spend-Tracker/main/posts_backup.json?t=' + Date.now());
+                    if (_bk.ok) {
+                        const _bd = await _bk.json();
+                        const _bkAll = (_bd.posts || []).filter(p => !p.is_deleted);
+                        const _existIds = new Set(tradeParents.map(p => p.id));
+                        if (!tradeParents.length) {
+                            const _bkParents = _bkAll.filter(p => p.post_type === 'trade_alert' && !p.parent_id && !_existIds.has(p.id));
+                            tradeParents.push(..._bkParents);
+                            _bkParents.forEach(p => _existIds.add(p.id));
+                        }
+                        allFollowUps.push(..._bkAll.filter(p => p.parent_id && !_existIds.has(p.id)));
+                    }
+                } catch(e) {}
+            }
+            // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
+            const _isCugMember = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            if (!_isCugMember) tradeParents.splice(0, tradeParents.length, ...tradeParents.filter(p => p.audience !== 'cug_test'));
             const replyMap = {};
             allFollowUps.forEach(r => {
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
@@ -2294,7 +2309,6 @@
         container.innerHTML = html;
         if (_lastOptionLTPs  && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
         if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs);
-        initRealtimeSubscription();
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
@@ -2377,8 +2391,9 @@
             for (const r of pubReplies_s1) {
                 const fp = parseFollowUpContent(r.content||'');
                 if (fp.cmp) { latestCmp1 = fp.cmp; break; }
-                if (fp.price && (fp.type==='cmp_update'||fp.type==='status'||fp.type==='exit')) { latestCmp1 = fp.price; break; }
+                if (fp.price && (fp.type==='cmp_update'||fp.type==='status')) { latestCmp1 = fp.price; break; }
             }
+            if (!latestCmp1) { const _rf1=parseFollowUpContent(post.content||''); if(_rf1.cmp&&_rf1.cmp<10000) latestCmp1=_rf1.cmp; }
             const cumExit1 = getCumulativeExit(pubReplies_s1);
             const typeBoxS1 = showCP1 && fields.optType
                 ? `<div class="type-box ${typeClass_s1}">${fields.optType}</div>`
@@ -2396,7 +2411,7 @@
                         ${_ntBox1}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName_s1}${strikeStr_s1?' '+strikeStr_s1:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                     </div>
                     <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
@@ -2404,7 +2419,7 @@
 
             const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
-            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : '';
+            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : 'Holding 100%';
             const _statePill = _trState==='yet_to_trigger'
                 ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
@@ -2472,7 +2487,7 @@
                         ${_ntBox}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${instrName}${strikeStr?' '+strikeStr:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                     </div>
                     <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
@@ -2493,7 +2508,7 @@
                 ? `<div class="type-box ${typeClass2}">${fields.optType}</div>`
                 : `<div class="type-box" style="background:var(--primary-light);color:var(--primary);">🔒</div>`;
 
-            // SL display: spot-based → option-price-based with strikethrough
+            // SL display: show strikethrough when SL revised (any numeric change or Cost (No Loss))
             const initialSL2 = fields.sl;
             const revisedSL2 = getCurrentSL(postReplies);
             const revisedSL2Display = (revisedSL2 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revisedSL2;
@@ -2503,8 +2518,8 @@
             } else if (revisedSL2) {
                 const revNum2 = parseFloat(String(revisedSL2).replace(/[^0-9.]/g,''));
                 const initNum2 = typeof initialSL2 === 'number' ? initialSL2 : 0;
-                const slChanged = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
-                if (slChanged) {
+                const slChanged2 = initialSL2 && (revisedSL2 === 'Cost (No Loss)' || (revNum2 > 0 && Math.round(revNum2) !== Math.round(initNum2)));
+                if (slChanged2) {
                     slDisplay2 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initialSL2}</s> → ${revisedSL2Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else {
                     slDisplay2 = revisedSL2Display;
@@ -2522,11 +2537,12 @@
             for (const r of postReplies) {
                 const fp = parseFollowUpContent(r.content||'');
                 if (fp.cmp) { latestCmp=fp.cmp; break; }
-                if (fp.price&&(fp.type==='cmp_update'||fp.type==='status'||fp.type==='exit')) { latestCmp=fp.price; break; }
+                if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
             }
+            if (!latestCmp) { const _rf2=parseFollowUpContent(post.content||''); if(_rf2.cmp&&_rf2.cmp<10000) latestCmp=_rf2.cmp; }
 
             const cumExit = getCumulativeExit(postReplies);
-            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : '';
+            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : 'Holding 100%';
 
             // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
@@ -2597,7 +2613,7 @@
                         ${_ntBox25}
                         <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${fields.instrument||'Trade'}${fields.strike?' '+fields.strike:''}</span>
                         <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                        <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                     </div>
                     <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
                 </div>`;
@@ -2626,14 +2642,12 @@
             // SL display with strikethrough
             const initSL25 = fields.sl;
             const revSL25  = getCurrentSL(postReplies);
-            const revSL25Display = (revSL25 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL25;
             let slDisp25 = '—', slLabel25 = 'SL';
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
-                const slChanged25 = initSL25 && (revSL25 === 'Cost (No Loss)' || (rn25 > 0 && Math.round(rn25) !== initSL25));
-                if (slChanged25) {
-                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
-                } else { slDisp25 = revSL25Display; slLabel25 = slLabelFor(revSL25Display); }
+                if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
+                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
+                } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
             } else if (initSL25) {
                 slDisp25 = `₹${initSL25}`;
                 slLabel25 = slLabelFor(initSL25);
@@ -2700,9 +2714,14 @@
         for (const r of postReplies) {
             const fp = parseFollowUpContent(r.content||'');
             if (fp.cmp) { latestCmp=fp.cmp; break; }
-            if (fp.price&&(fp.type==='cmp_update'||fp.type==='status'||fp.type==='exit')) { latestCmp=fp.price; break; }
+            if (fp.price&&(fp.type==='cmp_update'||fp.type==='status')) { latestCmp=fp.price; break; }
         }
+        if (!latestCmp&&!isClosed) { const _rf3=parseFollowUpContent(post.content||''); if(_rf3.cmp&&_rf3.cmp<10000) latestCmp=_rf3.cmp; }
         const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies) } : null);
+        // For auto-closed partial exits, show the last known CMP as the exit price (more accurate than SL-weighted avg)
+        const _cumExitDisp = getCumulativeExit(postReplies);
+        const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && latestCmp)
+            ? latestCmp : exitPrice;
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
         if (!fields.instrument) {
@@ -2725,6 +2744,7 @@
             }
             const adminHtmlNT = isAdmin ? `
                 <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                    <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
                     <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
                 </div>
                 <div class="admin-compose-box" id="compose-${post.id}">
@@ -2756,14 +2776,15 @@
         const tradeState3 = getTradeState(post, postReplies);
         const cumExit3    = getCumulativeExit(postReplies);
 
-        // SL — same strikethrough logic as free member
+        // T2S-PROD-20260716-005: SL strikethrough for admin/paid — mirrors Section 1 & 2 logic; previously only fired on spot→option (>5000→<5000), missing Cost case
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
         const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
         let slDisplay3, slLabel3 = 'SL';
         if (revSL3) {
-            const revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
-            const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== initSL3));
+            const revNum3  = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
+            const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
+            const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
             if (slChanged3) {
                 slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revSL3Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
             } else { slDisplay3 = revSL3Display; slLabel3 = slLabelFor(revSL3Display); }
@@ -2816,6 +2837,7 @@
 
         const adminHtml3 = isAdmin ? `
             <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
                 <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
             </div>
             <div class="admin-compose-box" id="compose-${post.id}">
@@ -2831,14 +2853,14 @@
                 </div>
             </div>` : '';
 
-        // not_triggered: compact card (same as free member)
-        if (tradeState3 === 'not_triggered') {
+        // not_triggered: compact card — only when trade is still active (not auto-closed)
+        if (tradeState3 === 'not_triggered' && !isClosed) {
             return `<div class="update-card" data-trade-key="${tradeKey}" style="opacity:0.6;padding:5px 10px 6px;">
                 <div style="display:flex;align-items:center;gap:7px;flex-wrap:nowrap;">
                     <div class="type-box ${typeClass3}" style="width:24px;height:24px;font-size:0.72rem;flex-shrink:0;">${fields.optType||'—'}</div>
                     <span style="font-weight:700;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">${fields.instrument}${fields.strike?' '+fields.strike:''}</span>
                     <span class="not-triggered-pill" style="white-space:nowrap;font-size:0.68rem;">⚫ Not Triggered</span>
-                    <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">Removed</span>
+                    <span style="margin-left:auto;font-size:0.65rem;color:var(--text-muted);font-weight:500;white-space:nowrap;">No Update</span>
                 </div>
                 <div style="text-align:right;font-size:0.62rem;color:var(--text-muted);padding-top:2px;">${dateTimeStr}</div>
             </div>`;
@@ -2848,9 +2870,22 @@
         if (isClosed) {
             const lotSize3 = getLotSize(fields.instrument);
             let maxPnlPts3 = null, maxPnlRs3 = null;
-            if (fields.entry && exitPrice) {
-                maxPnlPts3 = Math.round(exitPrice - fields.entry);
-                maxPnlRs3  = Math.abs(maxPnlPts3) * lotSize3;
+            if (fields.entry && _effectiveExitPrice) {
+                const _cumExit3 = getCumulativeExit(postReplies);
+                if (isClosed && _cumExit3 > 0 && _cumExit3 < 100 && latestCmp) {
+                    // Adjusted-entry method: after partial exits, break-even shifts
+                    // adjustedEntry = entry − (banked profit from exits / remaining %)
+                    let _banked = 0;
+                    [...postReplies].reverse().forEach(r => {
+                        const fp = parseFollowUpContent(r.content||'');
+                        if (fp.exitPct && fp.price) _banked += (fp.price - fields.entry) * fp.exitPct;
+                    });
+                    const _adjEntry = fields.entry - _banked / (100 - _cumExit3);
+                    maxPnlPts3 = Math.round(latestCmp - _adjEntry);
+                } else {
+                    maxPnlPts3 = Math.round(_effectiveExitPrice - fields.entry);
+                }
+                maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
             }
             const _loss3 = maxPnlPts3 !== null && maxPnlPts3 < 0;
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
@@ -2879,7 +2914,7 @@
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${exitPrice&&exitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${exitPrice?`₹${exitPrice}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span></div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
                 ${why ? (whyVisible
@@ -2909,10 +2944,16 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : '';
+        // T2S-UAT-20260720-002: live SL breach detection — show 🔴 SL Breached when CMP < revised SL, replaces "Holding 100%"
+        const _liveOptionCmp = (_lastOptionLTPs && liveCmpKey) ? _lastOptionLTPs[liveCmpKey] : null;
+        const _currentSlNum  = getLastSLNumeric(postReplies) || (typeof fields.sl === 'number' ? fields.sl : null);
+        const _isSlBreached  = _liveOptionCmp != null && _currentSlNum != null && _liveOptionCmp < _currentSlNum;
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : _isSlBreached ? `SL Breached (₹${_liveOptionCmp})` : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
-            : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
+            : _isSlBreached
+                ? `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#dc2626;font-weight:700;">🔴 SL Breached</span><span style="font-size:0.68rem;color:#dc2626;">CMP ₹${_liveOptionCmp} &lt; SL ₹${_currentSlNum}</span></div>`
+                : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
             <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
@@ -2947,9 +2988,21 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        const _uc = _cLoad('t2s_upd_posts');
-        if (_uc && _uc.posts && _cachedTier) { renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache); _userInteracted.forEach(id => updateLikeUI(id)); }
-        else container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
+        const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000);
+        if (_uc && _uc.posts && _cachedTier) {
+            renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+            _userInteracted.forEach(id => updateLikeUI(id));
+            // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
+        }
+        // Preserve any open compose box across the loading wipe
+        let _fudCompose = null;
+        const _fudOpenBox = container.querySelector('.admin-compose-box.open');
+        if (_fudOpenBox) {
+            const _fudPId = _fudOpenBox.id.replace('compose-', '');
+            const _fudTa  = document.getElementById('reply-text-' + _fudPId);
+            _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
+        }
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
 
         try {
             const memberId = localStorage.getItem('t2s_member_id');
@@ -2960,17 +3013,32 @@
                 const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status,is_admin`, { method: 'GET' });
                 if(members && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
-                    memberTier = members[0].tier;
+                    memberTier = members[0].tier || localStorage.getItem('t2s_mode') || 'free';
                     isAdmin    = members[0].is_admin === true;
+                } else {
+                    // Supabase returned no rows — fall back to login-time stored mode
+                    memberTier = localStorage.getItem('t2s_mode') || 'free';
                 }
             }
 
-            // T2S-UAT-20260715-003: always full fetch — incremental missed deletions (only checked newer timestamps, never re-checked is_deleted on old posts)
+            // Always full-fetch so deleted posts never persist in cache
             const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
-
-            // T2S-UAT-20260715-001: hide cug_test posts from non-CUG members
+            // Supplement from GitHub backup if Supabase returns no general/market posts
+            if (!posts.some(p => ['general','market_update'].includes(p.post_type))) {
+                try {
+                    const _bk2 = await fetch('https://raw.githubusercontent.com/Trade2spend/Trade2Spend-Tracker/main/posts_backup.json?t=' + Date.now());
+                    if (_bk2.ok) {
+                        const _bd2 = await _bk2.json();
+                        const _existIds2 = new Set(posts.map(p => p.id));
+                        const _bkGeneral = (_bd2.posts || []).filter(p => !p.is_deleted && ['general','market_update'].includes(p.post_type) && !_existIds2.has(p.id));
+                        posts.push(..._bkGeneral);
+                    }
+                } catch(e) {}
+            }
+            // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
             const _isCugUpd = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
             if (!_isCugUpd) posts.splice(0, posts.length, ...posts.filter(p => p.audience !== 'cug_test'));
+
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
                 const receipts = await sbFetch(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
@@ -2980,7 +3048,7 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            if (posts.length > 0) _cSave('t2s_upd_posts', {posts});
+            if (posts.length > 0) _cSave('t2s_upd_posts_v2', {posts});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
@@ -2995,8 +3063,18 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            if (_fudCompose) {
+                const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
+                if (_fudBox) {
+                    _fudBox.classList.add('open');
+                    const _fudTa2 = document.getElementById('reply-text-' + _fudCompose.postId);
+                    if (_fudTa2) _fudTa2.value = _fudCompose.text;
+                    selectReplyAud(_fudCompose.postId, _fudCompose.audience);
+                }
+            }
             _userInteracted.forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
+            initRealtimeSubscription();
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
         }
@@ -3107,6 +3185,7 @@
                 // Admin compose
                 const adminHtml = isAdmin ? `
                     <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                        <button class="admin-reply-btn" onclick="toggleReplyBox('${post.id}')">↳ Add follow-up</button>
                         <button class="admin-delete-btn" onclick="deletePost('${post.id}')">🗑 Delete</button>
                     </div>
                     <div class="admin-compose-box" id="compose-${post.id}">
@@ -3273,10 +3352,9 @@
             selectNaType('CE');
             toggleNewAlertBox();
             btn.disabled = false; btn.textContent = 'Post Alert →';
-            // T2S-CUG-20260716-001: tell VM to refresh active contracts immediately so live CMP starts without 60s lag
-            fetch(`${VM_BASE}/refresh-contracts?key=T2SMonitor2026`).catch(() => {});
             fetchTradeAlerts();
             checkAndPromptTotp();
+            fetch(`${VM_BASE}/refresh-contracts?key=T2SMonitor2026`, { method: 'POST' }).catch(() => {});
         } catch(e) {
             alert('Failed to post. Check connection.');
             btn.disabled = false; btn.textContent = 'Post Alert →';
@@ -3304,7 +3382,6 @@
     }
 
     async function sendReply(parentId, fromTab, btnEl) {
-        // Scope lookup to the clicked button's compose box — prevents duplicate-ID clash when same post renders in both Trade Alert and Updates tabs
         const _cBox    = btnEl ? btnEl.closest('.admin-compose-box') : document.getElementById(`compose-${parentId}`);
         const text     = (_cBox ? _cBox.querySelector('.admin-compose-textarea') : document.getElementById(`reply-text-${parentId}`))?.value.trim() || '';
         const audience = replyAudience[parentId] || 'all';
@@ -3335,12 +3412,18 @@
             // Refresh the correct tab
             if (fromTab === 'trades') fetchTradeAlerts();
             else fetchUpdates();
-            // Push notification for trade alert follow-ups
+            // Push notification for follow-ups
             if (fromTab === 'trades') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
                     body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades' })
+                }).catch(() => {});
+            } else if (fromTab === 'updates') {
+                fetch('https://api.trade2spend.com/send-push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    body: JSON.stringify({ title: '📢 Trade2Spend Update', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates' })
                 }).catch(() => {});
             }
 
@@ -3352,77 +3435,48 @@
         }
     }
 
-    async function _sendTestPush() {
-        const memberId = localStorage.getItem('t2s_member_id') || '';
-        const deviceId = localStorage.getItem('t2s_device_id') || 'web';
-        if (!memberId) return;
-        const r = await fetch('https://api.trade2spend.com/test-push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ memberId, deviceId })
-        });
-        const d = await r.json();
-        if (!d.ok) throw new Error(d.error || 'Push failed');
-    }
-
     async function enableNotifications() {
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
-            alert('To receive trade alerts, open this app in Safari and install it to your home screen first.');
+            _bellToast('To receive alerts, install this app to your home screen first (iOS: Safari → Share → Add to Home Screen).');
             return;
         }
         if (Notification.permission === 'denied') {
-            alert('Notifications are blocked. Go to Settings → your browser → Notifications and allow Trade2Spend, then try again.');
+            _bellToast('Notifications blocked. Allow in Settings → browser → Notifications, then tap again.');
             return;
         }
         if (Notification.permission === 'granted') {
-            // Already enabled — force fresh subscription (old endpoint may have expired/been deleted by server)
             _bellToast('🔔 Refreshing…');
-            await subscribeToPush(true).catch(() => {});
-            const ok = await _sendTestPush().then(() => true).catch(() => false);
-            _bellToast(ok ? '✓ Notification sent! Check your screen.' : '🔔 Notifications are on. Test notification failed — try refreshing.');
+            await subscribeToPush(true);
+            updateNotifBell();
+            await _sendTestPush();
             return;
         }
-        // First time — request permission
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
-            _bellToast('🔔 Setting up…');
-            await subscribeToPush(true).catch(() => {});
+            await subscribeToPush(true);
             updateNotifBell();
-            const ok = await _sendTestPush().then(() => true).catch(() => false);
-            _bellToast(ok ? '✓ Notification sent! Check your screen.' : '✓ Notifications enabled! You\'ll get instant trade alerts.');
+            _bellToast('✓ Notification sent! Check your screen.');
+            await _sendTestPush();
         } else {
             updateNotifBell();
+            _bellToast('Notifications not allowed. You can enable in browser settings.');
         }
-    }
-
-    function _bellToast(msg) {
-        const t = document.createElement('div');
-        t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:10px 20px;border-radius:20px;font-size:0.8rem;font-weight:600;z-index:9999;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.2);';
-        t.textContent = msg;
-        document.body.appendChild(t);
-        setTimeout(() => t.remove(), 3000);
     }
 
     function updateNotifBell() {
-        const bell   = document.getElementById('notif-bell-btn');
-        const banner = document.getElementById('notif-banner');
-        const isEnabled = typeof Notification !== 'undefined' && Notification.permission === 'granted';
-        if (bell) {
-            bell.style.display = 'inline-block'; // always visible
-            const dot = bell.querySelector('span');
-            if (isEnabled) {
-                // Greyscale + dimmed = already set up, nothing to do
-                bell.style.filter  = 'grayscale(1)';
-                bell.style.opacity = '0.45';
-                if (dot) dot.style.display = 'none';
-            } else {
-                // Full colour + orange dot = action needed
-                bell.style.filter  = 'none';
-                bell.style.opacity = '1';
-                if (dot) dot.style.display = 'block';
-            }
+        const bell = document.getElementById('notif-bell-btn');
+        const dot  = document.getElementById('notif-bell-dot');
+        if (!bell) return;
+        // Bell is always visible from HTML — only update filter/dot based on permission state
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            bell.style.filter  = 'grayscale(1)';
+            bell.style.opacity = '0.45';
+            if (dot) dot.style.display = 'none';
+        } else {
+            bell.style.filter  = '';
+            bell.style.opacity = '1';
+            if (dot) dot.style.display = 'block';
         }
-        if (banner) banner.style.display = isEnabled ? 'none' : '';
     }
 
     function logout(){
@@ -3463,35 +3517,28 @@
         const lastLogin = parseInt(localStorage.getItem('t2s_last_login')||'0');
         const SESSION_24H = 24 * 60 * 60 * 1000;
 
-        function showUatLoginMsg() {
-            document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;padding:32px;text-align:center;font-family:'Plus Jakarta Sans',sans-serif;background:#f6f3ee;">
-                <div style="font-size:2rem;margin-bottom:16px;">🔐</div>
-                <h2 style="font-size:1.1rem;font-weight:800;color:#1a2030;margin-bottom:10px;">Session Required</h2>
-                <p style="font-size:0.85rem;color:#9ca3af;line-height:1.6;max-width:280px;margin-bottom:24px;">Please log in to the main app first, then come back to this UAT page.</p>
-                <a href="index.html" style="background:#4a2a78;color:#fff;padding:13px 28px;border-radius:12px;font-size:0.9rem;font-weight:700;text-decoration:none;display:inline-block;">Log in to Main App →</a>
-                <p style="margin-top:16px;font-size:0.75rem;color:#b5bec9;">After logging in, press Back or navigate to <strong>uat.html</strong></p>
-            </div>`;
-        }
-
         if(mode !== 'free' && !memberId){
-            showUatLoginMsg(); return;
+            window.location.href='login.html'; return;
         }
         if(mode !== 'free' && memberId){
             if(Date.now()-lastLogin >= SESSION_24H){
-                showUatLoginMsg(); return;
+                window.location.href='login.html'; return;
             }
         }
         // Start market data fetch immediately — runs in parallel with auth check below
         const _mktLoad = fetchMarketData();
         if(mode !== 'free' && memberId){
             try {
-                const members=await sbFetch(`members?id=eq.${memberId}&select=status`,{method:'GET'});
+                const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin`,{method:'GET'});
                 if(!members||!members.length||members[0].status==='disabled'){
-                    showUatLoginMsg(); return;
+                    window.location.href='login.html'; return;
                 }
+                window._cachedMember = members[0];
+                // Render tier chip immediately — before any tab fetch completes
+                _renderMemberChip(members[0]);
             } catch(e){ console.warn('Auth check failed',e); }
         }
-        // Active-member tracking: update last_active in Supabase on open + every 5 min (fire-and-forget)
+        // Active-member tracking: update last_active in Supabase on open + every 5 min (fire-and-forget, never blocks UI)
         if(mode !== 'free' && memberId){
             const _did = localStorage.getItem('t2s_device_id');
             const _pingLastActive = () => {
@@ -3501,6 +3548,15 @@
             };
             _pingLastActive();
             setInterval(_pingLastActive, 300000);
+        }
+        // Fallback chip render — runs even if sbFetch above failed or was skipped (free-mode visitors).
+        // Guarantees the FREE/PAID/ADMIN chip is visible on every tab, not just Trade Alert.
+        if (!window._cachedMember) {
+            // sbFetch failed or mode==='free' — synthesize minimal member object from localStorage
+            _renderMemberChip({ tier: localStorage.getItem('t2s_mode') || 'free', is_admin: false });
+        } else {
+            // Ensure chip is shown even if the call inside try{} was a no-op (defensive)
+            _renderMemberChip(window._cachedMember);
         }
         // Idle auto-lock: update last_active on real user interactions
         const IDLE_MS = 30 * 60 * 1000;
@@ -3524,13 +3580,14 @@
             // Pre-load trade alerts in background so tab is instant when user switches
             fetchTradeAlerts();
         }
-        // Re-subscribe silently only if permission already granted (never prompt without user gesture)
+        // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
         } else {
             updateNotifBell();
         }
         setTimeout(initTour, 1200);
+        setTimeout(initNotifGuide, 2500);
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
@@ -3661,223 +3718,97 @@
         } catch(e) { console.error('[resolve-pwa]', e.message); }
     }
     setInterval(checkPwaResolveAlert, 30_000);
-    // Safety: ensure bell state is set even if session init took a different path
     setTimeout(updateNotifBell, 1000);
 
-    // First-login notification nudge — UAT: shows every load for testing; prod will use localStorage flag
-    function _showNotifNudge() {
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
-        const el = document.createElement('div');
-        el.id = 'notif-nudge';
-        el.style.cssText = 'position:fixed;bottom:76px;left:12px;right:12px;z-index:200;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 20px rgba(74,42,120,0.2);border:1px solid #e8e0f5;display:flex;align-items:center;gap:12px;animation:fadeIn 0.35s ease;';
-        el.innerHTML = `
-            <span style="font-size:1.5rem;flex-shrink:0;">🔔</span>
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:0.85rem;font-weight:700;color:#1a2030;line-height:1.3;">Enable Trade Alerts</div>
-                <div style="font-size:0.74rem;color:#9ca3af;margin-top:2px;line-height:1.3;">Get notified the moment a trade is posted</div>
-            </div>
-            <button onclick="_nudgeEnable()" style="background:#4a2a78;color:#fff;border:none;border-radius:9px;padding:8px 13px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">Enable</button>
-            <button onclick="_nudgeDismiss()" style="background:none;border:none;font-size:1rem;color:#c4b8d8;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;">✕</button>`;
-        document.body.appendChild(el);
-        setTimeout(_nudgeDismiss, 4000);
-    }
-    function _nudgeDismiss() { const el = document.getElementById('notif-nudge'); if (el) el.remove(); }
-    function _nudgeEnable()  { _nudgeDismiss(); enableNotifications(); }
-    setTimeout(_showNotifNudge, 3000);
-
-    // ── KNOWLEDGE HUB ─────────────────────────────────────────────────────────
-    const KH_API = 'https://api.trade2spend.com/knowledge-ask';
-    let _khStack = []; // [{question, answer}]
-
-    function _khNormalize(q) {
-        // If user typed a term/keyword (no question word, short) — wrap it
-        if (!/[?]$/.test(q) && !/^(what|how|why|when|where|who|explain|tell|is|are|can|do|does|define)/i.test(q))
-            return `Explain "${q}" simply`;
-        return q;
+    function _bellToast(msg) {
+        let t = document.getElementById('_bell-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = '_bell-toast';
+            t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:10px 18px;border-radius:20px;font-size:0.82rem;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;transition:opacity 0.3s;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.opacity = '1';
+        clearTimeout(t._timer);
+        t._timer = setTimeout(() => { t.style.opacity = '0'; }, 3000);
     }
 
-    function _khExtractTopic(q) {
-        return q
-            .replace(/^(what is a?n?\s+|what are\s+|how does\s+|how do\s+|explain\s+"?|tell me about\s+|define\s+|what'?s\s+a?\s*|why is\s+)/i, '')
-            .replace(/"?\?*$/, '').trim();
-    }
-
-    async function khAsk() {
-        const inp = document.getElementById('kh-input');
-        const display = (inp?.value || '').trim();
-        if (!display) { inp?.focus(); return; }
-        inp.value = '';
-        _khStack = [];
-        await _khFetch(display, _khNormalize(display));
-    }
-
-    async function khAskNext() {
-        const inp = document.getElementById('kh-input-ans');
-        const display = (inp?.value || '').trim();
-        if (!display) { inp?.focus(); return; }
-        inp.value = '';
-        await _khFetch(display, _khNormalize(display));
-    }
-
-    async function khAskTerm(term) {
-        await _khFetch(term, `Explain "${term}" simply`);
-    }
-
-    async function _khFetch(display, apiQ) {
-        _khShowAnswer(display, null);
-        const history = _khStack.slice(-3).flatMap(s => [
-            { role: 'user', content: s.apiQ },
-            { role: 'assistant', content: s.answer }
-        ]);
-        const memberId = localStorage.getItem('t2s_member_id') || '';
+    async function _sendTestPush() {
         try {
-            const res = await fetch(KH_API, {
+            const memberId = localStorage.getItem('t2s_member_id');
+            const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+            if (!memberId) return;
+            const res = await fetch('https://api.trade2spend.com/test-push', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question: apiQ, history, memberId })
+                body: JSON.stringify({ memberId, deviceId })
             });
             const d = await res.json();
-            if (d.limitReached) {
-                const mins = d.minutesUntilReset || 60;
-                _khShowAnswer(display, null, `You've used your ${d.limit} Learning searches for this hour. Next batch available in ${mins} minute${mins !== 1 ? 's' : ''}.`);
-                return;
-            }
-            if (d.error) throw new Error(d.error);
-            _khStack.push({ question: display, apiQ, answer: d.answer });
-            _khShowAnswer(display, d.answer);
-        } catch(e) {
-            _khShowAnswer(display, null, e.message || 'Something went wrong. Please try again.');
-        }
+            if (d.ok) _bellToast('✓ Notification sent! Check your screen.');
+        } catch(e) { console.log('Test push failed:', e.message); }
     }
 
-    function _khShowAnswer(question, answer, error) {
-        document.getElementById('kh-landing').style.display = 'none';
-        document.getElementById('kh-answer').style.display = 'block';
-        document.getElementById('kh-nav-q').textContent = question;
-        document.getElementById('kh-depth').textContent = _khStack.length > 1 ? `${_khStack.length} deep` : '';
-        document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-
-        const content = document.getElementById('kh-content');
-        const bubble = `<div class="kh-q-bubble">${_khEscape(question)}</div>`;
-
-        if (!answer && !error) {
-            content.innerHTML = bubble + `<div class="kh-loading">
-                <div style="margin-bottom:10px;font-size:1.4rem;">🤔</div>
-                <span class="kh-loading-dot">●</span><span class="kh-loading-dot">●</span><span class="kh-loading-dot">●</span>
-                <div style="margin-top:8px;font-size:0.78rem;">Thinking...</div></div>`;
-            return;
-        }
-        if (error) {
-            content.innerHTML = bubble + `<div class="kh-section" style="border-color:#fca5a5;">
-                <div class="kh-section-body" style="color:#dc2626;">⚠ ${_khEscape(error)}</div></div>`;
-            return;
-        }
-        content.innerHTML = bubble + _khRender(answer, _khExtractTopic(question)) +
-          `<div class="kh-regulatory-note">📋 Market rules, taxes, and regulations may change. Always verify from official SEBI / NSE / BSE sources.</div>`;
-        setTimeout(() => { document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' }); }, 50);
-        setTimeout(() => { const el = document.getElementById('kh-input-ans'); if (el) el.focus({ preventScroll: true }); }, 80);
+    function _showNotifNudge() {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
+        if (localStorage.getItem('t2s_notif_nudged') === '1') return;
+        if (document.getElementById('notif-guide-ol')) return;
+        localStorage.setItem('t2s_notif_nudged', '1');
+        const n = document.createElement('div');
+        n.id = '_notif-nudge';
+        n.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #4a2a78;border-radius:14px;padding:12px 16px;max-width:320px;width:90%;z-index:8888;box-shadow:0 4px 20px rgba(74,42,120,0.15);display:flex;align-items:center;gap:10px;font-family:inherit;';
+        n.innerHTML = `<span style="font-size:1.4rem;">🔔</span><div style="flex:1;"><div style="font-size:0.82rem;font-weight:700;color:#1a2030;">Get instant trade alerts</div><div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">Enable notifications to never miss a trade update</div></div><button onclick="_nudgeEnable()" style="background:#4a2a78;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:inherit;">Enable</button><button onclick="_nudgeDismiss()" style="background:none;border:none;color:#9ca3af;font-size:1.1rem;cursor:pointer;padding:0 0 0 4px;line-height:1;">×</button>`;
+        document.body.appendChild(n);
+        setTimeout(_nudgeDismiss, 6000);
     }
 
-    function khBack() {
-        _khStack.pop();
-        if (_khStack.length === 0) {
-            document.getElementById('kh-landing').style.display = 'block';
-            document.getElementById('kh-answer').style.display = 'none';
-            setTimeout(() => { const el = document.getElementById('kh-input'); if (el) el.focus({ preventScroll: true }); }, 80);
-        } else {
-            const prev = _khStack[_khStack.length - 1];
-            _khShowAnswer(prev.question, prev.answer);
-        }
+    function _nudgeDismiss() {
+        const n = document.getElementById('_notif-nudge');
+        if (n) n.remove();
     }
 
-    function _khRender(text, mainTopic) {
-        const SECTIONS = [
-            { emoji: '📘', key: 'Answer',            color: '#4a2a78', bg: '#f8f5ff' },
-            { emoji: '🌍', key: 'Example', color: '#059669', bg: '#f0fdf4' },
-            { emoji: '💡', key: 'Why It Matters',    color: '#d97706', bg: '#fffbeb' },
-            { emoji: '⚠',  key: 'Common Mistake',    color: '#dc2626', bg: '#fff5f5' },
-            { emoji: '🎯', key: 'Quick Takeaway',    color: '#2563eb', bg: '#eff6ff' },
-            { emoji: '🔗', key: 'Related Topics',    color: '#6b7280', bg: '#f9fafb' },
-        ];
-        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const sectionMap = {};
-        for (const s of SECTIONS) {
-            const pat = new RegExp(esc(s.emoji) + '\\s*\\**' + esc(s.key) + '\\**', 'i');
-            const idx = text.search(pat);
-            if (idx === -1) continue;
-            const after = text.slice(idx).replace(pat, '').trimStart();
-            let end = after.length;
-            for (const s2 of SECTIONS) {
-                if (s2.key === s.key) continue;
-                const p2 = new RegExp(esc(s2.emoji) + '\\s*\\**' + esc(s2.key) + '\\**', 'i');
-                const i2 = after.search(p2);
-                if (i2 !== -1 && i2 < end) end = i2;
-            }
-            sectionMap[s.key] = after.slice(0, end).trim();
-        }
-
-        // One shared set — each jargon term links only ONCE across the full answer
-        const linked = new Set();
-        const skipLower = (mainTopic || '').toLowerCase();
-        const lk = (t) => _khLinkify(t, skipLower, linked);
-
-        let html = '';
-        for (const s of SECTIONS) {
-            const body = sectionMap[s.key];
-            if (!body) continue;
-            let bodyHtml = '';
-            if (s.key === 'Related Topics') {
-                const topics = body.split('\n')
-                    .map(l => l.replace(/^[\-•*\[\]]+\s*/g,'').replace(/\[\[([^\]]+)\]\]/g,'$1').trim())
-                    .filter(Boolean);
-                bodyHtml = topics.map(t =>
-                    `<span class="kh-related-chip" onclick="khAskTerm('${_khEscapeAttr(t)}')">${_khEscape(t)}</span>`
-                ).join('');
-            } else {
-                // Detect bullets (•, -, *) or scenario emoji (📈/📉/➡️) on their own lines
-                const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
-                const hasBulletLines = lines.some(l => /^[•\-*]/.test(l) || /^(📈|📉|➡️)/.test(l));
-                if (hasBulletLines) {
-                    bodyHtml = '<ul>' + lines.map(l => {
-                        const clean = l.replace(/^[•\-*]\s*/, '');
-                        return `<li>${lk(clean)}</li>`;
-                    }).join('') + '</ul>';
-                } else if (/📈|📉|➡️/.test(body)) {
-                    // Fallback: inline scenario emoji — split on them
-                    const parts = body.split(/(?=📈|📉|➡️)/).map(p => p.trim()).filter(Boolean);
-                    if (parts.length > 1) {
-                        bodyHtml = '<ul>' + parts.map(p => `<li>${lk(p)}</li>`).join('') + '</ul>';
-                    } else {
-                        bodyHtml = `<p style="margin:0 0 6px 0;">${lk(body.replace(/\n+/g,' ').trim())}</p>`;
-                    }
-                } else {
-                    bodyHtml = body.split('\n\n').map(para => {
-                        const pl = para.split('\n').map(l => l.trim()).filter(Boolean);
-                        return `<p style="margin:0 0 6px 0;">${lk(pl.join(' '))}</p>`;
-                    }).join('');
-                }
-            }
-            html += `<div class="kh-section" style="background:${s.bg};border-color:${s.color}22;">
-                <div class="kh-section-label" style="color:${s.color};">${s.emoji} ${s.key}</div>
-                <div class="kh-section-body">${bodyHtml}</div></div>`;
-        }
-        return html || `<div class="kh-section"><div class="kh-section-body">${lk(text)}</div></div>`;
+    async function _nudgeEnable() {
+        _nudgeDismiss();
+        await enableNotifications();
     }
 
-    function _khLinkify(text, skipLower, linked) {
-        return text
-            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-            .replace(/\[\[([^\]]+)\]\]/g, (_, term) => {
-                const tl = term.toLowerCase();
-                if (tl === skipLower || linked.has(tl)) return term; // skip self + duplicates
-                linked.add(tl);
-                return `<span class="kh-jargon" onclick="khAskTerm('${_khEscapeAttr(term)}')">${term}</span>`;
-            });
+    setTimeout(_showNotifNudge, 3500);
+
+    // ── NOTIFICATION GUIDE ────────────────────────────────────────────────────
+    // T2S-PROD-20260720-001: single-screen guide — highlights bell, shown every session until member enables push
+    function _closeNotifGuide() {
+        const el = document.getElementById('notif-guide-ol');
+        if (el) el.remove();
     }
 
-    function _khEscape(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-    function _khEscapeAttr(s) { return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+    function initNotifGuide() {
+        if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return;
+        if (Notification.permission === 'granted') return;
+        if (sessionStorage.getItem('t2s_ng_shown')) return;
+        if (!localStorage.getItem('t2s_member_id')) return;
+        const tourOl = document.getElementById('tour-overlay');
+        if (tourOl && tourOl.style.display === 'block') return;
+        const bell = document.getElementById('notif-bell-btn');
+        if (!bell) return;
+        sessionStorage.setItem('t2s_ng_shown', '1');
+        const r = bell.getBoundingClientRect();
+        const pad = 8;
+        const ol = document.createElement('div');
+        ol.id = 'notif-guide-ol';
+        ol.style.cssText = 'position:fixed;inset:0;z-index:9500;';
+        const hl = document.createElement('div');
+        hl.style.cssText = `position:absolute;top:${r.top-pad}px;left:${r.left-pad}px;width:${r.width+pad*2}px;height:${r.height+pad*2}px;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,0.72),0 0 0 2px #4a2a78,0 0 16px rgba(74,42,120,0.9);pointer-events:none;z-index:1;`;
+        ol.appendChild(hl);
+        const vw = window.innerWidth;
+        const ttW = Math.min(290, vw - 20);
+        const ttLeft = Math.max(8, Math.min(r.left + r.width/2 - ttW/2, vw - ttW - 8));
+        const arrowL = Math.max(10, Math.min(r.left + r.width/2 - ttLeft - 9, ttW - 24));
+        const tt = document.createElement('div');
+        tt.style.cssText = `position:absolute;top:${r.bottom+12}px;left:${ttLeft}px;width:${ttW}px;background:#fff;border-radius:16px;padding:18px 18px 14px;box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:2;font-family:inherit;`;
+        tt.innerHTML = `<div style="width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:9px solid #fff;position:absolute;top:-9px;left:${arrowL}px;"></div><div style="font-size:0.88rem;font-weight:700;color:#1a2030;margin-bottom:6px;">🔔 Enable Trade Alerts</div><div style="font-size:0.80rem;color:#6b7280;line-height:1.5;margin-bottom:14px;">Tap <strong>Enable</strong> below, then tap <strong>Allow</strong> when your browser asks. You'll get an instant alert whenever a new trade is posted — even when this app is closed.</div><button onclick="_closeNotifGuide();enableNotifications();" style="width:100%;background:#4a2a78;color:#fff;border:none;border-radius:10px;padding:11px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">Enable Notifications →</button><div style="text-align:center;"><button onclick="_closeNotifGuide();" style="background:none;border:none;color:#9ca3af;font-size:0.78rem;cursor:pointer;font-family:inherit;padding:4px 8px;">skip for now</button></div>`;
+        ol.appendChild(tt);
+        document.body.appendChild(ol);
+    }
 
     // ── PRODUCT TOUR ──────────────────────────────────────────────────────────
     let _tourIdx = 0, _tourVisible = [];
@@ -3902,7 +3833,7 @@
           body: 'Tap the bell to allow push notifications. You get an instant alert the moment a new trade is posted — even when the app is closed.' },
         { target: '#a2hs-fab', pos: 'above',
           title: '📲 Install the App',
-          body: 'Add Trade2Spend to your home screen for one-tap access. Works like a native app — no App Store needed.' },
+          body: 'Add Trade2Spend to your home screen for one-tap access — works like a native app, no App Store needed.' },
     ];
 
     async function initTour() {
@@ -3958,7 +3889,6 @@
         const ad = document.getElementById('tour-arrow-down');
         au.style.display = 'none';
         ad.style.display = 'none';
-        // Reset tooltip position
         tt.style.top = ''; tt.style.left = ''; tt.style.bottom = ''; tt.style.transform = '';
 
         if (!step.target) {
@@ -4257,7 +4187,7 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
                 closeTotpModal();
                 const t = document.createElement('div');
                 t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:10px 20px;border-radius:20px;font-size:0.82rem;font-weight:700;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
-                t.textContent = '✅ Kotak connected — live CMP tracking started';
+                t.textContent = '✅ Live CMP tracking started';
                 document.body.appendChild(t);
                 setTimeout(() => t.remove(), 4000);
             } else {
@@ -4269,47 +4199,13 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             btn.disabled = false; btn.textContent = 'Start Tracking →';
         }
     }
-
-    // UAT-only: inject dummy LTPs to verify CMP display path works without needing Kotak login or market hours
-    async function testDummyCmp() {
-        const btn = document.getElementById('test-cmp-btn');
-        btn.textContent = 'Testing...';
-        btn.disabled = true;
-        try {
-            const res = await fetch('https://api.trade2spend.com/test-cmp?key=T2SMonitor2026');
-            const data = await res.json();
-            const fakeLTPs = data.optionLTPs || {};
-            // Bypass market-hours gate: temporarily override isMarketClosedNow
-            const _realCheck = window.isMarketClosedNow;
-            window.isMarketClosedNow = () => false;
-            updateTradeCMPs(fakeLTPs);
-            window.isMarketClosedNow = _realCheck;
-            // Check if any trade card CMP elements exist
-            const els = document.querySelectorAll('[data-live-cmp]');
-            if (els.length === 0) {
-                btn.textContent = 'No cards';
-                btn.style.background = '#dc2626';
-            } else {
-                btn.textContent = 'CMP OK';
-                btn.style.background = '#059669';
-            }
-        } catch(e) {
-            btn.textContent = 'VM error';
-            btn.style.background = '#dc2626';
-        }
-        setTimeout(() => {
-            btn.textContent = 'Test CMP';
-            btn.style.background = '#4a2a78';
-            btn.disabled = false;
-        }, 3000);
-    }
 </script>
 
 <!-- TOTP Modal -->
 <div id="totp-modal">
     <div class="totp-box">
         <div class="totp-title">📲 Start Live CMP Tracking</div>
-        <div class="totp-sub">Trade alert is live! Enter your 6-digit Kotak TOTP to start fetching live option prices from Kotak Neo.</div>
+        <div class="totp-sub">Trade alert is live! Enter your 6-digit TOTP to start fetching live option prices.</div>
         <input id="totp-input" class="totp-input" type="text" inputmode="numeric" maxlength="6" placeholder="——————"
                oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
                onkeydown="if(event.key==='Enter')submitTotpFromPwa()">
@@ -4318,7 +4214,7 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             <button class="totp-skip" onclick="closeTotpModal()">Skip</button>
             <button id="totp-submit-btn" class="totp-submit" onclick="submitTotpFromPwa()">Start Tracking →</button>
         </div>
-        <div class="totp-footer">Auto-stops at 3:35 PM IST · Kotak Neo only</div>
+        <div class="totp-footer">Auto-stops at 3:35 PM IST</div>
     </div>
 </div>
 
