@@ -861,7 +861,7 @@
             }
         }
         if (tabId === 'performance') fetchPerformance();
-        if (tabId === 'markets') fetchMarketData();
+        if (tabId === 'markets') { fetchMarketData(); if (_marketRefreshTimer) { clearInterval(_marketRefreshTimer); _marketRefreshTimer = null; } const _mNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'})); const _mMins = _mNow.getHours() * 60 + _mNow.getMinutes(); if (_mMins >= 9*60+15 && _mMins < 16*60) { _marketRefreshTimer = setInterval(fetchMarketData, 15000); } }
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
