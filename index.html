@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260720-001 | Notification guided tour: single-screen overlay highlights bell button, shown every browser session until member enables push. Two functions added (initNotifGuide, _closeNotifGuide) + 1 guard in _showNotifNudge + setTimeout trigger. Zero existing code modified. Also: server.js test-push congratulations message updated. Rollback: remove initNotifGuide + _closeNotifGuide functions, remove setTimeout(initNotifGuide,2500) line, remove guard line in _showNotifNudge. -->
 <!-- DEPLOY: T2S-PROD-20260717-004 | Member PWA push notifications: subscribeToPush() now takes forceNew param. Bell tap always unsubscribes old endpoint + creates fresh (forceNew=true). Auto page-load checks if DB row was deleted by server (expired 410) — if missing, force-fresh instead of re-saving stale endpoint. Fixes: notification loop where expired endpoint kept being re-saved then deleted. Rollback: revert subscribeToPush to no param + original body, revert two subscribeToPush(true) calls in enableNotifications() back to subscribeToPush(). -->
 <!-- DEPLOY: T2S-PROD-20260717-003 | Member PWA: (1) sendReply() now receives clicked button as 3rd arg (btnEl) and scopes getElementById/querySelector to that button's compose box — fixes follow-up posting failing on general posts that appear in both Trade Alert and Updates tabs (duplicate IDs caused getElementById to return wrong/empty textarea). (2) Unlock button hidden on audience='all' posts (no unlock needed, everyone sees it). (3) Unlock button hidden on closed trades (free members already see all details per existing logic). Rollback: revert sendReply signature + 2 lookup lines + btn line, revert 3 button onclick attrs to remove ',this', revert 2 forceUnlock buttons to unconditional. -->
 <!-- DEPLOY: T2S-PROD-20260717-002 | Member PWA Updates tab — compose box preserved across fetchUpdates() loading wipe. _fudCompose snapshots open box (postId, text, audience) before container.innerHTML wipe; restored after renderUpdates(). Fixes: follow-up compose box vanishing on Realtime/60s poll refresh. renderFollowUpCard/parseFollowUpContent untouched. Rollback: remove 7-line snapshot block before loading wipe + 8-line restore block after renderUpdates(). -->
@@ -3580,6 +3581,7 @@
             updateNotifBell();
         }
         setTimeout(initTour, 1200);
+        setTimeout(initNotifGuide, 2500);
         // Check IST time using Intl — returns true during normal or special trading hours
         function isMarketOpen(specialHours){
             if(specialHours) return true;
@@ -3744,6 +3746,7 @@
     function _showNotifNudge() {
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
         if (localStorage.getItem('t2s_notif_nudged') === '1') return;
+        if (document.getElementById('notif-guide-ol')) return;
         localStorage.setItem('t2s_notif_nudged', '1');
         const n = document.createElement('div');
         n.id = '_notif-nudge';
@@ -3764,6 +3767,42 @@
     }
 
     setTimeout(_showNotifNudge, 3500);
+
+    // ── NOTIFICATION GUIDE ────────────────────────────────────────────────────
+    // T2S-PROD-20260720-001: single-screen guide — highlights bell, shown every session until member enables push
+    function _closeNotifGuide() {
+        const el = document.getElementById('notif-guide-ol');
+        if (el) el.remove();
+    }
+
+    function initNotifGuide() {
+        if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return;
+        if (Notification.permission === 'granted') return;
+        if (sessionStorage.getItem('t2s_ng_shown')) return;
+        if (!localStorage.getItem('t2s_member_id')) return;
+        const tourOl = document.getElementById('tour-overlay');
+        if (tourOl && tourOl.style.display === 'block') return;
+        const bell = document.getElementById('notif-bell-btn');
+        if (!bell) return;
+        sessionStorage.setItem('t2s_ng_shown', '1');
+        const r = bell.getBoundingClientRect();
+        const pad = 8;
+        const ol = document.createElement('div');
+        ol.id = 'notif-guide-ol';
+        ol.style.cssText = 'position:fixed;inset:0;z-index:9500;';
+        const hl = document.createElement('div');
+        hl.style.cssText = `position:absolute;top:${r.top-pad}px;left:${r.left-pad}px;width:${r.width+pad*2}px;height:${r.height+pad*2}px;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,0.72),0 0 0 2px #4a2a78,0 0 16px rgba(74,42,120,0.9);pointer-events:none;z-index:1;`;
+        ol.appendChild(hl);
+        const vw = window.innerWidth;
+        const ttW = Math.min(290, vw - 20);
+        const ttLeft = Math.max(8, Math.min(r.left + r.width/2 - ttW/2, vw - ttW - 8));
+        const arrowL = Math.max(10, Math.min(r.left + r.width/2 - ttLeft - 9, ttW - 24));
+        const tt = document.createElement('div');
+        tt.style.cssText = `position:absolute;top:${r.bottom+12}px;left:${ttLeft}px;width:${ttW}px;background:#fff;border-radius:16px;padding:18px 18px 14px;box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:2;font-family:inherit;`;
+        tt.innerHTML = `<div style="width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:9px solid #fff;position:absolute;top:-9px;left:${arrowL}px;"></div><div style="font-size:0.88rem;font-weight:700;color:#1a2030;margin-bottom:6px;">🔔 Enable Trade Alerts</div><div style="font-size:0.80rem;color:#6b7280;line-height:1.5;margin-bottom:14px;">Tap <strong>Enable</strong> below, then tap <strong>Allow</strong> when your browser asks. You'll get an instant alert whenever a new trade is posted — even when this app is closed.</div><button onclick="_closeNotifGuide();enableNotifications();" style="width:100%;background:#4a2a78;color:#fff;border:none;border-radius:10px;padding:11px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">Enable Notifications →</button><div style="text-align:center;"><button onclick="_closeNotifGuide();" style="background:none;border:none;color:#9ca3af;font-size:0.78rem;cursor:pointer;font-family:inherit;padding:4px 8px;">skip for now</button></div>`;
+        ol.appendChild(tt);
+        document.body.appendChild(ol);
+    }
 
     // ── PRODUCT TOUR ──────────────────────────────────────────────────────────
     let _tourIdx = 0, _tourVisible = [];
