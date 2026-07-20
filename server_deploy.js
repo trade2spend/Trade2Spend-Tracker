@@ -3881,8 +3881,8 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         const subs = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId || 'web')}&select=id,subscription_json`);
         if (!subs || !subs.length) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'No subscription found — try tapping the bell again.' })); return; }
         const sc = await sendWebPush(subs[0].subscription_json, JSON.stringify({
-          title: '✅ Notifications enabled',
-          body: 'You are all set. Trade alerts will come here.',
+          title: '✅ Trade Alerts Active',
+          body: 'You will now get instant notifications whenever a new trade or update is posted.',
           tag: 't2s-test',
           url: 'https://app.trade2spend.com/#updates'
         }));
