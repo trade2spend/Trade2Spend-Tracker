@@ -667,7 +667,6 @@
     let _tradeRefreshTimer   = null;
     let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
-    let _marketRefreshTimer = null; // live market polling timer
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
@@ -861,7 +860,7 @@
             }
         }
         if (tabId === 'performance') fetchPerformance();
-        if (tabId === 'markets') { fetchMarketData(); if (_marketRefreshTimer) { clearInterval(_marketRefreshTimer); _marketRefreshTimer = null; } const _mNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'})); const _mMins = _mNow.getHours() * 60 + _mNow.getMinutes(); if (_mMins >= 9*60+15 && _mMins < 16*60) { _marketRefreshTimer = setInterval(fetchMarketData, 15000); } }
+        if (tabId === 'markets') fetchMarketData();
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -2122,7 +2121,7 @@
         if (parsed.type==='sl_update'&&parsed.slRevised) {
             const nsl=parsed.slRevised==='cost'?'Entry (Cost)':parsed.slRevised;
             const osl=prevSL?(prevSL==='cost'?`<s class="sl-old-val">Entry</s> → `:`<s class="sl-old-val">${prevSL}</s> → `):'';
-            let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="sl-basis"> · 15 min basis</span><span class="fu-val">${osl}${nsl}</span></div>`;
+            let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             const _slExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
@@ -2945,10 +2944,16 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
+        // T2S-PROD-20260720-002: live SL breach detection — show 🔴 SL Breached when CMP < revised SL, replaces "Holding 100%"
+        const _liveOptionCmp = (_lastOptionLTPs && liveCmpKey) ? _lastOptionLTPs[liveCmpKey] : null;
+        const _currentSlNum  = getLastSLNumeric(postReplies) || (typeof fields.sl === 'number' ? fields.sl : null);
+        const _isSlBreached  = _liveOptionCmp != null && _currentSlNum != null && _liveOptionCmp < _currentSlNum;
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : _isSlBreached ? `SL Breached (₹${_liveOptionCmp})` : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
-            : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
+            : _isSlBreached
+                ? `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#dc2626;font-weight:700;">🔴 SL Breached</span><span style="font-size:0.68rem;color:#dc2626;">CMP ₹${_liveOptionCmp} &lt; SL ₹${_currentSlNum}</span></div>`
+                : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
             <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
