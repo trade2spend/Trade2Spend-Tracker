@@ -1,3 +1,5 @@
+// DEPLOY: T2S-PROD-20260720-005 | server.js: Scraper 9:15 false alarm fix — _scraperRanTodayIST tracks first start of day. Periodic check now sends calm ✅ message on normal 9:15 start instead of ⚠️ alarm (which was designed for mid-session crashes only). Mid-session unexpected stop still sends ⚠️. Rollback: remove _scraperRanTodayIST var + stamp in startMarketScraper, revert periodic check if/else-if block back to single if(!_scraperStopAlerted) block.
+// DEPLOY: T2S-PROD-20260720-004 | server.js: Static index prices fix — Fix 1: fetchKotakIndexLTP() parsing now handles d.data as plain object (gw-napi returns object for spot indices, array for options — old code fell back to d as item, d.ltp=undefined → null → freeze). Fix 2: runMarketScraper() lastUpdated now reflects _lastRealPriceTs (last cycle with ≥1 live price) not Date.now() — makes PWA 5-min ⚠ stale warning accurate when all sources fail. Added STALE log line when falling back to cached values. Rollback: remove _lastRealPriceTs var, revert fetchKotakIndexLTP item line to original Array.isArray ternary, revert lastUpdated to new Date().toISOString(), revert console.log.
 // DEPLOY: T2S-PROD-20260720-001 | server.js: CMP wrong value fix — Fix 1: refreshActiveContracts() dedup now ignores expiry (was per-expiry, caused same strike/type with different expiry labels to both enter _activeContracts → loop wrote wrong contract's LTP under correct key). Fix 2: _latestMarketData.optionLTPs snapshot moved to after the for...of loop in fetchKotakOptionLTPs() (was inside loop → partial poisoned snapshots served mid-cycle). Rollback: revert dedup line to include &&c.expiry===expiry, move optionLTPs/optionHighs snapshot back inside if(ltp>0) block.
 // DEPLOY: T2S-PROD-20260715-009 | server.js: per-member dedup in /send-push — max 1 notification per member_id (keeps most-recently-used subscription). Both CUG and broadcast queries now fetch member_id+order by last_used.desc. Rollback: remove _seenMembers/_finalSubs block, change _finalSubs.map back to _dedupedSubs.map, revert select queries to not include member_id.
 // DEPLOY: T2S-CUG-20260716-001 | server.js: /refresh-contracts endpoint added — bypasses 60s throttle so new trade CMP starts immediately. Rollback: remove the /refresh-contracts block.
@@ -490,6 +492,8 @@ let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty d
 let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
 let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent
 let _lastPushTs          = 0;    // dedup guard: timestamp of last broadcast push sent
+let _lastRealPriceTs     = 0;    // timestamp of last cycle where ≥1 index price came from a live source (not cache fallback)
+let _scraperRanTodayIST  = null; // IST date string of first scraper start today — distinguishes normal 9:15 start from mid-session crash
 
 function loadHolidayState() {
   try {
@@ -1513,9 +1517,16 @@ async function fetchKotakIndexLTP(instrument) {
     }, 5000);
     if (!r.ok) { console.log(`[KotakIdx] ${instrument} HTTP ${r.status}`); return null; }
     const d = await r.json();
-    const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d);
+    // gw-napi returns data as array [{ltp,...}] for options but sometimes as object {ltp,...} for spot indices — handle both
+    const _dataRaw = d?.data;
+    const item = Array.isArray(_dataRaw) ? _dataRaw[0]
+               : (_dataRaw && typeof _dataRaw === 'object') ? _dataRaw
+               : Array.isArray(d) ? d[0] : d;
     const price = parseFloat(item?.ltp || 0);
-    if (!price) return null;
+    if (!price) {
+      console.log(`[KotakIdx] ${instrument}: no price — raw: ${JSON.stringify(d).slice(0, 300)}`);
+      return null;
+    }
     const prevClose = parseFloat(item?.close || item?.prevClose || item?.prev_close || 0);
     const change    = prevClose ? parseFloat((price - prevClose).toFixed(2)) : parseFloat((item?.netChng || item?.change || 0));
     const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : parseFloat((item?.pChange || item?.pctChng || 0));
@@ -1853,9 +1864,17 @@ async function runMarketScraper(force = false) {
     const day = now.getDay(); // 0=Sun, 6=Sat
     const isWeekday = day >= 1 && day <= 5;
     const isMarketOpen = isWeekday && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
+    // Only advance _lastRealPriceTs when ≥1 live price was received — so lastUpdated in the
+    // served JSON reflects actual data freshness, not just scraper cycle time. This makes the
+    // PWA's 5-min ⚠ staleness warning accurate when all three sources are failing.
+    const _gotRealPrice = !!(nifty || sensexFinal || banknifty);
+    if (_gotRealPrice) _lastRealPriceTs = Date.now();
+    const _effectiveLastUpdated = _lastRealPriceTs
+      ? new Date(_lastRealPriceTs).toISOString()
+      : new Date().toISOString();
     const marketData = {
       marketOpen:  isMarketOpen,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: _effectiveLastUpdated,
       dataSource:  isSessionValid() ? 'broker' : 'nse',
       indices: {
         NIFTY:     nifty     || existing.indices?.NIFTY     || { price: 0, change: 0, changePct: 0 },
@@ -1871,7 +1890,7 @@ async function runMarketScraper(force = false) {
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
     _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, optionHighs: _highsSnap, expiry: _expiryDates };
     await pushMarketToGitHub(marketData);
-    console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}`);
+    console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}${_gotRealPrice ? '' : ' [STALE — all sources failed, using cached values]'}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
 }
 
@@ -1880,6 +1899,9 @@ function startMarketScraper() {
   marketScraperInterval = setInterval(runMarketScraper, 15_000);
   runMarketScraper();
   startKotakLtpInterval(); // start 5s Kotak option LTP fetch (uses _activeContracts)
+  // Stamp first-start date — used to distinguish normal 9:15 open from mid-session crash
+  const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+  if (_scraperRanTodayIST !== todayIST) _scraperRanTodayIST = todayIST;
   return true;
 }
 
@@ -4338,10 +4360,16 @@ setInterval(() => {
     checkSupabaseSLs().catch(e => console.error('[sb-sl]', e.message));
     checkSupabaseTriggers().catch(e => console.error('[sb-trigger]', e.message));
     if (!marketScraperInterval) {
+      const _todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+      const _isFirstStartToday = _scraperRanTodayIST !== _todayIST;
       startMarketScraper();
-      if (!_scraperStopAlerted) {
+      if (_isFirstStartToday) {
+        // Normal daily 9:15 auto-start — calm confirmation, not an alarm
+        tgAlert('📊 <b>Market scraper started</b> (9:15 IST)\nFetching NIFTY / SENSEX / BANKNIFTY every 15s\nAuto-stops at 3:35 PM IST').catch(()=>{});
+      } else if (!_scraperStopAlerted) {
+        // Was already running today and died mid-session — this is a real problem
         _scraperStopAlerted = true;
-        tgAlert('⚠️ Market scraper was not running during market hours — auto-restarted.').catch(()=>{});
+        tgAlert('⚠️ Market scraper stopped unexpectedly during market hours — auto-restarted.').catch(()=>{});
       }
     }
   } else {
