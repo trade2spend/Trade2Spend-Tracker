@@ -2134,8 +2134,9 @@
             }
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
-            const _exitMsgDiv = rawText ? `<div class="reply-body">${rawText}</div>` : '';
-            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div>${_exitMsgDiv}<div class="fu-body" style="${rawText?'border-top:1px solid var(--border);padding-top:8px;':''}">${rows}</div></div>`;
+            // Fix 3: raw message text shown BELOW structured fields, muted style
+            const _exitMsgBelow = rawText ? `<div style="padding:6px 12px 8px;font-size:13px;color:#9ca3af;line-height:1.5;">${rawText}</div>` : '';
+            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_exitMsgBelow}</div>`;
         }
 
         if (parsed.type==='sl_update'&&parsed.slRevised) {
@@ -2144,12 +2145,14 @@
             let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
-            const _slMsgDiv = rawText ? `<div class="reply-body">${rawText}</div>` : '';
-            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div>${_slMsgDiv}<div class="fu-body" style="${rawText?'border-top:1px solid var(--border);padding-top:8px;':''}">${rows}</div></div>`;
+            // Fix 3: raw message text shown BELOW structured fields, muted style
+            const _slMsgBelow = rawText ? `<div style="padding:6px 12px 8px;font-size:13px;color:#9ca3af;line-height:1.5;">${rawText}</div>` : '';
+            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_slMsgBelow}</div>`;
         }
 
         if (parsed.type==='cmp_update'&&parsed.price) {
-            const _cmpExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
+            // Fix 3: raw message text shown BELOW structured fields, muted style
+            const _cmpExtra = rawText ? `<div style="padding:6px 12px 8px;font-size:13px;color:#9ca3af;line-height:1.5;">${rawText}</div>` : '';
             return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div></div>${_cmpExtra}</div>`;
         }
 
@@ -2654,10 +2657,11 @@
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
             const lotSize25 = getLotSize(fields.instrument);
+            // Fix 2: direction multiplier — SELL profit = entry - exit (same as Section 3), BUY = exit - entry
+            const _pnlDir25 = fields.action === 'SELL' ? -1 : 1;
             let maxPnlPts25 = null, maxPnlRs25 = null;
             if (fields.entry && displayPrice25) {
-                // For BOTH CE and PE: option profit = display price − entry (positive = gain, negative = loss)
-                maxPnlPts25 = Math.round(displayPrice25 - fields.entry);
+                maxPnlPts25 = Math.round((displayPrice25 - fields.entry) * _pnlDir25);
                 maxPnlRs25 = Math.abs(maxPnlPts25) * lotSize25;
             }
             // SL display with strikethrough
@@ -2690,9 +2694,10 @@
             const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
-            const _optHigh25 = extractHighFromReplies(postReplies);
-            const _calcMax25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
-            const _bestHigh25 = (_optHigh25 && fields.entry && _optHigh25 >= fields.entry) ? _optHigh25 : (_calcMax25 ? _calcMax25.max : null);
+            // Fix 4: only use exact [HIGH:XXX] system marker — no calculateMaxProfit fallback (picks up free-text numbers like "High 200+")
+            // Fix 2: SELL trades use session LOW for max profit — VM doesn't post [LOW:XXX] yet, so suppress for SELL
+            const _optHigh25 = fields.action === 'SELL' ? null : extractHighFromReplies(postReplies);
+            const _bestHigh25 = (_optHigh25 && fields.entry && _optHigh25 >= fields.entry) ? _optHigh25 : null;
             const _maxPoss25 = (_bestHigh25 && fields.entry) ? Math.round(_bestHigh25 - fields.entry) : null;
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
@@ -2705,6 +2710,7 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
+                        ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>`:''}
                         <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;${_badgeStyle25}">${_barLabel25}</span>
                     </div>
                 </div>
@@ -2914,9 +2920,10 @@
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle3 = _loss3 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
-            const _optHigh3 = extractHighFromReplies(postReplies);
-            const _calcMax3 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
-            const _bestHigh3 = (_optHigh3 && fields.entry && _optHigh3 >= fields.entry) ? _optHigh3 : (_calcMax3 ? _calcMax3.max : null);
+            // Fix 4: only use exact [HIGH:XXX] system marker — no calculateMaxProfit fallback (picks up free-text numbers like "High 200+")
+            // Fix 2: SELL trades use session LOW for max profit — VM doesn't post [LOW:XXX] yet, so suppress for SELL
+            const _optHigh3 = fields.action === 'SELL' ? null : extractHighFromReplies(postReplies);
+            const _bestHigh3 = (_optHigh3 && fields.entry && _optHigh3 >= fields.entry) ? _optHigh3 : null;
             const _maxPoss3 = (_bestHigh3 && fields.entry) ? Math.round(_bestHigh3 - fields.entry) : null;
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
@@ -2929,6 +2936,7 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
+                        ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>`:''}
                         <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:3px;">
                             <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">${_barLabel3}</span>
                             ${_audBadge3}
