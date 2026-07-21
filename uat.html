@@ -669,6 +669,7 @@
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
+    let _sessionOptionLows = {}; // session low per key — for SELL trade cards (data-live-low)
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
@@ -1091,6 +1092,16 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
+        // Track session lows for SELL trade cards (data-live-low attribute)
+        document.querySelectorAll('[data-live-low]').forEach(el => {
+            const key = el.dataset.liveLow;
+            const ltp = optionLTPs[key];
+            if (ltp != null && ltp > 0) {
+                if (_sessionOptionLows[key] == null || ltp < _sessionOptionLows[key])
+                    _sessionOptionLows[key] = ltp;
+                el.textContent = `₹${_sessionOptionLows[key].toFixed(2)}`;
+            }
+        });
         // Show "● Live · HH:MM" chip (admin only) when Kotak is sending real LTPs
         if (Object.values(optionLTPs).some(v => v > 0)) {
             const chip = document.getElementById('cmp-live-dot');
@@ -1360,11 +1371,14 @@
             const tradeData = closedTrades.map(p => {
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
+                // T2S-UAT-20260721-003: direction multiplier — SELL profit = entry - exit, BUY = exit - entry
+                const _dirMult = (f.action === 'SELL') ? -1 : 1;
                 // P&L priority: adjusted-entry (partial exit + CMP) > VM Day High > weighted exit > calculateMaxProfit
+                // For SELL: dayHigh (highest premium) and calculateMaxProfit are wrong signals — skip them
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies) });
-                const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
-                const validDayHigh = (dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
+                const mp = (f.action !== 'SELL' && f.entry) ? calculateMaxProfit(f.entry, replies) : null;
+                const validDayHigh = (f.action !== 'SELL' && dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
                 const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
                 let pnlPts = null, pnlRs = null, isWin = false;
@@ -1384,11 +1398,11 @@
                         if (_fp2.exitPct && _fp2.price) _bankedPerf += (_fp2.price - f.entry) * _fp2.exitPct;
                     });
                     const _adjEntryPerf = f.entry - _bankedPerf / (100 - _cumExitPerf);
-                    pnlPts = Math.round(latestCmpPerf - _adjEntryPerf);
+                    pnlPts = Math.round((latestCmpPerf - _adjEntryPerf) * _dirMult);
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
                 } else if (f.entry && maxPrice) {
-                    pnlPts = Math.round(maxPrice - f.entry);
+                    pnlPts = Math.round((maxPrice - f.entry) * _dirMult);
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
                 }
@@ -2120,8 +2134,8 @@
             }
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
-            const _exitExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
-            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_exitExtra}</div>`;
+            const _exitMsgDiv = rawText ? `<div class="reply-body">${rawText}</div>` : '';
+            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div>${_exitMsgDiv}<div class="fu-body" style="${rawText?'border-top:1px solid var(--border);padding-top:8px;':''}">${rows}</div></div>`;
         }
 
         if (parsed.type==='sl_update'&&parsed.slRevised) {
@@ -2130,8 +2144,8 @@
             let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
-            const _slExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
-            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_slExtra}</div>`;
+            const _slMsgDiv = rawText ? `<div class="reply-body">${rawText}</div>` : '';
+            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div>${_slMsgDiv}<div class="fu-body" style="${rawText?'border-top:1px solid var(--border);padding-top:8px;':''}">${rows}</div></div>`;
         }
 
         if (parsed.type==='cmp_update'&&parsed.price) {
@@ -2876,6 +2890,8 @@
         // CLOSED trade card — matches Section 2.5 layout
         if (isClosed) {
             const lotSize3 = getLotSize(fields.instrument);
+            // T2S-UAT-20260721-002: direction multiplier — SELL profit = entry - exit, BUY = exit - entry
+            const _pnlDir3 = fields.action === 'SELL' ? -1 : 1;
             let maxPnlPts3 = null, maxPnlRs3 = null;
             if (fields.entry && _effectiveExitPrice) {
                 const _cumExit3 = getCumulativeExit(postReplies);
@@ -2888,9 +2904,9 @@
                         if (fp.exitPct && fp.price) _banked += (fp.price - fields.entry) * fp.exitPct;
                     });
                     const _adjEntry = fields.entry - _banked / (100 - _cumExit3);
-                    maxPnlPts3 = Math.round(latestCmp - _adjEntry);
+                    maxPnlPts3 = Math.round((latestCmp - _adjEntry) * _pnlDir3);
                 } else {
-                    maxPnlPts3 = Math.round(_effectiveExitPrice - fields.entry);
+                    maxPnlPts3 = Math.round((_effectiveExitPrice - fields.entry) * _pnlDir3);
                 }
                 maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
             }
@@ -2951,15 +2967,18 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        // T2S-UAT-20260720-002: live SL breach detection — show 🔴 SL Breached when CMP < revised SL, replaces "Holding 100%"
+        // T2S-UAT-20260721-001: SL breach — direction-aware + index SL guard (SELL uses >, BUY uses <; index SLs >5000 skipped — VM monitors those)
         const _liveOptionCmp = (_lastOptionLTPs && liveCmpKey) ? _lastOptionLTPs[liveCmpKey] : null;
         const _currentSlNum  = getLastSLNumeric(postReplies) || (typeof fields.sl === 'number' ? fields.sl : null);
-        const _isSlBreached  = _liveOptionCmp != null && _currentSlNum != null && _liveOptionCmp < _currentSlNum;
+        const _isSellTrade3  = fields.action === 'SELL';
+        const _isSlBreached  = _liveOptionCmp != null && _currentSlNum != null && _currentSlNum < 5000 &&
+                               (_isSellTrade3 ? _liveOptionCmp > _currentSlNum : _liveOptionCmp < _currentSlNum);
+        const _slBreachDir3  = _isSellTrade3 ? '&gt;' : '&lt;';
         const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : _isSlBreached ? `SL Breached (₹${_liveOptionCmp})` : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
             : _isSlBreached
-                ? `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#dc2626;font-weight:700;">🔴 SL Breached</span><span style="font-size:0.68rem;color:#dc2626;">CMP ₹${_liveOptionCmp} &lt; SL ₹${_currentSlNum}</span></div>`
+                ? `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#dc2626;font-weight:700;">🔴 SL Breached</span><span style="font-size:0.68rem;color:#dc2626;">CMP ₹${_liveOptionCmp} ${_slBreachDir3} SL ₹${_currentSlNum}</span></div>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
@@ -2983,8 +3002,8 @@
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span>
-                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span>
+                <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`}>—</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
