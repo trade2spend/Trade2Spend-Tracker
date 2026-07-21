@@ -4110,6 +4110,9 @@ async function checkSupabaseSLs() {
       if (_sbSlAlertedToday.has(post.id)) continue;
       const pr = rMap[post.id] || [];
       if (sbTradeFullyExited(pr)) continue;
+      // T2S-SRV-20260721-001: detect trade direction — SELL uses cmp >= sl, BUY uses cmp <= sl
+      const _postLo = (post.content || '').toLowerCase();
+      const _isSellPost = /\bsell(?:ing)?\b/.test(_postLo);
       let sl = null;
       for (const r of pr) { const v = extractOptSL(r.content || ''); if (v) { sl = v; break; } }
       // "SL to cost / no loss" = entry price — resolve from original post
@@ -4128,7 +4131,8 @@ async function checkSupabaseSLs() {
       const key = `${im[1]}-${am[1]}-${tm[1]}`;
       const cmp = _optionChain[key];
       if (!cmp) continue;
-      if (cmp <= sl) {
+      // Direction-aware SL check: SELL hits SL when premium RISES above sl; BUY when it falls below
+      if (_isSellPost ? (cmp >= sl) : (cmp <= sl)) {
         _sbSlAlertedToday.add(post.id);
         const ep = Math.round(cmp * 100) / 100;
         await sbFetch('posts', {
@@ -4140,7 +4144,8 @@ async function checkSupabaseSLs() {
             parent_id: post.id, sent_at: new Date().toISOString()
           })
         });
-        await tgSend(`🔴 <b>SL HIT (auto)</b>\n<b>${key}</b>\nCMP ₹${cmp} ≤ SL ₹${sl}\nFollow-up posted to PWA.`);
+        const _dir = _isSellPost ? '≥' : '≤';
+        await tgSend(`🔴 <b>SL HIT (auto)</b>\n<b>${key}</b>\nCMP ₹${cmp} ${_dir} SL ₹${sl}\nFollow-up posted to PWA.`);
       }
     }
   } catch(e) { console.error('[sb-sl]', e.message); }
