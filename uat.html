@@ -2708,15 +2708,10 @@
             const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
-            // Max possible: only shown when trade is in LOSS + SL was NOT hit (manual exit)
+            // Max possible: shown when overall trade is in PROFIT (not when overall loss)
             // BUY trades → session HIGH ([HIGH:XXX]); SELL trades → session LOW ([LOW:XXX])
-            // Detect SL-hit: any reply where SL hit/triggered/gone appears (same pattern as parseFollowUpContent)
-            const _isSlHit25 = postReplies.some(r => {
-                const lo = (r.content||'').toLowerCase().replace(/(?:till|until|if|when)\s+(?:the\s+)?(?:sl|stop\s*loss)\s+(?:is\s+)?(?:hit|triggered)/gi,'');
-                return /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(lo);
-            });
             let _maxPoss25 = null, _maxPossLabel25 = '';
-            if (!_isSlHit25) {
+            if (!_loss25) {
                 if (fields.action === 'SELL') {
                     // SELL: max possible = how much the option dropped from entry (profit when premium falls)
                     const _optLow25 = extractLowFromReplies(postReplies);
@@ -2958,12 +2953,9 @@
             const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
             // Max possible: only shown when trade is in LOSS + SL was NOT hit (manual exit)
             // BUY trades → session HIGH ([HIGH:XXX]); SELL trades → session LOW ([LOW:XXX])
-            const _isSlHit3 = postReplies.some(r => {
-                const lo = (r.content||'').toLowerCase().replace(/(?:till|until|if|when)\s+(?:the\s+)?(?:sl|stop\s*loss)\s+(?:is\s+)?(?:hit|triggered)/gi,'');
-                return /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(lo);
-            });
+            // Max possible: shown when overall trade is in PROFIT (not when overall loss)
             let _maxPoss3 = null, _maxPossLabel3 = '';
-            if (!_isSlHit3) {
+            if (!_loss3) {
                 if (fields.action === 'SELL') {
                     const _optLow3 = extractLowFromReplies(postReplies);
                     if (_optLow3 != null && fields.entry && _optLow3 < fields.entry) {
