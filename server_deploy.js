@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260721-001 | server.js: Session LOW tracking for SELL trades — added _optionLows var; refreshActiveContracts() now parses action (BUY/SELL) from post content; fetchKotakOptionLTPs() tracks low alongside high for all contracts; saveOptionHighsToSupabase() now also posts [LOW:X] follow-up for SELL contracts at 3:35 PM; loginKotak() resets _optionLows on new day; saveState()/loadState() persist/restore lows same as highs. Rollback: remove _optionLows var, remove action parse in refreshActiveContracts, remove low tracking block in fetchKotakOptionLTPs, revert saveOptionHighsToSupabase to single highs loop, revert loginKotak reset, revert saveState/loadState.
 // DEPLOY: T2S-PROD-20260720-005 | server.js: Scraper 9:15 false alarm fix — _scraperRanTodayIST tracks first start of day. Periodic check now sends calm ✅ message on normal 9:15 start instead of ⚠️ alarm (which was designed for mid-session crashes only). Mid-session unexpected stop still sends ⚠️. Rollback: remove _scraperRanTodayIST var + stamp in startMarketScraper, revert periodic check if/else-if block back to single if(!_scraperStopAlerted) block.
 // DEPLOY: T2S-PROD-20260720-004 | server.js: Static index prices fix — Fix 1: fetchKotakIndexLTP() parsing now handles d.data as plain object (gw-napi returns object for spot indices, array for options — old code fell back to d as item, d.ltp=undefined → null → freeze). Fix 2: runMarketScraper() lastUpdated now reflects _lastRealPriceTs (last cycle with ≥1 live price) not Date.now() — makes PWA 5-min ⚠ stale warning accurate when all sources fail. Added STALE log line when falling back to cached values. Rollback: remove _lastRealPriceTs var, revert fetchKotakIndexLTP item line to original Array.isArray ternary, revert lastUpdated to new Date().toISOString(), revert console.log.
 // DEPLOY: T2S-PROD-20260720-001 | server.js: CMP wrong value fix — Fix 1: refreshActiveContracts() dedup now ignores expiry (was per-expiry, caused same strike/type with different expiry labels to both enter _activeContracts → loop wrote wrong contract's LTP under correct key). Fix 2: _latestMarketData.optionLTPs snapshot moved to after the for...of loop in fetchKotakOptionLTPs() (was inside loop → partial poisoned snapshots served mid-cycle). Rollback: revert dedup line to include &&c.expiry===expiry, move optionLTPs/optionHighs snapshot back inside if(ltp>0) block.
@@ -477,6 +478,7 @@ let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...
 let _activeContracts     = []; // [{instrument,strike,type,expiry,postId}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
 let _optionHighs         = {}; // key → { high: number, postId: string } — max LTP since session start
+let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
@@ -527,6 +529,16 @@ function loadState() {
           console.log(`Restored ${Object.keys(_optionHighs).length} option highs from state`);
         }
       }
+      // Restore intraday option lows — only if from same IST trading day
+      if (data.optionLows && data.optionLowsDate) {
+        const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+        if (data.optionLowsDate === todayIST) {
+          Object.entries(data.optionLows).forEach(([k,v]) => {
+            _optionLows[k] = { low: v.low, postId: null, action: v.action || 'BUY' };
+          });
+          console.log(`Restored ${Object.keys(_optionLows).length} option lows from state`);
+        }
+      }
       console.log(`State loaded: ${Object.keys(state.trades).length} trades`);
     }
   } catch (e) { console.error('loadState error:', e.message); }
@@ -536,7 +548,8 @@ async function saveState() {
   try {
     const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
     const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
-    fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST }, null, 2));
+    const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action }]));
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2));
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -832,10 +845,11 @@ async function loginKotak(totp) {
       `<i>Market scraper runs automatically 9:15–3:35 IST (no TOTP needed)</i>`
     ).catch(()=>{});
     await saveState();
-    // Only reset tracked highs on a NEW trading day — same-day re-logins preserve accumulated peaks
+    // Only reset tracked highs/lows on a NEW trading day — same-day re-logins preserve accumulated peaks
     const _todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
     if (_prevLoginIST !== _todayIST) {
       _optionHighs     = {};
+      _optionLows      = {};
       _highPostedToday = false;
     }
     // Download scrip master, then immediately load contracts + start LTP interval (don't wait for market open)
@@ -1330,13 +1344,16 @@ async function refreshActiveContracts() {
       const typeMatch = t.match(/\b(CE|PE)\b/);
       if (!typeMatch) return;
       const type = typeMatch[1];
+      // Action: BUY or SELL from post content (used to track session LOW for SELL trades)
+      const actionMatch = (p.content || '').match(/\b(SELL(?:ING)?|BUY(?:ING)?)\b/i);
+      const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
       const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
       // Deduplicate by instrument-strike-type only (not expiry) — two posts with the same
       // strike but different expiry labels both resolve to the same _optionChain key, so
       // allowing both would cause the loop to overwrite the correct LTP with the wrong one.
       if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type))
-        contracts.push({ instrument: instr, strike, type, expiry, postId: p.id });
+        contracts.push({ instrument: instr, strike, type, expiry, postId: p.id, action });
     });
     _activeContracts = contracts;
     console.log(`[contracts] Active: ${contracts.map(c=>`${c.instrument}${c.strike}${c.type}`).join(', ')}`);
@@ -1394,6 +1411,11 @@ async function fetchKotakOptionLTPs() {
         const _prevHigh = _optionHighs[key]?.high || 0;
         _optionHighs[key] = { high: Math.max(_prevHigh, ltp), postId: c.postId || _optionHighs[key]?.postId };
         if (_optionHighs[key].high > _prevHigh) saveState().catch(() => {}); // persist new high so VM restart doesn't lose it
+        // Track session low for all contracts — only USED for SELL trades in the follow-up post
+        const _prevLow = _optionLows[key]?.low;
+        if (_prevLow === undefined || ltp < _prevLow) {
+          _optionLows[key] = { low: ltp, postId: c.postId || _optionLows[key]?.postId, action: c.action || 'BUY' };
+        }
         _ltpConsecFailures = 0; // successful fetch — current URL is working, reset failure counter
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
         // Cache returned numeric token to avoid repeated symbol-based lookups
@@ -1760,11 +1782,13 @@ async function pushMarketToGitHub(marketData) {
   } catch (e) { console.error('pushMarketToGitHub error:', e.message); return false; }
 }
 
-// Save the intraday high for each active contract to Supabase as a [HIGH:X] follow-up.
+// Save the intraday high (BUY) or low (SELL) for each active contract to Supabase.
 // Called once at 3:35 PM so the member PWA can display "Max possible" on closed trade cards.
+// BUY trades → [HIGH:X] follow-up; SELL trades → [LOW:X] follow-up.
 async function saveOptionHighsToSupabase() {
   if (_highPostedToday) return;
   _highPostedToday = true;
+  // Post [HIGH:X] for all contracts that recorded a high
   for (const [key, data] of Object.entries(_optionHighs)) {
     if (!data.high || !data.postId) continue;
     try {
@@ -1780,6 +1804,23 @@ async function saveOptionHighsToSupabase() {
       }, 8000);
       console.log(`[high] ${r.ok ? 'Saved' : 'Failed'} ₹${data.high} for ${key}`);
     } catch(e) { console.error('[high] save error:', e.message); }
+  }
+  // Post [LOW:X] for SELL contracts only
+  for (const [key, data] of Object.entries(_optionLows)) {
+    if (!data.low || !data.postId || data.action !== 'SELL') continue;
+    try {
+      const r = await ft(`${SB_URL}/rest/v1/posts`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          content: `[LOW:${data.low.toFixed(2)}]`,
+          post_type: 'follow_up', audience: 'all',
+          allow_sharing: false, is_deleted: false,
+          parent_id: data.postId, sent_at: new Date().toISOString()
+        })
+      }, 8000);
+      console.log(`[low] ${r.ok ? 'Saved' : 'Failed'} ₹${data.low} for ${key} (SELL)`);
+    } catch(e) { console.error('[low] save error:', e.message); }
   }
 }
 
