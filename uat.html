@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260721-003 | uat.html: Max possible gate — removed _loss condition from both Section 2.5 and Section 3. Now shows for ALL closed trades where SL was NOT hit (profit OR loss). Previously was _loss25 && !_isSlHit25 / _loss3 && !_isSlHit3; now simply !_isSlHit25 / !_isSlHit3. _loss25 and _loss3 vars retained (used for bar color/badge styling). Rollback: re-add _loss25 && before !_isSlHit25 on ~line 2718, re-add _loss3 && before !_isSlHit3 on ~line 2965. -->
 <!-- DEPLOY: T2S-PROD-20260721-002 | uat.html: Max possible conditions + SELL LOW support — added extractLowFromReplies() mirroring extractHighFromReplies but matching [LOW:X]; Section 2.5 and Section 3 max possible now only renders when: isClosed=true AND SL NOT hit (new _isSlHit check: any reply with "SL hit/triggered/gone/breached") AND trade is in loss (_loss=true); BUY uses [HIGH:X] session high; SELL uses [LOW:X] session low with formula entry−low. Old "suppress SELL" comment replaced. Rollback: revert both closed-card blocks to their original _optHigh/_bestHigh/_maxPoss lines, remove extractLowFromReplies function. -->
 <!-- DEPLOY: T2S-PROD-20260720-001 | Notification guided tour: single-screen overlay highlights bell button, shown every browser session until member enables push. Two functions added (initNotifGuide, _closeNotifGuide) + 1 guard in _showNotifNudge + setTimeout trigger. Zero existing code modified. Also: server.js test-push congratulations message updated. Rollback: remove initNotifGuide + _closeNotifGuide functions, remove setTimeout(initNotifGuide,2500) line, remove guard line in _showNotifNudge. -->
 <!-- DEPLOY: T2S-PROD-20260717-004 | Member PWA push notifications: subscribeToPush() now takes forceNew param. Bell tap always unsubscribes old endpoint + creates fresh (forceNew=true). Auto page-load checks if DB row was deleted by server (expired 410) — if missing, force-fresh instead of re-saving stale endpoint. Fixes: notification loop where expired endpoint kept being re-saved then deleted. Rollback: revert subscribeToPush to no param + original body, revert two subscribeToPush(true) calls in enableNotifications() back to subscribeToPush(). -->
@@ -2715,7 +2716,7 @@
                 return /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(lo);
             });
             let _maxPoss25 = null, _maxPossLabel25 = '';
-            if (_loss25 && !_isSlHit25) {
+            if (!_isSlHit25) {
                 if (fields.action === 'SELL') {
                     // SELL: max possible = how much the option dropped from entry (profit when premium falls)
                     const _optLow25 = extractLowFromReplies(postReplies);
@@ -2962,7 +2963,7 @@
                 return /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(lo);
             });
             let _maxPoss3 = null, _maxPossLabel3 = '';
-            if (_loss3 && !_isSlHit3) {
+            if (!_isSlHit3) {
                 if (fields.action === 'SELL') {
                     const _optLow3 = extractLowFromReplies(postReplies);
                     if (_optLow3 != null && fields.entry && _optLow3 < fields.entry) {
