@@ -1049,7 +1049,7 @@
     function extractHighFromReplies(replies) {
         let max = null;
         for (const r of replies) {
-            const m = (r.content || '').match(/^\[HIGH:([\d.]+)\]$/);
+            const m = (r.content || '').trim().match(/^\[HIGH:([\d.]+)\]$/);
             if (m) { const v = parseFloat(m[1]); if (max === null || v > max) max = v; }
         }
         return max;
@@ -2710,7 +2710,7 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
-                        ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>`:''}
+                        ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELL':'📈 BUY'}</span>`:''}
                         <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;${_badgeStyle25}">${_barLabel25}</span>
                     </div>
                 </div>
@@ -2936,7 +2936,7 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
-                        ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>`:''}
+                        ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELL':'📈 BUY'}</span>`:''}
                         <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:3px;">
                             <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">${_barLabel3}</span>
                             ${_audBadge3}
