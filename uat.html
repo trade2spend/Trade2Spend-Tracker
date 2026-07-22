@@ -3020,19 +3020,11 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        // T2S-UAT-20260721-001: SL breach — direction-aware + index SL guard (SELL uses >, BUY uses <; index SLs >5000 skipped — VM monitors those)
-        const _liveOptionCmp = (_lastOptionLTPs && liveCmpKey) ? _lastOptionLTPs[liveCmpKey] : null;
-        const _currentSlNum  = getLastSLNumeric(postReplies) || (typeof fields.sl === 'number' ? fields.sl : null);
-        const _isSellTrade3  = fields.action === 'SELL';
-        const _isSlBreached  = _liveOptionCmp != null && _currentSlNum != null && _currentSlNum < 5000 &&
-                               (_isSellTrade3 ? _liveOptionCmp > _currentSlNum : _liveOptionCmp < _currentSlNum);
-        const _slBreachDir3  = _isSellTrade3 ? '&gt;' : '&lt;';
-        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : _isSlBreached ? `SL Breached (₹${_liveOptionCmp})` : 'Holding 100%';
+        // T2S-PROD-20260722-003: SL Breached auto-detection removed — state shown only via explicit follow-up messages
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
-            : _isSlBreached
-                ? `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#dc2626;font-weight:700;">🔴 SL Breached</span><span style="font-size:0.68rem;color:#dc2626;">CMP ₹${_liveOptionCmp} ${_slBreachDir3} SL ₹${_currentSlNum}</span></div>`
-                : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
+            : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
             <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
