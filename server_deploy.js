@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260722-001 | server.js: LTP staleness detection + auto-recovery — added _optionChainTs{} var tracking last-good-fetch timestamp per contract key; inside fetchKotakOptionLTPs() if(ltp>0) block now stamps _optionChainTs[key]=Date.now(); post-loop staleness check: if any active contract's timestamp missing or >2min old, resets _activeContractsTs=0 and calls refreshActiveContracts() for self-recovery within one 5s tick; _ltpZeroSince alert now treats stale-but-non-empty as effectively dry (separate reason logged). Rollback: remove _optionChainTs var, remove _optionChainTs[key]=Date.now() stamp, remove staleness detection block (lines 1450-1468), revert _effectivelyDry logic in alert block.
 // DEPLOY: T2S-PROD-20260721-001 | server.js: Session LOW tracking for SELL trades — added _optionLows var; refreshActiveContracts() now parses action (BUY/SELL) from post content; fetchKotakOptionLTPs() tracks low alongside high for all contracts; saveOptionHighsToSupabase() now also posts [LOW:X] follow-up for SELL contracts at 3:35 PM; loginKotak() resets _optionLows on new day; saveState()/loadState() persist/restore lows same as highs. Rollback: remove _optionLows var, remove action parse in refreshActiveContracts, remove low tracking block in fetchKotakOptionLTPs, revert saveOptionHighsToSupabase to single highs loop, revert loginKotak reset, revert saveState/loadState.
 // DEPLOY: T2S-PROD-20260720-005 | server.js: Scraper 9:15 false alarm fix — _scraperRanTodayIST tracks first start of day. Periodic check now sends calm ✅ message on normal 9:15 start instead of ⚠️ alarm (which was designed for mid-session crashes only). Mid-session unexpected stop still sends ⚠️. Rollback: remove _scraperRanTodayIST var + stamp in startMarketScraper, revert periodic check if/else-if block back to single if(!_scraperStopAlerted) block.
 // DEPLOY: T2S-PROD-20260720-004 | server.js: Static index prices fix — Fix 1: fetchKotakIndexLTP() parsing now handles d.data as plain object (gw-napi returns object for spot indices, array for options — old code fell back to d as item, d.ltp=undefined → null → freeze). Fix 2: runMarketScraper() lastUpdated now reflects _lastRealPriceTs (last cycle with ≥1 live price) not Date.now() — makes PWA 5-min ⚠ stale warning accurate when all sources fail. Added STALE log line when falling back to cached values. Rollback: remove _lastRealPriceTs var, revert fetchKotakIndexLTP item line to original Array.isArray ternary, revert lastUpdated to new Date().toISOString(), revert console.log.
@@ -492,6 +493,7 @@ let _morningCheckDone    = null; // date string when morning health check was se
 let _pendingBugFixes     = {};   // uuid → { file, find, replace, summary } awaiting Telegram approval
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
 let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
+let _optionChainTs       = {};   // key → Date.now() of last successful LTP fetch — staleness detection
 let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent
 let _lastPushTs          = 0;    // dedup guard: timestamp of last broadcast push sent
 let _lastRealPriceTs     = 0;    // timestamp of last cycle where ≥1 index price came from a live source (not cache fallback)
@@ -1408,6 +1410,7 @@ async function fetchKotakOptionLTPs() {
       if (ltp > 0) {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
+        _optionChainTs[key] = Date.now(); // freshness timestamp — used for stale-but-non-empty detection
         const _prevHigh = _optionHighs[key]?.high || 0;
         _optionHighs[key] = { high: Math.max(_prevHigh, ltp), postId: c.postId || _optionHighs[key]?.postId };
         if (_optionHighs[key].high > _prevHigh) saveState().catch(() => {}); // persist new high so VM restart doesn't lose it
@@ -1444,16 +1447,40 @@ async function fetchKotakOptionLTPs() {
     _latestMarketData.optionLTPs  = { ..._optionChain };
     _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
   }
+
+  // Staleness detection — if any active contract's LTP hasn't updated in >2 min, the token has
+  // probably expired or the contract rolled over. Reset the active-contracts cache so the next
+  // tick triggers a fresh Supabase lookup via refreshActiveContracts().
+  const STALE_MS = 2 * 60 * 1000; // 2 minutes
+  const now_ms = Date.now();
+  let _staleDetected = false;
+  for (const c of _activeContracts) {
+    const key = `${c.instrument}-${c.strike}-${c.type}`;
+    const ts = _optionChainTs[key];
+    if (!ts || (now_ms - ts) > STALE_MS) {
+      console.warn(`[ltp] STALE: ${key} — last good fetch ${ts ? Math.floor((now_ms - ts) / 1000) + 's ago' : 'never'}. Triggering contract refresh.`);
+      _staleDetected = true;
+      break;
+    }
+  }
+  if (_staleDetected) {
+    _activeContractsTs = 0; // bypass 60s throttle on next call
+    refreshActiveContracts().catch(() => {}); // self-recovery within one 5-second tick
+  }
+
   // Alert when CMP has been empty for >2 min during market hours (logged to PM2 every 2 min)
   const _hasLtps = Object.keys(_optionChain).length > 0;
-  if (!_hasLtps && _activeContracts.length > 0 && isMarketHours()) {
+  // Also treat the stale-but-non-empty case as "effectively dry" for alerting purposes
+  const _effectivelyDry = !_hasLtps || (_activeContracts.length > 0 && _staleDetected);
+  if (_effectivelyDry && _activeContracts.length > 0 && isMarketHours()) {
     if (!_ltpZeroSince) _ltpZeroSince = Date.now();
     const _dryMins = Math.floor((Date.now() - _ltpZeroSince) / 60000);
     if (_dryMins >= 2 && _dryMins % 2 === 0) {
-      console.error(`[ltp] ALERT: No option LTPs for ${_dryMins} min — sid:${!!session.sid} auth:${!!session.auth} token:${!!session.token}`);
+      const _reason = !_hasLtps ? 'No option LTPs' : 'Stale option LTPs (non-empty but >2min old)';
+      console.error(`[ltp] ALERT: ${_reason} for ${_dryMins} min — sid:${!!session.sid} auth:${!!session.auth} token:${!!session.token}`);
     }
   } else {
-    _ltpZeroSince = 0; // reset once LTPs are flowing
+    _ltpZeroSince = 0; // reset once LTPs are fresh and flowing
   }
 }
 
