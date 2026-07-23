@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260723-001 | Production hotfix: 3 trade state bugs. (1) Session High/Low direction fix — SELL cards now show "Session Low" with data-live-low; BUY cards show "Session High" with data-live-high. Added _sessionOptionLows dict; client-side low tracking in updateTradeCMPs (VM sends highs not lows); re-apply after DOM rebuild. Added data-entry to both spans for entry-price initialization. All 3 card sections updated (S2 free, S3 closed, S3 active). (2) "Yet to trigger" state pill now auto-updates when CMP arrives post-render — added data-state-pill/data-entry/data-live-key attrs to yet_to_trigger spans in S1/S2/S3; updateTradeCMPs re-evaluates and replaces pill in-place. (3) SL breach indicator restored with < 5000 guard — only fires for revised premium SLs (not index SLs). Added data-sl-key/num/sell/post to trigger-banner; hidden slb-{id} span toggles visible on breach. Rollback: remove _sessionOptionLows dict decl, remove session-low + state-pill + SL-breach blocks in updateTradeCMPs, remove session-low re-apply after DOM rebuild, revert 3 Session High template locations, revert statePill3/stateBanner2/_statePill data attrs, revert Section 3 trigger-banner. -->
 <!-- DEPLOY: T2S-PROD-20260722-003 | SL Breached auto-detection fully removed. Removed: _isSlBreached/_isSellTrade3/_slBreachDir3/_slBannerData/_liveOptionCmp/_currentSlNum vars, dynamic forEach block in updateTradeCMPs, data-sl-key/num/sell/cum attrs on trigger-banner. statePill3 now shows only "Yet to trigger" or "Triggered / Holding X%" — no automated SL state. SL breach shown only when admin explicitly posts a follow-up. Rollback: reinstate T2S-PROD-20260722-002 block. -->
 <!-- DEPLOY: T2S-PROD-20260722-002 | SL Engine permanent fix — production hotfix for false SL Breached + stuck-in-Holding bugs. (1) Added _currentSlNum<5000 index SL guard: prevents index-level SLs (e.g. 23975) from being compared against option premium CMP — was root cause of "CMP ₹153 < SL ₹23975" false alarm. (2) Added SELL direction awareness: _isSellTrade3 flag so SELL SL breach fires when CMP > SL not < SL. (3) Added _slBannerData attrs (data-sl-key, data-sl-num, data-sl-sell, data-sl-cum) to trigger-banner element for premium SL trades. (4) Added dynamic SL breach re-evaluation in updateTradeCMPs: forEach on trigger-banners with data-sl-key — updates statePill innerHTML in-place every CMP tick, fixes "Holding 100%" stuck state even after CMP crosses revised premium SL. Rollback: revert _isSlBreached line to original (remove < 5000 guard + direction), remove _isSellTrade3/_slBreachDir3/_slBannerData lines, remove ${_slBannerData?' '+_slBannerData:''} from trigger-banner, remove 20-line querySelectorAll block in updateTradeCMPs. -->
 <!-- DEPLOY: T2S-PROD-20260720-003 | Spot SL exit condition display: extractTradeAlertFields() now captures slDirection (above/below) and slSustainMinutes from post content. New spotSLNote() helper appends direction word inline after spot SL value. slLabelFor() label updated to "SL (15 min candle)". All 4 card sections (S1/S2/S2.5/S3) show direction for spot SL (>5000); price-based SL unchanged. Zero schema/server/logic changes. Rollback: remove spotSLNote(), revert slLabelFor label, revert 8 slDisplay lines, revert extractTradeAlertFields SL regex to (?:below|above) non-capturing + remove slDirection/slSustainMinutes lines. -->
@@ -672,6 +673,7 @@
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
+    let _sessionOptionLows = {}; // client-side session low per key — for SELL trade cards
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
@@ -1093,6 +1095,42 @@
                 el.classList.toggle('cmp-down', _cmpLastDir[key] === 'down');
                 _cmpPrevPrices[key] = ltp;
             }
+        });
+        // Session low tracking for SELL trades (client-side; VM sends highs not lows)
+        document.querySelectorAll('[data-live-low]').forEach(el => {
+            const key = el.dataset.liveLow;
+            const ltp = optionLTPs[key];
+            if (ltp != null && ltp > 0) {
+                if (_sessionOptionLows[key] == null) {
+                    const entryVal = parseFloat(el.dataset.entry || '') || 0;
+                    if (entryVal > 0) _sessionOptionLows[key] = entryVal; // init at entry: low can only go ≤ entry
+                }
+                if (_sessionOptionLows[key] == null || ltp < _sessionOptionLows[key])
+                    _sessionOptionLows[key] = ltp;
+                el.textContent = `₹${_sessionOptionLows[key].toFixed(2)}`;
+            }
+        });
+        // Re-evaluate stale "yet to trigger" state pills when CMP arrives after render
+        document.querySelectorAll('[data-state-pill]').forEach(pill => {
+            const key = pill.dataset.liveKey;
+            const entry = parseFloat(pill.dataset.entry || '') || 0;
+            if (!key || !entry) return;
+            const ltp = optionLTPs[key];
+            if (ltp != null && ltp > 0 && ltp >= entry) {
+                pill.outerHTML = `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">Holding 100%</span></div>`;
+            }
+        });
+        // SL breach indicator for triggered trades with premium revised SL (revNum < 5000 = premium, not index)
+        document.querySelectorAll('[data-sl-key]').forEach(banner => {
+            const key = banner.dataset.slKey;
+            const slNum = parseFloat(banner.dataset.slNum || '') || 0;
+            const isSell = banner.dataset.slSell === '1';
+            const postId = banner.dataset.slPost;
+            const ltp = optionLTPs[key];
+            if (!key || !slNum || !postId || ltp == null || ltp <= 0) return;
+            const slbEl = document.getElementById(`slb-${postId}`);
+            if (!slbEl) return;
+            slbEl.style.display = (isSell ? ltp > slNum : ltp < slNum) ? 'inline' : 'none';
         });
         // Show "● Live · HH:MM" chip (admin only) when Kotak is sending real LTPs
         if (Object.values(optionLTPs).some(v => v > 0)) {
@@ -2318,6 +2356,14 @@
         container.innerHTML = html;
         if (_lastOptionLTPs  && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
         if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs);
+        // Re-apply session lows after DOM rebuild (session highs re-applied by updateTradeHighs above)
+        if (_lastOptionLTPs && !isMarketClosedNow()) {
+            document.querySelectorAll('[data-live-low]').forEach(el => {
+                const key = el.dataset.liveLow;
+                const v = _sessionOptionLows[key];
+                if (v != null) el.textContent = `₹${v.toFixed(2)}`;
+            });
+        }
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
@@ -2430,7 +2476,7 @@
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
             const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : 'Holding 100%';
             const _statePill = _trState==='yet_to_trigger'
-                ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
+                ? `<span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
             let s1RepliesHtml = '';
             if (pubReplies_s1.length > 0 && _trState === 'triggered') {
@@ -2579,7 +2625,7 @@
             const _shareBtn2 = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_shareSvg2}</button>`;
             const _likeBtns2 = `<div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${_shareBtn2}</div>`;
             const stateBanner2 = tradeState === 'yet_to_trigger'
-                ? `<div class="trigger-banner" style="justify-content:space-between;"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>${_likeBtns2}</div>`
+                ? `<div class="trigger-banner" style="justify-content:space-between;"><span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>${_likeBtns2}</div>`
                 : tradeState === 'triggered'
                 ? `<div class="trigger-banner" style="justify-content:space-between;"><div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText2}</span></div>${_likeBtns2}</div>`
                 : `<div class="update-footer">${_likeBtns2}</div>`;
@@ -2603,7 +2649,9 @@
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
-                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span></div>`:''}
+                ${showCmp&&liveCmpKey?(fields.action==='SELL'
+                    ?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`
+                    :`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`):''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -2791,8 +2839,9 @@
         const revSL3  = getCurrentSL(postReplies);
         const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
         let slDisplay3, slLabel3 = 'SL';
+        let revNum3 = 0; // exposed outside if block for SL breach detection below
         if (revSL3) {
-            const revNum3  = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
+            revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
             if (slChanged3) {
@@ -2940,7 +2989,9 @@
                         ${_maxPoss3!==null
                             ?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_bestHigh3})</span></div>`
                             :(!isMarketClosedNow()&&liveCmpKey)
-                                ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span></div>`
+                                ?(fields.action==='SELL'
+                                    ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`
+                                    :`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`)
                                 :''}
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div>
@@ -2954,11 +3005,14 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        // T2S-PROD-20260722-003: SL Breached auto-detection removed — state shown only via explicit follow-up messages
         const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
-            ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
+            ? `<span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
             : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
+        // SL breach attrs: only when triggered + revised premium SL (revNum3 < 5000 = option premium, not index level)
+        const _slBannerAttrs3 = (tradeState3 === 'triggered' && revNum3 > 0 && revNum3 < 5000 && liveCmpKey)
+            ? ` data-sl-key="${liveCmpKey}" data-sl-num="${revNum3}" data-sl-sell="${fields.action==='SELL'?'1':'0'}" data-sl-post="${post.id}"`
+            : '';
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
             <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
@@ -2981,12 +3035,13 @@
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span>
-                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span>
+                ${fields.action==='SELL'
+                    ?`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${liveCmpKey}" data-entry="${fields.entry||''}">—</span>`
+                    :`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-entry="${fields.entry||''}">—</span>`}
             </div>
             ${whyRow3}
             ${repliesHtml}
-            <div class="trigger-banner" style="justify-content:space-between;">${statePill3}<div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div></div>
+            <div class="trigger-banner" style="justify-content:space-between;"${_slBannerAttrs3}>${statePill3}<span id="slb-${post.id}" style="display:none;font-size:0.72rem;color:#dc2626;font-weight:700;margin-left:4px;">⚠️ SL Breached</span><div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div></div>
         </div>
         ${adminHtml3}`;
     }
