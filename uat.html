@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260723-001 | uat.html: D1 feedback fixes — (1) Card header layout compressed to 2 rows: date/time top, BUY/SELL pill + P&L badge same row below (Sections 1/2/3 active); (2) "Yet to Trigger" label added below entry metric when trade not yet triggered (all sections); (3) Session high tracking added inside updateTradeCMPs so mock CMPs correctly update data-live-high elements (was only driven by VM optionHighs data, not CMP LTPs). -->
 <!-- T2S-UAT-20260722-001 | uat.html: Trade Alert Card Logic fixes — (1) Live P&L badge on active triggered trades (BUY/SELL), with adjusted threshold after partial exits; (2) 2:45 PM free member time-based unlock; (3) SL field unlock for free members after trade closes; (4) Session High→Low label fixed for SELL in Section 2; (5) Loss trade: static session high/low instead of live updating data-live-high; (6) [CLOSEPRICE:X] support for Scenario 4 remaining position close price; (7) UAT dummy posts for all 15 trade scenarios (deleted after Tushar confirms). Rollback: revert getTradeState/isTradeFullyClosed mock overrides, revert getFreeUnlockedFields to previous signature, remove computePlBadgeAttrs/calculateMinPrice/extractClosePriceFromReplies, remove P&L badge spans from sections 1/2/3, revert Section 2 Session High label, revert Section 3 closed loss session display, revert getWeightedExitPrice to single-opts.sl block, remove UAT dummy data injection, remove _UAT_DUMMY_* vars. -->
 <!-- DEPLOY: T2S-PROD-20260721-003 | uat.html: Max possible gate — removed _loss condition from both Section 2.5 and Section 3. Now shows for ALL closed trades where SL was NOT hit (profit OR loss). Previously was _loss25 && !_isSlHit25 / _loss3 && !_isSlHit3; now simply !_isSlHit25 / !_isSlHit3. _loss25 and _loss3 vars retained (used for bar color/badge styling). Rollback: re-add _loss25 && before !_isSlHit25 on ~line 2718, re-add _loss3 && before !_isSlHit3 on ~line 2965. -->
 <!-- DEPLOY: T2S-PROD-20260721-002 | uat.html: Max possible conditions + SELL LOW support — added extractLowFromReplies() mirroring extractHighFromReplies but matching [LOW:X]; Section 2.5 and Section 3 max possible now only renders when: isClosed=true AND SL NOT hit (new _isSlHit check: any reply with "SL hit/triggered/gone/breached") AND trade is in loss (_loss=true); BUY uses [HIGH:X] session high; SELL uses [LOW:X] session low with formula entry−low. Old "suppress SELL" comment replaced. Rollback: revert both closed-card blocks to their original _optHigh/_bestHigh/_maxPoss lines, remove extractLowFromReplies function. -->
@@ -675,6 +676,7 @@
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
     let _sessionOptionLows = {}; // session low per key — for SELL trade cards (data-live-low)
+    let _sessionOptionHighs = {}; // session high per key — for BUY trade cards (data-live-high)
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
@@ -1218,6 +1220,16 @@
                 if (_sessionOptionLows[key] == null || ltp < _sessionOptionLows[key])
                     _sessionOptionLows[key] = ltp;
                 el.textContent = `₹${_sessionOptionLows[key].toFixed(2)}`;
+            }
+        });
+        // Track session highs for BUY trade cards (data-live-high attribute)
+        document.querySelectorAll('[data-live-high]').forEach(el => {
+            const key = el.dataset.liveHigh;
+            const ltp = optionLTPs[key];
+            if (ltp != null && ltp > 0) {
+                if (_sessionOptionHighs[key] == null || ltp > _sessionOptionHighs[key])
+                    _sessionOptionHighs[key] = ltp;
+                el.textContent = `₹${_sessionOptionHighs[key].toFixed(2)}`;
             }
         });
         // Live P&L badge on active triggered trade cards — updates every 5s with CMP
@@ -2709,13 +2721,15 @@
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
                         <span class="update-time">${dateTimeStr}</span>
-                        ${_trState==='triggered'&&showCmp1?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span>`:''}
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
+                            ${_trState==='triggered'&&showCmp1?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span>`:''}
+                        </div>
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${_trState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${_slS1Label}</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
                 </div>
@@ -2840,13 +2854,15 @@
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
                         <span class="update-time">${dateTimeStr}</span>
-                        ${tradeState==='triggered'&&showCmp&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
+                            ${tradeState==='triggered'&&showCmp&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        </div>
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${tradeState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
@@ -3268,14 +3284,18 @@
                     </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                    ${actionBadge3}
-                    <span class="update-time">${dateTimeStr}</span>
-                    ${_audBadge3}
-                    ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <span class="update-time">${dateTimeStr}</span>
+                        ${_audBadge3}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:5px;">
+                        ${actionBadge3}
+                        ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                    </div>
                 </div>
             </div>
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
-                <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span>${tradeState3==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                 <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
