@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20260723-004 | uat.html: Card header layout standardisation — P&L/status badge now always in its own row BELOW the BUY/SELL pill across ALL card types. Previously: active cards (S1/S2/S3) had P&L badge inline (same row as BUY/SELL pill); Section 2.5 closed had Profit/Loss as display:inline-block alongside BUY. Now: all 4 sections move the badge to a flex row below BUY/SELL, matching Section 3 closed card format. Zero functional change — purely layout position of the badge. Rollback: revert S1 header to display:flex gap:5px wrapper, revert S2 header same, revert S2.5 badge from flex-div wrapper to inline-block span, revert S3 active header from separate rows to inner flex gap:5px wrapper. -->
+<!-- T2S-UAT-20260723-003 | uat.html: Exit breakdown display — (1) getExitLegs() helper extracts each partial exit leg [{pct,price}] from follow-ups (mirrors getWeightedExitPrice logic); (2) buildExitBreakdownHtml() renders "50%@₹115 · 25%@₹132 · 25%@₹149" only when ≥2 legs; (3) Closed trade cards (Sections 2.5 + 3): "Exit" label changes to "Effective Exit" for multi-exit trades, breakdown appears below the price value; (4) Active partial-exit trigger banner (Sections 1/2/3): holdingText changed from "Exited 50% · Remaining 50%" to "50% @ ₹115 · 50% Remaining" — price of locked portion now visible. Single-exit closed trades (D10/D11/D12) unchanged. Rollback: remove getExitLegs+buildExitBreakdownHtml functions; revert _holdingText1/_activeLegs1, holdingText2/_activeLegs2, holdingText3/_activeLegs3 to single-line ternaries; remove _exitLegs25/label/breakdown and _exitLegs3/label/breakdown vars; revert metric-label template literals back to hardcoded "Exit". -->
 <!-- T2S-UAT-20260723-002 | uat.html: D2/D3/D4 feedback fixes — (1) D-number labels (D1–D14) stamped on each dummy card via DOM injection after render; (2) Session high/low initialized from entry price so high≥entry (BUY) and low≤entry (SELL) always — data-entry attr added to spans, updateTradeCMPs seeds dict from entry before comparing LTP; (3) All BankNifty dummies changed weekly→monthly (BankNifty is monthly-only); all Nifty dummies changed weekly→monthly (Jul 28 = last Tuesday = monthly); (4) Dummy follow-up CMPs fixed to be near entry price to avoid trigger-at-wrong-price confusion; "session high/low X" text removed from follow-up content; D4 follow-up "SL at 51000 spot" removed (was causing false SL revision display). -->
 <!-- T2S-UAT-20260723-001 | uat.html: D1 feedback fixes — (1) Card header layout compressed to 2 rows: date/time top, BUY/SELL pill + P&L badge same row below (Sections 1/2/3 active); (2) "Yet to Trigger" label added below entry metric when trade not yet triggered (all sections); (3) Session high tracking added inside updateTradeCMPs so mock CMPs correctly update data-live-high elements (was only driven by VM optionHighs data, not CMP LTPs). -->
 <!-- T2S-UAT-20260722-001 | uat.html: Trade Alert Card Logic fixes — (1) Live P&L badge on active triggered trades (BUY/SELL), with adjusted threshold after partial exits; (2) 2:45 PM free member time-based unlock; (3) SL field unlock for free members after trade closes; (4) Session High→Low label fixed for SELL in Section 2; (5) Loss trade: static session high/low instead of live updating data-live-high; (6) [CLOSEPRICE:X] support for Scenario 4 remaining position close price; (7) UAT dummy posts for all 15 trade scenarios (deleted after Tushar confirms). Rollback: revert getTradeState/isTradeFullyClosed mock overrides, revert getFreeUnlockedFields to previous signature, remove computePlBadgeAttrs/calculateMinPrice/extractClosePriceFromReplies, remove P&L badge spans from sections 1/2/3, revert Section 2 Session High label, revert Section 3 closed loss session display, revert getWeightedExitPrice to single-opts.sl block, remove UAT dummy data injection, remove _UAT_DUMMY_* vars. -->
@@ -2189,6 +2191,30 @@
         return totalPct > 0 ? Math.round(weightedSum / totalPct * 100) / 100 : null;
     }
 
+    function getExitLegs(replies, opts) {
+        const sorted = [...(replies||[])].reverse();
+        const legs = [];
+        let totalPct = 0;
+        for (const r of sorted) {
+            const fp = parseFollowUpContent(r.content||'');
+            if (!fp.price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
+            if (pct <= 0) continue;
+            legs.push({ pct, price: fp.price });
+            totalPct += pct;
+            if (fp.isFullExit || totalPct >= 100) break;
+        }
+        if (totalPct < 100 && opts && opts.closePrice) {
+            legs.push({ pct: 100 - totalPct, price: opts.closePrice });
+        }
+        return legs;
+    }
+
+    function buildExitBreakdownHtml(legs) {
+        if (!legs || legs.length <= 1) return '';
+        return `<div style="font-size:0.62rem;color:var(--text-muted);margin-top:1px;line-height:1.4;">${legs.map(l=>`${l.pct}%@₹${l.price}`).join(' · ')}</div>`;
+    }
+
     // Returns numeric option-price SL from most recent SL update reply (replies are newest-first)
     function getLastSLNumeric(replies) {
         for (const r of (replies||[])) {
@@ -2706,7 +2732,12 @@
 
             const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
-            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : 'Holding 100%';
+            const _activeLegs1 = cumExit1 > 0 && cumExit1 < 100 ? getExitLegs(pubReplies_s1) : [];
+            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully'
+                : cumExit1 > 0 && _activeLegs1.length > 0
+                    ? _activeLegs1.map(l=>`${l.pct}% @ ₹${l.price}`).join(' · ') + ` · ${100-cumExit1}% Remaining`
+                    : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%`
+                    : 'Holding 100%';
             const _statePill = _trState==='yet_to_trigger'
                 ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
@@ -2744,10 +2775,8 @@
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
                         <span class="update-time">${dateTimeStr}</span>
-                        <div style="display:flex;align-items:center;gap:5px;">
-                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
-                            ${_trState==='triggered'&&showCmp1?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span>`:''}
-                        </div>
+                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
+                        ${_trState==='triggered'&&showCmp1?`<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;"><span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span></div>`:''}
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
@@ -2833,7 +2862,12 @@
             if (!latestCmp) { const _rf2=parseFollowUpContent(post.content||''); if(_rf2.cmp&&_rf2.cmp<10000) latestCmp=_rf2.cmp; }
 
             const cumExit = getCumulativeExit(postReplies);
-            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : 'Holding 100%';
+            const _activeLegs2 = cumExit > 0 && cumExit < 100 ? getExitLegs(postReplies) : [];
+            const holdingText2 = cumExit >= 100 ? 'Exited Fully'
+                : cumExit > 0 && _activeLegs2.length > 0
+                    ? _activeLegs2.map(l=>`${l.pct}% @ ₹${l.price}`).join(' · ') + ` · ${100-cumExit}% Remaining`
+                    : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%`
+                    : 'Holding 100%';
 
             // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
@@ -2877,10 +2911,8 @@
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
                         <span class="update-time">${dateTimeStr}</span>
-                        <div style="display:flex;align-items:center;gap:5px;">
-                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
-                            ${tradeState==='triggered'&&showCmp&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
-                        </div>
+                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
+                        ${tradeState==='triggered'&&showCmp&&liveCmpKey?`<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;"><span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span></div>`:''}
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
@@ -2988,6 +3020,9 @@
                     }
                 }
             }
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25 });
+            const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
+            const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -3000,12 +3035,14 @@
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
                         ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;display:inline-block;margin-top:3px;">${fields.action==='SELL'?'📉 SELL':'📈 BUY'}</span>`:''}
-                        <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;${_badgeStyle25}">${_barLabel25}</span>
+                        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:3px;">
+                            <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">${_barLabel25}</span>
+                        </div>
                     </div>
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel25}</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span>${_exitBreakdown25}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel25}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -3238,6 +3275,9 @@
                     }
                 }
             }
+            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3 });
+            const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
+            const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -3258,7 +3298,7 @@
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel3}</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span>${_exitBreakdown3}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
                 ${why ? (whyVisible
@@ -3291,7 +3331,12 @@
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
         // T2S-PROD-20260722-003: SL Breached auto-detection removed — state shown only via explicit follow-up messages
-        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
+        const _activeLegs3 = cumExit3 > 0 && cumExit3 < 100 ? getExitLegs(postReplies) : [];
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully'
+            : cumExit3 > 0 && _activeLegs3.length > 0
+                ? _activeLegs3.map(l=>`${l.pct}% @ ₹${l.price}`).join(' · ') + ` · ${100-cumExit3}% Remaining`
+                : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%`
+                : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
             : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
@@ -3310,10 +3355,8 @@
                         <span class="update-time">${dateTimeStr}</span>
                         ${_audBadge3}
                     </div>
-                    <div style="display:flex;align-items:center;gap:5px;">
-                        ${actionBadge3}
-                        ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
-                    </div>
+                    ${actionBadge3}
+                    ${tradeState3==='triggered'&&liveCmpKey?`<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;"><span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span></div>`:''}
                 </div>
             </div>
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
