@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260723-002 | uat.html: D2/D3/D4 feedback fixes — (1) D-number labels (D1–D14) stamped on each dummy card via DOM injection after render; (2) Session high/low initialized from entry price so high≥entry (BUY) and low≤entry (SELL) always — data-entry attr added to spans, updateTradeCMPs seeds dict from entry before comparing LTP; (3) All BankNifty dummies changed weekly→monthly (BankNifty is monthly-only); all Nifty dummies changed weekly→monthly (Jul 28 = last Tuesday = monthly); (4) Dummy follow-up CMPs fixed to be near entry price to avoid trigger-at-wrong-price confusion; "session high/low X" text removed from follow-up content; D4 follow-up "SL at 51000 spot" removed (was causing false SL revision display). -->
 <!-- T2S-UAT-20260723-001 | uat.html: D1 feedback fixes — (1) Card header layout compressed to 2 rows: date/time top, BUY/SELL pill + P&L badge same row below (Sections 1/2/3 active); (2) "Yet to Trigger" label added below entry metric when trade not yet triggered (all sections); (3) Session high tracking added inside updateTradeCMPs so mock CMPs correctly update data-live-high elements (was only driven by VM optionHighs data, not CMP LTPs). -->
 <!-- T2S-UAT-20260722-001 | uat.html: Trade Alert Card Logic fixes — (1) Live P&L badge on active triggered trades (BUY/SELL), with adjusted threshold after partial exits; (2) 2:45 PM free member time-based unlock; (3) SL field unlock for free members after trade closes; (4) Session High→Low label fixed for SELL in Section 2; (5) Loss trade: static session high/low instead of live updating data-live-high; (6) [CLOSEPRICE:X] support for Scenario 4 remaining position close price; (7) UAT dummy posts for all 15 trade scenarios (deleted after Tushar confirms). Rollback: revert getTradeState/isTradeFullyClosed mock overrides, revert getFreeUnlockedFields to previous signature, remove computePlBadgeAttrs/calculateMinPrice/extractClosePriceFromReplies, remove P&L badge spans from sections 1/2/3, revert Section 2 Session High label, revert Section 3 closed loss session display, revert getWeightedExitPrice to single-opts.sl block, remove UAT dummy data injection, remove _UAT_DUMMY_* vars. -->
 <!-- DEPLOY: T2S-PROD-20260721-003 | uat.html: Max possible gate — removed _loss condition from both Section 2.5 and Section 3. Now shows for ALL closed trades where SL was NOT hit (profit OR loss). Previously was _loss25 && !_isSlHit25 / _loss3 && !_isSlHit3; now simply !_isSlHit25 / !_isSlHit3. _loss25 and _loss3 vars retained (used for bar color/badge styling). Rollback: re-add _loss25 && before !_isSlHit25 on ~line 2718, re-add _loss3 && before !_isSlHit3 on ~line 2965. -->
@@ -687,48 +688,48 @@
     // 15 scenarios: BUY/SELL × Yet-to-trigger / Triggered / Partial exit / Closed profit / Closed loss
     window._UAT_TIME_2_45 = false; // toggle for testing 2:45 PM free member unlock
     window._UAT_DUMMY_POSTS = [
-      // D1: BUY yet-to-trigger, paid-only — free member sees locked fields
-      { id:'dummy-d1', content:'I am buying Nifty 24250 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong support at 24200, Nifty forming double bottom.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:35:00+05:30', created_at:'2026-07-22T09:35:00+05:30', _mockState:'yet_to_trigger', _mockClosed:false },
-      // D2: BUY triggered in profit (mock CMP 106 > entry 85)
-      { id:'dummy-d2', content:'I am buying Nifty 24300 weekly call at 85 CMP 83, SL if spot sustains below 24150 for 15 minutes.\nWhy: Momentum breakout above 24200.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:00:00+05:30', created_at:'2026-07-22T10:00:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D3: BUY triggered in loss (mock CMP 190 < entry 210)
-      { id:'dummy-d3', content:'Buying Banknifty 51500 weekly call at 210 CMP 205, SL if spot sustains below 51000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:15:00+05:30', created_at:'2026-07-22T10:15:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D4: BUY 50% exited — adjusted threshold test: entry 102, exit 50% at 115 (locked 13 pts), threshold=89, mock CMP 91 → shows PROFIT even though 91<102
-      { id:'dummy-d4', content:'I am buying Nifty 24400 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Key breakout level.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:45:00+05:30', created_at:'2026-07-22T09:45:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D5: BUY closed profit — multiple exits + SL at cost + SL hit at revised level
-      { id:'dummy-d5', content:'Buying Nifty 24250 monthly call at 102 CMP 101, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong momentum.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:20:00+05:30', created_at:'2026-07-22T09:20:00+05:30', _mockState:'triggered', _mockClosed:true },
-      // D6: BUY closed loss — SL hit. Session high shows static value from follow-up CMPs (not live)
-      { id:'dummy-d6', content:'Buying Nifty 24500 weekly call at 65 CMP 63, SL if spot sustains below 24300 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30', _mockState:'triggered', _mockClosed:true },
-      // D7: BUY Scenario 4 — 50% exited, remaining auto-closed via [CLOSEPRICE:X] at 3:30 PM
-      { id:'dummy-d7', content:'Buying Sensex 80000 monthly call at 180 CMP 175, SL if spot sustains below 79500 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:50:00+05:30', created_at:'2026-07-22T09:50:00+05:30', _mockState:'triggered', _mockClosed:true },
-      // D8: SELL yet-to-trigger, paid-only — label shows "Session Low" not "Session High"
-      { id:'dummy-d8', content:'I am selling Nifty 24150 monthly call at 102 CMP 105, SL if spot sustains above 24250 for 15 minutes.\nWhy: Resistance zone, expecting reversal.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:30:00+05:30', created_at:'2026-07-22T10:30:00+05:30', _mockState:'yet_to_trigger', _mockClosed:false },
-      // D9: SELL triggered in profit (mock CMP 82 < entry 95)
-      { id:'dummy-d9', content:'Selling Nifty 24200 weekly call at 95 CMP 98, SL if spot sustains above 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:45:00+05:30', created_at:'2026-07-22T10:45:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D10: SELL triggered in loss (mock CMP 205 > entry 180)
-      { id:'dummy-d10', content:'Selling Banknifty 52000 weekly call at 180 CMP 183, SL if spot sustains above 52000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:15:00+05:30', created_at:'2026-07-22T11:15:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D11: SELL 50% exited — adjusted threshold: entry 102, exit 50% at 91 (locked 11 pts), threshold=113, mock CMP 100 → PROFIT
-      { id:'dummy-d11', content:'Selling Nifty 24350 monthly call at 102 CMP 105, SL if spot sustains above 24350 for 15 minutes.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:55:00+05:30', created_at:'2026-07-22T09:55:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D12: SELL closed profit — [LOW:X] used for max possible
-      { id:'dummy-d12', content:'Selling Nifty 24600 weekly call at 55 CMP 58, SL if spot sustains above 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:05:00+05:30', created_at:'2026-07-22T10:05:00+05:30', _mockState:'triggered', _mockClosed:true },
-      // D13: SELL closed loss — SL hit above entry
-      { id:'dummy-d13', content:'Selling Banknifty 51800 weekly call at 150 CMP 152, SL if spot sustains above 51800 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:30:00+05:30', created_at:'2026-07-22T11:30:00+05:30', _mockState:'triggered', _mockClosed:true },
-      // D14: BUY paid-only created at 14:00 — toggle "2:45 PM" button to test time-unlock for free members
-      { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T14:00:00+05:30', created_at:'2026-07-22T14:00:00+05:30', _mockState:'triggered', _mockClosed:false },
-      // D15: BUY not triggered (compact card)
-      { id:'dummy-d15', content:'Buying Nifty 24800 weekly call at 30 CMP 25, SL if spot sustains below 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:45:00+05:30', created_at:'2026-07-22T11:45:00+05:30', _mockState:'not_triggered', _mockClosed:true }
+      // D9 on screen: BUY yet-to-trigger, paid-only — free member sees locked fields
+      { id:'dummy-d1', content:'I am buying Nifty 24250 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong support at 24200, Nifty forming double bottom.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:35:00+05:30', created_at:'2026-07-22T09:35:00+05:30', _mockState:'yet_to_trigger', _mockClosed:false, _uatLabel:'D9' },
+      // D5 on screen: BUY triggered in profit (mock CMP 106 > entry 85)
+      { id:'dummy-d2', content:'I am buying Nifty 24300 monthly call at 85 CMP 83, SL if spot sustains below 24150 for 15 minutes.\nWhy: Momentum breakout above 24200.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:00:00+05:30', created_at:'2026-07-22T10:00:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D5' },
+      // D4 on screen: BUY triggered in loss (mock CMP 190 < entry 210)
+      { id:'dummy-d3', content:'Buying Banknifty 51500 monthly call at 210 CMP 205, SL if spot sustains below 51000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:15:00+05:30', created_at:'2026-07-22T10:15:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D4' },
+      // D7 on screen: BUY 50% exited — adjusted threshold: entry 102, exit 50% at 115 (locked 13 pts), threshold=89, mock CMP 91 → PROFIT
+      { id:'dummy-d4', content:'I am buying Nifty 24400 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Key breakout level.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:45:00+05:30', created_at:'2026-07-22T09:45:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D7' },
+      // D14 on screen: BUY closed profit — multiple exits + SL at cost + SL hit at revised level
+      { id:'dummy-d5', content:'Buying Nifty 24250 monthly call at 102 CMP 101, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong momentum.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:20:00+05:30', created_at:'2026-07-22T09:20:00+05:30', _mockState:'triggered', _mockClosed:true, _uatLabel:'D14' },
+      // D11 on screen: BUY closed loss — SL hit
+      { id:'dummy-d6', content:'Buying Nifty 24500 monthly call at 65 CMP 63, SL if spot sustains below 24300 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30', _mockState:'triggered', _mockClosed:true, _uatLabel:'D11' },
+      // D13 on screen: BUY Scenario 4 — 50% exited, remaining auto-closed via [CLOSEPRICE:X] at 3:30 PM
+      { id:'dummy-d7', content:'Buying Sensex 80000 monthly call at 180 CMP 175, SL if spot sustains below 79500 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:50:00+05:30', created_at:'2026-07-22T09:50:00+05:30', _mockState:'triggered', _mockClosed:true, _uatLabel:'D13' },
+      // D8 on screen: SELL yet-to-trigger, paid-only — label shows "Session Low" not "Session High"
+      { id:'dummy-d8', content:'I am selling Nifty 24150 monthly call at 102 CMP 105, SL if spot sustains above 24250 for 15 minutes.\nWhy: Resistance zone, expecting reversal.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:30:00+05:30', created_at:'2026-07-22T10:30:00+05:30', _mockState:'yet_to_trigger', _mockClosed:false, _uatLabel:'D8' },
+      // D3 on screen: SELL triggered in profit (mock CMP 82 < entry 95)
+      { id:'dummy-d9', content:'Selling Nifty 24200 monthly call at 95 CMP 98, SL if spot sustains above 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:45:00+05:30', created_at:'2026-07-22T10:45:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D3' },
+      // D2 on screen: SELL triggered in loss (mock CMP 205 > entry 180)
+      { id:'dummy-d10', content:'Selling Banknifty 52000 monthly call at 180 CMP 183, SL if spot sustains above 52000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:15:00+05:30', created_at:'2026-07-22T11:15:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D2' },
+      // D6 on screen: SELL 50% exited — adjusted threshold: entry 102, exit 50% at 91 (locked 11 pts), threshold=113, mock CMP 100 → PROFIT
+      { id:'dummy-d11', content:'Selling Nifty 24350 monthly call at 102 CMP 105, SL if spot sustains above 24350 for 15 minutes.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T09:55:00+05:30', created_at:'2026-07-22T09:55:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D6' },
+      // D12 on screen: SELL closed profit
+      { id:'dummy-d12', content:'Selling Nifty 24600 monthly call at 55 CMP 58, SL if spot sustains above 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:05:00+05:30', created_at:'2026-07-22T10:05:00+05:30', _mockState:'triggered', _mockClosed:true, _uatLabel:'D12' },
+      // D10 on screen: SELL closed loss — SL hit above entry
+      { id:'dummy-d13', content:'Selling Banknifty 51800 monthly call at 150 CMP 152, SL if spot sustains above 51800 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:30:00+05:30', created_at:'2026-07-22T11:30:00+05:30', _mockState:'triggered', _mockClosed:true, _uatLabel:'D10' },
+      // D1 on screen: BUY paid-only created at 14:00 — toggle "2:45 PM" button to test time-unlock for free members
+      { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T14:00:00+05:30', created_at:'2026-07-22T14:00:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D1' },
+      // (filtered out: not_triggered + closed)
+      { id:'dummy-d15', content:'Buying Nifty 24800 monthly call at 30 CMP 25, SL if spot sustains below 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:45:00+05:30', created_at:'2026-07-22T11:45:00+05:30', _mockState:'not_triggered', _mockClosed:true }
     ];
     window._UAT_DUMMY_REPLIES = {
-      // D2: BUY triggered (single CMP follow-up to force triggered state)
-      'dummy-d2': [{ id:'dummy-d2-r1', content:'CMP 106, trade triggered. Holding.', post_type:'follow_up', audience:'all', parent_id:'dummy-d2', sent_at:'2026-07-22T10:05:00+05:30', created_at:'2026-07-22T10:05:00+05:30' }],
-      // D3: BUY triggered in loss
-      'dummy-d3': [{ id:'dummy-d3-r1', content:'CMP 190, watching. SL at 51000 spot.', post_type:'follow_up', audience:'all', parent_id:'dummy-d3', sent_at:'2026-07-22T10:20:00+05:30', created_at:'2026-07-22T10:20:00+05:30' }],
-      // D4: 50% exited at 115 → threshold = 89, mock CMP 91 → overall PROFIT
+      // D5 on screen: BUY triggered — trigger CMP near entry (85), live mock 106
+      'dummy-d2': [{ id:'dummy-d2-r1', content:'CMP 87, trade triggered. Holding.', post_type:'follow_up', audience:'all', parent_id:'dummy-d2', sent_at:'2026-07-22T10:05:00+05:30', created_at:'2026-07-22T10:05:00+05:30' }],
+      // D4 on screen: BUY triggered in loss — follow-up is informational, no SL revision
+      'dummy-d3': [{ id:'dummy-d3-r1', content:'CMP 190, trade active. Monitoring.', post_type:'follow_up', audience:'all', parent_id:'dummy-d3', sent_at:'2026-07-22T10:20:00+05:30', created_at:'2026-07-22T10:20:00+05:30' }],
+      // D7 on screen: BUY 50% exited at 115 → threshold=89, mock CMP 91 → overall PROFIT
       'dummy-d4': [
         { id:'dummy-d4-r2', content:'CMP 91, holding remaining 50%. Overall trade still in profit due to locked gains.', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' },
         { id:'dummy-d4-r1', content:'CMP 115, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-07-22T10:00:00+05:30', created_at:'2026-07-22T10:00:00+05:30' }
       ],
-      // D5: Multiple exits + SL revisions + SL at cost + SL hit at revised level
+      // D14 on screen: Multiple exits + SL at cost + SL hit at revised level
       'dummy-d5': [
         { id:'dummy-d5-r6', content:'[HIGH:170]', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
         { id:'dummy-d5-r5', content:'SL hit at 149. Revised SL triggered. Exiting with 149 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-07-22T13:00:00+05:30', created_at:'2026-07-22T13:00:00+05:30' },
@@ -737,53 +738,53 @@
         { id:'dummy-d5-r2', content:'CMP 125, modifying SL to 24225', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-07-22T10:30:00+05:30', created_at:'2026-07-22T10:30:00+05:30' },
         { id:'dummy-d5-r1', content:'CMP 115, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-07-22T10:00:00+05:30', created_at:'2026-07-22T10:00:00+05:30' }
       ],
-      // D6: BUY SL hit → closed loss, session high should freeze (static from follow-up CMP 80)
+      // D11 on screen: BUY SL hit → closed loss, session high from [HIGH:80]
       'dummy-d6': [
         { id:'dummy-d6-r4', content:'[HIGH:80]', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
         { id:'dummy-d6-r3', content:'SL gone. Spot sustained below 24300 for 15 min. Exiting with 42 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:50:00+05:30', created_at:'2026-07-22T11:50:00+05:30' },
-        { id:'dummy-d6-r2', content:'CMP 80, session high.', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' },
-        { id:'dummy-d6-r1', content:'CMP 72, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:10:00+05:30', created_at:'2026-07-22T11:10:00+05:30' }
+        { id:'dummy-d6-r2', content:'CMP 80, trade active.', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' },
+        { id:'dummy-d6-r1', content:'CMP 67, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:10:00+05:30', created_at:'2026-07-22T11:10:00+05:30' }
       ],
-      // D7: Scenario 4 — 50% exited, remaining uses [CLOSEPRICE:195] for auto-close P&L
+      // D13 on screen: Scenario 4 — 50% exited, remaining uses [CLOSEPRICE:195]
       'dummy-d7': [
         { id:'dummy-d7-r3', content:'[CLOSEPRICE:195]', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
         { id:'dummy-d7-r2', content:'[HIGH:235]', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
         { id:'dummy-d7-r1', content:'CMP 210, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-07-22T11:30:00+05:30', created_at:'2026-07-22T11:30:00+05:30' }
       ],
-      // D8: SELL yet-to-trigger (status-only so it stays in active section)
+      // D8 on screen: SELL yet-to-trigger
       'dummy-d8': [{ id:'dummy-d8-r1', content:'Yet to trigger, watching for entry', post_type:'follow_up', audience:'all', parent_id:'dummy-d8', sent_at:'2026-07-22T10:35:00+05:30', created_at:'2026-07-22T10:35:00+05:30' }],
-      // D9: SELL triggered in profit
-      'dummy-d9': [{ id:'dummy-d9-r1', content:'CMP 82, trade triggered. Session low 82.', post_type:'follow_up', audience:'all', parent_id:'dummy-d9', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' }],
-      // D10: SELL triggered in loss
-      'dummy-d10': [{ id:'dummy-d10-r1', content:'CMP 205, trade active. Watching SL.', post_type:'follow_up', audience:'all', parent_id:'dummy-d10', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' }],
-      // D11: SELL 50% exited at 91 → threshold = 113, mock CMP 100 → overall PROFIT
+      // D3 on screen: SELL triggered in profit — trigger CMP near entry (95), live mock 82
+      'dummy-d9': [{ id:'dummy-d9-r1', content:'CMP 94, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d9', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' }],
+      // D2 on screen: SELL triggered in loss — trigger CMP near entry (180)
+      'dummy-d10': [{ id:'dummy-d10-r1', content:'CMP 181, trade triggered. Monitoring.', post_type:'follow_up', audience:'all', parent_id:'dummy-d10', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' }],
+      // D6 on screen: SELL 50% exited at 91 → threshold=113, mock CMP 100 → overall PROFIT
       'dummy-d11': [
-        { id:'dummy-d11-r2', content:'CMP 100, holding remaining. Trade still in overall profit (locked 11 pts from first exit).', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30' },
+        { id:'dummy-d11-r2', content:'CMP 100, holding remaining 50%. Overall trade still in profit (locked 11 pts from first exit).', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30' },
         { id:'dummy-d11-r1', content:'CMP 91, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' }
       ],
-      // D12: SELL closed profit — exited full at 75, [LOW:62] = max possible
+      // D12 on screen: SELL closed profit — exited full at 75, [LOW:62] = max possible
       'dummy-d12': [
         { id:'dummy-d12-r2', content:'[LOW:62]', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
-        { id:'dummy-d12-r1', content:'CMP 75, exiting full position at 75', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30' }
+        { id:'dummy-d12-r1', content:'CMP 40, exiting full position at 40', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30' }
       ],
-      // D13: SELL closed loss — SL hit above entry (190 > 150 entry) → loss
+      // D10 on screen: SELL closed loss — SL hit above entry
       'dummy-d13': [
         { id:'dummy-d13-r3', content:'[LOW:145]', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
         { id:'dummy-d13-r2', content:'SL hit. Spot sustained above 51800. Exiting with 190 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30' },
-        { id:'dummy-d13-r1', content:'CMP 168, session low 160.', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-07-22T11:35:00+05:30', created_at:'2026-07-22T11:35:00+05:30' }
+        { id:'dummy-d13-r1', content:'CMP 168, trade active.', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-07-22T11:35:00+05:30', created_at:'2026-07-22T11:35:00+05:30' }
       ],
-      // D14: BUY 2:45 PM unlock test — paid-only, triggered (press "Toggle 2:45 PM" to see free member unlock)
-      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 82, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-07-22T14:05:00+05:30', created_at:'2026-07-22T14:05:00+05:30' }]
+      // D1 on screen: BUY 2:45 PM unlock test — trigger CMP near entry (78)
+      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-07-22T14:05:00+05:30', created_at:'2026-07-22T14:05:00+05:30' }]
     };
     // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
     window._UAT_MOCK_LTPS = {
-      'NIFTY-24300-CE': 106,      // D2: BUY, CMP(106) > entry(85) → Profit
-      'BANKNIFTY-51500-CE': 190,  // D3: BUY, CMP(190) < entry(210) → Loss
-      'NIFTY-24400-CE': 91,       // D4: BUY 50% exit, adjusted threshold=89, CMP(91)>89 → Profit
-      'NIFTY-24200-CE': 82,       // D9: SELL, CMP(82) < entry(95) → Profit
-      'BANKNIFTY-52000-CE': 205,  // D10: SELL, CMP(205) > entry(180) → Loss
-      'NIFTY-24350-CE': 100,      // D11: SELL 50% exit, threshold=113, CMP(100)<113 → Profit
-      'NIFTY-24100-CE': 82        // D14: BUY, CMP(82) > entry(78) → Profit
+      'NIFTY-24300-CE': 106,      // D5: BUY, entry 85, CMP 106 → Profit
+      'BANKNIFTY-51500-CE': 190,  // D4: BUY, entry 210, CMP 190 → Loss
+      'NIFTY-24400-CE': 91,       // D7: BUY 50% exit, threshold=89, CMP 91 → Profit
+      'NIFTY-24200-CE': 82,       // D3: SELL, entry 95, CMP 82 → Profit
+      'BANKNIFTY-52000-CE': 205,  // D2: SELL, entry 180, CMP 205 → Loss
+      'NIFTY-24350-CE': 100,      // D6: SELL 50% exit, threshold=113, CMP 100 → Profit
+      'NIFTY-24100-CE': 82        // D1: BUY, entry 78, CMP 82 → Profit
     };
 
     // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
@@ -1212,21 +1213,29 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
-        // Track session lows for SELL trade cards (data-live-low attribute)
+        // Track session lows for SELL trade cards (data-live-low) — initialized from entry so low ≤ entry always
         document.querySelectorAll('[data-live-low]').forEach(el => {
             const key = el.dataset.liveLow;
             const ltp = optionLTPs[key];
             if (ltp != null && ltp > 0) {
+                if (_sessionOptionLows[key] == null) {
+                    const entryVal = parseFloat(el.dataset.entry || '') || 0;
+                    if (entryVal > 0) _sessionOptionLows[key] = entryVal;
+                }
                 if (_sessionOptionLows[key] == null || ltp < _sessionOptionLows[key])
                     _sessionOptionLows[key] = ltp;
                 el.textContent = `₹${_sessionOptionLows[key].toFixed(2)}`;
             }
         });
-        // Track session highs for BUY trade cards (data-live-high attribute)
+        // Track session highs for BUY trade cards (data-live-high) — initialized from entry so high ≥ entry always
         document.querySelectorAll('[data-live-high]').forEach(el => {
             const key = el.dataset.liveHigh;
             const ltp = optionLTPs[key];
             if (ltp != null && ltp > 0) {
+                if (_sessionOptionHighs[key] == null) {
+                    const entryVal = parseFloat(el.dataset.entry || '') || 0;
+                    if (entryVal > 0) _sessionOptionHighs[key] = entryVal;
+                }
                 if (_sessionOptionHighs[key] == null || ltp > _sessionOptionHighs[key])
                     _sessionOptionHighs[key] = ltp;
                 el.textContent = `₹${_sessionOptionHighs[key].toFixed(2)}`;
@@ -2480,6 +2489,19 @@
             // UAT: apply mock CMPs so P&L badges show on dummy posts even when market is closed
             if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
                 updateTradeCMPs(window._UAT_MOCK_LTPS);
+            // UAT: stamp D-number label on each dummy card header so Tushar can reference by number
+            if (window._UAT_DUMMY_POSTS) {
+                window._UAT_DUMMY_POSTS.forEach(p => {
+                    if (!p._uatLabel) return;
+                    const el = document.getElementById(`ucard-${p.id}`);
+                    if (el) {
+                        const lbl = document.createElement('div');
+                        lbl.style.cssText = 'background:#6366f1;color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;';
+                        lbl.textContent = p._uatLabel;
+                        el.insertBefore(lbl, el.firstChild);
+                    }
+                });
+            }
             _userInteracted.forEach(id => updateLikeUI(id)); // instantly restore liked hearts after re-render
             fetchLikes(tradeParents.map(p => p.id));
             _cSave('t2s_alerts_html', container.innerHTML);
@@ -2866,7 +2888,7 @@
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
-                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`}>—</span></div>`:''}
+                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.entry||''}">${fields.entry?`₹${fields.entry}`:'—'}</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -3301,7 +3323,7 @@
             </div>
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
-                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`}>—</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.entry||''}">${fields.entry?`₹${fields.entry}`:'—'}</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
