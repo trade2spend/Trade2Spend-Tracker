@@ -2536,8 +2536,9 @@
                             const _lInstr = _lf.instrument || '';
                             const _lStrike = _lf.strike ? ' ' + _lf.strike : '';
                             const _lExpiry = _lf.expiry ? ' · ' + formatExpiryDisplay(_lf.expiry, _lf.instrument, p.sent_at||p.created_at) : '';
-                            lbl.textContent = `${_lOpt}${_lOpt?' · ':''}${_lInstr}${_lStrike}${_lExpiry}`;
-                            lbl.style.cssText = 'background:#4a2a78;color:#fff;font-size:0.65rem;font-weight:600;padding:3px 14px;letter-spacing:0.04em;border-radius:8px 8px 0 0;';
+                            const _pillHtml = _lOpt ? `<span style="background:rgba(255,255,255,0.28);padding:2px 10px;border-radius:5px;font-size:0.82rem;font-weight:800;margin-right:8px;">${_lOpt}</span>` : '';
+                            lbl.innerHTML = `${_pillHtml}<span style="font-size:0.78rem;font-weight:600;">${_lInstr}${_lStrike}${_lExpiry}</span>`;
+                            lbl.style.cssText = 'background:#4a2a78;color:#fff;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;';
                         } else {
                             lbl.textContent = p._uatLabel;
                             lbl.style.cssText = 'background:#6366f1;color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;';
@@ -3370,13 +3371,13 @@
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
             <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
-                <div class="trade-title-box">
+                ${post._uatLabel !== 'D1' ? `<div class="trade-title-box">
                     ${typeBoxHtml3}
                     <div>
                         <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
                         <div class="trade-expiry">${formatExpiryDisplay(fields.expiry||'', fields.instrument, post.sent_at||post.created_at)}</div>
                     </div>
-                </div>
+                </div>` : ''}
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
                     <div style="display:flex;align-items:center;gap:4px;">
                         <span class="update-time">${dateTimeStr}</span>
