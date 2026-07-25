@@ -726,9 +726,9 @@
     ];
     window._UAT_DUMMY_REPLIES = {
       // D5 on screen: BUY triggered — trigger CMP near entry (85), live mock 106
-      'dummy-d2': [{ id:'dummy-d2-r1', content:'CMP 87, trade triggered. Holding.', post_type:'follow_up', audience:'all', parent_id:'dummy-d2', sent_at:'2026-07-22T10:05:00+05:30', created_at:'2026-07-22T10:05:00+05:30' }],
+      'dummy-d2': [{ id:'dummy-d2-r1', content:'CMP 87\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d2', sent_at:'2026-07-22T10:05:00+05:30', created_at:'2026-07-22T10:05:00+05:30' }],
       // D4 on screen: BUY triggered in loss — follow-up is informational, no SL revision
-      'dummy-d3': [{ id:'dummy-d3-r1', content:'CMP 190, trade active. Monitoring.', post_type:'follow_up', audience:'all', parent_id:'dummy-d3', sent_at:'2026-07-22T10:20:00+05:30', created_at:'2026-07-22T10:20:00+05:30' }],
+      'dummy-d3': [{ id:'dummy-d3-r1', content:'CMP 190\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d3', sent_at:'2026-07-22T10:20:00+05:30', created_at:'2026-07-22T10:20:00+05:30' }],
       // D7 on screen: BUY 50% exited at 115 → threshold=89, mock CMP 91 → overall PROFIT
       'dummy-d4': [
         { id:'dummy-d4-r2', content:'CMP 91, holding remaining 50%. Overall trade still in profit due to locked gains.', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' },
@@ -748,7 +748,7 @@
         { id:'dummy-d6-r4', content:'[HIGH:80]', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T15:35:00+05:30', created_at:'2026-07-22T15:35:00+05:30' },
         { id:'dummy-d6-r3', content:'SL gone. Spot sustained below 24300 for 15 min. Exiting with 42 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:50:00+05:30', created_at:'2026-07-22T11:50:00+05:30' },
         { id:'dummy-d6-r2', content:'CMP 80, trade active.', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' },
-        { id:'dummy-d6-r1', content:'CMP 67, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:10:00+05:30', created_at:'2026-07-22T11:10:00+05:30' }
+        { id:'dummy-d6-r1', content:'CMP 67\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-07-22T11:10:00+05:30', created_at:'2026-07-22T11:10:00+05:30' }
       ],
       // D13 on screen: Scenario 4 — 50% exited, remaining uses [CLOSEPRICE:195]
       'dummy-d7': [
@@ -759,9 +759,9 @@
       // D8 on screen: SELL yet-to-trigger
       'dummy-d8': [{ id:'dummy-d8-r1', content:'Yet to trigger, watching for entry', post_type:'follow_up', audience:'all', parent_id:'dummy-d8', sent_at:'2026-07-22T10:35:00+05:30', created_at:'2026-07-22T10:35:00+05:30' }],
       // D3 on screen: SELL triggered in profit — trigger CMP near entry (95), live mock 82
-      'dummy-d9': [{ id:'dummy-d9-r1', content:'CMP 94, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d9', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' }],
+      'dummy-d9': [{ id:'dummy-d9-r1', content:'CMP 94\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d9', sent_at:'2026-07-22T11:00:00+05:30', created_at:'2026-07-22T11:00:00+05:30' }],
       // D2 on screen: SELL triggered in loss — trigger CMP near entry (180)
-      'dummy-d10': [{ id:'dummy-d10-r1', content:'CMP 181, trade triggered. Monitoring.', post_type:'follow_up', audience:'all', parent_id:'dummy-d10', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' }],
+      'dummy-d10': [{ id:'dummy-d10-r1', content:'CMP 181\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d10', sent_at:'2026-07-22T11:20:00+05:30', created_at:'2026-07-22T11:20:00+05:30' }],
       // D6 on screen: SELL 50% exited at 91 → threshold=113, mock CMP 100 → overall PROFIT
       'dummy-d11': [
         { id:'dummy-d11-r2', content:'CMP 100, holding remaining 50%. Overall trade still in profit (locked 11 pts from first exit).', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30' },
@@ -779,7 +779,7 @@
         { id:'dummy-d13-r1', content:'CMP 168, trade active.', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-07-22T11:35:00+05:30', created_at:'2026-07-22T11:35:00+05:30' }
       ],
       // D1 on screen: BUY 2:45 PM unlock test — trigger CMP near entry (78)
-      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79, trade triggered.', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-07-22T14:05:00+05:30', created_at:'2026-07-22T14:05:00+05:30' }]
+      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-07-22T14:05:00+05:30', created_at:'2026-07-22T14:05:00+05:30' }]
     };
     // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
     window._UAT_MOCK_LTPS = {
@@ -2068,6 +2068,11 @@
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
         const slm = content.match(/(below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
         if (slm) { f.sl = parseFloat(slm[2]); f.slDirection = slm[1].toLowerCase(); }
+        // Fallback: derive direction from action + optType if not explicit in content
+        if (!f.slDirection && f.action && f.optType) {
+            const _bullish = (f.action==='BUY'&&f.optType==='CE')||(f.action==='SELL'&&f.optType==='PE');
+            f.slDirection = _bullish ? 'below' : 'above';
+        }
         const sustM = content.match(/for\s+(\d+)\s+min/i);
         if (sustM) f.slSustainMinutes = parseInt(sustM[1]);
         return f;
@@ -2808,7 +2813,7 @@
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${_trState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${_slS1Label}</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
-                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
+                    <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;">${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${s1RepliesHtml}
@@ -2946,7 +2951,7 @@
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${tradeState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
-                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
+                    <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
                 ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.entry||''}">${fields.entry?`₹${fields.entry}`:'—'}</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -3401,7 +3406,7 @@
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span>${tradeState3==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                 <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
-                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+                <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
