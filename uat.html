@@ -2536,9 +2536,9 @@
                             const _lInstr = _lf.instrument || '';
                             const _lStrike = _lf.strike ? ' ' + _lf.strike : '';
                             const _lExpiry = _lf.expiry ? ' · ' + formatExpiryDisplay(_lf.expiry, _lf.instrument, p.sent_at||p.created_at) : '';
-                            const _pillHtml = _lOpt ? `<span style="background:rgba(255,255,255,0.28);padding:2px 10px;border-radius:5px;font-size:0.82rem;font-weight:800;margin-right:8px;">${_lOpt}</span>` : '';
-                            lbl.innerHTML = `${_pillHtml}<span style="font-size:0.78rem;font-weight:600;">${_lInstr}${_lStrike}${_lExpiry}</span>`;
-                            lbl.style.cssText = 'background:#6366f1;color:#fff;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;';
+                            const _pillHtml = _lOpt ? `<span style="background:#4a2a78;color:#fff;padding:2px 10px;border-radius:5px;font-size:0.82rem;font-weight:800;margin-right:8px;">${_lOpt}</span>` : '';
+                            lbl.innerHTML = `${_pillHtml}<span style="font-size:0.78rem;font-weight:700;color:#4a2a78;">${_lInstr}${_lStrike}${_lExpiry}</span>`;
+                            lbl.style.cssText = 'background:#f3f0f8;border:1px solid #ede8f5;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;';
                         } else {
                             lbl.textContent = p._uatLabel;
                             lbl.style.cssText = 'background:#6366f1;color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;';
