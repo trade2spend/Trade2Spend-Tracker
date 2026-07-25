@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260725-002 | uat.html: D1 card new layout — (1) Label changes from "D1" to "CE · Nifty 24100 · Monthly (30 Jul)" built from extractTradeAlertFields; purple brand colour instead of indigo. (2) D1 card header: no trade-title-box (CE box + instrument name + expiry removed from inside card); header becomes single row with date/time LEFT and BUY/SELL+P&L badge RIGHT. D2–D14 labels and headers unchanged. Rollback: revert _s1Header ternary to the original <div class="trade-header"> block; revert label injection forEach to single lbl.textContent = p._uatLabel branch. -->
 <!-- T2S-UAT-20260725-001 | uat.html: Exit breakdown root-cause fix — parseFollowUpContent stores CMP value in fp.cmp (not fp.price) for messages like "CMP 115, exiting 50% holding rest". Both getWeightedExitPrice and getExitLegs checked !fp.price and skipped these replies, so no exit legs were found. Fix: added fp.cmp fallback — when fp.price is null but fp.cmp exists and message is an exit type (exitPct or isFullExit), use fp.cmp as the exit price. Now D6/D7 active trigger banners show "50% @₹91 / 50% Remaining"; D13/D14 closed cards show "Effective Exit" label + breakdown "50% @₹210 / 50% @₹195". Rollback: remove the `const price = ...` line and revert `!fp.price` checks in both functions; revert `price` references back to `fp.price`. -->
 <!-- T2S-UAT-20260723-005 | uat.html: (1) Exit breakdown separator changed from · to / with space before @ — now renders as "50% @₹100 / 25% @₹110 / 25% @₹140" in both closed-card breakdowns and active-card trigger banner. (2) Card header layout: BUY/SELL pill and P&L/status badge now on SAME row (reverts 004 stacked rows back to side-by-side per user-confirmed image). S1/S2 active: pill + P&L span wrapped in one flex row. S2.5/S3 closed: BUY span + badge in one flex row. S3 active: actionBadge3 + P&L span in one flex row. Rollback: revert join(' / ') to join(' · ') and `% @` to `% @ ` in 4 places; revert S1/S2 from wrapper-div to bare span + outer div; revert S2.5/S3 closed from single-row to two separate elements; revert S3 active from wrapper-div to bare actionBadge3 + outer div. -->
 <!-- T2S-UAT-20260723-004 | uat.html: Card header layout standardisation — P&L/status badge now always in its own row BELOW the BUY/SELL pill across ALL card types. Previously: active cards (S1/S2/S3) had P&L badge inline (same row as BUY/SELL pill); Section 2.5 closed had Profit/Loss as display:inline-block alongside BUY. Now: all 4 sections move the badge to a flex row below BUY/SELL, matching Section 3 closed card format. Zero functional change — purely layout position of the badge. Rollback: revert S1 header to display:flex gap:5px wrapper, revert S2 header same, revert S2.5 badge from flex-div wrapper to inline-block span, revert S3 active header from separate rows to inner flex gap:5px wrapper. -->
@@ -2528,8 +2529,19 @@
                     const el = document.getElementById(`ucard-${p.id}`);
                     if (el) {
                         const lbl = document.createElement('div');
-                        lbl.style.cssText = 'background:#6366f1;color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;';
-                        lbl.textContent = p._uatLabel;
+                        if (p._uatLabel === 'D1') {
+                            // D1: show instrument info as label instead of D-number
+                            const _lf = extractTradeAlertFields(p.content||'');
+                            const _lOpt = _lf.optType || '';
+                            const _lInstr = _lf.instrument || '';
+                            const _lStrike = _lf.strike ? ' ' + _lf.strike : '';
+                            const _lExpiry = _lf.expiry ? ' · ' + formatExpiryDisplay(_lf.expiry, _lf.instrument, p.sent_at||p.created_at) : '';
+                            lbl.textContent = `${_lOpt}${_lOpt?' · ':''}${_lInstr}${_lStrike}${_lExpiry}`;
+                            lbl.style.cssText = 'background:#4a2a78;color:#fff;font-size:0.65rem;font-weight:600;padding:3px 14px;letter-spacing:0.04em;border-radius:8px 8px 0 0;';
+                        } else {
+                            lbl.textContent = p._uatLabel;
+                            lbl.style.cssText = 'background:#6366f1;color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;';
+                        }
                         el.insertBefore(lbl, el.firstChild);
                     }
                 });
@@ -2770,8 +2782,14 @@
                 : ((_slS1Display && _slS1InitSL > 5000 ? spotSLNote(fields.slDirection) : '') + (_slS1Display || '—'));
             const _slS1Html = showSL1 ? _slS1HtmlVal : lockBtn;
             const _slS1Label = (showSL1 && _slS1Display) ? slLabelFor(_slS1Display) : 'SL';
-            return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
-                <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+            const _buyPill1 = `<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>`;
+            const _plBadge1 = _trState==='triggered'&&showCmp1?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span>`:'';
+            const _s1Header = post._uatLabel === 'D1'
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+                    <span class="update-time" style="font-size:0.72rem;color:var(--text-muted);">${dateTimeStr}</span>
+                    <div style="display:flex;align-items:center;gap:5px;">${_buyPill1}${_plBadge1}</div>
+                </div>`
+                : `<div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
                         ${typeBoxS1}
                         <div>
@@ -2781,12 +2799,11 @@
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
                         <span class="update-time">${dateTimeStr}</span>
-                        <div style="display:flex;align-items:center;gap:5px;">
-                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
-                            ${_trState==='triggered'&&showCmp1?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span>`:''}
-                        </div>
+                        <div style="display:flex;align-items:center;gap:5px;">${_buyPill1}${_plBadge1}</div>
                     </div>
-                </div>
+                </div>`;
+            return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
+                ${_s1Header}
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                     <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${_trState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${_slS1Label}</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
