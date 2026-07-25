@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260725-001 | uat.html: Exit breakdown root-cause fix — parseFollowUpContent stores CMP value in fp.cmp (not fp.price) for messages like "CMP 115, exiting 50% holding rest". Both getWeightedExitPrice and getExitLegs checked !fp.price and skipped these replies, so no exit legs were found. Fix: added fp.cmp fallback — when fp.price is null but fp.cmp exists and message is an exit type (exitPct or isFullExit), use fp.cmp as the exit price. Now D6/D7 active trigger banners show "50% @₹91 / 50% Remaining"; D13/D14 closed cards show "Effective Exit" label + breakdown "50% @₹210 / 50% @₹195". Rollback: remove the `const price = ...` line and revert `!fp.price` checks in both functions; revert `price` references back to `fp.price`. -->
 <!-- T2S-UAT-20260723-005 | uat.html: (1) Exit breakdown separator changed from · to / with space before @ — now renders as "50% @₹100 / 25% @₹110 / 25% @₹140" in both closed-card breakdowns and active-card trigger banner. (2) Card header layout: BUY/SELL pill and P&L/status badge now on SAME row (reverts 004 stacked rows back to side-by-side per user-confirmed image). S1/S2 active: pill + P&L span wrapped in one flex row. S2.5/S3 closed: BUY span + badge in one flex row. S3 active: actionBadge3 + P&L span in one flex row. Rollback: revert join(' / ') to join(' · ') and `% @` to `% @ ` in 4 places; revert S1/S2 from wrapper-div to bare span + outer div; revert S2.5/S3 closed from single-row to two separate elements; revert S3 active from wrapper-div to bare actionBadge3 + outer div. -->
 <!-- T2S-UAT-20260723-004 | uat.html: Card header layout standardisation — P&L/status badge now always in its own row BELOW the BUY/SELL pill across ALL card types. Previously: active cards (S1/S2/S3) had P&L badge inline (same row as BUY/SELL pill); Section 2.5 closed had Profit/Loss as display:inline-block alongside BUY. Now: all 4 sections move the badge to a flex row below BUY/SELL, matching Section 3 closed card format. Zero functional change — purely layout position of the badge. Rollback: revert S1 header to display:flex gap:5px wrapper, revert S2 header same, revert S2.5 badge from flex-div wrapper to inline-block span, revert S3 active header from separate rows to inner flex gap:5px wrapper. -->
 <!-- T2S-UAT-20260723-003 | uat.html: Exit breakdown display — (1) getExitLegs() helper extracts each partial exit leg [{pct,price}] from follow-ups (mirrors getWeightedExitPrice logic); (2) buildExitBreakdownHtml() renders "50%@₹115 · 25%@₹132 · 25%@₹149" only when ≥2 legs; (3) Closed trade cards (Sections 2.5 + 3): "Exit" label changes to "Effective Exit" for multi-exit trades, breakdown appears below the price value; (4) Active partial-exit trigger banner (Sections 1/2/3): holdingText changed from "Exited 50% · Remaining 50%" to "50% @ ₹115 · 50% Remaining" — price of locked portion now visible. Single-exit closed trades (D10/D11/D12) unchanged. Rollback: remove getExitLegs+buildExitBreakdownHtml functions; revert _holdingText1/_activeLegs1, holdingText2/_activeLegs2, holdingText3/_activeLegs3 to single-line ternaries; remove _exitLegs25/label/breakdown and _exitLegs3/label/breakdown vars; revert metric-label template literals back to hardcoded "Exit". -->
@@ -2171,10 +2172,12 @@
         let totalPct = 0, weightedSum = 0;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
-            if (!fp.price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp ? fp.cmp : null);
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
-            weightedSum += fp.price * pct;
+            weightedSum += price * pct;
             totalPct += pct;
             if (fp.isFullExit || totalPct >= 100) break;
         }
@@ -2198,10 +2201,12 @@
         let totalPct = 0;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
-            if (!fp.price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp ? fp.cmp : null);
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
-            legs.push({ pct, price: fp.price });
+            legs.push({ pct, price });
             totalPct += pct;
             if (fp.isFullExit || totalPct >= 100) break;
         }
