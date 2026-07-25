@@ -2538,7 +2538,7 @@
                             const _lExpiry = _lf.expiry ? ' · ' + formatExpiryDisplay(_lf.expiry, _lf.instrument, p.sent_at||p.created_at) : '';
                             const _pillHtml = _lOpt ? `<span style="background:rgba(255,255,255,0.28);padding:2px 10px;border-radius:5px;font-size:0.82rem;font-weight:800;margin-right:8px;">${_lOpt}</span>` : '';
                             lbl.innerHTML = `${_pillHtml}<span style="font-size:0.78rem;font-weight:600;">${_lInstr}${_lStrike}${_lExpiry}</span>`;
-                            lbl.style.cssText = 'background:#4a2a78;color:#fff;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;';
+                            lbl.style.cssText = 'background:#6366f1;color:#fff;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;';
                         } else {
                             lbl.textContent = p._uatLabel;
                             lbl.style.cssText = 'background:#6366f1;color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;';
@@ -3378,16 +3378,25 @@
                         <div class="trade-expiry">${formatExpiryDisplay(fields.expiry||'', fields.instrument, post.sent_at||post.created_at)}</div>
                     </div>
                 </div>` : ''}
-                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                    <div style="display:flex;align-items:center;gap:4px;">
+                ${post._uatLabel === 'D1'
+                    ? `<div style="display:flex;justify-content:space-between;align-items:center;flex:1;">
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            ${actionBadge3}
+                            ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        </div>
                         <span class="update-time">${dateTimeStr}</span>
-                        ${_audBadge3}
-                    </div>
-                    <div style="display:flex;align-items:center;gap:5px;">
-                        ${actionBadge3}
-                        ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
-                    </div>
-                </div>
+                    </div>`
+                    : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <span class="update-time">${dateTimeStr}</span>
+                            ${_audBadge3}
+                        </div>
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            ${actionBadge3}
+                            ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        </div>
+                    </div>`
+                }
             </div>
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
                 <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span>${tradeState3==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
