@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260726-001 | uat.html: Session HIGH/LOW seed fix for partial-exit active cards — (1) Section 3 BUY active cards: data-entry and display value now use _initialHigh3 (= max(entry, exit_price)) instead of bare fields.entry — fixes D7 session HIGH showing entry 102 when it should seed at 115 (exit price). (2) Holding text in all 3 sections: removed ₹ symbol from @₹${l.price} exit leg text → now renders as "Holding 50% exited 50% @115" per spec. Sections 1/2 SELL logic (_initialLow2) was already correct from prior session. D1–D5 unaffected (no partial exits, _activeLegs empty). Rollback: revert line 3444 BUY data-entry and display from _initialHigh3 back to fields.entry; revert @${l.price} to @₹${l.price} in holdingText3 (line 3401), holdingText2 (line 2914), _holdingText1 (line 2762). -->
 <!-- T2S-UAT-20260725-002 | uat.html: D1 card new layout — (1) Label changes from "D1" to "CE · Nifty 24100 · Monthly (30 Jul)" built from extractTradeAlertFields; purple brand colour instead of indigo. (2) D1 card header: no trade-title-box (CE box + instrument name + expiry removed from inside card); header becomes single row with date/time LEFT and BUY/SELL+P&L badge RIGHT. D2–D14 labels and headers unchanged. Rollback: revert _s1Header ternary to the original <div class="trade-header"> block; revert label injection forEach to single lbl.textContent = p._uatLabel branch. -->
 <!-- T2S-UAT-20260725-001 | uat.html: Exit breakdown root-cause fix — parseFollowUpContent stores CMP value in fp.cmp (not fp.price) for messages like "CMP 115, exiting 50% holding rest". Both getWeightedExitPrice and getExitLegs checked !fp.price and skipped these replies, so no exit legs were found. Fix: added fp.cmp fallback — when fp.price is null but fp.cmp exists and message is an exit type (exitPct or isFullExit), use fp.cmp as the exit price. Now D6/D7 active trigger banners show "50% @₹91 / 50% Remaining"; D13/D14 closed cards show "Effective Exit" label + breakdown "50% @₹210 / 50% @₹195". Rollback: remove the `const price = ...` line and revert `!fp.price` checks in both functions; revert `price` references back to `fp.price`. -->
 <!-- T2S-UAT-20260723-005 | uat.html: (1) Exit breakdown separator changed from · to / with space before @ — now renders as "50% @₹100 / 25% @₹110 / 25% @₹140" in both closed-card breakdowns and active-card trigger banner. (2) Card header layout: BUY/SELL pill and P&L/status badge now on SAME row (reverts 004 stacked rows back to side-by-side per user-confirmed image). S1/S2 active: pill + P&L span wrapped in one flex row. S2.5/S3 closed: BUY span + badge in one flex row. S3 active: actionBadge3 + P&L span in one flex row. Rollback: revert join(' / ') to join(' · ') and `% @` to `% @ ` in 4 places; revert S1/S2 from wrapper-div to bare span + outer div; revert S2.5/S3 closed from single-row to two separate elements; revert S3 active from wrapper-div to bare actionBadge3 + outer div. -->
@@ -2759,7 +2760,7 @@
             const _activeLegs1 = cumExit1 > 0 && cumExit1 < 100 ? getExitLegs(pubReplies_s1) : [];
             const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully'
                 : cumExit1 > 0 && _activeLegs1.length > 0
-                    ? _activeLegs1.map(l=>`${l.pct}% @₹${l.price}`).join(' / ') + ` / ${100-cumExit1}% Remaining`
+                    ? `Holding ${100-cumExit1}% exited ${_activeLegs1.map(l=>`${l.pct}% @${l.price}`).join('/')}`
                     : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%`
                     : 'Holding 100%';
             const _statePill = _trState==='yet_to_trigger'
@@ -2894,9 +2895,24 @@
 
             const cumExit = getCumulativeExit(postReplies);
             const _activeLegs2 = cumExit > 0 && cumExit < 100 ? getExitLegs(postReplies) : [];
+            // Session low seed: cap at exit price for SELL trades with partial exits (price must have reached exit level)
+            const _exitMinPriceSell2 = fields.action === 'SELL' && _activeLegs2.length > 0
+                ? Math.min(..._activeLegs2.map(l => l.price))
+                : null;
+            const _initialLow2 = (_exitMinPriceSell2 !== null && fields.entry)
+                ? Math.min(fields.entry, _exitMinPriceSell2)
+                : fields.entry;
+            // Session high seed: for BUY trades with partial exits, option price already reached exit price
+            // so session high cannot be below that level. Initialize at max(entry, exit_price).
+            const _exitMaxPriceBuy2 = fields.action !== 'SELL' && _activeLegs2.length > 0
+                ? Math.max(..._activeLegs2.map(l => l.price))
+                : null;
+            const _initialHigh2 = (_exitMaxPriceBuy2 !== null && fields.entry)
+                ? Math.max(fields.entry, _exitMaxPriceBuy2)
+                : fields.entry;
             const holdingText2 = cumExit >= 100 ? 'Exited Fully'
                 : cumExit > 0 && _activeLegs2.length > 0
-                    ? _activeLegs2.map(l=>`${l.pct}% @₹${l.price}`).join(' / ') + ` / ${100-cumExit}% Remaining`
+                    ? `Holding ${100-cumExit}% exited ${_activeLegs2.map(l=>`${l.pct}% @${l.price}`).join('/')}`
                     : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%`
                     : 'Holding 100%';
 
@@ -2953,7 +2969,7 @@
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
-                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.entry||''}">${fields.entry?`₹${fields.entry}`:'—'}</span></div>`:''}
+                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.action==='SELL'?(_initialLow2||fields.entry||''):(_initialHigh2||fields.entry||'')}">${fields.action==='SELL'?(_initialLow2?`₹${_initialLow2}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh2?`₹${_initialHigh2}`:(fields.entry?`₹${fields.entry}`:'—'))}</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -3365,9 +3381,25 @@
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
         // T2S-PROD-20260722-003: SL Breached auto-detection removed — state shown only via explicit follow-up messages
         const _activeLegs3 = cumExit3 > 0 && cumExit3 < 100 ? getExitLegs(postReplies) : [];
+        // Session low seed: for SELL trades with a partial exit, the option price already reached the exit price,
+        // so session low cannot be higher than that exit price. Cap the seed at min(entry, exit_price).
+        const _exitMinPriceSell3 = fields.action === 'SELL' && _activeLegs3.length > 0
+            ? Math.min(..._activeLegs3.map(l => l.price))
+            : null;
+        const _initialLow3 = (_exitMinPriceSell3 !== null && fields.entry)
+            ? Math.min(fields.entry, _exitMinPriceSell3)
+            : fields.entry;
+        // Session high seed: for BUY trades with a partial exit, the option price already reached the exit price,
+        // so session high cannot be below that level. Initialize at max(entry, exit_price).
+        const _exitMaxPriceBuy3 = fields.action !== 'SELL' && _activeLegs3.length > 0
+            ? Math.max(..._activeLegs3.map(l => l.price))
+            : null;
+        const _initialHigh3 = (_exitMaxPriceBuy3 !== null && fields.entry)
+            ? Math.max(fields.entry, _exitMaxPriceBuy3)
+            : fields.entry;
         const holdingText3 = cumExit3 >= 100 ? 'Exited Fully'
             : cumExit3 > 0 && _activeLegs3.length > 0
-                ? _activeLegs3.map(l=>`${l.pct}% @₹${l.price}`).join(' / ') + ` / ${100-cumExit3}% Remaining`
+                ? `Holding ${100-cumExit3}% exited ${_activeLegs3.map(l=>`${l.pct}% @${l.price}`).join('/')}`
                 : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%`
                 : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
@@ -3410,7 +3442,7 @@
             </div>
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
-                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.entry||''}">${fields.entry?`₹${fields.entry}`:'—'}</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.action==='SELL'?(_initialLow3||fields.entry||''):(_initialHigh3||fields.entry||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—'))}</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
