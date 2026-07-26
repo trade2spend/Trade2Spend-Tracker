@@ -2526,6 +2526,9 @@
                 });
             }
             container.dataset.loaded = '1';
+            // UAT: seed _lastOptionLTPs so getTradeState() auto-trigger logic can use mock prices
+            if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
+                _lastOptionLTPs = window._UAT_MOCK_LTPS;
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
             // UAT: apply mock CMPs so P&L badges show on dummy posts even when market is closed
             if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
