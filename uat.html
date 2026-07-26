@@ -695,7 +695,7 @@
     window._UAT_TIME_2_45 = false; // toggle for testing 2:45 PM free member unlock
     window._UAT_DUMMY_POSTS = [
       // D9 on screen: BUY yet-to-trigger, paid-only — free member sees locked fields
-      { id:'dummy-d1', content:'I am buying Nifty 24250 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong support at 24200, Nifty forming double bottom.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:00:00+05:30', created_at:'2026-07-22T10:00:00+05:30', _mockState:'yet_to_trigger', _mockClosed:false, _uatLabel:'D9' },
+      { id:'dummy-d1', content:'I am buying Nifty 24250 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong support at 24200, Nifty forming double bottom.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T10:00:00+05:30', created_at:'2026-07-22T10:00:00+05:30', _mockClosed:false, _uatLabel:'D9' },
       // D5 on screen: BUY triggered in profit (mock CMP 106 > entry 85)
       { id:'dummy-d2', content:'I am buying Nifty 24300 monthly call at 85 CMP 83, SL if spot sustains below 24150 for 15 minutes.\nWhy: Momentum breakout above 24200.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T12:00:00+05:30', created_at:'2026-07-22T12:00:00+05:30', _mockState:'triggered', _mockClosed:false, _uatLabel:'D5' },
       // D4 on screen: BUY triggered in loss (mock CMP 190 < entry 210)
@@ -791,7 +791,8 @@
       'BANKNIFTY-52000-CE': 205,  // D2: SELL, entry 180, CMP 205 → Loss
       'NIFTY-24350-CE': 100,      // D6: SELL 50% exit, threshold=113, CMP 100 → Profit
       'NIFTY-24100-CE': 82,       // D1: BUY, entry 78, CMP 82 → Profit
-      'NIFTY-24150-CE': 102       // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
+      'NIFTY-24150-CE': 102,      // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
+      'NIFTY-24250-CE': 102       // D9: BUY, entry 102, CMP 102 → Triggered (price touched buy level)
     };
 
     // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
