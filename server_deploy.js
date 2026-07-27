@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260727-001 | server.js: Wrong-contract CMP fix (root cause: unordered Supabase query + stale scrip master on expiry day). Fix 1: refreshActiveContracts() query now adds &order=sent_at.desc so newest post wins the dedup (was undefined order — oldest post, possibly expired, won first). Fix 2: resolved expiry is validated against today's IST date — if in the past, contract is skipped with a warning (prevents tracking expired contracts even if dedup fails). Fix 3: staleness detection now also triggers scrip master re-download (was only refreshing contracts — useless if the token map has yesterday's expired contract tokens). Fix 4: scheduleExpiryDayRefresh() added — fires every Tuesday at 9:10 AM IST to pre-download fresh scrip master before market open (prevents stale token issue when trade posted before TOTP login). Rollback: remove &order=sent_at.desc from query, remove expiry past-check block, remove _scripMasterTs=0 line in staleness handler, remove scheduleExpiryDayRefresh function and its call.
 // DEPLOY: T2S-PROD-20260722-001 | server.js: LTP staleness detection + auto-recovery — added _optionChainTs{} var tracking last-good-fetch timestamp per contract key; inside fetchKotakOptionLTPs() if(ltp>0) block now stamps _optionChainTs[key]=Date.now(); post-loop staleness check: if any active contract's timestamp missing or >2min old, resets _activeContractsTs=0 and calls refreshActiveContracts() for self-recovery within one 5s tick; _ltpZeroSince alert now treats stale-but-non-empty as effectively dry (separate reason logged). Rollback: remove _optionChainTs var, remove _optionChainTs[key]=Date.now() stamp, remove staleness detection block (lines 1450-1468), revert _effectivelyDry logic in alert block.
 // DEPLOY: T2S-PROD-20260721-001 | server.js: Session LOW tracking for SELL trades — added _optionLows var; refreshActiveContracts() now parses action (BUY/SELL) from post content; fetchKotakOptionLTPs() tracks low alongside high for all contracts; saveOptionHighsToSupabase() now also posts [LOW:X] follow-up for SELL contracts at 3:35 PM; loginKotak() resets _optionLows on new day; saveState()/loadState() persist/restore lows same as highs. Rollback: remove _optionLows var, remove action parse in refreshActiveContracts, remove low tracking block in fetchKotakOptionLTPs, revert saveOptionHighsToSupabase to single highs loop, revert loginKotak reset, revert saveState/loadState.
 // DEPLOY: T2S-PROD-20260720-005 | server.js: Scraper 9:15 false alarm fix — _scraperRanTodayIST tracks first start of day. Periodic check now sends calm ✅ message on normal 9:15 start instead of ⚠️ alarm (which was designed for mid-session crashes only). Mid-session unexpected stop still sends ⚠️. Rollback: remove _scraperRanTodayIST var + stamp in startMarketScraper, revert periodic check if/else-if block back to single if(!_scraperStopAlerted) block.
@@ -1324,7 +1325,7 @@ async function refreshActiveContracts() {
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const r = await ft(
-      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=id,content`,
+      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=id,content&order=sent_at.desc`,
       { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 8000
     );
     if (!r.ok) return;
@@ -1351,9 +1352,23 @@ async function refreshActiveContracts() {
       const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
       const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
+      // Guard: skip if resolved expiry is already in the past (expired contract — price is near-zero)
+      // Format DDMMMYYYY e.g. "28JUL2026" → parse as UTC date for comparison
+      const MONS_CHK = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      const expM2 = (expiry || '').match(/^(\d{2})([A-Z]{3})(\d{4})$/);
+      if (expM2) {
+        const expDate = new Date(Date.UTC(parseInt(expM2[3]), MONS_CHK.indexOf(expM2[2]), parseInt(expM2[1])));
+        const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        todayIST.setHours(0, 0, 0, 0);
+        if (expDate < todayIST) {
+          console.warn(`[contracts] SKIP ${instr}-${strike}-${type}: resolved expiry ${expiry} is in the past — post may be stale or expiry label ambiguous`);
+          return; // skip this post
+        }
+      }
       // Deduplicate by instrument-strike-type only (not expiry) — two posts with the same
       // strike but different expiry labels both resolve to the same _optionChain key, so
       // allowing both would cause the loop to overwrite the correct LTP with the wrong one.
+      // Query is ordered sent_at.desc so the first match is the MOST RECENT post.
       if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type))
         contracts.push({ instrument: instr, strike, type, expiry, postId: p.id, action });
     });
@@ -1465,7 +1480,13 @@ async function fetchKotakOptionLTPs() {
   }
   if (_staleDetected) {
     _activeContractsTs = 0; // bypass 60s throttle on next call
-    refreshActiveContracts().catch(() => {}); // self-recovery within one 5-second tick
+    // Also force scrip master re-download — stale LTPs often mean a new expiry rolled in
+    // and the token map has yesterday's expired contract tokens. Without fresh tokens,
+    // refreshActiveContracts() will just re-look up the same wrong/expired contract.
+    _scripMasterTs = 0; _scripMasterAttemptTs = 0;
+    downloadScripMaster()
+      .then(() => refreshActiveContracts())
+      .catch(() => refreshActiveContracts()); // contracts refresh regardless of scrip master outcome
   }
 
   // Alert when CMP has been empty for >2 min during market hours (logged to PM2 every 2 min)
@@ -4451,5 +4472,38 @@ setInterval(() => {
   checkResolveAlert().catch(e => console.error('[resolve-alert]', e.message));
   checkMorning().catch(e => console.error('[morning-check]', e.message));
 }, 30_000);
+
+// ── TUESDAY EXPIRY-DAY SCRIP MASTER REFRESH ──────────────────────────────────
+// NIFTY expires every Tuesday. If a new trade is posted before the morning TOTP
+// login, the scrip master cached from yesterday won't have the new weekly contract.
+// This scheduler fires every Tuesday at 9:10 AM IST to pre-emptively refresh so
+// fresh tokens are always available when trading begins.
+function scheduleExpiryDayRefresh() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day  = now.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  const h    = now.getHours();
+  const m    = now.getMinutes();
+
+  // Days until next Tuesday (day 2)
+  let daysUntil = (2 - day + 7) % 7;
+  // If today IS Tuesday and we haven't yet hit 9:10 AM → fire today; else next Tuesday (7 days)
+  if (day === 2 && (h > 9 || (h === 9 && m >= 10))) daysUntil = 7;
+
+  const target = new Date(now);
+  target.setDate(target.getDate() + daysUntil);
+  target.setHours(9, 10, 0, 0); // 9:10 AM IST
+
+  const msUntil = target.getTime() - now.getTime();
+  console.log(`[scrip] Next expiry-day refresh scheduled in ${Math.round(msUntil / 60000)} min (Tue 9:10 AM IST)`);
+
+  setTimeout(async () => {
+    console.log('[scrip] Tuesday expiry-day refresh — downloading fresh scrip master');
+    _scripMasterTs = 0;          // force bypass of 22h cache
+    _scripMasterAttemptTs = 0;   // reset retry rate-limit
+    await downloadScripMaster().catch(e => console.error('[scrip] Tuesday refresh error:', e.message));
+    scheduleExpiryDayRefresh();  // reschedule for next Tuesday
+  }, msUntil);
+}
+scheduleExpiryDayRefresh();
 
 tgAlert(`🟢 <b>Trade2Spend Bot v5.0 started</b>\nServer: api.trade2spend.com\nLoaded: ${Object.keys(state.trades).length} trades`).catch(() => {});
