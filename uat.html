@@ -807,7 +807,12 @@
       'NIFTY-24100-CE': 82,       // D1: BUY, entry 78, CMP 82 → Profit
       'NIFTY-24150-CE': 102,      // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
       'NIFTY-24250-CE': 102,      // D9: BUY, entry 102, CMP 102 → Triggered (price touched buy level)
-      'RELIANCE-1280-CE': 34.5    // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 34.5 → Profit
+      'RELIANCE-1280-CE': 32.9    // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 32.9 (actual)
+    };
+    // Intraday highs (BUY) / lows (SELL) — applied BEFORE _UAT_MOCK_LTPS so session peaks are
+    // seeded correctly even when current CMP differs from the day's high/low
+    window._UAT_MOCK_SESSION_PEAKS = {
+      'RELIANCE-1280-CE': 33.9   // DS2: actual session high 33.9, CMP 32.9 (pulled back from peak)
     };
 
     // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
@@ -2567,7 +2572,10 @@
             if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
                 _lastOptionLTPs = window._UAT_MOCK_LTPS;
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
-            // UAT: apply mock CMPs so P&L badges show on dummy posts even when market is closed
+            // UAT: first pass — seed session highs/lows to intraday peaks (before current CMP)
+            if (window._UAT_MOCK_SESSION_PEAKS && Object.keys(window._UAT_MOCK_SESSION_PEAKS).length)
+                updateTradeCMPs(window._UAT_MOCK_SESSION_PEAKS);
+            // UAT: second pass — apply current CMPs (session peaks won't decrease)
             if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
                 updateTradeCMPs(window._UAT_MOCK_LTPS);
             // UAT: stamp D-number label on each dummy card header so Tushar can reference by number
