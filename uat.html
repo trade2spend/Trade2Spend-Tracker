@@ -1220,6 +1220,8 @@
 
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
+        // UAT: merge mock LTPs so stock/test keys persist even when real VM data overwrites
+        if (window._UAT_MOCK_LTPS) optionLTPs = Object.assign({}, optionLTPs, window._UAT_MOCK_LTPS);
         _lastOptionLTPs = optionLTPs;
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
             const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-CE"
