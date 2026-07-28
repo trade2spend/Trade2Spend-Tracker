@@ -1206,8 +1206,9 @@
 
     // Strict lot size lookup — never use .includes() for instrument matching
     const LOT_SIZES = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 20, MIDCAP: 75, NIFTYFIN: 25 }; // fallback — overridden by Kotak scrip master via /market
+    const STOCK_LOT_SIZES = { RELIANCE:250, TCS:175, INFY:300, HDFCBANK:550, ICICIBANK:700, WIPRO:1500, AXISBANK:625, SBIN:1500, BAJFINANCE:125, LT:175, MARUTI:25, TITAN:175, SUNPHARMA:350, ULTRACEMCO:100, NESTLEIND:40, KOTAKBANK:400, HINDUNILVR:300, ASIANPAINT:200, ITC:1600, BHARTIARTL:500 };
     let _kotakLotSizes = {}; // populated from /market response after TOTP
-    function getLotSize(instrument) { return _kotakLotSizes[instrument] || LOT_SIZES[instrument] || 65; }
+    function getLotSize(instrument) { const k=(instrument||'').toUpperCase(); return _kotakLotSizes[k] || LOT_SIZES[k] || STOCK_LOT_SIZES[k] || 1; }
 
     // Strip premium fields from trade payload before rendering
     function sanitizeTrade(trade, canSeePremium) {
@@ -1915,6 +1916,11 @@
         else if (/\bbankex\b/i.test(content)) f.instrument='BANKEX';
         const sm = content.match(/(?:nifty|banknifty|bank\s*nifty|sensex|finnifty)\s+(\d{4,6})/i);
         if (sm) f.strike = sm[1];
+        // Stock option fallback — fires only when no index was matched
+        if (!f.instrument) {
+            const stk = content.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i);
+            if (stk) { f.instrument=stk[1].toUpperCase(); f.strike=stk[2]; f.optType=stk[3].toUpperCase(); }
+        }
         if (/\bce\b|\bcall\b/i.test(content)) f.optType='CE'; else if (/\bpe\b|\bput\b/i.test(content)) f.optType='PE';
         if (/next\s+weekly/i.test(lo)) f.expiry='Next Weekly';
         else if (/monthly/i.test(lo)) f.expiry='Monthly';
