@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260728-001 | uat.html: Stock option support in extractTradeAlertFields — (1) STOCK_LOT_SIZES lookup table added (20 NSE F&O stocks, fallback=1 per-unit). getLotSize now checks _kotakLotSizes → LOT_SIZES (indices) → STOCK_LOT_SIZES → 1. (2) extractTradeAlertFields: stock fallback regex /\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i fires only when f.instrument is still null after index matching — sets instrument/strike/optType from stock option pattern. (3) DS1 dummy post added: RELIANCE 1280 Monthly CE at 1.7 with trigger reply. Rollback: remove STOCK_LOT_SIZES const + revert getLotSize to single-line; remove 8-line stock fallback block in extractTradeAlertFields; remove dummy-stock1 post and reply entries. -->
 <!-- T2S-UAT-20260726-001 | uat.html: Session HIGH/LOW seed fix for partial-exit active cards — (1) Section 3 BUY active cards: data-entry and display value now use _initialHigh3 (= max(entry, exit_price)) instead of bare fields.entry — fixes D7 session HIGH showing entry 102 when it should seed at 115 (exit price). (2) Holding text in all 3 sections: removed ₹ symbol from @₹${l.price} exit leg text → now renders as "Holding 50% exited 50% @115" per spec. Sections 1/2 SELL logic (_initialLow2) was already correct from prior session. D1–D5 unaffected (no partial exits, _activeLegs empty). Rollback: revert line 3444 BUY data-entry and display from _initialHigh3 back to fields.entry; revert @${l.price} to @₹${l.price} in holdingText3 (line 3401), holdingText2 (line 2914), _holdingText1 (line 2762). -->
 <!-- T2S-UAT-20260725-002 | uat.html: D1 card new layout — (1) Label changes from "D1" to "CE · Nifty 24100 · Monthly (30 Jul)" built from extractTradeAlertFields; purple brand colour instead of indigo. (2) D1 card header: no trade-title-box (CE box + instrument name + expiry removed from inside card); header becomes single row with date/time LEFT and BUY/SELL+P&L badge RIGHT. D2–D14 labels and headers unchanged. Rollback: revert _s1Header ternary to the original <div class="trade-header"> block; revert label injection forEach to single lbl.textContent = p._uatLabel branch. -->
 <!-- T2S-UAT-20260725-001 | uat.html: Exit breakdown root-cause fix — parseFollowUpContent stores CMP value in fp.cmp (not fp.price) for messages like "CMP 115, exiting 50% holding rest". Both getWeightedExitPrice and getExitLegs checked !fp.price and skipped these replies, so no exit legs were found. Fix: added fp.cmp fallback — when fp.price is null but fp.cmp exists and message is an exit type (exitPct or isFullExit), use fp.cmp as the exit price. Now D6/D7 active trigger banners show "50% @₹91 / 50% Remaining"; D13/D14 closed cards show "Effective Exit" label + breakdown "50% @₹210 / 50% @₹195". Rollback: remove the `const price = ...` line and revert `!fp.price` checks in both functions; revert `price` references back to `fp.price`. -->
@@ -723,7 +724,9 @@
       // D1 on screen: BUY paid-only created at 14:00 — toggle "2:45 PM" button to test time-unlock for free members
       { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T14:00:00+05:30', created_at:'2026-07-22T14:00:00+05:30', _mockClosed:false, _uatLabel:'D1' },
       // (filtered out: not_triggered + closed)
-      { id:'dummy-d15', content:'Buying Nifty 24800 monthly call at 30 CMP 25, SL if spot sustains below 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:45:00+05:30', created_at:'2026-07-22T11:45:00+05:30', _mockState:'not_triggered', _mockClosed:true }
+      { id:'dummy-d15', content:'Buying Nifty 24800 monthly call at 30 CMP 25, SL if spot sustains below 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-22T11:45:00+05:30', created_at:'2026-07-22T11:45:00+05:30', _mockState:'not_triggered', _mockClosed:true },
+      // DS1: Stock option — RELIANCE 1280 Monthly CE (tests fallback instrument detection)
+      { id:'dummy-stock1', content:'I am Buying RELIANCE 1280 Monthly CE at 1.7, CMP 1.5\nSL if spot sustains below 1275 for 15 minutes.\nWhy: Expiry day hero/zero play.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-28T10:33:00+05:30', created_at:'2026-07-28T10:33:00+05:30', _mockClosed:false, _uatLabel:'DS1' }
     ];
     window._UAT_DUMMY_REPLIES = {
       // D5 on screen: BUY triggered — trigger CMP near entry (85), live mock 106
@@ -785,7 +788,9 @@
         { id:'dummy-d13-r0', content:'CMP 150\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-07-22T09:35:00+05:30', created_at:'2026-07-22T09:35:00+05:30' }
       ],
       // D1 on screen: BUY 2:45 PM unlock test — trigger CMP near entry (78)
-      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-07-22T14:05:00+05:30', created_at:'2026-07-22T14:05:00+05:30' }]
+      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-07-22T14:05:00+05:30', created_at:'2026-07-22T14:05:00+05:30' }],
+      // DS1: RELIANCE stock option trigger reply
+      'dummy-stock1': [{ id:'dummy-stock1-r1', content:'CMP 1.7\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock1', sent_at:'2026-07-28T10:38:00+05:30', created_at:'2026-07-28T10:38:00+05:30' }]
     };
     // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
     window._UAT_MOCK_LTPS = {
@@ -1353,8 +1358,19 @@
 
     // Strict lot size lookup — never use .includes() for instrument matching
     const LOT_SIZES = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 20, MIDCAP: 75, NIFTYFIN: 25 }; // fallback — overridden by Kotak scrip master via /market
+    // NSE F&O stock lot sizes (mid-2026). Fallback=1 (per-unit P&L) when stock not listed — never 0.
+    const STOCK_LOT_SIZES = {
+        RELIANCE: 250, TCS: 175, INFY: 300, HDFCBANK: 550, ICICIBANK: 700,
+        WIPRO: 1500, AXISBANK: 625, SBIN: 1500, BAJFINANCE: 125, LT: 175,
+        MARUTI: 25, TITAN: 175, SUNPHARMA: 350, ULTRACEMCO: 100, NESTLEIND: 40,
+        KOTAKBANK: 400, HINDUNILVR: 300, ASIANPAINT: 200, ITC: 1600, BHARTIARTL: 500
+    };
     let _kotakLotSizes = {}; // populated from /market response after TOTP
-    function getLotSize(instrument) { return _kotakLotSizes[instrument] || LOT_SIZES[instrument] || 65; }
+    function getLotSize(instrument) {
+        if (!instrument) return 1;
+        const key = instrument.toUpperCase();
+        return _kotakLotSizes[key] || LOT_SIZES[key] || STOCK_LOT_SIZES[key] || 1;
+    }
 
     // Strip premium fields from trade payload before rendering
     function sanitizeTrade(trade, canSeePremium) {
@@ -2065,6 +2081,16 @@
         else if (/\bbankex\b/i.test(content)) f.instrument='BANKEX';
         const sm = content.match(/(?:nifty|banknifty|bank\s*nifty|sensex|finnifty)\s+(\d{4,6})/i);
         if (sm) f.strike = sm[1];
+        // Fallback: stock option detection — fires only when no index instrument was matched
+        // Pattern: "RELIANCE 1280 Monthly CE" → instrument=RELIANCE, strike=1280, optType=CE
+        if (!f.instrument) {
+            const stockM = content.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i);
+            if (stockM) {
+                f.instrument = stockM[1].toUpperCase();
+                if (!f.strike) f.strike = stockM[2];
+                if (!f.optType) f.optType = stockM[3].toUpperCase();
+            }
+        }
         if (/\bce\b|\bcall\b/i.test(content)) f.optType='CE'; else if (/\bpe\b|\bput\b/i.test(content)) f.optType='PE';
         if (/next\s+weekly/i.test(lo)) f.expiry='Next Weekly';
         else if (/monthly/i.test(lo)) f.expiry='Monthly';
