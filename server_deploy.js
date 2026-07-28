@@ -1357,11 +1357,14 @@ async function refreshActiveContracts() {
       const actionMatch = (p.content || '').match(/\b(SELL(?:ING)?|BUY(?:ING)?)\b/i);
       const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
-      // Explicit month name override — e.g. "August expiry" in post → use that month's last Thursday
-      // Prevents "Monthly" resolving to current month when post specifies next month's contract
+      // Explicit month name override — STOCK OPTIONS ONLY (not indices — NIFTY posts say "August 4"
+      // for next weekly which would wrongly match). Prevents "Monthly" resolving to current month
+      // when post specifies next month's contract (e.g. "August expiry" in RELIANCE post).
+      const _INDEX_INSTRS = ['NIFTY','BANKNIFTY','SENSEX','MIDCAP','FINNIFTY','BANKEX'];
       const _MNAMES = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
       const _MFULL  = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-      const _mMatch = t.match(/\b(JANUARY|FEBRUARY|MARCH|APRIL|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/);
+      const _mMatch = !_INDEX_INSTRS.includes(instr) &&
+        t.match(/\b(JANUARY|FEBRUARY|MARCH|APRIL|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/);
       let expiry;
       if (_mMatch) {
         const _mIdx = _MFULL.indexOf(_mMatch[1]);
