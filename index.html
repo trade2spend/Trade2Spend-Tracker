@@ -1955,7 +1955,7 @@
     const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['’]?t\s+(?:take|enter))/i;
     function getTradeState(post, replies) {
         // Admin saying "ignore/cancel" in any follow-up = order was never triggered, remove from active
-        const hasIgnore = (replies||[]).some(r => /\b(ignore|cancel(?:l?ing|l?ed)?)\b/i.test(r.content||''));
+        const hasIgnore = (replies||[]).some(r => /\b(ignore|cancel(?:l?ing|l?ed)?|avoid(?:ing)?)\b/i.test(r.content||''));
         if (hasIgnore) return 'not_triggered';
 
         const validReplies = (replies||[]).filter(r => {
