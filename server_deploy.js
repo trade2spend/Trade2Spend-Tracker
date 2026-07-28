@@ -1357,7 +1357,22 @@ async function refreshActiveContracts() {
       const actionMatch = (p.content || '').match(/\b(SELL(?:ING)?|BUY(?:ING)?)\b/i);
       const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
-      const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
+      // Explicit month name override — e.g. "August expiry" in post → use that month's last Thursday
+      // Prevents "Monthly" resolving to current month when post specifies next month's contract
+      const _MNAMES = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      const _MFULL  = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+      const _mMatch = t.match(/\b(JANUARY|FEBRUARY|MARCH|APRIL|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/);
+      let expiry;
+      if (_mMatch) {
+        const _mIdx = _MFULL.indexOf(_mMatch[1]);
+        const _now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+        const _yr  = _mIdx < _now.getMonth() ? _now.getFullYear()+1 : _now.getFullYear();
+        const _ld  = new Date(_yr, _mIdx+1, 0);
+        while (_ld.getDay() !== 4) _ld.setDate(_ld.getDate()-1); // last Thursday
+        expiry = String(_ld.getDate()).padStart(2,'0') + _MNAMES[_ld.getMonth()] + _ld.getFullYear();
+      } else {
+        expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
+      }
       // Guard: skip if resolved expiry is already in the past (expired contract — price is near-zero)
       // Format DDMMMYYYY e.g. "28JUL2026" → parse as UTC date for comparison
       const MONS_CHK = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
