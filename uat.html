@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260729-001 | uat.html: Permanent fix for wrong exit price on auto-closed trades — (1) renderFollowUpCard: added [CLOSEPRICE:X] filter (system marker, not shown to members — same pattern as [HIGH:X] and [LOW:X]). (2) _freeVisReplies2 and _cf25Vis filters: same [CLOSEPRICE:X] exclusion added so system marker never counts as visible follow-up. (3) getWeightedExitPrice: SL fallback now skips spot/index SLs (opts.sl > 5000) — index-level values (e.g. 24050) must never be used as option exit prices; shows — instead of wrong index price. [CLOSEPRICE:X] is now posted by VM at 3:35 PM (server.js T2S-PROD-20260729-001) so this safety net is only needed when Kotak session expired before close. Rollback: remove [CLOSEPRICE] filter lines from renderFollowUpCard, _freeVisReplies2, _cf25Vis; revert opts.sl condition to bare opts.sl; revert opts.sl comment.
 <!-- T2S-UAT-20260728-001 | uat.html: Stock option support in extractTradeAlertFields — (1) STOCK_LOT_SIZES lookup table added (20 NSE F&O stocks, fallback=1 per-unit). getLotSize now checks _kotakLotSizes → LOT_SIZES (indices) → STOCK_LOT_SIZES → 1. (2) extractTradeAlertFields: stock fallback regex /\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i fires only when f.instrument is still null after index matching — sets instrument/strike/optType from stock option pattern. (3) DS1 dummy post added: RELIANCE 1280 Monthly CE at 1.7 with trigger reply. Rollback: remove STOCK_LOT_SIZES const + revert getLotSize to single-line; remove 8-line stock fallback block in extractTradeAlertFields; remove dummy-stock1 post and reply entries. -->
 <!-- T2S-UAT-20260726-001 | uat.html: Session HIGH/LOW seed fix for partial-exit active cards — (1) Section 3 BUY active cards: data-entry and display value now use _initialHigh3 (= max(entry, exit_price)) instead of bare fields.entry — fixes D7 session HIGH showing entry 102 when it should seed at 115 (exit price). (2) Holding text in all 3 sections: removed ₹ symbol from @₹${l.price} exit leg text → now renders as "Holding 50% exited 50% @115" per spec. Sections 1/2 SELL logic (_initialLow2) was already correct from prior session. D1–D5 unaffected (no partial exits, _activeLegs empty). Rollback: revert line 3444 BUY data-entry and display from _initialHigh3 back to fields.entry; revert @${l.price} to @₹${l.price} in holdingText3 (line 3401), holdingText2 (line 2914), _holdingText1 (line 2762). -->
 <!-- T2S-UAT-20260725-002 | uat.html: D1 card new layout — (1) Label changes from "D1" to "CE · Nifty 24100 · Monthly (30 Jul)" built from extractTradeAlertFields; purple brand colour instead of indigo. (2) D1 card header: no trade-title-box (CE box + instrument name + expiry removed from inside card); header becomes single row with date/time LEFT and BUY/SELL+P&L badge RIGHT. D2–D14 labels and headers unchanged. Rollback: revert _s1Header ternary to the original <div class="trade-header"> block; revert label injection forEach to single lbl.textContent = p._uatLabel branch. -->
@@ -2240,7 +2241,10 @@
             if (opts.closePrice) {
                 weightedSum += opts.closePrice * (100 - totalPct);
                 totalPct = 100;
-            } else if (opts.sl) {
+            } else if (opts.sl && opts.sl <= 5000) {
+                // Only use SL as fallback when it is an option price (<= ₹5000).
+                // Spot/index SLs (e.g. "SL if spot below 24000") are > 5000 and must never
+                // be used as option exit prices — they are index levels, not option LTPs.
                 weightedSum += opts.sl * (100 - totalPct);
                 totalPct = 100;
             }
@@ -2421,6 +2425,7 @@
         if (parsed.isAdminUnlock||(reply.content||'').includes('[T2S_UNLOCK]')) return '';
         if (/^\[HIGH:[\d.]+\]$/.test(reply.content||'')) return '';
         if (/^\[LOW:[\d.]+\]$/.test(reply.content||'')) return '';
+        if (/^\[CLOSEPRICE:[\d.]+\]$/.test(reply.content||'')) return '';
         const ts = formatPostTime(reply.sent_at||reply.created_at);
         const rawText = stripDisclaimerText(sanitizeHtml(reply.content||'').replace(/\n/g,'<br>'));
 
@@ -2974,6 +2979,7 @@
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                 if (/^\[HIGH:[\d.]+\]$/.test(r.content||'')) return false;
                 if (/^\[LOW:[\d.]+\]$/.test(r.content||'')) return false;
+                if (/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'')) return false;
                 if (r.audience==='paid_only') return false;
                 if (_STATUS_ONLY_RE.test((r.content||'').trim())) return false;
                 return true;
@@ -3084,7 +3090,7 @@
             }
             // follow-ups visible to free members on closed trades
             let _cf25Html = '';
-            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[LOW:[\d.]+\]$/.test(r.content||'') && r.audience !== 'paid_only');
+            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[LOW:[\d.]+\]$/.test(r.content||'') && !/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'') && r.audience !== 'paid_only');
             if (_cf25Vis.length > 0) {
                 const _cf25id = `cf25-replies-${post.id}`, _cf25n = _cf25Vis.length;
                 _cf25Html = `<button class="replies-toggle" id="btn-${_cf25id}" data-count="${_cf25n}" onclick="toggleReplies('${_cf25id}')">↳ ${_cf25n} update${_cf25n>1?'s':''} — tap to view</button><div class="thread-replies" id="${_cf25id}" style="display:none;">`;
