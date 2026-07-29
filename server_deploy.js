@@ -1333,49 +1333,25 @@ async function refreshActiveContracts() {
     const contracts = [];
     posts.forEach(p => {
       const t = (p.content || '').toUpperCase();
-      // Instrument: index first, then stock option fallback
-      let instr, strike, type;
+      // Instrument
       const instrM = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
-      if (instrM) {
-        instr = instrM[1];
-        // Strike: first 4-6 digit number after the instrument name
-        // (handles "Nifty 23850 Next Weekly CE at 120" — CE is not adjacent to the number)
-        const afterInstr = t.slice(t.indexOf(instr) + instr.length);
-        const strikeMatch = afterInstr.match(/\b(\d{4,6})\b/);
-        if (!strikeMatch) return;
-        strike = parseInt(strikeMatch[1]);
-        const typeMatch = t.match(/\b(CE|PE)\b/);
-        if (!typeMatch) return;
-        type = typeMatch[1];
-      } else {
-        // Stock option fallback: "RELIANCE 1280 Monthly CE" pattern
-        const stkM = t.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:MONTHLY|WEEKLY|NEXT\s+WEEKLY)?\s*(CE|PE)\b/);
-        if (!stkM) return;
-        instr = stkM[1]; strike = parseInt(stkM[2]); type = stkM[3];
-      }
+      if (!instrM) return;
+      const instr = instrM[1];
+      // Strike: first 4-6 digit number after the instrument name
+      // (handles "Nifty 23850 Next Weekly CE at 120" — CE is not adjacent to the number)
+      const afterInstr = t.slice(t.indexOf(instr) + instr.length);
+      const strikeMatch = afterInstr.match(/\b(\d{4,6})\b/);
+      if (!strikeMatch) return;
+      const strike = parseInt(strikeMatch[1]);
+      // Type: CE or PE anywhere in the content
+      const typeMatch = t.match(/\b(CE|PE)\b/);
+      if (!typeMatch) return;
+      const type = typeMatch[1];
       // Action: BUY or SELL from post content (used to track session LOW for SELL trades)
       const actionMatch = (p.content || '').match(/\b(SELL(?:ING)?|BUY(?:ING)?)\b/i);
       const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
-      // Explicit month name override — STOCK OPTIONS ONLY (not indices — NIFTY posts say "August 4"
-      // for next weekly which would wrongly match). Prevents "Monthly" resolving to current month
-      // when post specifies next month's contract (e.g. "August expiry" in RELIANCE post).
-      const _INDEX_INSTRS = ['NIFTY','BANKNIFTY','SENSEX','MIDCAP','FINNIFTY','BANKEX'];
-      const _MNAMES = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-      const _MFULL  = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-      const _mMatch = !_INDEX_INSTRS.includes(instr) &&
-        t.match(/\b(JANUARY|FEBRUARY|MARCH|APRIL|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/);
-      let expiry;
-      if (_mMatch) {
-        const _mIdx = _MFULL.indexOf(_mMatch[1]);
-        const _now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
-        const _yr  = _mIdx < _now.getMonth() ? _now.getFullYear()+1 : _now.getFullYear();
-        const _ld  = new Date(_yr, _mIdx+1, 0);
-        while (_ld.getDay() !== 4) _ld.setDate(_ld.getDate()-1); // last Thursday
-        expiry = String(_ld.getDate()).padStart(2,'0') + _MNAMES[_ld.getMonth()] + _ld.getFullYear();
-      } else {
-        expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
-      }
+      const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
       // Guard: skip if resolved expiry is already in the past (expired contract — price is near-zero)
       // Format DDMMMYYYY e.g. "28JUL2026" → parse as UTC date for comparison
       const MONS_CHK = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
