@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260729-001 | server.js: [CLOSEPRICE:X] permanent fix — (1) fetchKotakOptionLTPs() now stores last:ltp on _optionHighs[key] alongside high (tracks most-recent option LTP, not just session peak); (2) saveOptionHighsToSupabase() now posts [CLOSEPRICE:last] for every active contract at 3:35 PM — member PWA uses this as exit price for remaining qty when no explicit exit follow-up was posted; safe to post even on fully-exited trades (PWA only uses it for remaining un-exited qty). Rollback: remove last:ltp from _optionHighs assignment; remove the [CLOSEPRICE:X] posting loop in saveOptionHighsToSupabase.
 // DEPLOY: T2S-PROD-20260727-001 | server.js: Wrong-contract CMP fix (root cause: unordered Supabase query + stale scrip master on expiry day). Fix 1: refreshActiveContracts() query now adds &order=sent_at.desc so newest post wins the dedup (was undefined order — oldest post, possibly expired, won first). Fix 2: resolved expiry is validated against today's IST date — if in the past, contract is skipped with a warning (prevents tracking expired contracts even if dedup fails). Fix 3: staleness detection now also triggers scrip master re-download (was only refreshing contracts — useless if the token map has yesterday's expired contract tokens). Fix 4: scheduleExpiryDayRefresh() added — fires every Tuesday at 9:10 AM IST to pre-download fresh scrip master before market open (prevents stale token issue when trade posted before TOTP login). Rollback: remove &order=sent_at.desc from query, remove expiry past-check block, remove _scripMasterTs=0 line in staleness handler, remove scheduleExpiryDayRefresh function and its call.
 // DEPLOY: T2S-PROD-20260722-001 | server.js: LTP staleness detection + auto-recovery — added _optionChainTs{} var tracking last-good-fetch timestamp per contract key; inside fetchKotakOptionLTPs() if(ltp>0) block now stamps _optionChainTs[key]=Date.now(); post-loop staleness check: if any active contract's timestamp missing or >2min old, resets _activeContractsTs=0 and calls refreshActiveContracts() for self-recovery within one 5s tick; _ltpZeroSince alert now treats stale-but-non-empty as effectively dry (separate reason logged). Rollback: remove _optionChainTs var, remove _optionChainTs[key]=Date.now() stamp, remove staleness detection block (lines 1450-1468), revert _effectivelyDry logic in alert block.
 // DEPLOY: T2S-PROD-20260721-001 | server.js: Session LOW tracking for SELL trades — added _optionLows var; refreshActiveContracts() now parses action (BUY/SELL) from post content; fetchKotakOptionLTPs() tracks low alongside high for all contracts; saveOptionHighsToSupabase() now also posts [LOW:X] follow-up for SELL contracts at 3:35 PM; loginKotak() resets _optionLows on new day; saveState()/loadState() persist/restore lows same as highs. Rollback: remove _optionLows var, remove action parse in refreshActiveContracts, remove low tracking block in fetchKotakOptionLTPs, revert saveOptionHighsToSupabase to single highs loop, revert loginKotak reset, revert saveState/loadState.
@@ -1427,7 +1428,7 @@ async function fetchKotakOptionLTPs() {
         _optionChain[key] = ltp;
         _optionChainTs[key] = Date.now(); // freshness timestamp — used for stale-but-non-empty detection
         const _prevHigh = _optionHighs[key]?.high || 0;
-        _optionHighs[key] = { high: Math.max(_prevHigh, ltp), postId: c.postId || _optionHighs[key]?.postId };
+        _optionHighs[key] = { high: Math.max(_prevHigh, ltp), last: ltp, postId: c.postId || _optionHighs[key]?.postId };
         if (_optionHighs[key].high > _prevHigh) saveState().catch(() => {}); // persist new high so VM restart doesn't lose it
         // Track session low for all contracts — only USED for SELL trades in the follow-up post
         const _prevLow = _optionLows[key]?.low;
@@ -1869,6 +1870,25 @@ async function saveOptionHighsToSupabase() {
       }, 8000);
       console.log(`[low] ${r.ok ? 'Saved' : 'Failed'} ₹${data.low} for ${key} (SELL)`);
     } catch(e) { console.error('[low] save error:', e.message); }
+  }
+  // Post [CLOSEPRICE:X] for ALL contracts — option LTP at market close.
+  // Used by member PWA to show the correct exit price when no explicit exit follow-up was posted.
+  // Safe to post even when trade was fully exited — PWA only uses it for the un-exited remaining qty.
+  for (const [key, data] of Object.entries(_optionHighs)) {
+    if (!data.last || !data.postId) continue;
+    try {
+      const r = await ft(`${SB_URL}/rest/v1/posts`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          content: `[CLOSEPRICE:${data.last.toFixed(2)}]`,
+          post_type: 'follow_up', audience: 'all',
+          allow_sharing: false, is_deleted: false,
+          parent_id: data.postId, sent_at: new Date().toISOString()
+        })
+      }, 8000);
+      console.log(`[close] ${r.ok ? 'Saved' : 'Failed'} CLOSEPRICE ₹${data.last} for ${key}`);
+    } catch(e) { console.error('[close] save error:', e.message); }
   }
 }
 
