@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260730-003 | server.js: Trade identity engine — permanent fix for session high/low bleeding across trades with the same strike. (1) refreshActiveContracts(): postId-change detection — when a new trade is posted for the same instrument-strike-type key, _optionHighs[key] and _optionLows[key] are reset to zero; the null guard means server restarts (where postId is null from state.json restore) do NOT trigger spurious resets. (2) _latestMarketData snapshot: optionHighsPostIds added — member PWA now receives {liveCmpKey → postId} map alongside optionHighs, enabling client-side postId gating. Rollback: remove the RC-1 FIX block in refreshActiveContracts (12 lines); remove optionHighsPostIds line from _latestMarketData snapshot.
 // DEPLOY: T2S-PROD-20260729-001 | server.js: [CLOSEPRICE:X] permanent fix — (1) fetchKotakOptionLTPs() now stores last:ltp on _optionHighs[key] alongside high (tracks most-recent option LTP, not just session peak); (2) saveOptionHighsToSupabase() now posts [CLOSEPRICE:last] for every active contract at 3:35 PM — member PWA uses this as exit price for remaining qty when no explicit exit follow-up was posted; safe to post even on fully-exited trades (PWA only uses it for remaining un-exited qty). Rollback: remove last:ltp from _optionHighs assignment; remove the [CLOSEPRICE:X] posting loop in saveOptionHighsToSupabase.
 // DEPLOY: T2S-PROD-20260727-001 | server.js: Wrong-contract CMP fix (root cause: unordered Supabase query + stale scrip master on expiry day). Fix 1: refreshActiveContracts() query now adds &order=sent_at.desc so newest post wins the dedup (was undefined order — oldest post, possibly expired, won first). Fix 2: resolved expiry is validated against today's IST date — if in the past, contract is skipped with a warning (prevents tracking expired contracts even if dedup fails). Fix 3: staleness detection now also triggers scrip master re-download (was only refreshing contracts — useless if the token map has yesterday's expired contract tokens). Fix 4: scheduleExpiryDayRefresh() added — fires every Tuesday at 9:10 AM IST to pre-download fresh scrip master before market open (prevents stale token issue when trade posted before TOTP login). Rollback: remove &order=sent_at.desc from query, remove expiry past-check block, remove _scripMasterTs=0 line in staleness handler, remove scheduleExpiryDayRefresh function and its call.
 // DEPLOY: T2S-PROD-20260722-001 | server.js: LTP staleness detection + auto-recovery — added _optionChainTs{} var tracking last-good-fetch timestamp per contract key; inside fetchKotakOptionLTPs() if(ltp>0) block now stamps _optionChainTs[key]=Date.now(); post-loop staleness check: if any active contract's timestamp missing or >2min old, resets _activeContractsTs=0 and calls refreshActiveContracts() for self-recovery within one 5s tick; _ltpZeroSince alert now treats stale-but-non-empty as effectively dry (separate reason logged). Rollback: remove _optionChainTs var, remove _optionChainTs[key]=Date.now() stamp, remove staleness detection block (lines 1450-1468), revert _effectivelyDry logic in alert block.
@@ -1373,6 +1374,18 @@ async function refreshActiveContracts() {
       if (!contracts.find(c => c.instrument===instr && c.strike===strike && c.type===type))
         contracts.push({ instrument: instr, strike, type, expiry, postId: p.id, action });
     });
+    // RC-1 FIX: Detect postId change for same liveCmpKey → reset session high/low for new trade
+    // Guard: only reset when BOTH postIds are non-null (null = just restored from state.json, not a real change)
+    for (const newC of contracts) {
+      const key = `${newC.instrument}-${newC.strike}-${newC.type}`;
+      const existingHigh = _optionHighs[key];
+      if (existingHigh && existingHigh.postId && existingHigh.postId !== newC.postId) {
+        console.log(`[contracts] New trade for ${key}: postId changed ${existingHigh.postId.slice(0,8)}→${newC.postId.slice(0,8)} — resetting session high/low`);
+        _optionHighs[key] = { high: 0, last: 0, postId: newC.postId };
+        if (_optionLows[key]) _optionLows[key] = { low: undefined, postId: newC.postId, action: newC.action };
+        saveState().catch(() => {});
+      }
+    }
     _activeContracts = contracts;
     console.log(`[contracts] Active: ${contracts.map(c=>`${c.instrument}${c.strike}${c.type}`).join(', ')}`);
   } catch(e) { console.error('[contracts] refresh error:', e.message); }
@@ -1461,7 +1474,8 @@ async function fetchKotakOptionLTPs() {
   // from being served to member PWA during the fetch cycle).
   if (_latestMarketData) {
     _latestMarketData.optionLTPs  = { ..._optionChain };
-    _latestMarketData.optionHighs = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
+    _latestMarketData.optionHighs        = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
+    _latestMarketData.optionHighsPostIds = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.postId]));
   }
 
   // Staleness detection — if any active contract's LTP hasn't updated in >2 min, the token has
