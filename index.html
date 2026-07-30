@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260730-002 | Member PWA: system marker filter hardening — [LOW:X] and [CLOSEPRICE:X] now filtered at all 5 display points: renderFollowUpCard, _freeVisReplies2, _cf25Vis, visibleReplies (Section 3), visibleReplies (Section 3 free-viewer). Previously only [HIGH:X] was filtered at all points; [LOW:X] was absent from prod; [CLOSEPRICE:X] was absent from the two visibleReplies filters. Result: no VM system marker can ever appear as a visible follow-up card to any member, regardless of trade direction or member tier. Zero logic change — purely additive filter lines. Rollback: remove [LOW:X] and [CLOSEPRICE:X] filter lines from the 5 locations listed. -->
 <!-- DEPLOY: T2S-PROD-20260730-001 | Member PWA: Performance tab P&L sync fix — (1) extractClosePriceFromReplies() function added to prod (existed only in UAT). (2) getWeightedExitPrice: added opts.closePrice branch — VM-posted [CLOSEPRICE:X] at 3:35 PM now fills remaining unexited qty in weighted average, before SL fallback. (3) Performance tab latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (4) Performance tab getWeightedExitPrice call: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. (5) Section 2.5 getWeightedExitPrice: now passes closePrice. (6) Section 3 getWeightedExitPrice: now passes closePrice; _effectiveExitPrice now prefers exitPrice (weighted with closePrice) over latestCmp when [CLOSEPRICE:X] is available. Rollback: remove extractClosePriceFromReplies function; revert getWeightedExitPrice opts block to single else-if; remove _closePricePerf line + closePrice from Performance call; remove <10000 guards from latestCmpPerf loop; remove _closePrice25 line + closePrice from Section 2.5; remove _closePrice3 line + closePrice from Section 3 + revert _effectiveExitPrice condition to remove !_closePrice3. -->
 <!-- DEPLOY: T2S-PROD-20260729-002 | Member PWA: 4 permanent fixes for trade card display correctness. (1) getWeightedExitPrice: SL fallback now skips spot/index SLs (opts.sl>5000) — only option-price SLs (<=5000) used as exit fallback. (2) renderFollowUpCard + _freeVisReplies2 + _cf25Vis: [CLOSEPRICE:X] system marker filtered out — never shows as a visible follow-up card to members. (3) latestCmp loops (Sections 1/2/3): added fp.cmp<10000 and fp.price<10000 guards — spot index CMPs (e.g. "CMP 24261" in SL updates) can no longer pollute _effectiveExitPrice on closed trade cards. (4) activePosts/closedPosts forEach: per-card try/catch — a single bad card no longer crashes the entire render. (5) "Closed today" UX banner: when trades close on the current IST day, a green tap-to-scroll banner appears at top of active section so users never miss same-day closed trades. Rollback: remove opts.sl<=5000 condition (revert to bare opts.sl), remove 2 [CLOSEPRICE] filter lines, remove <10000 guards from 3 latestCmp loops, revert forEach to single-line without try/catch, remove closed-today-banner block and revert closed-section div.
 <!-- DEPLOY: T2S-PROD-20260723-001 | Production hotfix: 3 trade state bugs. (1) Session High/Low direction fix — SELL cards now show "Session Low" with data-live-low; BUY cards show "Session High" with data-live-high. Added _sessionOptionLows dict; client-side low tracking in updateTradeCMPs (VM sends highs not lows); re-apply after DOM rebuild. Added data-entry to both spans for entry-price initialization. All 3 card sections updated (S2 free, S3 closed, S3 active). (2) "Yet to trigger" state pill now auto-updates when CMP arrives post-render — added data-state-pill/data-entry/data-live-key attrs to yet_to_trigger spans in S1/S2/S3; updateTradeCMPs re-evaluates and replaces pill in-place. (3) SL breach indicator restored with < 5000 guard — only fires for revised premium SLs (not index SLs). Added data-sl-key/num/sell/post to trigger-banner; hidden slb-{id} span toggles visible on breach. Rollback: remove _sessionOptionLows dict decl, remove session-low + state-pill + SL-breach blocks in updateTradeCMPs, remove session-low re-apply after DOM rebuild, revert 3 Session High template locations, revert statePill3/stateBanner2/_statePill data attrs, revert Section 3 trigger-banner. -->
@@ -2154,6 +2155,7 @@
     function renderFollowUpCard(reply, parsed, cumulativeExit, prevSL) {
         if (parsed.isAdminUnlock||(reply.content||'').includes('[T2S_UNLOCK]')) return '';
         if (/^\[HIGH:[\d.]+\]$/.test(reply.content||'')) return '';
+        if (/^\[LOW:[\d.]+\]$/.test(reply.content||'')) return '';
         if (/^\[CLOSEPRICE:[\d.]+\]$/.test(reply.content||'')) return '';
         const ts = formatPostTime(reply.sent_at||reply.created_at);
         const rawText = stripDisclaimerText(sanitizeHtml(reply.content||'').replace(/\n/g,'<br>'));
@@ -2638,6 +2640,7 @@
             const _freeVisReplies2 = postReplies.filter(r => {
                 if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                 if (/^\[HIGH:[\d.]+\]$/.test(r.content||'')) return false;
+                if (/^\[LOW:[\d.]+\]$/.test(r.content||'')) return false;
                 if (/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'')) return false;
                 if (r.audience==='paid_only') return false;
                 if (_STATUS_ONLY_RE.test((r.content||'').trim())) return false;
@@ -2747,7 +2750,7 @@
             }
             // follow-ups visible to free members on closed trades
             let _cf25Html = '';
-            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'') && r.audience !== 'paid_only');
+            const _cf25Vis = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[LOW:[\d.]+\]$/.test(r.content||'') && !/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'') && r.audience !== 'paid_only');
             if (_cf25Vis.length > 0) {
                 const _cf25id = `cf25-replies-${post.id}`, _cf25n = _cf25Vis.length;
                 _cf25Html = `<button class="replies-toggle" id="btn-${_cf25id}" data-count="${_cf25n}" onclick="toggleReplies('${_cf25id}')">↳ ${_cf25n} update${_cf25n>1?'s':''} — tap to view</button><div class="thread-replies" id="${_cf25id}" style="display:none;">`;
@@ -2906,7 +2909,7 @@
         // Follow-ups
         let repliesHtml = '';
         if (postReplies.length > 0) {
-            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||''));
+            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[LOW:[\d.]+\]$/.test(r.content||'') && !/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||''));
             if (visibleReplies.length > 0) {
                 // Pre-calc cumulative exit + prevSL per reply in chronological order (oldest→newest)
                 const _chrono=[...visibleReplies].sort((a,b)=>new Date(a.sent_at||a.created_at)-new Date(b.sent_at||b.created_at));
@@ -3247,6 +3250,8 @@
                     const visibleReplies = postReplies.filter(r => {
                         if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                         if (/^\[HIGH:[\d.]+\]$/.test(r.content||'')) return false;
+                        if (/^\[LOW:[\d.]+\]$/.test(r.content||'')) return false;
+                        if (/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'')) return false;
                         if (r.audience==='paid_only' && isFreeViewer) return false;
                         return true;
                     });
