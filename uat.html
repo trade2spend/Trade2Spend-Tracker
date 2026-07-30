@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260730-002 | uat.html: [CLOSEPRICE:X] added to visibleReplies filters (Section 3 both) — was missing alongside existing [HIGH:X] and [LOW:X] filters. Purely additive. Rollback: remove [CLOSEPRICE:X] filter lines from the two visibleReplies blocks. -->
 <!-- T2S-UAT-20260730-001 | uat.html: Performance tab P&L sync fix — (1) latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (2) getWeightedExitPrice call in Performance: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. Rollback: remove _closePricePerf line + closePrice from Performance getWeightedExitPrice call; remove <10000 guards from latestCmpPerf loop. -->
 <!-- T2S-UAT-20260729-002 | uat.html: latestCmp spot-price bug fixed — all 3 latestCmp loops (Sections 1/2/3) now have fp.cmp<10000 and fp.price<10000 guards; spot index CMPs (e.g. "CMP 24261" in SL updates) can no longer pollute _effectiveExitPrice on closed trade cards. Also added per-card try/catch in both activePosts and closedPosts forEach — a single bad card no longer crashes the entire render. Rollback: remove <10000 guards from 3 latestCmp loops; revert forEach to single-line without try/catch.
 <!-- T2S-UAT-20260729-001 | uat.html: Permanent fix for wrong exit price on auto-closed trades — (1) renderFollowUpCard: added [CLOSEPRICE:X] filter (system marker, not shown to members — same pattern as [HIGH:X] and [LOW:X]). (2) _freeVisReplies2 and _cf25Vis filters: same [CLOSEPRICE:X] exclusion added so system marker never counts as visible follow-up. (3) getWeightedExitPrice: SL fallback now skips spot/index SLs (opts.sl > 5000) — index-level values (e.g. 24050) must never be used as option exit prices; shows — instead of wrong index price. [CLOSEPRICE:X] is now posted by VM at 3:35 PM (server.js T2S-PROD-20260729-001) so this safety net is only needed when Kotak session expired before close. Rollback: remove [CLOSEPRICE] filter lines from renderFollowUpCard, _freeVisReplies2, _cf25Vis; revert opts.sl condition to bare opts.sl; revert opts.sl comment.
@@ -3275,7 +3276,7 @@
         // Follow-ups
         let repliesHtml = '';
         if (postReplies.length > 0) {
-            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[LOW:[\d.]+\]$/.test(r.content||''));
+            const visibleReplies = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]') && !/^\[HIGH:[\d.]+\]$/.test(r.content||'') && !/^\[LOW:[\d.]+\]$/.test(r.content||'') && !/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||''));
             if (visibleReplies.length > 0) {
                 // Pre-calc cumulative exit + prevSL per reply in chronological order (oldest→newest)
                 const _chrono=[...visibleReplies].sort((a,b)=>new Date(a.sent_at||a.created_at)-new Date(b.sent_at||b.created_at));
@@ -3677,6 +3678,7 @@
                         if ((r.content||'').includes('[T2S_UNLOCK]')) return false;
                         if (/^\[HIGH:[\d.]+\]$/.test(r.content||'')) return false;
                         if (/^\[LOW:[\d.]+\]$/.test(r.content||'')) return false;
+                        if (/^\[CLOSEPRICE:[\d.]+\]$/.test(r.content||'')) return false;
                         if (r.audience==='paid_only' && isFreeViewer) return false;
                         return true;
                     });
