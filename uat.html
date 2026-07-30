@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260730-003 | uat.html: Trade identity engine — same root-cause fix as T2S-PROD-20260730-003. (1) _lastOptionHighsPostIds global added. (2) updateTradeHighs() + 2 call sites: postId gating added. (3) _sessionOptionLows + _sessionOptionHighs: re-keyed from liveCmpKey to post.id in updateTradeCMPs() — data-live-low now stores post.id, data-live-low-key stores liveCmpKey for LTP lookup; data-live-high elements use data-post-id for high tracking key. (4) All 3 session high/low render locations updated with new attributes. (5) getTradeState() validReplies filter: system markers [HIGH:X],[LOW:X],[CLOSEPRICE:X] excluded. Rollback: same as T2S-PROD-20260730-003 rollback instructions applied to uat.html. -->
 <!-- T2S-UAT-20260730-002 | uat.html: [CLOSEPRICE:X] added to visibleReplies filters (Section 3 both) — was missing alongside existing [HIGH:X] and [LOW:X] filters. Purely additive. Rollback: remove [CLOSEPRICE:X] filter lines from the two visibleReplies blocks. -->
 <!-- T2S-UAT-20260730-001 | uat.html: Performance tab P&L sync fix — (1) latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (2) getWeightedExitPrice call in Performance: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. Rollback: remove _closePricePerf line + closePrice from Performance getWeightedExitPrice call; remove <10000 guards from latestCmpPerf loop. -->
 <!-- T2S-UAT-20260729-002 | uat.html: latestCmp spot-price bug fixed — all 3 latestCmp loops (Sections 1/2/3) now have fp.cmp<10000 and fp.price<10000 guards; spot index CMPs (e.g. "CMP 24261" in SL updates) can no longer pollute _effectiveExitPrice on closed trade cards. Also added per-card try/catch in both activePosts and closedPosts forEach — a single bad card no longer crashes the entire render. Rollback: remove <10000 guards from 3 latestCmp loops; revert forEach to single-line without try/catch.
@@ -686,9 +687,10 @@
     let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
-    let _lastOptionHighs = null; // latest session highs — re-applied after trade card rebuilds
-    let _sessionOptionLows = {}; // session low per key — for SELL trade cards (data-live-low)
-    let _sessionOptionHighs = {}; // session high per key — for BUY trade cards (data-live-high)
+    let _lastOptionHighs = null;         // latest session highs — re-applied after trade card rebuilds
+    let _lastOptionHighsPostIds = null;  // postId map from VM — gates session highs per trade post
+    let _sessionOptionLows = {}; // session low per post.id — for SELL trade cards (data-live-low)
+    let _sessionOptionHighs = {}; // session high per post.id — for BUY trade cards (data-live-high)
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
@@ -1184,7 +1186,7 @@
         }
         // Update live option CMPs on trade cards in-place — skip on cache renders to avoid stale flicker
         if (data.optionLTPs  && !isMarketClosedNow() && !opts.skipLTPs) updateTradeCMPs(data.optionLTPs);
-        if (data.optionHighs && !isMarketClosedNow() && !opts.skipLTPs) { _lastOptionHighs = data.optionHighs; updateTradeHighs(data.optionHighs); }
+        if (data.optionHighs && !isMarketClosedNow() && !opts.skipLTPs) { _lastOptionHighs = data.optionHighs; _lastOptionHighsPostIds = data.optionHighsPostIds||null; updateTradeHighs(data.optionHighs, data.optionHighsPostIds); }
     }
 
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
@@ -1209,10 +1211,15 @@
     }
 
     // Update Day High spans on active trade cards (live, from VM /market optionHighs)
-    function updateTradeHighs(optionHighs) {
+    // RC-3 FIX: optionHighsPostIds gates each update to the card whose post.id matches the VM's tracked postId
+    function updateTradeHighs(optionHighs, optionHighsPostIds) {
         if (!optionHighs) return;
         document.querySelectorAll('[data-live-high]').forEach(el => {
             const key = el.dataset.liveHigh;
+            const cardPostId    = el.dataset.postId;
+            const trackedPostId = optionHighsPostIds && optionHighsPostIds[key];
+            // Skip if VM is tracking this key for a DIFFERENT trade post (cross-trade contamination guard)
+            if (trackedPostId && cardPostId && trackedPostId !== cardPostId) return;
             const high = optionHighs[key];
             if (high != null && high > 0) {
                 // Only update when new high is strictly greater — session high never moves down
@@ -1247,32 +1254,34 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
-        // Track session lows for SELL trade cards (data-live-low) — initialized from entry so low ≤ entry always
+        // Track session lows for SELL trade cards — keyed by post.id (data-live-low) to prevent cross-trade contamination
         document.querySelectorAll('[data-live-low]').forEach(el => {
-            const key = el.dataset.liveLow;
+            const postId = el.dataset.liveLow;      // post.id of this trade card
+            const key    = el.dataset.liveLowKey;   // liveCmpKey for LTP lookup
             const ltp = optionLTPs[key];
             if (ltp != null && ltp > 0) {
-                if (_sessionOptionLows[key] == null) {
+                if (_sessionOptionLows[postId] == null) {
                     const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0) _sessionOptionLows[key] = entryVal;
+                    if (entryVal > 0) _sessionOptionLows[postId] = entryVal;
                 }
-                if (_sessionOptionLows[key] == null || ltp < _sessionOptionLows[key])
-                    _sessionOptionLows[key] = ltp;
-                el.textContent = `₹${_sessionOptionLows[key].toFixed(2)}`;
+                if (_sessionOptionLows[postId] == null || ltp < _sessionOptionLows[postId])
+                    _sessionOptionLows[postId] = ltp;
+                el.textContent = `₹${_sessionOptionLows[postId].toFixed(2)}`;
             }
         });
-        // Track session highs for BUY trade cards (data-live-high) — initialized from entry so high ≥ entry always
+        // Track session highs for BUY trade cards — keyed by post.id (data-post-id on data-live-high elements) to prevent cross-trade contamination
         document.querySelectorAll('[data-live-high]').forEach(el => {
-            const key = el.dataset.liveHigh;
+            const postId = el.dataset.postId;       // post.id of this trade card
+            const key    = el.dataset.liveHigh;     // liveCmpKey for LTP lookup
             const ltp = optionLTPs[key];
-            if (ltp != null && ltp > 0) {
-                if (_sessionOptionHighs[key] == null) {
+            if (ltp != null && ltp > 0 && postId) {
+                if (_sessionOptionHighs[postId] == null) {
                     const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0) _sessionOptionHighs[key] = entryVal;
+                    if (entryVal > 0) _sessionOptionHighs[postId] = entryVal;
                 }
-                if (_sessionOptionHighs[key] == null || ltp > _sessionOptionHighs[key])
-                    _sessionOptionHighs[key] = ltp;
-                el.textContent = `₹${_sessionOptionHighs[key].toFixed(2)}`;
+                if (_sessionOptionHighs[postId] == null || ltp > _sessionOptionHighs[postId])
+                    _sessionOptionHighs[postId] = ltp;
+                el.textContent = `₹${_sessionOptionHighs[postId].toFixed(2)}`;
             }
         });
         // Live P&L badge on active triggered trade cards — updates every 5s with CMP
@@ -2154,6 +2163,7 @@
         const validReplies = (replies||[]).filter(r => {
             const c = (r.content||'').trim();
             if (c.includes('[T2S_UNLOCK]')) return false;
+            if (/^\[(HIGH|LOW|CLOSEPRICE):[\d.]+\]$/.test(c)) return false; // RC-5 FIX: VM system markers are not trade signals
             if (_STATUS_ONLY_RE.test(c)) return false; // ignore pure status messages
             return true;
         });
@@ -2707,7 +2717,7 @@
 
         container.innerHTML = html;
         if (_lastOptionLTPs  && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
-        if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs);
+        if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs, _lastOptionHighsPostIds);
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
@@ -3031,7 +3041,7 @@
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
-                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.action==='SELL'?(_initialLow2||fields.entry||''):(_initialHigh2||fields.entry||'')}">${fields.action==='SELL'?(_initialLow2?`₹${_initialLow2}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh2?`₹${_initialHigh2}`:(fields.entry?`₹${fields.entry}`:'—'))}</span></div>`:''}
+                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow2||fields.entry||''):(_initialHigh2||fields.entry||'')}">${fields.action==='SELL'?(_initialLow2?`₹${_initialLow2}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh2?`₹${_initialHigh2}`:(fields.entry?`₹${fields.entry}`:'—'))}</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -3427,7 +3437,7 @@
                             :(_loss3
                                 ?_lossShLabel3
                                 :(!isMarketClosedNow()&&liveCmpKey)
-                                    ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}">—</span></div>`
+                                    ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}">—</span></div>`
                                     :'')}
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div>
@@ -3504,7 +3514,7 @@
             </div>
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
-                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${liveCmpKey}"`:`data-live-high="${liveCmpKey}"`} data-entry="${fields.action==='SELL'?(_initialLow3||fields.entry||''):(_initialHigh3||fields.entry||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—'))}</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow3||fields.entry||''):(_initialHigh3||fields.entry||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—'))}</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
