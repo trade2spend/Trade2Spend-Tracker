@@ -2638,6 +2638,9 @@ async function handleMessage(text) {
     await tgSend(
       '🤖 <b>Trade2Spend v5.0</b>\n━━━━━━━━━━━━━━━━━━\n' +
       '<b>Kotak login:</b> Use PWA Setup tab → Connect Kotak\n\n' +
+      '<b>📊 PWA Health (use from phone during market hours):</b>\n' +
+      '/pwa — Scraper status + active CMPs + session highs\n' +
+      '/reset_high — Reset stale session high (e.g. /reset_high NIFTY 24250 PE)\n\n' +
       '<b>Trading:</b>\n' +
       '/status — Open positions\n' +
       '/spot — Live NIFTY/BankNIFTY spot\n' +
@@ -2645,17 +2648,18 @@ async function handleMessage(text) {
       '/paper — Paper mode (safe testing)\n' +
       '/live — Live mode (real orders)\n' +
       '/kill — 🔴 Emergency exit ALL positions\n' +
-      '/reset — Reset daily counters\n' +
-      '/debug_spot — Raw Kotak LTP API response\n' +
-      '/debug_ltp — Test option LTP fetch\n' +
-      '/debug_cmp — Scrip master + option chain status\n' +
-      '/reload_scrip — Force re-download scrip master\n\n' +
+      '/reset — Reset daily counters\n\n' +
       '<b>Market Data:</b>\n' +
       '/market_on — Start live market scraper\n' +
       '/market_off — Stop market scraper\n' +
       '/market_status — Scraper status\n\n' +
       '<b>Admin Recovery:</b>\n' +
       '/unlock_admin — Unlock admin PWA + reset PIN\n\n' +
+      '<b>Debug (technical):</b>\n' +
+      '/debug_spot — Raw Kotak LTP API response\n' +
+      '/debug_ltp — Test option LTP fetch\n' +
+      '/debug_cmp — Scrip master + option chain status\n' +
+      '/reload_scrip — Force re-download scrip master\n\n' +
       '/cancel — Cancel current action'
     ); return;
   }
@@ -2838,8 +2842,9 @@ async function handleMessage(text) {
     await tgSend(msg); return;
   }
 
-  // /reset-high NIFTY 24250 PE — reset stale session high/low for a contract (phone emergency fix)
-  if (cmd.startsWith('/reset-high')) {
+  // /reset_high NIFTY 24250 PE — reset stale session high/low for a contract (phone emergency fix)
+  // Accepts both /reset_high (BotFather-registered) and /reset-high (legacy hyphen variant)
+  if (cmd.startsWith('/reset_high') || cmd.startsWith('/reset-high')) {
     const parts = text.trim().split(/\s+/);
     const instr  = (parts[1]||'').toUpperCase();
     const strike = parseInt(parts[2]||'');
