@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260731-001 | server.js: Phone emergency commands — /pwa and /reset-high. (1) /pwa: clean PWA health snapshot via Telegram — shows scraper status, Kotak session, all tracked contracts with live CMP, session high/low, and LTP age (⚠️ if stale >30s). Zero new data sources — reads _activeContracts, _optionChain, _optionHighs, _optionLows, _optionChainTs, _marketScraperInterval. (2) /reset-high NIFTY 24250 PE: resets _optionHighs[key] and _optionLows[key] for a specific contract from Telegram, preserves postId, calls saveState(). Returns usage hint on bad input. Both commands are purely additive — no existing command modified. Rollback: remove the /pwa block (lines 2809–2838) and /reset-high block (lines 2840–2857) from handleMessage().
 // DEPLOY: T2S-PROD-20260730-003 | server.js: Trade identity engine — permanent fix for session high/low bleeding across trades with the same strike. (1) refreshActiveContracts(): postId-change detection — when a new trade is posted for the same instrument-strike-type key, _optionHighs[key] and _optionLows[key] are reset to zero; the null guard means server restarts (where postId is null from state.json restore) do NOT trigger spurious resets. (2) _latestMarketData snapshot: optionHighsPostIds added — member PWA now receives {liveCmpKey → postId} map alongside optionHighs, enabling client-side postId gating. Rollback: remove the RC-1 FIX block in refreshActiveContracts (12 lines); remove optionHighsPostIds line from _latestMarketData snapshot.
 // DEPLOY: T2S-PROD-20260729-001 | server.js: [CLOSEPRICE:X] permanent fix — (1) fetchKotakOptionLTPs() now stores last:ltp on _optionHighs[key] alongside high (tracks most-recent option LTP, not just session peak); (2) saveOptionHighsToSupabase() now posts [CLOSEPRICE:last] for every active contract at 3:35 PM — member PWA uses this as exit price for remaining qty when no explicit exit follow-up was posted; safe to post even on fully-exited trades (PWA only uses it for remaining un-exited qty). Rollback: remove last:ltp from _optionHighs assignment; remove the [CLOSEPRICE:X] posting loop in saveOptionHighsToSupabase.
 // DEPLOY: T2S-PROD-20260727-001 | server.js: Wrong-contract CMP fix (root cause: unordered Supabase query + stale scrip master on expiry day). Fix 1: refreshActiveContracts() query now adds &order=sent_at.desc so newest post wins the dedup (was undefined order — oldest post, possibly expired, won first). Fix 2: resolved expiry is validated against today's IST date — if in the past, contract is skipped with a warning (prevents tracking expired contracts even if dedup fails). Fix 3: staleness detection now also triggers scrip master re-download (was only refreshing contracts — useless if the token map has yesterday's expired contract tokens). Fix 4: scheduleExpiryDayRefresh() added — fires every Tuesday at 9:10 AM IST to pre-download fresh scrip master before market open (prevents stale token issue when trade posted before TOTP login). Rollback: remove &order=sent_at.desc from query, remove expiry past-check block, remove _scripMasterTs=0 line in staleness handler, remove scheduleExpiryDayRefresh function and its call.
@@ -2803,6 +2804,56 @@ async function handleMessage(text) {
         await tgSend(`<b>CSV sample (first rows):</b>\n<code>${csvSample}</code>`);
       } catch(e) { await tgSend(`Parse error: ${e.message}`); }
     } catch(e) { await tgSend(`Error: ${e.message}`); }
+    return;
+  }
+
+  // /pwa — clean PWA health snapshot: scraper status, active contracts, LTPs, session highs
+  if (cmd === '/pwa') {
+    const tz = { timeZone: 'Asia/Kolkata' };
+    const nowIST = new Date(new Date().toLocaleString('en-US', tz));
+    const timeStr = nowIST.toLocaleTimeString('en-IN', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const scraperOn = !!_marketScraperInterval;
+    const kotak = session.token ? `✅ LIVE (login ${session.lastLogin ? Math.round((Date.now()-session.lastLogin)/60000)+'m ago' : 'N/A'})` : '❌ Not logged in';
+    let msg = `📊 <b>PWA Health</b> — ${timeStr} IST\n━━━━━━━━━━━━━━━━━━\n`;
+    msg += `${scraperOn ? '🟢' : '🔴'} <b>Scraper:</b> ${scraperOn ? 'RUNNING' : 'STOPPED'}\n`;
+    msg += `⚡ <b>Kotak:</b> ${kotak}\n`;
+    if (!_activeContracts.length) {
+      msg += `\n📡 <b>No active contracts tracked.</b>\nPost a trade alert to start tracking.`;
+    } else {
+      msg += `\n📡 <b>Tracking ${_activeContracts.length} contract${_activeContracts.length>1?'s':''}:</b>\n`;
+      for (const c of _activeContracts) {
+        const key = `${c.instrument}-${c.strike}-${c.type}`;
+        const ltp  = _optionChain[key];
+        const high = _optionHighs[key]?.high || 0;
+        const low  = _optionLows[key]?.low;
+        const lastTs = _optionChainTs[key];
+        const ageS   = lastTs ? Math.round((Date.now()-lastTs)/1000) : null;
+        const stale  = ageS != null && ageS > 30;
+        msg += `• <b>${c.instrument} ${c.strike} ${c.type}</b> ${stale?'⚠️':''}`;
+        msg += `\n  CMP: ${ltp != null ? `₹${ltp}` : '—'} | ${c.action==='SELL'?'Session Low':'Session High'}: ${high>0?`₹${high}`:low!=null?`₹${low}`:'—'}`;
+        if (ageS != null) msg += ` | Updated: ${ageS}s ago`;
+        msg += `\n`;
+      }
+    }
+    await tgSend(msg); return;
+  }
+
+  // /reset-high NIFTY 24250 PE — reset stale session high/low for a contract (phone emergency fix)
+  if (cmd.startsWith('/reset-high')) {
+    const parts = text.trim().split(/\s+/);
+    const instr  = (parts[1]||'').toUpperCase();
+    const strike = parseInt(parts[2]||'');
+    const type   = (parts[3]||'').toUpperCase();
+    if (!instr || !strike || !['CE','PE'].includes(type)) {
+      await tgSend('Usage: /reset-high NIFTY 24250 PE\nor: /reset-high BANKNIFTY 54000 CE');
+      return;
+    }
+    const key    = `${instr}-${strike}-${type}`;
+    const postId = _optionHighs[key]?.postId || _activeContracts.find(c=>c.instrument===instr&&c.strike===strike&&c.type===type)?.postId || null;
+    _optionHighs[key] = { high: 0, last: 0, postId };
+    if (_optionLows[key]) _optionLows[key] = { ..._optionLows[key], low: undefined };
+    await saveState();
+    await tgSend(`✅ <b>Session high/low reset for ${key}</b>\nHigh: 0 — will rebuild from next CMP tick (~5s)\nUse /pwa to verify.`);
     return;
   }
 
