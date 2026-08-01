@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260731-001 | uat.html: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp<10000 guard to the existing fp.cmp fallback — prevents spot index CMPs (24000+) from being mistaken as option exit prices. (2) getExitLegs: same fp.cmp<10000 guard added (mirrors getWeightedExitPrice). (3) computePlBadgeAttrs: added fp.cmp fallback with <10000 guard and use of resolved price variable throughout (fixes live P&L badge breakeven for CMP-phrased partial exits). (4) _bankedPerf loop in fetchPerformance: added fp.cmp fallback with <10000 guard — CMP-phrased partial exits now correctly adjust the banked profit in adjusted-entry P&L calculation. (5) _banked loop in buildTradeAlertCard S3: same fp.cmp fallback added — adjusted-entry formula now correctly includes CMP-phrased exit legs. Rollback: (1)+(2) remove &amp;&amp; fp.cmp < 10000 from price fallback in both functions; (3) revert computePlBadgeAttrs loop to original fp.price checks; (4)+(5) remove _prc2/_prc lines and revert if conditions to _fp2.price / fp.price. -->
 <!-- T2S-UAT-20260730-003 | uat.html: Trade identity engine — same root-cause fix as T2S-PROD-20260730-003. (1) _lastOptionHighsPostIds global added. (2) updateTradeHighs() + 2 call sites: postId gating added. (3) _sessionOptionLows + _sessionOptionHighs: re-keyed from liveCmpKey to post.id in updateTradeCMPs() — data-live-low now stores post.id, data-live-low-key stores liveCmpKey for LTP lookup; data-live-high elements use data-post-id for high tracking key. (4) All 3 session high/low render locations updated with new attributes. (5) getTradeState() validReplies filter: system markers [HIGH:X],[LOW:X],[CLOSEPRICE:X] excluded. Rollback: same as T2S-PROD-20260730-003 rollback instructions applied to uat.html. -->
 <!-- T2S-UAT-20260730-002 | uat.html: [CLOSEPRICE:X] added to visibleReplies filters (Section 3 both) — was missing alongside existing [HIGH:X] and [LOW:X] filters. Purely additive. Rollback: remove [CLOSEPRICE:X] filter lines from the two visibleReplies blocks. -->
 <!-- T2S-UAT-20260730-001 | uat.html: Performance tab P&L sync fix — (1) latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (2) getWeightedExitPrice call in Performance: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. Rollback: remove _closePricePerf line + closePrice from Performance getWeightedExitPrice call; remove <10000 guards from latestCmpPerf loop. -->
@@ -1583,7 +1584,7 @@
             const replyMap = {};
             allReplies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
-            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]) && getTradeState(p, replyMap[p.id]||[]) !== 'not_triggered');
+            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]) && getTradeState(p, (replyMap[p.id]||[]).filter(r => r.audience !== 'paid_only')) !== 'not_triggered');
 
             const tz = {timeZone:'Asia/Kolkata'};
             const tradeData = closedTrades.map(p => {
@@ -1614,7 +1615,8 @@
                     let _bankedPerf = 0;
                     [...replies].reverse().forEach(_rr => {
                         const _fp2 = parseFollowUpContent(_rr.content||'');
-                        if (_fp2.exitPct && _fp2.price) _bankedPerf += (_fp2.price - f.entry) * _fp2.exitPct;
+                        const _prc2 = _fp2.price || (_fp2.exitPct && _fp2.cmp && _fp2.cmp < 10000 ? _fp2.cmp : null);
+                        if (_fp2.exitPct && _prc2) _bankedPerf += (_prc2 - f.entry) * _fp2.exitPct;
                     });
                     const _adjEntryPerf = f.entry - _bankedPerf / (100 - _cumExitPerf);
                     pnlPts = Math.round((latestCmpPerf - _adjEntryPerf) * _dirMult);
@@ -2241,7 +2243,8 @@
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
-            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp ? fp.cmp : null);
+            // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
@@ -2273,7 +2276,8 @@
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
-            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp ? fp.cmp : null);
+            // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
@@ -2331,7 +2335,7 @@
 
     function isTradeFullyClosed(post, replies) {
         if (post._mockClosed !== undefined) return post._mockClosed; // UAT dummy data override
-        const reps = replies||[];
+        const reps = [...(replies||[])].reverse();  // oldest → newest; hasHolding reflects most recent action
         let cum=0, hasHolding=false;
         for (const r of reps) {
             const p = parseFollowUpContent(r.content||'');
@@ -2347,7 +2351,7 @@
             if (td.getHours() * 60 + td.getMinutes() >= 15 * 60 + 30) return true;
             const postIST = new Date(new Date(post.sent_at||post.created_at).toLocaleString('en-US', tz));
             if (reps.length > 0) {
-                const lrd = new Date(new Date(reps[0].sent_at||reps[0].created_at).toLocaleString('en-US', tz));
+                const lrd = new Date(new Date(reps[reps.length - 1].sent_at||reps[reps.length - 1].created_at).toLocaleString('en-US', tz));
                 if (lrd.toDateString() !== td.toDateString()) return true; // reply from prev day → closed
             }
             // No replies + posted on a previous calendar day → auto-close ONLY if expiry has passed
@@ -2416,11 +2420,14 @@
         let lockedPnl = 0, totalExitPct = 0;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
-            if (!fp.price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
+            // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalExitPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
             // BUY profit: price > entry is good. SELL profit: price < entry is good.
-            const pnlPerUnit = fields.action === 'SELL' ? (fields.entry - fp.price) : (fp.price - fields.entry);
+            const pnlPerUnit = fields.action === 'SELL' ? (fields.entry - price) : (price - fields.entry);
             lockedPnl += pnlPerUnit * (pct / 100);
             totalExitPct += pct;
             if (fp.isFullExit || totalExitPct >= 100) break;
@@ -2895,7 +2902,8 @@
 
         // ── 2. FREE MEMBER + trade not closed → progressive unlock ───────────
         if (isFreeViewer && !isClosed) {
-            const tradeState = getTradeState(post, postReplies);
+            const _pubReplies2 = postReplies.filter(r => r.audience !== 'paid_only');
+            const tradeState = getTradeState(post, _pubReplies2);
             const instrName  = fields.instrument||'Trade Alert';
             const strikeStr  = fields.strike||'';
 
@@ -2917,7 +2925,7 @@
             }
 
             // Determine unlock state
-            const unlocked  = getFreeUnlockedFields(postReplies, post.sent_at);
+            const unlocked  = getFreeUnlockedFields(_pubReplies2, post.sent_at);
             // Past-day triggered trade → unlock all fields for free members (trade is history)
             const _postDay = new Date(post.sent_at||post.created_at).toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'});
             if (tradeState === 'triggered' && _postDay < new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'})) unlocked.all = true;
@@ -3050,7 +3058,8 @@
         // ── 2.5. FREE MEMBER + CLOSED TRADE → Image 3 design ────────────────
         if (isFreeViewer && isClosed) {
             // Not-triggered: compact pill (same as paid/admin)
-            const _nt25state = getTradeState(post, postReplies);
+            const _pubReplies25 = postReplies.filter(r => r.audience !== 'paid_only');
+            const _nt25state = getTradeState(post, _pubReplies25);
             if (_nt25state === 'not_triggered') {
                 const _ntOpt25 = (fields.optType||'').toLowerCase();
                 const _ntBox25 = fields.optType
@@ -3356,7 +3365,8 @@
                     let _banked = 0;
                     [...postReplies].reverse().forEach(r => {
                         const fp = parseFollowUpContent(r.content||'');
-                        if (fp.exitPct && fp.price) _banked += (fp.price - fields.entry) * fp.exitPct;
+                        const _prc = fp.price || (fp.exitPct && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+                        if (fp.exitPct && _prc) _banked += (_prc - fields.entry) * fp.exitPct;
                     });
                     const _adjEntry = fields.entry - _banked / (100 - _cumExit3);
                     maxPnlPts3 = Math.round((latestCmp - _adjEntry) * _pnlDir3);
