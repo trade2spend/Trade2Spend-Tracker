@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260801-002 | Member PWA: RC-5 — SELL Max Possible HIGH→LOW. (1) extractLowFromReplies() added after extractHighFromReplies. (2) calculateMinPrice() added after calculateMaxProfit. (3) S2.5 max possible block: !_loss25 gate + SELL/BUY branch. (4) S2.5 template: _maxPossLabel25. (5) S3 block: _lossShLabel3 + !_loss3 gate + SELL/BUY branch. (6) S3 template: _maxPossLabel3/_lossShLabel3 branches. (7) fetchPerformance mp+validDayHigh: f.action!==SELL guards. -->
 <!-- DEPLOY: T2S-PROD-20260801-001 | Member PWA: RC-3 — isTradeFullyClosed reply-order fix. (1) const reps: added [...].reverse() for oldest-first hasHolding semantics. (2) reps[0] → reps[reps.length-1] in stale-trade check. -->
 <!-- DEPLOY: T2S-PROD-20260731-001 | Member PWA: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp fallback with fp.cmp<10000 guard — when admin writes "CMP 115, exiting 50%", parseFollowUpContent stores exit price in fp.cmp not fp.price; the function was silently skipping these legs. Now correctly captures CMP-phrased exits; <10000 guard prevents spot index values (Nifty 24000+) from being mistaken as option prices. (2) _bankedPerf loop in fetchPerformance: added _prc2 fallback — CMP-phrased exits now correctly contribute to the banked profit used in adjusted-entry P&L for partial-exit trades in the Performance tab. (3) _banked loop in buildTradeAlertCard S3: added _prc fallback — adjusted-entry formula in closed card S3 now includes CMP-phrased exit legs. Rollback: (1) remove `const price` line, revert `if (!fp.price...)` to original, revert `weightedSum += fp.price * pct`; (2) remove `_prc2` line, revert `if (_fp2.exitPct && _prc2)` to `if (_fp2.exitPct && _fp2.price)`; (3) remove `_prc` line, revert `if (fp.exitPct && _prc)` to `if (fp.exitPct && fp.price)`. -->
 <!-- DEPLOY: T2S-PROD-20260730-003 | Member PWA: Trade identity engine — permanent fix for session high/low bleeding across trades with identical strike. (1) _lastOptionHighsPostIds global added; updateTradeHighs() now accepts optionHighsPostIds parameter — before applying a session high, checks that VM's tracked postId for that liveCmpKey matches the card's own post.id; skips if different post is being tracked (RC-3 fix). (2) _sessionOptionLows re-keyed from liveCmpKey to post.id — data-live-low now stores post.id; new data-live-low-key stores liveCmpKey for LTP lookup; _sessionOptionLows dict updated throughout (RC-4 fix). (3) All 3 data-live-high render locations: data-post-id="${post.id}" added. All 3 data-live-low render locations: data-live-low="${post.id}" + data-live-low-key="${liveCmpKey}" (was data-live-low="${liveCmpKey}"). (4) getTradeState() validReplies filter: system markers [HIGH:X], [LOW:X], [CLOSEPRICE:X] now excluded — previously they passed through and could cause false "Triggered" state on trades that had only system marker follow-ups (RC-5 fix). Rollback: remove _lastOptionHighsPostIds decl; revert updateTradeHighs() to single param (remove postId block); revert 2 call sites to single-arg; remove data-post-id attrs from 3 live-high spans; revert data-live-low to liveCmpKey + remove data-live-low-key attrs; revert _sessionOptionLows tracking block to use key=liveLow; remove /^\[(HIGH|LOW|CLOSEPRICE).../ line from getTradeState. -->
@@ -1066,6 +1067,16 @@
         return max;
     }
 
+    // Extract the VM-tracked intraday low from [LOW:X] follow-up posted at close (SELL trades)
+    function extractLowFromReplies(replies) {
+        let min = null;
+        for (const r of replies) {
+            const m = (r.content || '').trim().match(/^\[LOW:([\d.]+)\]$/);
+            if (m) { const v = parseFloat(m[1]); if (min === null || v < min) min = v; }
+        }
+        return min;
+    }
+
     // Update Day High spans on active trade cards (live, from VM /market optionHighs)
     // RC-3 FIX: optionHighsPostIds gates each update to the card whose post.id matches the VM's tracked postId
     function updateTradeHighs(optionHighs, optionHighsPostIds) {
@@ -1422,8 +1433,8 @@
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const _closePricePerf = extractClosePriceFromReplies(replies);
                 const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies), closePrice: _closePricePerf });
-                const mp = f.entry ? calculateMaxProfit(f.entry, replies) : null;
-                const validDayHigh = (dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
+                const mp = (f.action !== 'SELL' && f.entry) ? calculateMaxProfit(f.entry, replies) : null;
+                const validDayHigh = (f.action !== 'SELL' && dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
                 const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
                 const lotSize = getLotSize(f.instrument);
                 let pnlPts = null, pnlRs = null, isWin = false;
@@ -2169,6 +2180,17 @@
         return maxP>entry ? {max:maxP, pts:parseFloat((maxP-entry).toFixed(2))} : null;
     }
 
+    // Lowest option price seen in follow-up messages — for SELL trade session low tracking
+    function calculateMinPrice(entry, replies) {
+        if (!entry||!replies||!replies.length) return null;
+        let minP = entry;
+        for (const r of replies) {
+            const nums=[...(r.content||'').matchAll(/\b(\d{2,4}(?:\.\d+)?)\b/g)].map(m=>parseFloat(m[1])).filter(n=>n>10&&n<9999);
+            for (const n of nums) if (n > 0 && n < minP) minP = n;
+        }
+        return minP < entry ? { min: minP, pts: parseFloat((entry - minP).toFixed(2)) } : null;
+    }
+
     // ── RENDER STRUCTURED FOLLOW-UP CARD ─────────────────────────────────────
     function renderFollowUpCard(reply, parsed, cumulativeExit, prevSL) {
         if (parsed.isAdminUnlock||(reply.content||'').includes('[T2S_UNLOCK]')) return '';
@@ -2784,10 +2806,22 @@
             const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
-            const _optHigh25 = extractHighFromReplies(postReplies);
-            const _calcMax25 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
-            const _bestHigh25 = (_optHigh25 && fields.entry && _optHigh25 >= fields.entry) ? _optHigh25 : (_calcMax25 ? _calcMax25.max : null);
-            const _maxPoss25 = (_bestHigh25 && fields.entry) ? Math.round(_bestHigh25 - fields.entry) : null;
+            let _maxPoss25 = null, _maxPossLabel25 = '';
+            if (!_loss25) {
+                if (fields.action === 'SELL') {
+                    const _optLow25 = extractLowFromReplies(postReplies);
+                    if (_optLow25 != null && fields.entry && _optLow25 < fields.entry) {
+                        _maxPoss25 = Math.round(fields.entry - _optLow25);
+                        _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_optLow25})</span></div>`;
+                    }
+                } else {
+                    const _optHigh25 = extractHighFromReplies(postReplies);
+                    if (_optHigh25 != null && fields.entry && _optHigh25 > fields.entry) {
+                        _maxPoss25 = Math.round(_optHigh25 - fields.entry);
+                        _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh25})</span></div>`;
+                    }
+                }
+            }
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -2815,7 +2849,7 @@
                             <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">✅ Closed Trade</span>
                             ${maxPnlPts25!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss25?'#dc2626':'#15803d'};">${maxPnlPts25>0?'+':''}${maxPnlPts25} pts · ₹${Math.abs(maxPnlRs25).toLocaleString()}</span>`:''}
                         </div>
-                        ${_maxPoss25!==null?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_bestHigh25})</span></div>`:''}
+                        ${_maxPossLabel25}
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}<button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>
                 </div>
@@ -3012,10 +3046,30 @@
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle3 = _loss3 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
-            const _optHigh3 = extractHighFromReplies(postReplies);
-            const _calcMax3 = fields.entry ? calculateMaxProfit(fields.entry, postReplies) : null;
-            const _bestHigh3 = (_optHigh3 && fields.entry && _optHigh3 >= fields.entry) ? _optHigh3 : (_calcMax3 ? _calcMax3.max : null);
-            const _maxPoss3 = (_bestHigh3 && fields.entry) ? Math.round(_bestHigh3 - fields.entry) : null;
+            const _lossShLabel3 = (() => {
+                if (!_loss3 || !fields.entry) return '';
+                const _lmp = fields.action === 'SELL' ? calculateMinPrice(fields.entry, postReplies) : calculateMaxProfit(fields.entry, postReplies);
+                if (!_lmp) return '';
+                const _shVal = fields.action === 'SELL' ? _lmp.min : _lmp.max;
+                const _shLbl = fields.action === 'SELL' ? 'Session Low' : 'Session High';
+                return `<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${_shLbl}</span><span style="font-size:0.8rem;font-weight:700;color:#9ca3af;">₹${_shVal}</span></div>`;
+            })();
+            let _maxPoss3 = null, _maxPossLabel3 = '';
+            if (!_loss3) {
+                if (fields.action === 'SELL') {
+                    const _optLow3 = extractLowFromReplies(postReplies);
+                    if (_optLow3 != null && fields.entry && _optLow3 < fields.entry) {
+                        _maxPoss3 = Math.round(fields.entry - _optLow3);
+                        _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_optLow3})</span></div>`;
+                    }
+                } else {
+                    const _optHigh3 = extractHighFromReplies(postReplies);
+                    if (_optHigh3 != null && fields.entry && _optHigh3 > fields.entry) {
+                        _maxPoss3 = Math.round(_optHigh3 - fields.entry);
+                        _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`;
+                    }
+                }
+            }
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -3049,12 +3103,15 @@
                             ${maxPnlPts3!==null?`<span style="font-size:0.72rem;font-weight:700;color:${_loss3?'#dc2626':'#15803d'};">${maxPnlPts3>0?'+':''}${maxPnlPts3} pts · ₹${Math.abs(maxPnlRs3).toLocaleString()}</span>`:''}
                         </div>
                         ${_maxPoss3!==null
-                            ?`<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_bestHigh3})</span></div>`
-                            :(!isMarketClosedNow()&&liveCmpKey)
-                                ?(fields.action==='SELL'
-                                    ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`
-                                    :`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${fields.entry||''}">—</span></div>`)
-                                :''}
+                            ?_maxPossLabel3
+                            :(_loss3
+                                ?_lossShLabel3
+                                :(!isMarketClosedNow()&&liveCmpKey)
+                                    ?(fields.action==='SELL'
+                                        ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`
+                                        :`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${fields.entry||''}">—</span></div>`)
+                                    :'')}
+
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div>
                 </div>
