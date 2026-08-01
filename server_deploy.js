@@ -530,7 +530,12 @@ function loadState() {
         const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
         if (data.optionHighsDate === todayIST) {
           Object.entries(data.optionHighs).forEach(([k,v]) => {
-            _optionHighs[k] = { high: v, postId: null };
+            // RC-4 FIX: old format = plain number (no postId); new format = { high, last, postId }
+            if (typeof v === 'number') {
+              _optionHighs[k] = { high: v, last: 0, postId: null };
+            } else {
+              _optionHighs[k] = { high: v.high || 0, last: v.last || 0, postId: v.postId || null };
+            }
           });
           console.log(`Restored ${Object.keys(_optionHighs).length} option highs from state`);
         }
@@ -540,7 +545,7 @@ function loadState() {
         const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
         if (data.optionLowsDate === todayIST) {
           Object.entries(data.optionLows).forEach(([k,v]) => {
-            _optionLows[k] = { low: v.low, postId: null, action: v.action || 'BUY' };
+            _optionLows[k] = { low: v.low, postId: v.postId || null, action: v.action || 'BUY' }; // RC-4 FIX: restore postId
           });
           console.log(`Restored ${Object.keys(_optionLows).length} option lows from state`);
         }
@@ -553,8 +558,8 @@ function loadState() {
 async function saveState() {
   try {
     const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
-    const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
-    const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action }]));
+    const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, { high: v.high, last: v.last || 0, postId: v.postId || null }])); // RC-4 FIX: persist postId for new-trade detection after VM restart
+    const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action, postId: v.postId || null }])); // RC-4 FIX: persist postId
     fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2));
   } catch (e) {
     console.error('saveState error:', e.message);
