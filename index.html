@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260731-001 | Member PWA: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp fallback with fp.cmp<10000 guard — when admin writes "CMP 115, exiting 50%", parseFollowUpContent stores exit price in fp.cmp not fp.price; the function was silently skipping these legs. Now correctly captures CMP-phrased exits; <10000 guard prevents spot index values (Nifty 24000+) from being mistaken as option prices. (2) _bankedPerf loop in fetchPerformance: added _prc2 fallback — CMP-phrased exits now correctly contribute to the banked profit used in adjusted-entry P&L for partial-exit trades in the Performance tab. (3) _banked loop in buildTradeAlertCard S3: added _prc fallback — adjusted-entry formula in closed card S3 now includes CMP-phrased exit legs. Rollback: (1) remove `const price` line, revert `if (!fp.price...)` to original, revert `weightedSum += fp.price * pct`; (2) remove `_prc2` line, revert `if (_fp2.exitPct && _prc2)` to `if (_fp2.exitPct && _fp2.price)`; (3) remove `_prc` line, revert `if (fp.exitPct && _prc)` to `if (fp.exitPct && fp.price)`. -->
 <!-- DEPLOY: T2S-PROD-20260730-003 | Member PWA: Trade identity engine — permanent fix for session high/low bleeding across trades with identical strike. (1) _lastOptionHighsPostIds global added; updateTradeHighs() now accepts optionHighsPostIds parameter — before applying a session high, checks that VM's tracked postId for that liveCmpKey matches the card's own post.id; skips if different post is being tracked (RC-3 fix). (2) _sessionOptionLows re-keyed from liveCmpKey to post.id — data-live-low now stores post.id; new data-live-low-key stores liveCmpKey for LTP lookup; _sessionOptionLows dict updated throughout (RC-4 fix). (3) All 3 data-live-high render locations: data-post-id="${post.id}" added. All 3 data-live-low render locations: data-live-low="${post.id}" + data-live-low-key="${liveCmpKey}" (was data-live-low="${liveCmpKey}"). (4) getTradeState() validReplies filter: system markers [HIGH:X], [LOW:X], [CLOSEPRICE:X] now excluded — previously they passed through and could cause false "Triggered" state on trades that had only system marker follow-ups (RC-5 fix). Rollback: remove _lastOptionHighsPostIds decl; revert updateTradeHighs() to single param (remove postId block); revert 2 call sites to single-arg; remove data-post-id attrs from 3 live-high spans; revert data-live-low to liveCmpKey + remove data-live-low-key attrs; revert _sessionOptionLows tracking block to use key=liveLow; remove /^\[(HIGH|LOW|CLOSEPRICE).../ line from getTradeState. -->
 <!-- DEPLOY: T2S-PROD-20260730-002 | Member PWA: system marker filter hardening — [LOW:X] and [CLOSEPRICE:X] now filtered at all 5 display points: renderFollowUpCard, _freeVisReplies2, _cf25Vis, visibleReplies (Section 3), visibleReplies (Section 3 free-viewer). Previously only [HIGH:X] was filtered at all points; [LOW:X] was absent from prod; [CLOSEPRICE:X] was absent from the two visibleReplies filters. Result: no VM system marker can ever appear as a visible follow-up card to any member, regardless of trade direction or member tier. Zero logic change — purely additive filter lines. Rollback: remove [LOW:X] and [CLOSEPRICE:X] filter lines from the 5 locations listed. -->
 <!-- DEPLOY: T2S-PROD-20260730-001 | Member PWA: Performance tab P&L sync fix — (1) extractClosePriceFromReplies() function added to prod (existed only in UAT). (2) getWeightedExitPrice: added opts.closePrice branch — VM-posted [CLOSEPRICE:X] at 3:35 PM now fills remaining unexited qty in weighted average, before SL fallback. (3) Performance tab latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (4) Performance tab getWeightedExitPrice call: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. (5) Section 2.5 getWeightedExitPrice: now passes closePrice. (6) Section 3 getWeightedExitPrice: now passes closePrice; _effectiveExitPrice now prefers exitPrice (weighted with closePrice) over latestCmp when [CLOSEPRICE:X] is available. Rollback: remove extractClosePriceFromReplies function; revert getWeightedExitPrice opts block to single else-if; remove _closePricePerf line + closePrice from Performance call; remove <10000 guards from latestCmpPerf loop; remove _closePrice25 line + closePrice from Section 2.5; remove _closePrice3 line + closePrice from Section 3 + revert _effectiveExitPrice condition to remove !_closePrice3. -->
@@ -1414,6 +1415,8 @@
             const tradeData = closedTrades.map(p => {
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
+                // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
+                const _dirMult = (f.action === 'SELL') ? -1 : 1;
                 // P&L priority: adjusted-entry (partial exit + CMP) > VM Day High > weighted exit > calculateMaxProfit
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const _closePricePerf = extractClosePriceFromReplies(replies);
@@ -1436,14 +1439,15 @@
                     let _bankedPerf = 0;
                     [...replies].reverse().forEach(_rr => {
                         const _fp2 = parseFollowUpContent(_rr.content||'');
-                        if (_fp2.exitPct && _fp2.price) _bankedPerf += (_fp2.price - f.entry) * _fp2.exitPct;
+                        const _prc2 = _fp2.price || (_fp2.exitPct && _fp2.cmp && _fp2.cmp < 10000 ? _fp2.cmp : null);
+                        if (_fp2.exitPct && _prc2) _bankedPerf += (_prc2 - f.entry) * _fp2.exitPct;
                     });
                     const _adjEntryPerf = f.entry - _bankedPerf / (100 - _cumExitPerf);
-                    pnlPts = Math.round(latestCmpPerf - _adjEntryPerf);
+                    pnlPts = Math.round((latestCmpPerf - _adjEntryPerf) * _dirMult);
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
                 } else if (f.entry && maxPrice) {
-                    pnlPts = Math.round(maxPrice - f.entry);
+                    pnlPts = Math.round((maxPrice - f.entry) * _dirMult);
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
                 }
@@ -2037,10 +2041,13 @@
         let totalPct = 0, weightedSum = 0;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
-            if (!fp.price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
+            // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
-            weightedSum += fp.price * pct;
+            weightedSum += price * pct;
             totalPct += pct;
             if (fp.isFullExit || totalPct >= 100) break;
         }
@@ -2739,10 +2746,11 @@
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
             const lotSize25 = getLotSize(fields.instrument);
+            // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
+            const _pnlDir25 = fields.action === 'SELL' ? -1 : 1;
             let maxPnlPts25 = null, maxPnlRs25 = null;
             if (fields.entry && displayPrice25) {
-                // For BOTH CE and PE: option profit = display price − entry (positive = gain, negative = loss)
-                maxPnlPts25 = Math.round(displayPrice25 - fields.entry);
+                maxPnlPts25 = Math.round((displayPrice25 - fields.entry) * _pnlDir25);
                 maxPnlRs25 = Math.abs(maxPnlPts25) * lotSize25;
             }
             // SL display with strikethrough
@@ -2978,6 +2986,8 @@
         // CLOSED trade card — matches Section 2.5 layout
         if (isClosed) {
             const lotSize3 = getLotSize(fields.instrument);
+            // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
+            const _pnlDir3 = fields.action === 'SELL' ? -1 : 1;
             let maxPnlPts3 = null, maxPnlRs3 = null;
             if (fields.entry && _effectiveExitPrice) {
                 const _cumExit3 = getCumulativeExit(postReplies);
@@ -2987,12 +2997,13 @@
                     let _banked = 0;
                     [...postReplies].reverse().forEach(r => {
                         const fp = parseFollowUpContent(r.content||'');
-                        if (fp.exitPct && fp.price) _banked += (fp.price - fields.entry) * fp.exitPct;
+                        const _prc = fp.price || (fp.exitPct && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+                        if (fp.exitPct && _prc) _banked += (_prc - fields.entry) * fp.exitPct;
                     });
                     const _adjEntry = fields.entry - _banked / (100 - _cumExit3);
-                    maxPnlPts3 = Math.round(latestCmp - _adjEntry);
+                    maxPnlPts3 = Math.round((latestCmp - _adjEntry) * _pnlDir3);
                 } else {
-                    maxPnlPts3 = Math.round(_effectiveExitPrice - fields.entry);
+                    maxPnlPts3 = Math.round((_effectiveExitPrice - fields.entry) * _pnlDir3);
                 }
                 maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
             }
