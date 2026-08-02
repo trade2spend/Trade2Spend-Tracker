@@ -1504,7 +1504,7 @@ async function fetchKotakOptionLTPs() {
     // Also force scrip master re-download — stale LTPs often mean a new expiry rolled in
     // and the token map has yesterday's expired contract tokens. Without fresh tokens,
     // refreshActiveContracts() will just re-look up the same wrong/expired contract.
-    _scripMasterTs = 0; _scripMasterAttemptTs = 0;
+    _scripMasterTs = 0;
     downloadScripMaster()
       .then(() => refreshActiveContracts())
       .catch(() => refreshActiveContracts()); // contracts refresh regardless of scrip master outcome
