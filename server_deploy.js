@@ -4561,6 +4561,10 @@ setInterval(() => {
         tgAlert('⚠️ Market scraper stopped unexpectedly during market hours — auto-restarted.').catch(()=>{});
       }
     }
+    if (session.token && session.baseUrl && !_kotakLtpInterval) {
+      startKotakLtpInterval();
+      console.warn('[ltp] RC-7: _kotakLtpInterval was null during market hours — restarted');
+    }
   } else {
     _scraperStopAlerted = false; // reset so alert fires again next session if needed
   }
