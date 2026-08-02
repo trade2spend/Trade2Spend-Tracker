@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260801-003 | Member PWA: RC-6 — Paid-only reply scope fix for free member code paths. (1) fetchPerformance closedTrades filter: getTradeState now receives (replyMap[p.id]||[]).filter(r => r.audience !== 'paid_only') — paid-only cancel replies no longer exclude triggered trades from Performance tab. (2) buildTradeAlertCard Section 2: _pubReplies2 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState and getFreeUnlockedFields receive _pubReplies2 — paid-only trigger/SL replies no longer cause false Triggered state or field unlock for free members. (3) buildTradeAlertCard Section 2.5: _pubReplies25 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState receives _pubReplies25 — paid-only cancel replies no longer suppress full closed card. isTradeFullyClosed, P&L calculations (getWeightedExitPrice, calculateMaxProfit, extractHighFromReplies, extractLowFromReplies, extractClosePriceFromReplies, getLastSLNumeric, getCurrentSL), and Section 3 all retain full postReplies. -->
 <!-- DEPLOY: T2S-PROD-20260801-002 | Member PWA: RC-5 — SELL Max Possible HIGH→LOW. (1) extractLowFromReplies() added after extractHighFromReplies. (2) calculateMinPrice() added after calculateMaxProfit. (3) S2.5 max possible block: !_loss25 gate + SELL/BUY branch. (4) S2.5 template: _maxPossLabel25. (5) S3 block: _lossShLabel3 + !_loss3 gate + SELL/BUY branch. (6) S3 template: _maxPossLabel3/_lossShLabel3 branches. (7) fetchPerformance mp+validDayHigh: f.action!==SELL guards. -->
 <!-- DEPLOY: T2S-PROD-20260801-001 | Member PWA: RC-3 — isTradeFullyClosed reply-order fix. (1) const reps: added [...].reverse() for oldest-first hasHolding semantics. (2) reps[0] → reps[reps.length-1] in stale-trade check. -->
 <!-- DEPLOY: T2S-PROD-20260731-001 | Member PWA: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp fallback with fp.cmp<10000 guard — when admin writes "CMP 115, exiting 50%", parseFollowUpContent stores exit price in fp.cmp not fp.price; the function was silently skipping these legs. Now correctly captures CMP-phrased exits; <10000 guard prevents spot index values (Nifty 24000+) from being mistaken as option prices. (2) _bankedPerf loop in fetchPerformance: added _prc2 fallback — CMP-phrased exits now correctly contribute to the banked profit used in adjusted-entry P&L for partial-exit trades in the Performance tab. (3) _banked loop in buildTradeAlertCard S3: added _prc fallback — adjusted-entry formula in closed card S3 now includes CMP-phrased exit legs. Rollback: (1) remove `const price` line, revert `if (!fp.price...)` to original, revert `weightedSum += fp.price * pct`; (2) remove `_prc2` line, revert `if (_fp2.exitPct && _prc2)` to `if (_fp2.exitPct && _fp2.price)`; (3) remove `_prc` line, revert `if (fp.exitPct && _prc)` to `if (fp.exitPct && fp.price)`. -->
@@ -1421,7 +1422,7 @@
             const replyMap = {};
             allReplies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
-            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]) && getTradeState(p, replyMap[p.id]||[]) !== 'not_triggered');
+            const closedTrades = tradePosts.filter(p => isTradeFullyClosed(p, replyMap[p.id]||[]) && getTradeState(p, (replyMap[p.id]||[]).filter(r => r.audience !== 'paid_only')) !== 'not_triggered');
 
             const tz = {timeZone:'Asia/Kolkata'};
             const tradeData = closedTrades.map(p => {
@@ -2603,7 +2604,8 @@
 
         // ── 2. FREE MEMBER + trade not closed → progressive unlock ───────────
         if (isFreeViewer && !isClosed) {
-            const tradeState = getTradeState(post, postReplies);
+            const _pubReplies2 = postReplies.filter(r => r.audience !== 'paid_only');
+            const tradeState = getTradeState(post, _pubReplies2);
             const instrName  = fields.instrument||'Trade Alert';
             const strikeStr  = fields.strike||'';
 
@@ -2625,7 +2627,7 @@
             }
 
             // Determine unlock state
-            const unlocked  = getFreeUnlockedFields(postReplies);
+            const unlocked  = getFreeUnlockedFields(_pubReplies2);
             // Past-day triggered trade → unlock all fields for free members (trade is history)
             const _postDay = new Date(post.sent_at||post.created_at).toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'});
             if (tradeState === 'triggered' && _postDay < new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'})) unlocked.all = true;
@@ -2737,7 +2739,8 @@
         // ── 2.5. FREE MEMBER + CLOSED TRADE → Image 3 design ────────────────
         if (isFreeViewer && isClosed) {
             // Not-triggered: compact pill (same as paid/admin)
-            const _nt25state = getTradeState(post, postReplies);
+            const _pubReplies25 = postReplies.filter(r => r.audience !== 'paid_only');
+            const _nt25state = getTradeState(post, _pubReplies25);
             if (_nt25state === 'not_triggered') {
                 const _ntOpt25 = (fields.optType||'').toLowerCase();
                 const _ntBox25 = fields.optType
