@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260803-001 | uat.html: P1 SL-breach auto-close validation. (1) isTradeFullyClosed: same SL-breach block as T2S-PROD-20260803-002 — partial exits with breached premium SL now close. (2) _effectiveExitPrice: _slForExit3 guard added — SL-based exits use weighted exit price, not latestCmp. (3) getExitLegs: opts.sl fallback leg added — breakdown shows SL exit leg when closePrice absent. (4) _exitLegs25/_exitLegs3 call sites: sl:getLastSLNumeric() added to opts. (5) dummy-dsl card added: BUY NIFTY 24450 at 80, 50%@160 partial exit, SL revised to 140, mock LTP 139.75 → must render as CLOSED with Effective Exit ₹150, breakdown "50%@160 / 50%@140", P&L +₹4550. Rollback: reverse all 5 changes; remove dummy-dsl from _UAT_DUMMY_POSTS/_REPLIES and 'NIFTY-24450-CE' from _UAT_MOCK_LTPS. -->
 <!-- T2S-UAT-20260731-001 | uat.html: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp<10000 guard to the existing fp.cmp fallback — prevents spot index CMPs (24000+) from being mistaken as option exit prices. (2) getExitLegs: same fp.cmp<10000 guard added (mirrors getWeightedExitPrice). (3) computePlBadgeAttrs: added fp.cmp fallback with <10000 guard and use of resolved price variable throughout (fixes live P&L badge breakeven for CMP-phrased partial exits). (4) _bankedPerf loop in fetchPerformance: added fp.cmp fallback with <10000 guard — CMP-phrased partial exits now correctly adjust the banked profit in adjusted-entry P&L calculation. (5) _banked loop in buildTradeAlertCard S3: same fp.cmp fallback added — adjusted-entry formula now correctly includes CMP-phrased exit legs. Rollback: (1)+(2) remove &amp;&amp; fp.cmp < 10000 from price fallback in both functions; (3) revert computePlBadgeAttrs loop to original fp.price checks; (4)+(5) remove _prc2/_prc lines and revert if conditions to _fp2.price / fp.price. -->
 <!-- T2S-UAT-20260730-003 | uat.html: Trade identity engine — same root-cause fix as T2S-PROD-20260730-003. (1) _lastOptionHighsPostIds global added. (2) updateTradeHighs() + 2 call sites: postId gating added. (3) _sessionOptionLows + _sessionOptionHighs: re-keyed from liveCmpKey to post.id in updateTradeCMPs() — data-live-low now stores post.id, data-live-low-key stores liveCmpKey for LTP lookup; data-live-high elements use data-post-id for high tracking key. (4) All 3 session high/low render locations updated with new attributes. (5) getTradeState() validReplies filter: system markers [HIGH:X],[LOW:X],[CLOSEPRICE:X] excluded. Rollback: same as T2S-PROD-20260730-003 rollback instructions applied to uat.html. -->
 <!-- T2S-UAT-20260730-002 | uat.html: [CLOSEPRICE:X] added to visibleReplies filters (Section 3 both) — was missing alongside existing [HIGH:X] and [LOW:X] filters. Purely additive. Rollback: remove [CLOSEPRICE:X] filter lines from the two visibleReplies blocks. -->
@@ -735,7 +736,10 @@
       // DS1: Stock option — RELIANCE 1280 Monthly CE (July expiry, hero/zero test)
       { id:'dummy-stock1', content:'I am Buying RELIANCE 1280 Monthly CE at 1.7, CMP 1.5\nSL if spot sustains below 1275 for 15 minutes.\nWhy: Expiry day hero/zero play.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-28T09:00:00+05:30', created_at:'2026-07-28T09:00:00+05:30', _mockClosed:false, _uatLabel:'DS1' },
       // DS2: Stock option — RELIANCE 1280 Monthly CE (August expiry, matches real Supabase trade)
-      { id:'dummy-stock2', content:'I am Buying RELIANCE 1280 Monthly CE at 33, CMP 32.5\nSL if spot sustains below 1273 for 15 minutes, CMP 1276\n⚠️ *August expiry*\n\nOnly for informational purposes. Please trade based on your own analysis.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-28T10:33:00+05:30', created_at:'2026-07-28T10:33:00+05:30', _mockClosed:false, _uatLabel:'DS2' }
+      { id:'dummy-stock2', content:'I am Buying RELIANCE 1280 Monthly CE at 33, CMP 32.5\nSL if spot sustains below 1273 for 15 minutes, CMP 1276\n⚠️ *August expiry*\n\nOnly for informational purposes. Please trade based on your own analysis.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-28T10:33:00+05:30', created_at:'2026-07-28T10:33:00+05:30', _mockClosed:false, _uatLabel:'DS2' },
+      // D_SL: P1 production fix validation — BUY 50% exited, revised SL ₹140 breached at ₹139.75 → auto-close
+      // No _mockClosed set — card must fall through to isTradeFullyClosed() SL-breach logic
+      { id:'dummy-dsl', content:'Buying Nifty 24450 monthly call at 80 CMP 78, SL if spot sustains below 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-03T09:30:00+05:30', created_at:'2026-08-03T09:30:00+05:30', _uatLabel:'D_SL' }
     ];
     window._UAT_DUMMY_REPLIES = {
       // D5 on screen: BUY triggered — trigger CMP near entry (85), live mock 106
@@ -801,7 +805,14 @@
       // DS1: RELIANCE stock option trigger reply (July expiry, entry 1.7)
       'dummy-stock1': [{ id:'dummy-stock1-r1', content:'CMP 1.7\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock1', sent_at:'2026-07-28T09:05:00+05:30', created_at:'2026-07-28T09:05:00+05:30' }],
       // DS2: RELIANCE 1280 August CE (matches real Supabase trade posted 28 Jul)
-      'dummy-stock2': [{ id:'dummy-stock2-r1', content:'CMP 33\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock2', sent_at:'2026-07-28T10:38:00+05:30', created_at:'2026-07-28T10:38:00+05:30' }]
+      'dummy-stock2': [{ id:'dummy-stock2-r1', content:'CMP 33\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock2', sent_at:'2026-07-28T10:38:00+05:30', created_at:'2026-07-28T10:38:00+05:30' }],
+      // D_SL replies — newest-first (as Supabase returns)
+      // r2: SL revised to 140 (premium). r1: 50% exit at 115 via CMP phrasing. r0: trigger.
+      'dummy-dsl': [
+        { id:'dummy-dsl-r2', content:'CMP 152, modifying SL to 140', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-03T12:00:00+05:30', created_at:'2026-08-03T12:00:00+05:30' },
+        { id:'dummy-dsl-r1', content:'CMP 160, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-03T11:00:00+05:30', created_at:'2026-08-03T11:00:00+05:30' },
+        { id:'dummy-dsl-r0', content:'CMP 82\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-03T10:00:00+05:30', created_at:'2026-08-03T10:00:00+05:30' }
+      ]
     };
     // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
     window._UAT_MOCK_LTPS = {
@@ -814,7 +825,8 @@
       'NIFTY-24100-CE': 82,       // D1: BUY, entry 78, CMP 82 → Profit
       'NIFTY-24150-CE': 102,      // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
       'NIFTY-24250-CE': 102,      // D9: BUY, entry 102, CMP 102 → Triggered (price touched buy level)
-      'RELIANCE-1280-CE': 32.9    // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 32.9 (actual)
+      'RELIANCE-1280-CE': 32.9,   // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 32.9 (actual)
+      'NIFTY-24450-CE': 139.75    // D_SL: BUY at 80, 50% exited @160, revised SL ₹140 → breached at ₹139.75
     };
     // Intraday highs (BUY) / lows (SELL) — applied BEFORE _UAT_MOCK_LTPS so session peaks are
     // seeded correctly even when current CMP differs from the day's high/low
@@ -2285,8 +2297,12 @@
             totalPct += pct;
             if (fp.isFullExit || totalPct >= 100) break;
         }
-        if (totalPct < 100 && opts && opts.closePrice) {
-            legs.push({ pct: 100 - totalPct, price: opts.closePrice });
+        if (totalPct < 100 && opts) {
+            if (opts.closePrice) {
+                legs.push({ pct: 100 - totalPct, price: opts.closePrice });
+            } else if (opts.sl && opts.sl < 5000) {
+                legs.push({ pct: 100 - totalPct, price: opts.sl });
+            }
         }
         return legs;
     }
@@ -2344,6 +2360,19 @@
             if (p.exitPct) { cum+=p.exitPct; hasHolding=false; }
         }
         if (cum>=100) return true;
+        // SL-breach auto-close: remaining position exits when live CMP crosses the revised premium SL.
+        // Requires: partial exit done (cum>0), premium SL revision in replies (sl<5000 excludes spot index SLs), live LTP available.
+        if (cum > 0 && cum < 100 && _lastOptionLTPs) {
+            const _slNum = getLastSLNumeric(replies);
+            if (_slNum && _slNum < 5000) {
+                const _f = extractTradeAlertFields(post.content || '');
+                if (_f.instrument && _f.strike && _f.optType) {
+                    const _ltp = _lastOptionLTPs[`${_f.instrument}-${_f.strike}-${_f.optType}`];
+                    const _isSell = (_f.action || '').toUpperCase() === 'SELL';
+                    if (_ltp != null && _ltp > 0 && (_isSell ? _ltp > _slNum : _ltp < _slNum)) return true;
+                }
+            }
+        }
         if (!hasHolding) {
             const tz = { timeZone:'Asia/Kolkata' };
             const td = new Date(new Date().toLocaleString('en-US', tz));
@@ -3151,7 +3180,7 @@
                     }
                 }
             }
-            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25 });
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: getLastSLNumeric(postReplies) });
             const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
             const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
@@ -3206,7 +3235,8 @@
         // For auto-closed partial exits: prefer getWeightedExitPrice (which now includes [CLOSEPRICE:X])
         // Fall back to latestCmp only when no CLOSEPRICE is available (older behaviour)
         const _cumExitDisp = getCumulativeExit(postReplies);
-        const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp)
+        const _slForExit3 = getLastSLNumeric(postReplies);
+        const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp && !(_slForExit3 && _slForExit3 < 5000))
             ? latestCmp : exitPrice;
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
@@ -3407,7 +3437,7 @@
                     }
                 }
             }
-            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3 });
+            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: getLastSLNumeric(postReplies) });
             const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
             const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
