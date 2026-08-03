@@ -1342,8 +1342,12 @@ async function refreshActiveContracts() {
     posts.forEach(p => {
       const t = (p.content || '').toUpperCase();
       // Instrument
-      const instrM = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
-      if (!instrM) return;
+      let instrM = t.match(/\b(NIFTY|BANKNIFTY|SENSEX|MIDCAP)\b/);
+      if (!instrM) {
+        const sm = t.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:(?:NEXT\s+)?(?:WEEKLY|MONTHLY)\s+)?(CE|PE)\b/);
+        if (!sm) return;
+        instrM = sm;
+      }
       const instr = instrM[1];
       // Strike: first 4-6 digit number after the instrument name
       // (handles "Nifty 23850 Next Weekly CE at 120" — CE is not adjacent to the number)
