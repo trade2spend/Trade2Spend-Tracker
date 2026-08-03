@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260804-001 | Member PWA: P1 complete — SL-breach auto-close, correct exit price, correct P&L. (1) updateTradeCMPs: first SL-breach event triggers fetchTradeAlerts() via 1s debounce, one-shot per card. (2) isTradeFullyClosed: SL-breach block — cum>0&&cum<100 + live LTP crossed revised premium SL (<5000) returns true; index-level SLs excluded. (3) _effectiveExitPrice: _slForExit3 guard — uses weighted exit (SL-based) not latestCmp. (4) maxPnlPts3: same _slForExit3 guard on adjusted-entry branch — P&L in closed bar now correct for SL-breach auto-close. Rollback: (1) revert 5-line updateTradeCMPs block to single slbEl.style.display line; (2) remove 11-line isTradeFullyClosed block; (3) remove _slForExit3 line + revert _effectiveExitPrice condition; (4) remove guard from maxPnlPts3 condition and revert comment. -->
 <!-- DEPLOY: T2S-PROD-20260803-001 | server.js: RC-9 — stock instrument support in refreshActiveContracts() (+4 lines, stock fallback regex). index.html: RC-10 — Section 1 data-live-cmp on CMP cell + Session High row for free member progressive unlock view (+1 line). -->
 <!-- DEPLOY: T2S-PROD-20260801-003 | Member PWA: RC-6 — Paid-only reply scope fix for free member code paths. (1) fetchPerformance closedTrades filter: getTradeState now receives (replyMap[p.id]||[]).filter(r => r.audience !== 'paid_only') — paid-only cancel replies no longer exclude triggered trades from Performance tab. (2) buildTradeAlertCard Section 2: _pubReplies2 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState and getFreeUnlockedFields receive _pubReplies2 — paid-only trigger/SL replies no longer cause false Triggered state or field unlock for free members. (3) buildTradeAlertCard Section 2.5: _pubReplies25 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState receives _pubReplies25 — paid-only cancel replies no longer suppress full closed card. isTradeFullyClosed, P&L calculations (getWeightedExitPrice, calculateMaxProfit, extractHighFromReplies, extractLowFromReplies, extractClosePriceFromReplies, getLastSLNumeric, getCurrentSL), and Section 3 all retain full postReplies. -->
 <!-- DEPLOY: T2S-PROD-20260801-002 | Member PWA: RC-5 — SELL Max Possible HIGH→LOW. (1) extractLowFromReplies() added after extractHighFromReplies. (2) calculateMinPrice() added after calculateMaxProfit. (3) S2.5 max possible block: !_loss25 gate + SELL/BUY branch. (4) S2.5 template: _maxPossLabel25. (5) S3 block: _lossShLabel3 + !_loss3 gate + SELL/BUY branch. (6) S3 template: _maxPossLabel3/_lossShLabel3 branches. (7) fetchPerformance mp+validDayHigh: f.action!==SELL guards. -->
@@ -1157,7 +1158,14 @@
             if (!key || !slNum || !postId || ltp == null || ltp <= 0) return;
             const slbEl = document.getElementById(`slb-${postId}`);
             if (!slbEl) return;
-            slbEl.style.display = (isSell ? ltp > slNum : ltp < slNum) ? 'inline' : 'none';
+            const _slNowBreach = isSell ? ltp > slNum : ltp < slNum;
+            const _slWasBreach = slbEl.style.display === 'inline';
+            slbEl.style.display = _slNowBreach ? 'inline' : 'none';
+            // First breach only: re-run fetchTradeAlerts so isTradeFullyClosed() can close the partial-exit position.
+            if (_slNowBreach && !_slWasBreach) {
+                clearTimeout(window._slBreachRenderTimer);
+                window._slBreachRenderTimer = setTimeout(() => fetchTradeAlerts(), 1000);
+            }
         });
         // Show "● Live · HH:MM" chip (admin only) when Kotak is sending real LTPs
         if (Object.values(optionLTPs).some(v => v > 0)) {
@@ -2134,6 +2142,19 @@
             if (p.exitPct) { cum+=p.exitPct; hasHolding=false; }
         }
         if (cum>=100) return true;
+        // SL-breach auto-close: remaining position exits when live CMP crosses the revised premium SL.
+        // Requires: partial exit done (cum>0), premium SL revision in replies (sl<5000 excludes spot index SLs), live LTP available.
+        if (cum > 0 && cum < 100 && _lastOptionLTPs) {
+            const _slNum = getLastSLNumeric(replies);
+            if (_slNum && _slNum < 5000) {
+                const _f = extractTradeAlertFields(post.content || '');
+                if (_f.instrument && _f.strike && _f.optType) {
+                    const _ltp = _lastOptionLTPs[`${_f.instrument}-${_f.strike}-${_f.optType}`];
+                    const _isSell = (_f.action || '').toUpperCase() === 'SELL';
+                    if (_ltp != null && _ltp > 0 && (_isSell ? _ltp > _slNum : _ltp < _slNum)) return true;
+                }
+            }
+        }
         if (!hasHolding) {
             const tz = { timeZone:'Asia/Kolkata' };
             const td = new Date(new Date().toLocaleString('en-US', tz));
@@ -2876,7 +2897,8 @@
         // For auto-closed partial exits: prefer getWeightedExitPrice (which now includes [CLOSEPRICE:X])
         // Fall back to latestCmp only when no CLOSEPRICE is available (older behaviour)
         const _cumExitDisp = getCumulativeExit(postReplies);
-        const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp)
+        const _slForExit3 = getLastSLNumeric(postReplies);
+        const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp && !(_slForExit3 && _slForExit3 < 5000))
             ? latestCmp : exitPrice;
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
@@ -3031,9 +3053,9 @@
             let maxPnlPts3 = null, maxPnlRs3 = null;
             if (fields.entry && _effectiveExitPrice) {
                 const _cumExit3 = getCumulativeExit(postReplies);
-                if (isClosed && _cumExit3 > 0 && _cumExit3 < 100 && latestCmp) {
-                    // Adjusted-entry method: after partial exits, break-even shifts
-                    // adjustedEntry = entry − (banked profit from exits / remaining %)
+                if (isClosed && _cumExit3 > 0 && _cumExit3 < 100 && latestCmp && !(_slForExit3 && _slForExit3 < 5000)) {
+                    // Adjusted-entry method: after partial exits, break-even shifts.
+                    // Guard: when a revised premium SL exists, remaining leg exited at SL — use _effectiveExitPrice instead.
                     let _banked = 0;
                     [...postReplies].reverse().forEach(r => {
                         const fp = parseFollowUpContent(r.content||'');
