@@ -1453,6 +1453,12 @@ async function fetchKotakOptionLTPs() {
         const _prevHigh = _optionHighs[key]?.high || 0;
         _optionHighs[key] = { high: Math.max(_prevHigh, ltp), last: ltp, postId: c.postId || _optionHighs[key]?.postId };
         if (_optionHighs[key].high > _prevHigh) saveState().catch(() => {}); // persist new high so VM restart doesn't lose it
+        // RC-10 INE-2: Propagate new session high immediately — optionHighs is monotonically
+        // increasing, so per-contract update carries no poisoning risk (unlike optionLTPs).
+        if (_latestMarketData && _optionHighs[key].high > _prevHigh) {
+          if (_latestMarketData.optionHighs) _latestMarketData.optionHighs[key] = _optionHighs[key].high;
+          if (_latestMarketData.optionHighsPostIds) _latestMarketData.optionHighsPostIds[key] = _optionHighs[key].postId;
+        }
         // Track session low for all contracts — only USED for SELL trades in the follow-up post
         const _prevLow = _optionLows[key]?.low;
         if (_prevLow === undefined || ltp < _prevLow) {
