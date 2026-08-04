@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260805-002 | Admin PWA: checkKotakStatus() dot logic — _kotakConnected now set to true when either loggedIn OR kotakLtpRunning is true (was loggedIn only). Fixes header dot showing red while CMP is live. One condition changed on one line. No push to members, no Supabase, no member PWA, no calculations touched. Rollback: revert _kotakConnected = !!(d.loggedIn || d.kotakLtpRunning) back to _kotakConnected = !!d.loggedIn. -->
 <!-- T2S-PROD-20260717-004 | Admin PWA Posts tab: (1) Restored "↳ Add follow-up" button (was disabled in T2S-PROD-20260717-001). (2) Restored "Send Follow-up →" button in reply box. (3) Unlock button now only shows for paid_only non-trade_alert posts — hidden for all-audience posts and trade alerts (trade alerts use their own unlock mechanism). Rollback: remove Add follow-up button, remove Send Follow-up button, revert Unlock condition to unconditional. -->
 <!-- T2S-PROD-20260717-001: Admin PWA — "Send Follow-up →" button hidden in Trade tab and Posts tab. JS functions sendFollowUp() and sendPostsReply() untouched. Rollback: restore the two <button> lines (Trade tab ~line 692, Posts tab ~line 5201). -->
 <!-- T2S-PROD-20260716-002: Admin PWA — Bug Reporter "Broken in" field changed from free-text input to locked dropdown (Admin PWA tabs + Member PWA sections + Backend). openBugReport() auto-selects matching option from active tab. No free typing possible. Rollback: replace <select> with <input type="text"> and revert openBugReport() to use .value = tabName. -->
@@ -3283,7 +3284,7 @@ async function checkKotakStatus() {
   try {
     const r = await fetch('https://api.trade2spend.com/?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
-    _kotakConnected = !!d.loggedIn;
+    _kotakConnected = !!(d.loggedIn || d.kotakLtpRunning);
     if (typeof d.marketHoliday === 'boolean' && d.marketHoliday !== _marketHolidayActive) {
       _marketHolidayActive = d.marketHoliday;
       saveHolidayToStorage(_marketHolidayActive);
