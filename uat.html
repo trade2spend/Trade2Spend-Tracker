@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260804-003 | uat.html: Special comment display — 3 style options (A amber bar, B purple chip, C grey note) for ⚠️ *...* pattern from Admin PWA "Special Comments" field. Extraction: _specialCommentMatch regex in buildTradeAlertCard. Displayed in UAT as stacked style selector between metrics row and Session High/Low (active) or between metrics and why-section (closed). Paid/admin only (!isFreeViewer guard). D_CMT dummy card added (Nifty 24600 CE at 120, mock LTP 126, paid_only, triggered). DS2 (dummy-stock2) also shows styles — already has ⚠️ *August expiry* in content. Zero impact on calculations, P&L, exit breakdown. Rollback: remove _specialComment extraction block (8 lines), remove _cmtHtmlUAT from 2 Section 3 HTML locations, remove dummy-dcmt post + reply + 'NIFTY-24600-CE' LTP. -->
 <!-- T2S-UAT-20260803-001 | uat.html: P1 SL-breach auto-close validation. (1) isTradeFullyClosed: SL-breach block — partial exits with breached premium SL now auto-close. (2) _effectiveExitPrice: _slForExit3 guard — SL-based remaining leg uses weighted exit price, not latestCmp. (3) maxPnlPts3: same _slForExit3 guard added to adjusted-entry branch — P&L in closed-trade bar also uses weighted exit, not latestCmp. (4) getExitLegs: opts.sl fallback leg — breakdown shows SL exit leg when closePrice absent. (5) _exitLegs25/_exitLegs3 call sites: sl:getLastSLNumeric() added. (6) dummy-dsl card: BUY NIFTY 24450 at 150, 50%@160 first exit, SL revised to 140, remaining 50% auto-exits at SL, [HIGH:166] session peak. Mock LTP 139.75. Expected: CLOSED, Effective Exit ₹150, breakdown "50%@160/50%@140", P&L 0pts/₹0, Max possible +16pts (High ₹166). Rollback: remove guard from maxPnlPts3 condition; revert _effectiveExitPrice guard; revert getExitLegs; remove dummy-dsl data and 'NIFTY-24450-CE' from _UAT_MOCK_LTPS. -->
 <!-- T2S-UAT-20260731-001 | uat.html: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp<10000 guard to the existing fp.cmp fallback — prevents spot index CMPs (24000+) from being mistaken as option exit prices. (2) getExitLegs: same fp.cmp<10000 guard added (mirrors getWeightedExitPrice). (3) computePlBadgeAttrs: added fp.cmp fallback with <10000 guard and use of resolved price variable throughout (fixes live P&L badge breakeven for CMP-phrased partial exits). (4) _bankedPerf loop in fetchPerformance: added fp.cmp fallback with <10000 guard — CMP-phrased partial exits now correctly adjust the banked profit in adjusted-entry P&L calculation. (5) _banked loop in buildTradeAlertCard S3: same fp.cmp fallback added — adjusted-entry formula now correctly includes CMP-phrased exit legs. Rollback: (1)+(2) remove &amp;&amp; fp.cmp < 10000 from price fallback in both functions; (3) revert computePlBadgeAttrs loop to original fp.price checks; (4)+(5) remove _prc2/_prc lines and revert if conditions to _fp2.price / fp.price. -->
 <!-- T2S-UAT-20260730-003 | uat.html: Trade identity engine — same root-cause fix as T2S-PROD-20260730-003. (1) _lastOptionHighsPostIds global added. (2) updateTradeHighs() + 2 call sites: postId gating added. (3) _sessionOptionLows + _sessionOptionHighs: re-keyed from liveCmpKey to post.id in updateTradeCMPs() — data-live-low now stores post.id, data-live-low-key stores liveCmpKey for LTP lookup; data-live-high elements use data-post-id for high tracking key. (4) All 3 session high/low render locations updated with new attributes. (5) getTradeState() validReplies filter: system markers [HIGH:X],[LOW:X],[CLOSEPRICE:X] excluded. Rollback: same as T2S-PROD-20260730-003 rollback instructions applied to uat.html. -->
@@ -739,7 +740,9 @@
       { id:'dummy-stock2', content:'I am Buying RELIANCE 1280 Monthly CE at 33, CMP 32.5\nSL if spot sustains below 1273 for 15 minutes, CMP 1276\n⚠️ *August expiry*\n\nOnly for informational purposes. Please trade based on your own analysis.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-07-28T10:33:00+05:30', created_at:'2026-07-28T10:33:00+05:30', _mockClosed:false, _uatLabel:'DS2' },
       // D_SL: P1 production fix validation — BUY 50% exited, revised SL ₹140 breached at ₹139.75 → auto-close
       // No _mockClosed set — card must fall through to isTradeFullyClosed() SL-breach logic
-      { id:'dummy-dsl', content:'Buying Nifty 24450 monthly call at 150 CMP 148, SL if spot sustains below 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-03T09:30:00+05:30', created_at:'2026-08-03T09:30:00+05:30', _uatLabel:'D_SL' }
+      { id:'dummy-dsl', content:'Buying Nifty 24450 monthly call at 150 CMP 148, SL if spot sustains below 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-03T09:30:00+05:30', created_at:'2026-08-03T09:30:00+05:30', _uatLabel:'D_SL' },
+      // D_CMT: Special comment display test — ⚠️ *...* from Admin PWA Trade tab "Special Comments" field
+      { id:'dummy-dcmt', content:'Buying Nifty 24600 monthly call at 120 CMP 118, SL if spot sustains below 24400 for 15 minutes.\n\n⚠️ *Risky trade, go with small quantity only*', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-04T10:30:00+05:30', created_at:'2026-08-04T10:30:00+05:30', _mockClosed:false, _uatLabel:'D_CMT' }
     ];
     window._UAT_DUMMY_REPLIES = {
       // D5 on screen: BUY triggered — trigger CMP near entry (85), live mock 106
@@ -813,6 +816,9 @@
         { id:'dummy-dsl-r2', content:'CMP 152, modifying SL to 140', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-03T12:00:00+05:30', created_at:'2026-08-03T12:00:00+05:30' },
         { id:'dummy-dsl-r1', content:'CMP 160, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-03T11:00:00+05:30', created_at:'2026-08-03T11:00:00+05:30' },
         { id:'dummy-dsl-r0', content:'CMP 150\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-03T10:00:00+05:30', created_at:'2026-08-03T10:00:00+05:30' }
+      ],
+      'dummy-dcmt': [
+        { id:'dummy-dcmt-r0', content:'CMP 120\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dcmt', sent_at:'2026-08-04T10:35:00+05:30', created_at:'2026-08-04T10:35:00+05:30' }
       ]
     };
     // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
@@ -827,7 +833,8 @@
       'NIFTY-24150-CE': 102,      // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
       'NIFTY-24250-CE': 102,      // D9: BUY, entry 102, CMP 102 → Triggered (price touched buy level)
       'RELIANCE-1280-CE': 32.9,   // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 32.9 (actual)
-      'NIFTY-24450-CE': 139.75    // D_SL: BUY at 150, 50% exited @160, revised SL ₹140 → breached at ₹139.75
+      'NIFTY-24450-CE': 139.75,   // D_SL: BUY at 150, 50% exited @160, revised SL ₹140 → breached at ₹139.75
+      'NIFTY-24600-CE': 126       // D_CMT: BUY at 120, CMP 126 → active, in profit
     };
     // Intraday highs (BUY) / lows (SELL) — applied BEFORE _UAT_MOCK_LTPS so session peaks are
     // seeded correctly even when current CMP differs from the day's high/low
@@ -2815,6 +2822,17 @@
 
         if (why) _whyMap[post.id] = why;
 
+        // ── SPECIAL COMMENT (⚠️ *...* embedded by Admin PWA "Special Comments" field) ─────────
+        const _specialCommentMatch = (post.content||'').match(/⚠️ \*([^*\n]+)\*/);
+        const _specialComment = _specialCommentMatch ? _specialCommentMatch[1].trim() : '';
+        // UAT: show all 3 style options so Tushar can pick one before production
+        const _cmtHtmlUAT = (!isFreeViewer && _specialComment) ? `<div style="margin:0 12px 10px;padding:6px 8px;background:#f8f6ff;border-radius:8px;border:1px dashed #c4b5fd;">
+            <div style="font-size:0.58rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">UAT — Pick a style for special comment:</div>
+            <div style="margin-bottom:5px;"><div style="font-size:0.58rem;color:#92400e;font-weight:700;margin-bottom:2px;">Style A — Amber bar</div><div style="padding:5px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 6px 6px 0;"><span style="font-size:0.72rem;color:#92400e;font-weight:600;">⚠️ ${_specialComment}</span></div></div>
+            <div style="margin-bottom:5px;"><div style="font-size:0.58rem;color:#4a2a78;font-weight:700;margin-bottom:2px;">Style B — Purple chip</div><div><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${_specialComment}</span></div></div>
+            <div><div style="font-size:0.58rem;color:var(--text-muted);font-weight:700;margin-bottom:2px;">Style C — Minimal note</div><div style="font-size:0.72rem;color:var(--text-muted);font-style:italic;">Note: ${_specialComment}</div></div>
+        </div>` : '';
+
         const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;font-size:0.9rem;">🔒</span>`;
 
         // ── 1. PAID-ONLY → free member ──
@@ -3464,6 +3482,7 @@
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel3}</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span>${_exitBreakdown3}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
+                ${_cmtHtmlUAT}
                 ${why ? (whyVisible
                     ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
                     : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
@@ -3554,6 +3573,7 @@
                 <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
                 <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
+            ${_cmtHtmlUAT}
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
                 <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow3||fields.entry||''):(_initialHigh3||fields.entry||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—'))}</span>
