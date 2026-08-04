@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260804-004 | Member PWA: SL multi-revision display + session high floor fix. (1) parseFollowUpContent slPats[0]: extended regex — "modifying SL of remaining to 157" now parsed as slRevised=157 (phrase "of remaining" between SL and number was blocking all patterns). Additive change: all existing SL phrases unaffected. (2) getPenultimateSL(replies): new helper returning second-to-last numeric SL revision; adjacent to getCurrentSL. (3) _prevRevSL3 in Section 3 SL display: strikethrough now uses previous revision (₹142) not original post SL (₹24530) when multiple revisions exist — shows ~~142~~ → ₹157 instead of ~~24530~~ → ₹157. Single/zero revision behaviour unchanged. (4) Session high/low floor (port from T2S-UAT-20260726-001): _initialHigh3/_initialLow3 computed from max/min exit price via _activeLegs3 (already available); Section 3 active card session high span seeded at max(entry, exit_price) for BUY and min(entry, exit_price) for SELL — prevents card rebuild from resetting below a known traded price. Zero impact on P&L, isTradeFullyClosed, getWeightedExitPrice, exit breakdown, or any other calculation. Rollback: revert slPats[0]; remove getPenultimateSL; remove _prevRevSL3 + revert strikethrough to initSL3; remove 4 _exitMin/Max/initial lines + revert session high span. -->
 <!-- DEPLOY: T2S-PROD-20260804-003 | Member PWA: Special comment display (Style B purple chip) — ⚠️ *text* pattern from Admin PWA "Special Comments" field now rendered on trade cards for paid members and admin. Extraction: _specialCommentMatch regex + _specialComment const at buildTradeAlertCard entry. Rendered as purple chip (💬 text, #f3f0f8 bg, #4a2a78 color, 10px border-radius) via _cmtHtml const. Two injection points: Section 3 closed card (between metrics row and why-section) + Section 3 active card (between metrics row and Session High/Low row). Free members: _cmtHtml='' (isFreeViewer guard). No comment: _cmtHtml='' (empty string when no ⚠️ *...* found). Zero impact on calculations, P&L, SL logic, getExitLegs, isTradeFullyClosed, or any other feature. Rollback: remove 5-line _specialComment block; remove ${_cmtHtml} from 2 Section 3 HTML locations. -->
 <!-- DEPLOY: T2S-PROD-20260804-002 | Member PWA: Exit breakdown display — getExitLegs + buildExitBreakdownHtml added (display-only, no calculation impact). Section 2.5 and Section 3 closed cards: label switches to "Effective Exit" for multi-leg exits, breakdown "50% @₹160 / 50% @₹140" renders below price. Active partial-exit trigger banner: holdingText updated to show per-leg prices ("Holding 50% exited 50% @₹160"). Single-exit trades unchanged (buildExitBreakdownHtml returns '' for ≤1 leg). Rollback: remove getExitLegs + buildExitBreakdownHtml functions; revert _exitLegs25/_exitLabel25/_exitBreakdown25 and Section 2.5 HTML; revert _exitLegs3/_exitLabel3/_exitBreakdown3 and Section 3 HTML; revert 3 holdingText lines to single-line ternary. -->
 <!-- DEPLOY: T2S-PROD-20260804-001 | Member PWA: P1 complete — SL-breach auto-close, correct exit price, correct P&L. (1) updateTradeCMPs: first SL-breach event triggers fetchTradeAlerts() via 1s debounce, one-shot per card. (2) isTradeFullyClosed: SL-breach block — cum>0&&cum<100 + live LTP crossed revised premium SL (<5000) returns true; index-level SLs excluded. (3) _effectiveExitPrice: _slForExit3 guard — uses weighted exit (SL-based) not latestCmp. (4) maxPnlPts3: same _slForExit3 guard on adjusted-entry branch — P&L in closed bar now correct for SL-breach auto-close. Rollback: (1) revert 5-line updateTradeCMPs block to single slbEl.style.display line; (2) remove 11-line isTradeFullyClosed block; (3) remove _slForExit3 line + revert _effectiveExitPrice condition; (4) remove guard from maxPnlPts3 condition and revert comment. -->
@@ -1927,7 +1928,7 @@
         // Numeric SL revision
         if (!r.slRevised) {
             const slPats = [
-                /(?:revised?|modif(?:y|ied|ying)|moved?|shifted?|new|updated?)\s+sl\s+(?:to\s+)?(?:for\s+\w+\s+)?(\d+(?:\.\d+)?)/i,
+                /(?:revised?|modif(?:y|ied|ying)|moved?|shifted?|new|updated?)\s+sl\s+(?:(?:of|for)\s+(?:\w+\s+){0,3})?(?:to\s+)?(\d+(?:\.\d+)?)/i,
                 /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
                 /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
                 /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i,
@@ -2141,6 +2142,13 @@
         const sorted = [...(replies||[])].reverse();
         for (const r of sorted) { const p=parseFollowUpContent(r.content||''); if(p.slRevised) sl=p.slRevised; }
         return sl ? (sl==='cost'?'Cost (No Loss)':'₹'+sl) : null;
+    }
+    // Returns the second-to-last SL revision (numeric) — used as strikethrough when multiple revisions exist
+    function getPenultimateSL(replies) {
+        const sorted = [...(replies||[])].reverse(); // oldest → newest
+        const revs = [];
+        for (const r of sorted) { const p=parseFollowUpContent(r.content||''); if(p.slRevised&&p.slRevised!=='cost') revs.push(parseFloat(p.slRevised)); }
+        return revs.length >= 2 ? revs[revs.length - 2] : null;
     }
 
     // ── WHY POPUP ─────────────────────────────────────────────────────────────
@@ -3010,6 +3018,7 @@
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
         const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
+        const _prevRevSL3 = getPenultimateSL(postReplies); // second-to-last revision — strikethrough when multiple revisions exist
         let slDisplay3, slLabel3 = 'SL';
         let revNum3 = 0; // exposed outside if block for SL breach detection below
         if (revSL3) {
@@ -3017,7 +3026,7 @@
             const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
             if (slChanged3) {
-                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL3}</s> → ${revNum3 > 5000 ? spotSLNote(fields.slDirection) : ''}${revSL3Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
+                slDisplay3 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${_prevRevSL3 || initSL3}</s> → ${revNum3 > 5000 ? spotSLNote(fields.slDirection) : ''}${revSL3Display}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
             } else { slDisplay3 = (revNum3 > 5000 ? spotSLNote(fields.slDirection) : '') + revSL3Display; slLabel3 = slLabelFor(revSL3Display); }
         } else if (initSL3) {
             slDisplay3 = (initSL3 > 5000 ? spotSLNote(fields.slDirection) : '') + `₹${initSL3}`;
@@ -3205,6 +3214,11 @@
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
         const _activeLegs3 = cumExit3 > 0 && cumExit3 < 100 ? getExitLegs(postReplies) : [];
+        // Session high/low floor: seeded from highest (BUY) or lowest (SELL) known exit price so card rebuild doesn't reset below a known traded price
+        const _exitMinPriceSell3 = fields.action === 'SELL' && _activeLegs3.length > 0 ? Math.min(..._activeLegs3.map(l => l.price)) : null;
+        const _initialLow3 = (_exitMinPriceSell3 !== null && fields.entry) ? Math.min(fields.entry, _exitMinPriceSell3) : fields.entry;
+        const _exitMaxPriceBuy3 = fields.action !== 'SELL' && _activeLegs3.length > 0 ? Math.max(..._activeLegs3.map(l => l.price)) : null;
+        const _initialHigh3 = (_exitMaxPriceBuy3 !== null && fields.entry) ? Math.max(fields.entry, _exitMaxPriceBuy3) : fields.entry;
         const holdingText3 = cumExit3 >= 100 ? 'Exited Fully'
             : cumExit3 > 0 && _activeLegs3.length > 0 ? `Holding ${100-cumExit3}% exited ${_activeLegs3.map(l=>`${l.pct}% @${l.price}`).join('/')}`
             : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%`
@@ -3240,8 +3254,8 @@
             ${_cmtHtml}
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 ${fields.action==='SELL'
-                    ?`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span>`
-                    :`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${fields.entry||''}">—</span>`}
+                    ?`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${_initialLow3||fields.entry||''}">${_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')}</span>`
+                    :`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${_initialHigh3||fields.entry||''}">${_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—')}</span>`}
             </div>
             ${whyRow3}
             ${repliesHtml}
