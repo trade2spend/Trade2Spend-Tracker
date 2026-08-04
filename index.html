@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260804-002 | Member PWA: Exit breakdown display — getExitLegs + buildExitBreakdownHtml added (display-only, no calculation impact). Section 2.5 and Section 3 closed cards: label switches to "Effective Exit" for multi-leg exits, breakdown "50% @₹160 / 50% @₹140" renders below price. Active partial-exit trigger banner: holdingText updated to show per-leg prices ("Holding 50% exited 50% @₹160"). Single-exit trades unchanged (buildExitBreakdownHtml returns '' for ≤1 leg). Rollback: remove getExitLegs + buildExitBreakdownHtml functions; revert _exitLegs25/_exitLabel25/_exitBreakdown25 and Section 2.5 HTML; revert _exitLegs3/_exitLabel3/_exitBreakdown3 and Section 3 HTML; revert 3 holdingText lines to single-line ternary. -->
 <!-- DEPLOY: T2S-PROD-20260804-001 | Member PWA: P1 complete — SL-breach auto-close, correct exit price, correct P&L. (1) updateTradeCMPs: first SL-breach event triggers fetchTradeAlerts() via 1s debounce, one-shot per card. (2) isTradeFullyClosed: SL-breach block — cum>0&&cum<100 + live LTP crossed revised premium SL (<5000) returns true; index-level SLs excluded. (3) _effectiveExitPrice: _slForExit3 guard — uses weighted exit (SL-based) not latestCmp. (4) maxPnlPts3: same _slForExit3 guard on adjusted-entry branch — P&L in closed bar now correct for SL-breach auto-close. Rollback: (1) revert 5-line updateTradeCMPs block to single slbEl.style.display line; (2) remove 11-line isTradeFullyClosed block; (3) remove _slForExit3 line + revert _effectiveExitPrice condition; (4) remove guard from maxPnlPts3 condition and revert comment. -->
 <!-- DEPLOY: T2S-PROD-20260803-001 | server.js: RC-9 — stock instrument support in refreshActiveContracts() (+4 lines, stock fallback regex). index.html: RC-10 — Section 1 data-live-cmp on CMP cell + Session High row for free member progressive unlock view (+1 line). -->
 <!-- DEPLOY: T2S-PROD-20260801-003 | Member PWA: RC-6 — Paid-only reply scope fix for free member code paths. (1) fetchPerformance closedTrades filter: getTradeState now receives (replyMap[p.id]||[]).filter(r => r.audience !== 'paid_only') — paid-only cancel replies no longer exclude triggered trades from Performance tab. (2) buildTradeAlertCard Section 2: _pubReplies2 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState and getFreeUnlockedFields receive _pubReplies2 — paid-only trigger/SL replies no longer cause false Triggered state or field unlock for free members. (3) buildTradeAlertCard Section 2.5: _pubReplies25 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState receives _pubReplies25 — paid-only cancel replies no longer suppress full closed card. isTradeFullyClosed, P&L calculations (getWeightedExitPrice, calculateMaxProfit, extractHighFromReplies, extractLowFromReplies, extractClosePriceFromReplies, getLastSLNumeric, getCurrentSL), and Section 3 all retain full postReplies. -->
@@ -2104,6 +2105,35 @@
         return null;
     }
 
+    // ── EXIT LEGS + BREAKDOWN ─────────────────────────────────────────────────
+    function getExitLegs(replies, opts) {
+        const sorted = [...(replies||[])].reverse();
+        const legs = [];
+        let totalPct = 0;
+        for (const r of sorted) {
+            const fp = parseFollowUpContent(r.content||'');
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
+            if (pct <= 0) continue;
+            legs.push({ pct, price });
+            totalPct += pct;
+            if (fp.isFullExit || totalPct >= 100) break;
+        }
+        if (totalPct < 100 && opts) {
+            if (opts.closePrice) {
+                legs.push({ pct: 100 - totalPct, price: opts.closePrice });
+            } else if (opts.sl && opts.sl < 5000) {
+                legs.push({ pct: 100 - totalPct, price: opts.sl });
+            }
+        }
+        return legs;
+    }
+    function buildExitBreakdownHtml(legs) {
+        if (!legs || legs.length <= 1) return '';
+        return `<div style="font-size:0.62rem;color:var(--text-muted);margin-top:1px;line-height:1.4;">${legs.map(l=>`${l.pct}% @₹${l.price}`).join(' / ')}</div>`;
+    }
+
     // ── LATEST SL VALUE ───────────────────────────────────────────────────────
     function getCurrentSL(replies) {
         let sl = null;
@@ -2572,7 +2602,11 @@
 
             const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
-            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully' : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%` : 'Holding 100%';
+            const _activeLegs1 = cumExit1 > 0 && cumExit1 < 100 ? getExitLegs(pubReplies_s1) : [];
+            const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully'
+                : cumExit1 > 0 && _activeLegs1.length > 0 ? `Holding ${100-cumExit1}% exited ${_activeLegs1.map(l=>`${l.pct}% @${l.price}`).join('/')}`
+                : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%`
+                : 'Holding 100%';
             const _statePill = _trState==='yet_to_trigger'
                 ? `<span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
@@ -2698,7 +2732,11 @@
             if (!latestCmp) { const _rf2=parseFollowUpContent(post.content||''); if(_rf2.cmp&&_rf2.cmp<10000) latestCmp=_rf2.cmp; }
 
             const cumExit = getCumulativeExit(postReplies);
-            const holdingText2 = cumExit >= 100 ? 'Exited Fully' : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%` : 'Holding 100%';
+            const _activeLegs2 = cumExit > 0 && cumExit < 100 ? getExitLegs(postReplies) : [];
+            const holdingText2 = cumExit >= 100 ? 'Exited Fully'
+                : cumExit > 0 && _activeLegs2.length > 0 ? `Holding ${100-cumExit}% exited ${_activeLegs2.map(l=>`${l.pct}% @${l.price}`).join('/')}`
+                : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%`
+                : 'Holding 100%';
 
             // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
@@ -2794,6 +2832,9 @@
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: getLastSLNumeric(postReplies) });
+            const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
+            const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             const lotSize25 = getLotSize(fields.instrument);
             // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
             const _pnlDir25 = fields.action === 'SELL' ? -1 : 1;
@@ -2864,7 +2905,7 @@
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel25}</span><span class="metric-value ${displayPrice25&&displayPrice25<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${displayPrice25?`₹${displayPrice25}`:'—'}</span>${_exitBreakdown25}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel25}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisp25}</span></div>
                 </div>
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -2900,6 +2941,9 @@
         const _slForExit3 = getLastSLNumeric(postReplies);
         const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp && !(_slForExit3 && _slForExit3 < 5000))
             ? latestCmp : exitPrice;
+        const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slForExit3 });
+        const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
+        const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
         if (!fields.instrument) {
@@ -3116,7 +3160,7 @@
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Entry</span><span class="metric-value" style="display:block;font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
-                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">Exit</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span></div>
+                    <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel3}</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span>${_exitBreakdown3}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
                 ${why ? (whyVisible
@@ -3151,7 +3195,11 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
-        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully' : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%` : 'Holding 100%';
+        const _activeLegs3 = cumExit3 > 0 && cumExit3 < 100 ? getExitLegs(postReplies) : [];
+        const holdingText3 = cumExit3 >= 100 ? 'Exited Fully'
+            : cumExit3 > 0 && _activeLegs3.length > 0 ? `Holding ${100-cumExit3}% exited ${_activeLegs3.map(l=>`${l.pct}% @${l.price}`).join('/')}`
+            : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%`
+            : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
             ? `<span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
             : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
