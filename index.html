@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260804-003 | Member PWA: Special comment display (Style B purple chip) — ⚠️ *text* pattern from Admin PWA "Special Comments" field now rendered on trade cards for paid members and admin. Extraction: _specialCommentMatch regex + _specialComment const at buildTradeAlertCard entry. Rendered as purple chip (💬 text, #f3f0f8 bg, #4a2a78 color, 10px border-radius) via _cmtHtml const. Two injection points: Section 3 closed card (between metrics row and why-section) + Section 3 active card (between metrics row and Session High/Low row). Free members: _cmtHtml='' (isFreeViewer guard). No comment: _cmtHtml='' (empty string when no ⚠️ *...* found). Zero impact on calculations, P&L, SL logic, getExitLegs, isTradeFullyClosed, or any other feature. Rollback: remove 5-line _specialComment block; remove ${_cmtHtml} from 2 Section 3 HTML locations. -->
 <!-- DEPLOY: T2S-PROD-20260804-002 | Member PWA: Exit breakdown display — getExitLegs + buildExitBreakdownHtml added (display-only, no calculation impact). Section 2.5 and Section 3 closed cards: label switches to "Effective Exit" for multi-leg exits, breakdown "50% @₹160 / 50% @₹140" renders below price. Active partial-exit trigger banner: holdingText updated to show per-leg prices ("Holding 50% exited 50% @₹160"). Single-exit trades unchanged (buildExitBreakdownHtml returns '' for ≤1 leg). Rollback: remove getExitLegs + buildExitBreakdownHtml functions; revert _exitLegs25/_exitLabel25/_exitBreakdown25 and Section 2.5 HTML; revert _exitLegs3/_exitLabel3/_exitBreakdown3 and Section 3 HTML; revert 3 holdingText lines to single-line ternary. -->
 <!-- DEPLOY: T2S-PROD-20260804-001 | Member PWA: P1 complete — SL-breach auto-close, correct exit price, correct P&L. (1) updateTradeCMPs: first SL-breach event triggers fetchTradeAlerts() via 1s debounce, one-shot per card. (2) isTradeFullyClosed: SL-breach block — cum>0&&cum<100 + live LTP crossed revised premium SL (<5000) returns true; index-level SLs excluded. (3) _effectiveExitPrice: _slForExit3 guard — uses weighted exit (SL-based) not latestCmp. (4) maxPnlPts3: same _slForExit3 guard on adjusted-entry branch — P&L in closed bar now correct for SL-breach auto-close. Rollback: (1) revert 5-line updateTradeCMPs block to single slbEl.style.display line; (2) remove 11-line isTradeFullyClosed block; (3) remove _slForExit3 line + revert _effectiveExitPrice condition; (4) remove guard from maxPnlPts3 condition and revert comment. -->
 <!-- DEPLOY: T2S-PROD-20260803-001 | server.js: RC-9 — stock instrument support in refreshActiveContracts() (+4 lines, stock fallback regex). index.html: RC-10 — Section 1 data-live-cmp on CMP cell + Session High row for free member progressive unlock view (+1 line). -->
@@ -2552,6 +2553,13 @@
 
         if (why) _whyMap[post.id] = why;
 
+        // Special comment from Admin PWA "Special Comments" field — embedded as ⚠️ *text* in post content
+        const _specialCommentMatch = (post.content||'').match(/⚠️ \*([^*\n]+)\*/);
+        const _specialComment = _specialCommentMatch ? _specialCommentMatch[1].trim() : '';
+        const _cmtHtml = (!isFreeViewer && _specialComment)
+            ? `<div style="margin:0 12px 8px;"><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${_specialComment}</span></div>`
+            : '';
+
         const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;font-size:0.9rem;">🔒</span>`;
 
         // ── 1. PAID-ONLY → free member ──
@@ -3163,6 +3171,7 @@
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel3}</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span>${_exitBreakdown3}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
+                ${_cmtHtml}
                 ${why ? (whyVisible
                     ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
                     : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
@@ -3228,6 +3237,7 @@
                 <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
                 <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
+            ${_cmtHtml}
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 ${fields.action==='SELL'
                     ?`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span>`
