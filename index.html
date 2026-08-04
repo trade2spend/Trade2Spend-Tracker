@@ -2144,10 +2144,16 @@
         return sl ? (sl==='cost'?'Cost (No Loss)':'₹'+sl) : null;
     }
     // Returns the second-to-last SL revision (numeric) — used as strikethrough when multiple revisions exist
-    function getPenultimateSL(replies) {
+    function getPenultimateSL(replies, entryPrice) {
         const sorted = [...(replies||[])].reverse(); // oldest → newest
         const revs = [];
-        for (const r of sorted) { const p=parseFollowUpContent(r.content||''); if(p.slRevised&&p.slRevised!=='cost') revs.push(parseFloat(p.slRevised)); }
+        for (const r of sorted) {
+            const p = parseFollowUpContent(r.content||'');
+            if (p.slRevised) {
+                const val = p.slRevised === 'cost' ? (entryPrice || null) : parseFloat(p.slRevised);
+                if (val) revs.push(val);
+            }
+        }
         return revs.length >= 2 ? revs[revs.length - 2] : null;
     }
 
@@ -3018,7 +3024,7 @@
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
         const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
-        const _prevRevSL3 = getPenultimateSL(postReplies); // second-to-last revision — strikethrough when multiple revisions exist
+        const _prevRevSL3 = getPenultimateSL(postReplies, fields.entry); // second-to-last revision — strikethrough when multiple revisions exist
         let slDisplay3, slLabel3 = 'SL';
         let revNum3 = 0; // exposed outside if block for SL breach detection below
         if (revSL3) {
