@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260805-002 | uat.html: Like blink fix — same 3-site fix as T2S-PROD-20260805-004. fetchTradeAlerts + fetchUpdates (cache + full): _userInteracted.forEach → allPostIds.forEach. Reads _likeCounts in-memory so all known counts restore synchronously after card rebuild. Rollback: revert 3 lines to _userInteracted.forEach(id => updateLikeUI(id)). -->
 <!-- T2S-UAT-20260805-001 | uat.html: SL breach auto-close for 100% open positions + D_CMT key fix. (1) isTradeFullyClosed: SL-breach block condition changed from cum>0 to cum>=0 — now auto-closes when CMP crosses revised premium SL even for positions with no prior partial exits (100% holding). Spot SLs (>5000) still excluded via _slNum<5000 guard. (2) D_CMT dummy card: strike changed from 24600 to 24700 — removes LTP key clash with real active NIFTY-24600-CE Supabase trade. (3) _UAT_MOCK_LTPS: 'NIFTY-24700-CE':126 added for D_CMT; 'NIFTY-24600-CE':126 kept for real active trade (needed by isTradeFullyClosed at render time — _lastOptionLTPs is seeded from mock before card render). No impact on partial-exit logic, P&L, Session High/Low, prod index.html, or any other feature. Rollback: revert cum>=0 to cum>0; change D_CMT card back to 24600; remove 'NIFTY-24700-CE' entry; keep 'NIFTY-24600-CE' as D_CMT LTP comment. -->
 <!-- T2S-UAT-20260804-004 | uat.html: SL multi-revision display fix. (1) parseFollowUpContent slPats[0]: extended to handle "of remaining/rest" between SL and number — "modifying SL of remaining to 157" now parsed as slRevised=157, type=sl_update. (2) getPenultimateSL(replies): new helper returning second-to-last SL revision value (numeric), adjacent to getCurrentSL. (3) Section 3 _prevRevSL3: getPenultimateSL used as strikethrough when 2+ revisions — shows ~~142~~ → ₹157 instead of ~~24530~~ → ₹157. (4) D_SL2 dummy card added: BUY NIFTY 24500 PE at 142, spot SL 24530, rev 1 ₹142, rev 2 ₹157 via "of remaining" phrasing, LTP 163. Session high fix (T2S-UAT-20260726-001) was already present. Rollback: revert slPats[0] to previous regex; remove getPenultimateSL; revert _prevRevSL3 declaration + strikethrough from _prevRevSL3||initSL3 back to initSL3; remove dummy-dsl2 post+replies+LTP. -->
 <!-- T2S-UAT-20260804-003b | uat.html: Special comment display — Style B (purple chip) finalised. ⚠️ *...* pattern from Admin PWA "Special Comments" field extracted as _specialComment; rendered as purple chip (💬 text, #f3f0f8 bg, #4a2a78 color, 10px border-radius) between metrics and Session High/Low (active) or metrics and why-section (closed). Paid/admin only. D_CMT card shows it live. DS2 (RELIANCE) also shows it. Rollback: remove _specialComment + _cmtHtmlUAT block; remove ${_cmtHtmlUAT} from 2 Section 3 locations; remove dummy-dcmt data + NIFTY-24600-CE LTP. -->
@@ -2688,7 +2689,7 @@
                     }
                 });
             }
-            _userInteracted.forEach(id => updateLikeUI(id)); // instantly restore liked hearts after re-render
+            tradeParents.map(p => p.id).forEach(id => updateLikeUI(id)); // instantly restore all known like counts after re-render (prevents blink on 30s refresh)
             fetchLikes(tradeParents.map(p => p.id));
             _cSave('t2s_alerts_html', container.innerHTML);
             // Trade Alert tab badge: count today's new trade alerts
@@ -3608,7 +3609,7 @@
         const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000);
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
-            _userInteracted.forEach(id => updateLikeUI(id));
+            (_uc.posts||[]).filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
             // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
         }
         // Preserve any open compose box across the loading wipe
@@ -3689,7 +3690,7 @@
                     selectReplyAud(_fudCompose.postId, _fudCompose.audience);
                 }
             }
-            _userInteracted.forEach(id => updateLikeUI(id));
+            posts.filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
             initRealtimeSubscription();
         } catch(e) {
