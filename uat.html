@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260806-001 | uat.html: SL hit slippage fix — when follow-up contains "SL hit/triggered/breached" AND revised premium SL (<5000) exists AND exit price slipped past SL (BUY: price<SL, SELL: price>SL), use SL price as conceptual exit. (1) getWeightedExitPrice: _rawPrice + _slRe override before weightedSum accumulation. (2) getExitLegs: same _rawPrice + _slRe override before legs.push. (3) 5 call sites: isSell:fields.action==='SELL' added to opts (Performance, S2.5 weighted, S2.5 legs, S3 weighted, S3 legs). (4) Rendering loop: parsed.price overridden before renderFollowUpCard so "EXIT PRICE" row in follow-up card also shows SL. Raw advisory text unchanged (still shows original admin message). All normal profit/partial exits unchanged — override only fires when SL hit regex matches + premium SL present + slippage past SL detected. Rollback: revert _rawPrice lines to `const price =`; remove _slRe lines; remove isSell from 5 call sites; revert rendering loop to single parsed+renderFollowUpCard lines. -->
 <!-- T2S-UAT-20260805-002 | uat.html: Like blink fix — same 3-site fix as T2S-PROD-20260805-004. fetchTradeAlerts + fetchUpdates (cache + full): _userInteracted.forEach → allPostIds.forEach. Reads _likeCounts in-memory so all known counts restore synchronously after card rebuild. Rollback: revert 3 lines to _userInteracted.forEach(id => updateLikeUI(id)). -->
 <!-- T2S-UAT-20260805-001 | uat.html: SL breach auto-close for 100% open positions + D_CMT key fix. (1) isTradeFullyClosed: SL-breach block condition changed from cum>0 to cum>=0 — now auto-closes when CMP crosses revised premium SL even for positions with no prior partial exits (100% holding). Spot SLs (>5000) still excluded via _slNum<5000 guard. (2) D_CMT dummy card: strike changed from 24600 to 24700 — removes LTP key clash with real active NIFTY-24600-CE Supabase trade. (3) _UAT_MOCK_LTPS: 'NIFTY-24700-CE':126 added for D_CMT; 'NIFTY-24600-CE':126 kept for real active trade (needed by isTradeFullyClosed at render time — _lastOptionLTPs is seeded from mock before card render). No impact on partial-exit logic, P&L, Session High/Low, prod index.html, or any other feature. Rollback: revert cum>=0 to cum>0; change D_CMT card back to 24600; remove 'NIFTY-24700-CE' entry; keep 'NIFTY-24600-CE' as D_CMT LTP comment. -->
 <!-- T2S-UAT-20260804-004 | uat.html: SL multi-revision display fix. (1) parseFollowUpContent slPats[0]: extended to handle "of remaining/rest" between SL and number — "modifying SL of remaining to 157" now parsed as slRevised=157, type=sl_update. (2) getPenultimateSL(replies): new helper returning second-to-last SL revision value (numeric), adjacent to getCurrentSL. (3) Section 3 _prevRevSL3: getPenultimateSL used as strikethrough when 2+ revisions — shows ~~142~~ → ₹157 instead of ~~24530~~ → ₹157. (4) D_SL2 dummy card added: BUY NIFTY 24500 PE at 142, spot SL 24530, rev 1 ₹142, rev 2 ₹157 via "of remaining" phrasing, LTP 163. Session high fix (T2S-UAT-20260726-001) was already present. Rollback: revert slPats[0] to previous regex; remove getPenultimateSL; revert _prevRevSL3 declaration + strikethrough from _prevRevSL3||initSL3 back to initSL3; remove dummy-dsl2 post+replies+LTP. -->
@@ -1629,7 +1630,7 @@
                 // For SELL: dayHigh (highest premium) and calculateMaxProfit are wrong signals — skip them
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const _closePricePerf = extractClosePriceFromReplies(replies);
-                const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies), closePrice: _closePricePerf });
+                const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies), closePrice: _closePricePerf, isSell: f.action === 'SELL' });
                 const mp = (f.action !== 'SELL' && f.entry) ? calculateMaxProfit(f.entry, replies) : null;
                 const validDayHigh = (f.action !== 'SELL' && dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
                 const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
@@ -2277,7 +2278,10 @@
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
-            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            const _rawPrice = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            // SL hit slippage fix: when "SL hit/triggered/breached" and exit price slipped past SL, use SL as conceptual exit price
+            const _slRe = /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i;
+            const price = (_rawPrice && fp.isFullExit && opts && opts.sl && opts.sl < 5000 && _slRe.test(r.content||'') && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
@@ -2310,7 +2314,10 @@
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
-            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            const _rawPrice = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            // SL hit slippage fix: when "SL hit/triggered/breached" and exit price slipped past SL, use SL as conceptual exit price
+            const _slRe = /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i;
+            const price = (_rawPrice && fp.isFullExit && opts && opts.sl && opts.sl < 5000 && _slRe.test(r.content||'') && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
@@ -3153,7 +3160,7 @@
             const maxPrice25 = mp25 ? mp25.max : null;
             // Exit price: weighted average across all partial exits (e.g. 50%@180 + 50%@158 = avg 169)
             const _closePrice25 = extractClosePriceFromReplies(postReplies);
-            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: getLastSLNumeric(postReplies), closePrice: _closePrice25 });
+            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: getLastSLNumeric(postReplies), closePrice: _closePrice25, isSell: fields.action === 'SELL' });
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
@@ -3217,7 +3224,7 @@
                     }
                 }
             }
-            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: getLastSLNumeric(postReplies) });
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: getLastSLNumeric(postReplies), isSell: fields.action === 'SELL' });
             const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
             const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
@@ -3268,7 +3275,7 @@
         }
         if (!latestCmp&&!isClosed) { const _rf3=parseFollowUpContent(post.content||''); if(_rf3.cmp&&_rf3.cmp<10000) latestCmp=_rf3.cmp; }
         const _closePrice3 = extractClosePriceFromReplies(postReplies);
-        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies), closePrice: _closePrice3 } : null);
+        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies), closePrice: _closePrice3, isSell: fields.action === 'SELL' } : null);
         // For auto-closed partial exits: prefer getWeightedExitPrice (which now includes [CLOSEPRICE:X])
         // Fall back to latestCmp only when no CLOSEPRICE is available (older behaviour)
         const _cumExitDisp = getCumulativeExit(postReplies);
@@ -3383,6 +3390,11 @@
                     <div class="thread-replies" id="${tid}" style="display:none;">`;
                 visibleReplies.forEach(reply=>{
                     const parsed=parseFollowUpContent(reply.content||'');
+                    // SL hit slippage fix: override EXIT PRICE shown in follow-up card when price slipped past SL
+                    const _slAtReply = parseFloat(_slMap[reply.id]);
+                    if (parsed.isFullExit && parsed.price && !isNaN(_slAtReply) && _slAtReply < 5000 && /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i.test(reply.content||'')) {
+                        if ((fields.action||'').toUpperCase()!=='SELL' ? parsed.price < _slAtReply : parsed.price > _slAtReply) parsed.price = _slAtReply;
+                    }
                     repliesHtml+=renderFollowUpCard(reply,parsed,_cumMap[reply.id],_slMap[reply.id]);
                 });
                 repliesHtml+=`</div>`;
@@ -3475,7 +3487,7 @@
                     }
                 }
             }
-            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: getLastSLNumeric(postReplies) });
+            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: getLastSLNumeric(postReplies), isSell: fields.action === 'SELL' });
             const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
             const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
