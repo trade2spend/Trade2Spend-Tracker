@@ -413,6 +413,27 @@
         #tour-arrow-down { bottom:-7px; clip-path:polygon(0% 0%,100% 0%,50% 100%); }
         .tour-dot { width:6px; height:6px; border-radius:50%; background:#e5e7eb; transition:all .2s; flex-shrink:0; }
         .tour-dot.active { background:#4a2a78; width:18px; border-radius:3px; }
+
+        /* ── UAT card group designs (applied at stylesheet load, no JS required) ── */
+
+        /* G2: Amber — CMP hero spans full row at bottom of metrics grid */
+        #ucard-dummy-d2,#ucard-dummy-d11,#ucard-dummy-d4,#ucard-dummy-d8{border-left:5px solid #d97706!important;background:#fffbf0!important;}
+        #ucard-dummy-d2 .trade-metrics,#ucard-dummy-d11 .trade-metrics,#ucard-dummy-d4 .trade-metrics,#ucard-dummy-d8 .trade-metrics{grid-template-columns:1fr 1fr!important;}
+        #ucard-dummy-d2 .metric-col:last-child,#ucard-dummy-d11 .metric-col:last-child,#ucard-dummy-d4 .metric-col:last-child,#ucard-dummy-d8 .metric-col:last-child{grid-column:1/-1!important;background:#d97706!important;border-radius:10px!important;margin:4px 0 6px!important;padding:14px 8px!important;text-align:center!important;}
+        #ucard-dummy-d2 .metric-col:last-child .metric-label,#ucard-dummy-d11 .metric-col:last-child .metric-label,#ucard-dummy-d4 .metric-col:last-child .metric-label,#ucard-dummy-d8 .metric-col:last-child .metric-label{color:rgba(255,255,255,0.75)!important;}
+        #ucard-dummy-d2 .metric-col:last-child .metric-value,#ucard-dummy-d11 .metric-col:last-child .metric-value,#ucard-dummy-d4 .metric-col:last-child .metric-value,#ucard-dummy-d8 .metric-col:last-child .metric-value{font-size:1.9rem!important;font-weight:900!important;color:#fff!important;display:block!important;}
+
+        /* G3: Teal — 2×2 grid for active (D9), coloured labels for all */
+        #ucard-dummy-d1,#ucard-dummy-d13,#ucard-dummy-d6,#ucard-dummy-d12{border-left:5px solid #0891b2!important;background:#f0f8ff!important;}
+        #ucard-dummy-d1 .trade-metrics{grid-template-columns:1fr 1fr!important;gap:1px!important;background:#bae6fd!important;border-radius:8px!important;overflow:hidden!important;}
+        #ucard-dummy-d1 .metric-col{background:#f0f8ff!important;padding:10px 12px!important;}
+        #ucard-dummy-d1 .metric-label,#ucard-dummy-d13 .metric-label,#ucard-dummy-d6 .metric-label,#ucard-dummy-d12 .metric-label{color:#0891b2!important;font-weight:700!important;}
+        #ucard-dummy-d1 .metric-value,#ucard-dummy-d13 .metric-value,#ucard-dummy-d6 .metric-value,#ucard-dummy-d12 .metric-value{color:#0c4a6e!important;}
+
+        /* G4: Green — coloured labels; exit value enlarged via JS below */
+        #ucard-dummy-d7,#ucard-dummy-d5{border-left:5px solid #059669!important;background:#f0fff4!important;}
+        #ucard-dummy-d7 .metric-label,#ucard-dummy-d5 .metric-label{color:#059669!important;font-weight:700!important;}
+        #ucard-dummy-d7 .metric-value,#ucard-dummy-d5 .metric-value{color:#065f46!important;}
     </style>
 </head>
 <body>
@@ -2706,65 +2727,15 @@
                             lbl.style.cssText = `background:${_grpC};color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;`;
                         }
                         el.insertBefore(lbl, el.firstChild);
-                        // G2: CMP-Hero layout — large amber CMP block centered below Entry/SL
-                        if (p._uatGroup === 'G2') {
-                            el.style.borderLeft = '4px solid #d97706';
-                            el.style.background = '#fffbf0';
-                            const cmpSpan = el.querySelector('[data-live-cmp]');
-                            if (cmpSpan) {
-                                const cmpKey = cmpSpan.getAttribute('data-live-cmp');
-                                const cmpVal = cmpSpan.textContent;
-                                const hero = document.createElement('div');
-                                hero.style.cssText = 'background:#d97706;border-radius:10px;margin:8px 12px;padding:14px 8px;text-align:center;color:#fff;';
-                                hero.innerHTML = `<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;opacity:0.8;text-transform:uppercase;margin-bottom:4px;">CMP</div><div style="font-size:1.9rem;font-weight:900;letter-spacing:-0.02em;" data-live-cmp="${cmpKey}">${cmpVal}</div>`;
-                                const metricsDiv = el.querySelector('.trade-metrics');
-                                if (metricsDiv) metricsDiv.insertAdjacentElement('afterend', hero);
-                                const cmpCol = cmpSpan.closest('.metric-col');
-                                if (cmpCol) cmpCol.style.display = 'none';
-                            }
-                        // G3: 2×2 grid layout — teal bordered grid with metric cells
-                        } else if (p._uatGroup === 'G3') {
-                            el.style.borderLeft = '4px solid #0891b2';
-                            el.style.background = '#f0f8ff';
-                            const metricsDiv = el.querySelector('.trade-metrics');
-                            if (metricsDiv) {
-                                metricsDiv.style.display = 'grid';
-                                metricsDiv.style.gridTemplateColumns = '1fr 1fr';
-                                metricsDiv.style.gap = '1px';
-                                metricsDiv.style.background = '#bae6fd';
-                                metricsDiv.style.borderRadius = '8px';
-                                metricsDiv.style.overflow = 'hidden';
-                                metricsDiv.querySelectorAll('.metric-col').forEach(col => {
-                                    col.style.background = '#f0f8ff';
-                                    col.style.padding = '10px 12px';
-                                    col.style.textAlign = 'left';
-                                });
-                                metricsDiv.querySelectorAll('.metric-label').forEach(lbl => {
-                                    lbl.style.color = '#0891b2';
-                                    lbl.style.fontWeight = '700';
-                                });
-                                metricsDiv.querySelectorAll('.metric-value').forEach(val => {
-                                    val.style.color = '#0c4a6e';
-                                });
-                            }
-                        // G4: Exit-Hero layout — large green Exit block centered below Entry
-                        } else if (p._uatGroup === 'G4') {
-                            el.style.borderLeft = '4px solid #059669';
-                            el.style.background = '#f0fff4';
-                            const metricCols = Array.from(el.querySelectorAll('.metric-col'));
-                            const exitCol = metricCols.find(col => {
-                                const lbl = col.querySelector('.metric-label');
-                                return lbl && (lbl.textContent.includes('Exit') || lbl.textContent.includes('CMP'));
-                            });
-                            if (exitCol) {
-                                const exitVal = exitCol.querySelector('.metric-value')?.textContent || '—';
-                                const exitLblText = exitCol.querySelector('.metric-label')?.textContent || 'Exit';
-                                const hero = document.createElement('div');
-                                hero.style.cssText = 'background:#059669;border-radius:10px;margin:8px 12px;padding:14px 8px;text-align:center;color:#fff;';
-                                hero.innerHTML = `<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;opacity:0.8;text-transform:uppercase;margin-bottom:4px;">${exitLblText}</div><div style="font-size:1.9rem;font-weight:900;letter-spacing:-0.02em;">${exitVal}</div>`;
-                                const metricsDiv = exitCol.closest('.trade-metrics');
-                                if (metricsDiv) metricsDiv.insertAdjacentElement('afterend', hero);
-                                exitCol.style.display = 'none';
+                        // G4: enlarge exit price value (CSS handles border/bg/labels)
+                        if (p._uatGroup === 'G4') {
+                            const exitLbl = Array.from(el.querySelectorAll('.metric-label')).find(l => l.textContent.includes('Exit'));
+                            if (exitLbl && exitLbl.nextElementSibling) {
+                                const ev = exitLbl.nextElementSibling;
+                                ev.style.fontSize = '1.9rem';
+                                ev.style.fontWeight = '900';
+                                ev.style.display = 'block';
+                                ev.style.textAlign = 'center';
                             }
                         }
                         // D_SL: hide badge when P&L = 0 (SL breach at breakeven)
