@@ -1,3 +1,4 @@
+<!-- DEPLOY: T2S-PROD-20260806-001 | Member PWA: SL hit slippage fix — when follow-up contains "SL hit/triggered/breached" AND effective premium SL (<5000) exists AND exit price slipped past SL (BUY: price<SL, SELL: price>SL), use SL as conceptual exit price. (1) getWeightedExitPrice + getExitLegs: _rawPrice + _slRe override replaces slippage price with SL in weighted exit and legs breakdown. (2) 'Cost (No Loss)' SL resolution: _slResolved3/_slResolved25/_slResolvedPerf = getLastSLNumeric || (cost SL → fields.entry) — getLastSLNumeric skips cost entries so resolving it was the root cause fix. (3) isSell added to opts at 5 call sites (Performance, S2.5 weighted/legs, S3 weighted/legs) so SELL slippage (price above SL) is also handled. (4) Rendering loop: parsed.price overridden with _slResolved3 before renderFollowUpCard — EXIT PRICE row in follow-up card shows SL, raw advisory text unchanged. All normal profit/partial exits unchanged. Spot SLs (>5000) excluded by guard. Rollback: revert _rawPrice lines in getWeightedExitPrice + getExitLegs to `const price =`; remove _slRe lines; remove _slResolved* defs; revert call sites to getLastSLNumeric(postReplies) without isSell; revert rendering loop. -->
 <!-- DEPLOY: T2S-PROD-20260805-004 | Member PWA: Like blink fix — 3 call sites changed from _userInteracted.forEach(updateLikeUI) to allPostIds.forEach(updateLikeUI). fetchTradeAlerts: tradeParents.map(p=>p.id); fetchUpdates cache branch: _uc.posts parent filter; fetchUpdates full: posts parent filter. Reads _likeCounts (in-memory, populated by previous fetchLikes) instead of only _userInteracted, so all known like counts restore synchronously after every card rebuild — eliminates the 0→N flash on the 30s auto-refresh. fetchLikes() still runs async after each call as server-reconciliation (unchanged). Zero impact on like storage, toggleLike, SL logic, P&L, Session High/Low, push notifications. Rollback: revert 3 lines back to _userInteracted.forEach(id => updateLikeUI(id)). -->
 <!-- DEPLOY: T2S-PROD-20260805-003 | Member PWA: isTradeFullyClosed SL-breach block — cum>0 changed to cum>=0. Now auto-closes trades with 100% open positions (no partial exits) when live CMP crosses revised premium SL. Previously only fired for partial-exit positions (cum>0). updateTradeCMPs SL breach indicator + fetchTradeAlerts trigger unchanged — those already work for all cum values. Spot SL guard (_slNum<5000) unchanged. No impact on P&L, Session High/Low, exit breakdown, Performance tab, partial-exit logic, or any other feature. Rollback: revert cum>=0 to cum>0 at isTradeFullyClosed SL-breach block; update comment. -->
 <!-- DEPLOY: T2S-PROD-20260804-004 | Member PWA: SL multi-revision display + session high floor fix. (1) parseFollowUpContent slPats[0]: extended regex — "modifying SL of remaining to 157" now parsed as slRevised=157 (phrase "of remaining" between SL and number was blocking all patterns). Additive change: all existing SL phrases unaffected. (2) getPenultimateSL(replies): new helper returning second-to-last numeric SL revision; adjacent to getCurrentSL. (3) _prevRevSL3 in Section 3 SL display: strikethrough now uses previous revision (₹142) not original post SL (₹24530) when multiple revisions exist — shows ~~142~~ → ₹157 instead of ~~24530~~ → ₹157. Single/zero revision behaviour unchanged. (4) Session high/low floor (port from T2S-UAT-20260726-001): _initialHigh3/_initialLow3 computed from max/min exit price via _activeLegs3 (already available); Section 3 active card session high span seeded at max(entry, exit_price) for BUY and min(entry, exit_price) for SELL — prevents card rebuild from resetting below a known traded price. Zero impact on P&L, isTradeFullyClosed, getWeightedExitPrice, exit breakdown, or any other calculation. Rollback: revert slPats[0]; remove getPenultimateSL; remove _prevRevSL3 + revert strikethrough to initSL3; remove 4 _exitMin/Max/initial lines + revert session high span. -->
@@ -1447,7 +1448,8 @@
                 // P&L priority: adjusted-entry (partial exit + CMP) > VM Day High > weighted exit > calculateMaxProfit
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const _closePricePerf = extractClosePriceFromReplies(replies);
-                const exitPricePerf = getWeightedExitPrice(replies, { sl: getLastSLNumeric(replies), closePrice: _closePricePerf });
+                const _slResolvedPerf = getLastSLNumeric(replies) || (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
+                const exitPricePerf = getWeightedExitPrice(replies, { sl: _slResolvedPerf, closePrice: _closePricePerf, isSell: f.action === 'SELL' });
                 const mp = (f.action !== 'SELL' && f.entry) ? calculateMaxProfit(f.entry, replies) : null;
                 const validDayHigh = (f.action !== 'SELL' && dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
                 const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
@@ -2070,7 +2072,10 @@
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
-            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            const _rawPrice = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            // SL hit slippage fix: when "SL hit/triggered/breached" and exit price slipped past SL, use SL as conceptual exit price
+            const _slRe = /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i;
+            const price = (_rawPrice && fp.isFullExit && opts && opts.sl && opts.sl < 5000 && _slRe.test(r.content||'') && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
@@ -2116,7 +2121,10 @@
         let totalPct = 0;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
-            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            const _rawPrice = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            // SL hit slippage fix: when "SL hit/triggered/breached" and exit price slipped past SL, use SL as conceptual exit price
+            const _slRe = /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i;
+            const price = (_rawPrice && fp.isFullExit && opts && opts.sl && opts.sl < 5000 && _slRe.test(r.content||'') && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
@@ -2853,11 +2861,12 @@
             const maxPrice25 = mp25 ? mp25.max : null;
             // Exit price: weighted average across all partial exits (e.g. 50%@180 + 50%@158 = avg 169)
             const _closePrice25 = extractClosePriceFromReplies(postReplies);
-            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: getLastSLNumeric(postReplies), closePrice: _closePrice25 });
+            const _slResolved25 = getLastSLNumeric(postReplies) || (getCurrentSL(postReplies) === 'Cost (No Loss)' && fields.entry && fields.entry < 5000 ? fields.entry : null);
+            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: _slResolved25, closePrice: _closePrice25, isSell: fields.action === 'SELL' });
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
-            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: getLastSLNumeric(postReplies) });
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: _slResolved25, isSell: fields.action === 'SELL' });
             const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
             const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             const lotSize25 = getLotSize(fields.instrument);
@@ -2959,14 +2968,15 @@
         }
         if (!latestCmp&&!isClosed) { const _rf3=parseFollowUpContent(post.content||''); if(_rf3.cmp&&_rf3.cmp<10000) latestCmp=_rf3.cmp; }
         const _closePrice3 = extractClosePriceFromReplies(postReplies);
-        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: getLastSLNumeric(postReplies), closePrice: _closePrice3 } : null);
+        const _slResolved3 = getLastSLNumeric(postReplies) || (getCurrentSL(postReplies) === 'Cost (No Loss)' && fields.entry && fields.entry < 5000 ? fields.entry : null);
+        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: _slResolved3, closePrice: _closePrice3, isSell: fields.action === 'SELL' } : null);
         // For auto-closed partial exits: prefer getWeightedExitPrice (which now includes [CLOSEPRICE:X])
         // Fall back to latestCmp only when no CLOSEPRICE is available (older behaviour)
         const _cumExitDisp = getCumulativeExit(postReplies);
         const _slForExit3 = getLastSLNumeric(postReplies);
         const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp && !(_slForExit3 && _slForExit3 < 5000))
             ? latestCmp : exitPrice;
-        const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slForExit3 });
+        const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slResolved3, isSell: fields.action === 'SELL' });
         const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
         const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
 
@@ -3078,6 +3088,10 @@
                     <div class="thread-replies" id="${tid}" style="display:none;">`;
                 visibleReplies.forEach(reply=>{
                     const parsed=parseFollowUpContent(reply.content||'');
+                    // SL hit slippage fix: override EXIT PRICE row in follow-up card when price slipped past SL
+                    if (parsed.isFullExit && parsed.price && _slResolved3 && _slResolved3 < 5000 && /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i.test(reply.content||'')) {
+                        if ((fields.action||'').toUpperCase()!=='SELL' ? parsed.price < _slResolved3 : parsed.price > _slResolved3) parsed.price = _slResolved3;
+                    }
                     repliesHtml+=renderFollowUpCard(reply,parsed,_cumMap[reply.id],_slMap[reply.id]);
                 });
                 repliesHtml+=`</div>`;
