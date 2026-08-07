@@ -1,208 +1,42 @@
 {
-  "marketOpen": false,
-  "lastUpdated": "2026-08-06T10:02:55.530Z",
-  "dataSource": "broker",
+  "marketOpen": true,
+  "lastUpdated": "2026-08-07T03:45:09.546Z",
+  "dataSource": "nse",
   "indices": {
     "NIFTY": {
-      "price": 24636,
-      "change": 11.35,
-      "changePct": 0.05
+      "price": 24538.9,
+      "change": -97.1,
+      "changePct": -0.39
     },
     "SENSEX": {
-      "price": 78954.76,
-      "change": 373.76,
-      "changePct": 0.48
+      "price": 78516.08,
+      "change": -438.68,
+      "changePct": -0.56
     },
     "BANKNIFTY": {
-      "price": 58063.65,
-      "change": 323.7,
-      "changePct": 0.56
+      "price": 57882,
+      "change": -181.65,
+      "changePct": -0.31
     }
   },
   "breadth": {
     "nifty50": {
-      "advancing": 15,
-      "declining": 34,
-      "unchanged": 1
+      "advancing": 10,
+      "declining": 27,
+      "unchanged": 13
     }
   },
   "gainers": [
     {
-      "symbol": "RELIANCE",
-      "price": 1325,
-      "change": 3.52
-    },
-    {
-      "symbol": "SBIN",
-      "price": 1085,
-      "change": 2.84
-    },
-    {
-      "symbol": "BEL",
-      "price": 399.2,
-      "change": 2.36
-    },
-    {
-      "symbol": "ETERNAL",
-      "price": 316.25,
-      "change": 1.9
-    },
-    {
-      "symbol": "TITAN",
-      "price": 4998,
-      "change": 1.74
-    },
-    {
-      "symbol": "SHRIRAMFIN",
-      "price": 1141,
-      "change": 1.66
-    },
-    {
-      "symbol": "CIPLA",
-      "price": 1477,
-      "change": 1.25
-    },
-    {
-      "symbol": "NESTLEIND",
-      "price": 1535,
-      "change": 0.99
-    },
-    {
-      "symbol": "APOLLOHOSP",
-      "price": 8974.5,
-      "change": 0.72
-    },
-    {
-      "symbol": "SUNPHARMA",
-      "price": 1951,
-      "change": 0.57
-    },
-    {
-      "symbol": "ICICIBANK",
-      "price": 1457.5,
-      "change": 0.51
-    },
-    {
-      "symbol": "JIOFIN",
-      "price": 263.1,
-      "change": 0.44
-    },
-    {
-      "symbol": "AXISBANK",
-      "price": 1256,
-      "change": 0.17
-    },
-    {
-      "symbol": "LT",
-      "price": 4061.8,
-      "change": 0.12
-    },
-    {
-      "symbol": "COALINDIA",
-      "price": 415.6,
-      "change": 0.02
-    }
-  ],
-  "losers": [
-    {
-      "symbol": "POWERGRID",
-      "price": 270.75,
-      "change": -3.9
-    },
-    {
-      "symbol": "TATASTEEL",
-      "price": 189.3,
-      "change": -1.91
-    },
-    {
-      "symbol": "TCS",
-      "price": 2373,
-      "change": -1.66
-    },
-    {
-      "symbol": "JSWSTEEL",
-      "price": 1307.9,
-      "change": -1.66
-    },
-    {
-      "symbol": "BAJAJ-AUTO",
-      "price": 11620,
-      "change": -1.53
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "price": 1948,
-      "change": -1.52
-    },
-    {
-      "symbol": "INDIGO",
-      "price": 5318.5,
-      "change": -1.51
-    },
-    {
-      "symbol": "KOTAKBANK",
-      "price": 394,
-      "change": -1.5
-    },
-    {
-      "symbol": "M&M",
-      "price": 3406,
-      "change": -1.43
-    },
-    {
-      "symbol": "NTPC",
-      "price": 345,
-      "change": -1.4
-    },
-    {
-      "symbol": "TMPV",
-      "price": 345.35,
-      "change": -1.27
-    },
-    {
-      "symbol": "HINDALCO",
-      "price": 1027,
-      "change": -1.25
-    },
-    {
-      "symbol": "BAJFINANCE",
-      "price": 1144.8,
-      "change": -1.21
-    },
-    {
-      "symbol": "HCLTECH",
-      "price": 1335,
-      "change": -1.11
-    },
-    {
-      "symbol": "TECHM",
-      "price": 1632.2,
-      "change": -1.08
-    },
-    {
-      "symbol": "ONGC",
-      "price": 237.8,
-      "change": -1
-    },
-    {
-      "symbol": "SBILIFE",
-      "price": 1861.5,
-      "change": -0.98
-    },
-    {
-      "symbol": "ULTRACEMCO",
-      "price": 12075,
-      "change": -0.94
-    },
-    {
-      "symbol": "ADANIENT",
-      "price": 3026,
-      "change": -0.79
+      "symbol": "GRASIM",
+      "price": 3220,
+      "change": -0.12
     },
     {
       "symbol": "MARUTI",
       "price": 14080,
       "change": -0.78
     }
-  ]
+  ],
+  "losers": []
 }
