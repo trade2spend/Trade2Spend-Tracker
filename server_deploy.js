@@ -37,9 +37,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
+import { redactPostForFreeMember } from '../stability_harness/src/redactor.js';
+import { formatOptionPrice } from '../stability_harness/src/pricing/foMath.js';
+import { createAtomicWriter } from '../stability_harness/src/state/atomicWriter.js';
+import { createMutex }       from '../stability_harness/src/async/mutex.js';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE   = path.join(__dirname, 'state.json');
+const _stateWriter = createAtomicWriter(STATE_FILE);
 const HOLIDAY_FILE = path.join(__dirname, '.holiday_state.json');
 const PORT       = process.env.PORT || 3000;
 
@@ -483,6 +488,7 @@ let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min
 let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...}, ... } from scrip master
 let _activeContracts     = []; // [{instrument,strike,type,expiry,postId}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
+const _contractsMutex    = createMutex(); // prevents parallel refreshActiveContracts() executions
 let _optionHighs         = {}; // key → { high: number, postId: string } — max LTP since session start
 let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
@@ -561,7 +567,7 @@ async function saveState() {
     const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
     const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, { high: v.high, last: v.last || 0, postId: v.postId || null }])); // RC-4 FIX: persist postId for new-trade detection after VM restart
     const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action, postId: v.postId || null }])); // RC-4 FIX: persist postId
-    fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2));
+    _stateWriter.schedule(JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2));
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -1329,7 +1335,9 @@ function buildExpiryDates() {
 
 // Parse active option contracts from recent Supabase trade_alert posts
 async function refreshActiveContracts() {
-  if (Date.now() - _activeContractsTs < 60 * 1000) return; // refresh every 60s
+  if (Date.now() - _activeContractsTs < 60 * 1000) return; // fast throttle — no lock needed
+  const _release = _contractsMutex.tryAcquire();
+  if (!_release) return; // a refresh is already in flight — skip, result will arrive shortly
   _activeContractsTs = Date.now();
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1399,7 +1407,11 @@ async function refreshActiveContracts() {
     }
     _activeContracts = contracts;
     console.log(`[contracts] Active: ${contracts.map(c=>`${c.instrument}${c.strike}${c.type}`).join(', ')}`);
-  } catch(e) { console.error('[contracts] refresh error:', e.message); }
+  } catch(e) {
+    console.error('[contracts] refresh error:', e.message);
+  } finally {
+    _release();
+  }
 }
 
 // Build Kotak trading symbol from contract fields
@@ -1446,7 +1458,7 @@ async function fetchKotakOptionLTPs() {
         continue;
       }
       const d = await r.json();
-      const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp);
+      const ltp = formatOptionPrice(parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp)) ?? 0;
       if (ltp > 0) {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
@@ -3179,6 +3191,35 @@ const server = http.createServer(async (req, res) => {
       ? { ...LOT_SIZES, ..._kotakLotSizes }
       : LOT_SIZES;
     res.end(JSON.stringify({ ...base, marketOpen: !_marketHoliday && timeOpen, lotSizes }));
+    return;
+  }
+
+  // Posts proxy — GET /posts?member_id=UUID&limit=50
+  // Fetches from Supabase server-side, applies redactPostForFreeMember per member tier.
+  if (req.method === 'GET' && urlPath === '/posts') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache, no-store');
+    const qs       = new URL('https://x' + req.url).searchParams;
+    const memberId = qs.get('member_id') || '';
+    const limit    = Math.min(parseInt(qs.get('limit') || '50', 10), 100);
+    try {
+      const tier = memberId ? await khGetMemberTier(memberId) : 'free';
+      const r = await fetch(
+        `${SB_URL}/rest/v1/posts?is_deleted=eq.false&order=sent_at.desc&limit=${limit}` +
+        `&select=id,content,post_type,audience,allow_sharing,is_deleted,parent_id,sent_at,created_at`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }
+      );
+      const rows = r.ok ? await r.json() : [];
+      const posts = Array.isArray(rows)
+        ? rows.map(p => redactPostForFreeMember(p, tier))
+        : [];
+      res.writeHead(200);
+      res.end(JSON.stringify({ ok: true, posts, tier }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
     return;
   }
 
