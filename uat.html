@@ -1099,7 +1099,7 @@
             }
         }
         if (tabId === 'performance') fetchPerformance();
-        if (tabId === 'markets') { fetchMarketData(); fetchMarketPreview(); }
+        if (tabId === 'markets') { fetchMarketData(); _renderMqpTrades(); fetchMarketPreview(); }
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -1445,6 +1445,96 @@
         if (tabEl) switchTab('updates', tabEl);
     }
 
+    // Synchronous Markets Trades sub-tab renderer.
+    // Always called AFTER renderTradeAlerts() so _mqpPnlStore is guaranteed populated.
+    // Also called from switchTab('markets') for instant re-render using cached data.
+    function _renderMqpTrades() {
+        const tradesBody = document.getElementById('mqp-body-trades');
+        if (!tradesBody) return;
+        const tradePosts = window._mqpLastTradePosts; // undefined until renderTradeAlerts fires
+        if (tradePosts === undefined) return;         // keep skeleton HTML — data not ready yet
+        const replyMap      = window._mqpLastReplyMap   || {};
+        const _mi           = window._mqpLastMemberInfo  || {};
+        const isAdminMqp    = _mi.isAdmin    || false;
+        const tierMqp       = _mi.memberTier || 'free';
+        const canSeePremium = isAdminMqp || tierMqp === 'paid';
+
+        const activeTrades = [], closedTrades = [];
+        tradePosts.forEach(post => {
+            const replies = replyMap[post.id] || [];
+            (isTradeFullyClosed(post, replies) ? closedTrades : activeTrades).push(post);
+        });
+        const byDate = (a, b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
+        activeTrades.sort(byDate); closedTrades.sort(byDate);
+        const activeSlice = activeTrades.slice(0, 5);
+        const closedSlice = closedTrades.slice(0, Math.max(0, 5 - activeSlice.length));
+
+        if (!activeSlice.length && !closedSlice.length) {
+            tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No active trades right now.</div>';
+            return;
+        }
+
+        const _sectionHdr = label =>
+            `<div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;padding:${label==='Active Trades'?'4px':'12px'} 2px 5px;">${label}</div>`;
+
+        const _buildMqpCard = (post, isClosed) => {
+            const replies  = replyMap[post.id] || [];
+            const f        = extractTradeAlertFields(post.content || '');
+            const isSell   = (f.action || '').toUpperCase() === 'SELL';
+            const _pnlDir  = isSell ? -1 : 1;
+            const expLabel = f.expiry ? formatExpiryDisplay(f.expiry, f.instrument, post.sent_at||post.created_at) : 'Monthly';
+            const _optClass = (f.optType || '').toLowerCase();
+            const _typeBox  = f.optType
+                ? `<div class="type-box ${_optClass}" style="flex-shrink:0;width:26px;height:26px;font-size:0.72rem;">${f.optType}</div>`
+                : '';
+            const instrLabel = (f.instrument && f.strike)
+                ? `${f.instrument} ${f.strike} · ${expLabel}`
+                : (post.content || '').substring(0, 50).replace(/\n/g,' ').trim() + '…';
+
+            let pnlHtml = '', cardBorder = '';
+            if (!canSeePremium) {
+                pnlHtml = `<div class="mqp-pnl lock" onclick="event.stopPropagation();showPopup();">🔒 Premium</div>`;
+            } else {
+                let pnlPts = null;
+                if (isClosed) {
+                    // Finalized P&L from store — written by buildTradeAlertCard Section 3.
+                    // _renderMqpTrades() is ALWAYS called after renderTradeAlerts() fills the store.
+                    const _stored = window._mqpPnlStore && window._mqpPnlStore[post.id];
+                    if (_stored !== undefined) pnlPts = _stored.pts;
+                } else {
+                    // Active trade: mirror live badge — same _lastOptionLTPs as updateTradeCMPs
+                    const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
+                    const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
+                    if (liveCmp != null && f.entry) pnlPts = Math.round((liveCmp - f.entry) * _pnlDir);
+                }
+                if (pnlPts !== null && f.instrument) {
+                    const lotSize = getLotSize(f.instrument);
+                    const pnlRs   = Math.round(pnlPts * lotSize);
+                    const sign    = pnlPts >= 0 ? '+' : '';
+                    const cls     = pnlPts >= 0 ? 'profit' : 'loss';
+                    cardBorder    = pnlPts >= 0 ? 'border-left:3px solid #bbf7d0;' : 'border-left:3px solid #fca5a5;';
+                    pnlHtml = `<div class="mqp-pnl ${cls}">${sign}${pnlPts} pts<br><span style="font-size:0.65rem;font-weight:600;">${sign}₹${Math.abs(pnlRs).toLocaleString()}</span></div>`;
+                } else {
+                    pnlHtml = `<div class="mqp-pnl" style="color:var(--text-muted);font-weight:600;">—</div>`;
+                }
+            }
+            const nav = `_mqpNavTrade('${post.id}','${f.instrument||''}','${f.optType||''}','${f.strike||''}')`;
+            return `<div class="mqp-card" onclick="${nav}" style="${cardBorder}">
+                ${_typeBox}
+                <div class="mqp-card-left">
+                    <div class="mqp-card-name">${sanitizeHtml(instrLabel)}</div>
+                </div>
+                ${pnlHtml}
+                <div class="mqp-arrow">›</div>
+            </div>`;
+        };
+
+        let html = '';
+        if (activeSlice.length) { html += _sectionHdr('Active Trades'); html += activeSlice.map(p => _buildMqpCard(p, false)).join(''); }
+        if (closedSlice.length) { html += _sectionHdr('Closed Trades'); html += closedSlice.map(p => _buildMqpCard(p, true)).join(''); }
+        tradesBody.innerHTML = html;
+    }
+
     async function fetchMarketPreview() {
         const tradesBody  = document.getElementById('mqp-body-trades');
         const updatesBody = document.getElementById('mqp-body-updates');
@@ -1464,105 +1554,9 @@
         }
         const canSeePremium = isAdmin || memberTier === 'paid';
 
-        // ── TRADES SUB-TAB ──────────────────────────────────────────────────────
-        try {
-            const [tradeParents, allFollowUps] = await Promise.all([
-                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=20&select=id,content,sent_at,created_at,audience', { method:'GET' }),
-                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=300&select=id,content,parent_id,sent_at', { method:'GET' })
-            ]);
-            const replyMap = {};
-            allFollowUps.forEach(r => { if (!replyMap[r.parent_id]) replyMap[r.parent_id] = []; replyMap[r.parent_id].push(r); });
-
-            const activeTrades = [], closedTrades = [];
-            tradeParents.forEach(post => {
-                const replies = replyMap[post.id] || [];
-                (isTradeFullyClosed(post, replies) ? closedTrades : activeTrades).push(post);
-            });
-            const byDate = (a, b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
-            activeTrades.sort(byDate); closedTrades.sort(byDate);
-
-            // Keep max 5 total: fill active first, then closed to reach 5
-            const activeSlice = activeTrades.slice(0, 5);
-            const closedSlice = closedTrades.slice(0, Math.max(0, 5 - activeSlice.length));
-
-            if (!activeSlice.length && !closedSlice.length) {
-                tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No active trades right now.</div>';
-            } else {
-                const _sectionHdr = label =>
-                    `<div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;padding:${label==='Active Trades'?'4px':'12px'} 2px 5px;">${label}</div>`;
-
-                const _buildCard = (post, isClosed) => {
-                    const replies  = replyMap[post.id] || [];
-                    const f        = extractTradeAlertFields(post.content || '');
-                    const isSell   = (f.action || '').toUpperCase() === 'SELL';
-                    const _pnlDir  = isSell ? -1 : 1;
-                    const expLabel = f.expiry ? formatExpiryDisplay(f.expiry, f.instrument, post.sent_at||post.created_at) : 'Monthly';
-
-                    // CE/PE badge reuses existing .type-box.ce / .type-box.pe CSS from Trade Alert tab
-                    const _optClass  = (f.optType || '').toLowerCase(); // 'ce' or 'pe'
-                    const _typeBox   = f.optType
-                        ? `<div class="type-box ${_optClass}" style="flex-shrink:0;width:26px;height:26px;font-size:0.72rem;">${f.optType}</div>`
-                        : '';
-
-                    // Instrument name without redundant [CE]/[PE] prefix — badge carries optType
-                    const instrLabel = (f.instrument && f.strike)
-                        ? `${f.instrument} ${f.strike} · ${expLabel}`
-                        : (post.content || '').substring(0, 50).replace(/\n/g,' ').trim() + '…';
-
-                    let pnlHtml = '', cardBorder = '';
-                    if (!canSeePremium) {
-                        pnlHtml = `<div class="mqp-pnl lock" onclick="event.stopPropagation();showPopup();">🔒 Premium</div>`;
-                    } else {
-                        let pnlPts = null;
-                        if (isClosed) {
-                            // Read finalized P&L from the store written by buildTradeAlertCard Section 3.
-                            // Zero math here — if store is absent (race on initial load), show — until
-                            // fetchTradeAlerts completes and triggers a fetchMarketPreview() refresh.
-                            const _stored = window._mqpPnlStore && window._mqpPnlStore[post.id];
-                            if (_stored !== undefined) pnlPts = _stored.pts;
-                        } else {
-                            // Active: same _lastOptionLTPs global used by updateTradeCMPs / computePlBadgeAttrs
-                            const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
-                            const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
-                            if (liveCmp != null && f.entry) pnlPts = Math.round((liveCmp - f.entry) * _pnlDir);
-                        }
-                        if (pnlPts !== null && f.instrument) {
-                            const lotSize = getLotSize(f.instrument);
-                            const pnlRs   = Math.round(pnlPts * lotSize);
-                            const sign    = pnlPts >= 0 ? '+' : '';
-                            const cls     = pnlPts >= 0 ? 'profit' : 'loss';
-                            cardBorder    = pnlPts >= 0 ? 'border-left:3px solid #bbf7d0;' : 'border-left:3px solid #fca5a5;';
-                            pnlHtml = `<div class="mqp-pnl ${cls}">${sign}${pnlPts} pts<br><span style="font-size:0.65rem;font-weight:600;">${sign}₹${Math.abs(pnlRs).toLocaleString()}</span></div>`;
-                        } else {
-                            pnlHtml = `<div class="mqp-pnl" style="color:var(--text-muted);font-weight:600;">—</div>`;
-                        }
-                    }
-
-                    const nav = `_mqpNavTrade('${post.id}','${f.instrument||''}','${f.optType||''}','${f.strike||''}')`;
-                    return `<div class="mqp-card" onclick="${nav}" style="${cardBorder}">
-                        ${_typeBox}
-                        <div class="mqp-card-left">
-                            <div class="mqp-card-name">${sanitizeHtml(instrLabel)}</div>
-                        </div>
-                        ${pnlHtml}
-                        <div class="mqp-arrow">›</div>
-                    </div>`;
-                };
-
-                let html = '';
-                if (activeSlice.length) {
-                    html += _sectionHdr('Active Trades');
-                    html += activeSlice.map(p => _buildCard(p, false)).join('');
-                }
-                if (closedSlice.length) {
-                    html += _sectionHdr('Closed Trades');
-                    html += closedSlice.map(p => _buildCard(p, true)).join('');
-                }
-                tradesBody.innerHTML = html;
-            }
-        } catch(e) {
-            tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">Unable to load trades.</div>';
-        }
+        // ── TRADES SUB-TAB: handled by _renderMqpTrades() ───────────────────────
+        // Populated synchronously by renderTradeAlerts() after _mqpPnlStore is filled.
+        // No async fetch — reads from window._mqpLastTradePosts set by renderTradeAlerts.
 
         // ── UPDATES SUB-TAB ─────────────────────────────────────────────────────
         try {
@@ -2925,8 +2919,6 @@
             if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
                 _lastOptionLTPs = window._UAT_MOCK_LTPS;
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
-            // Refresh Markets quick preview so it reads freshly stored closed-trade P&L values
-            if (document.getElementById('mqp-body-trades')) fetchMarketPreview();
             // UAT: first pass — seed session highs/lows to intraday peaks (before current CMP)
             if (window._UAT_MOCK_SESSION_PEAKS && Object.keys(window._UAT_MOCK_SESSION_PEAKS).length)
                 updateTradeCMPs(window._UAT_MOCK_SESSION_PEAKS);
@@ -3111,6 +3103,12 @@
                 }
             }, 700);
         }
+        // Publish trade data and trigger synchronous Markets quick preview rebuild.
+        // Runs AFTER all buildTradeAlertCard() calls — _mqpPnlStore is fully populated.
+        window._mqpLastTradePosts = tradePosts;
+        window._mqpLastReplyMap   = replyMap;
+        window._mqpLastMemberInfo = { memberTier, isAdmin };
+        _renderMqpTrades();
     }
 
     function buildTradeAlertCard(post, postReplies, memberTier, isAdmin, isFreeViewer) {
