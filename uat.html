@@ -1515,36 +1515,11 @@
                     } else {
                         let pnlPts = null;
                         if (isClosed) {
-                            // Exact Section 3 P&L chain — parse latestCmp, compute _effectiveExitPrice,
-                            // use adjusted-entry formula for partial exits (mirrors buildTradeAlertCard Section 3)
-                            let _mqpCmp = null;
-                            for (const _r of replies) {
-                                const _fp = parseFollowUpContent(_r.content||'');
-                                if (_fp.cmp && _fp.cmp < 10000) { _mqpCmp = _fp.cmp; break; }
-                                if (_fp.price && _fp.price < 10000 && (_fp.type==='cmp_update'||_fp.type==='status')) { _mqpCmp = _fp.price; break; }
-                            }
-                            const _mqpClosePrice = extractClosePriceFromReplies(replies);
-                            const _mqpSlNum = getLastSLNumeric(replies);
-                            const _mqpSlRes = _mqpSlNum || (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
-                            const _mqpExitPx = getWeightedExitPrice(replies, { sl: _mqpSlRes, closePrice: _mqpClosePrice, isSell });
-                            const _mqpCumExit = getCumulativeExit(replies);
-                            const _mqpEffExit = (_mqpCumExit > 0 && _mqpCumExit < 100 && !_mqpClosePrice && _mqpCmp && !(_mqpSlNum && _mqpSlNum < 5000))
-                                ? _mqpCmp : _mqpExitPx;
-                            if (f.entry && _mqpEffExit) {
-                                if (_mqpCumExit > 0 && _mqpCumExit < 100 && _mqpCmp && !(_mqpSlNum && _mqpSlNum < 5000)) {
-                                    // Adjusted-entry breakeven for partial exits (mirrors Section 3 _banked loop)
-                                    let _mqpBanked = 0;
-                                    [...replies].reverse().forEach(_r => {
-                                        const _fp = parseFollowUpContent(_r.content||'');
-                                        const _prc = _fp.price || (_fp.exitPct && _fp.cmp && _fp.cmp < 10000 ? _fp.cmp : null);
-                                        if (_fp.exitPct && _prc) _mqpBanked += (_prc - f.entry) * _fp.exitPct;
-                                    });
-                                    const _mqpAdjEnt = f.entry - _mqpBanked / (100 - _mqpCumExit);
-                                    pnlPts = Math.round((_mqpCmp - _mqpAdjEnt) * _pnlDir);
-                                } else {
-                                    pnlPts = Math.round((_mqpEffExit - f.entry) * _pnlDir);
-                                }
-                            }
+                            // Read finalized P&L from the store written by buildTradeAlertCard Section 3.
+                            // Zero math here — if store is absent (race on initial load), show — until
+                            // fetchTradeAlerts completes and triggers a fetchMarketPreview() refresh.
+                            const _stored = window._mqpPnlStore && window._mqpPnlStore[post.id];
+                            if (_stored !== undefined) pnlPts = _stored.pts;
                         } else {
                             // Active: same _lastOptionLTPs global used by updateTradeCMPs / computePlBadgeAttrs
                             const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
@@ -2950,6 +2925,8 @@
             if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
                 _lastOptionLTPs = window._UAT_MOCK_LTPS;
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
+            // Refresh Markets quick preview so it reads freshly stored closed-trade P&L values
+            if (document.getElementById('mqp-body-trades')) fetchMarketPreview();
             // UAT: first pass — seed session highs/lows to intraday peaks (before current CMP)
             if (window._UAT_MOCK_SESSION_PEAKS && Object.keys(window._UAT_MOCK_SESSION_PEAKS).length)
                 updateTradeCMPs(window._UAT_MOCK_SESSION_PEAKS);
@@ -3759,6 +3736,9 @@
                     maxPnlPts3 = Math.round((_effectiveExitPrice - fields.entry) * _pnlDir3);
                 }
                 maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
+                // Publish finalized P&L to Markets quick preview store — strict inheritance, no re-computation
+                window._mqpPnlStore = window._mqpPnlStore || {};
+                window._mqpPnlStore[post.id] = { pts: maxPnlPts3, rs: maxPnlRs3 };
             }
             const _loss3 = maxPnlPts3 !== null && maxPnlPts3 < 0;
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
