@@ -387,6 +387,22 @@
         .alert-banner-type { font-size:0.6rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:1px; }
         .alert-banner-name { font-size:0.84rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
+        /* Market Quick Preview — Trades / Updates dual-tab */
+        #market-quick-preview { margin-top:10px; }
+        .mqp-tab-strip { display:flex; gap:6px; margin-bottom:8px; }
+        .mqp-tab-btn { flex:1; padding:7px 0; border:none; border-radius:8px; font-size:0.8rem; font-weight:700; font-family:inherit; cursor:pointer; background:var(--primary-light); color:var(--primary); touch-action:manipulation; }
+        .mqp-tab-btn.active { background:var(--primary); color:#fff; }
+        .mqp-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:6px; cursor:pointer; display:flex; align-items:center; gap:10px; }
+        .mqp-card:last-child { margin-bottom:0; }
+        .mqp-card-left { flex:1; min-width:0; }
+        .mqp-card-name { font-size:0.82rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mqp-card-meta { font-size:0.69rem; color:var(--text-muted); margin-top:2px; }
+        .mqp-pnl { font-size:0.74rem; font-weight:700; white-space:nowrap; flex-shrink:0; text-align:right; }
+        .mqp-pnl.profit { color:var(--green); }
+        .mqp-pnl.loss   { color:var(--red); }
+        .mqp-pnl.lock   { color:var(--primary); }
+        .mqp-arrow { color:var(--border); font-size:0.85rem; flex-shrink:0; line-height:1; }
+        .mqp-skel { background:linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; border-radius:10px; margin-bottom:6px; height:50px; }
         .alert-popup-overlay { position:fixed; inset:0; background:rgba(10,8,20,0.55); display:flex; align-items:center; justify-content:center; z-index:400; padding:24px; opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
         .alert-popup-overlay.visible { opacity:1; pointer-events:auto; }
         .alert-popup-card { background:#fff; border-radius:20px; width:100%; max-width:340px; overflow:hidden; transform:scale(0.92) translateY(12px); transition:transform 0.3s cubic-bezier(0.34,1.3,0.64,1); box-shadow:0 20px 60px rgba(10,8,20,0.22); }
@@ -543,15 +559,21 @@
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
-        <!-- Alert banner — appears below gainers/losers when a new post is detected -->
-        <div id="alert-banner-section">
-            <div class="alert-banner" onclick="_showAlertPopup()">
-                <span class="alert-banner-dot"></span>
-                <div class="alert-banner-text">
-                    <div class="alert-banner-type" id="alert-banner-type">New Trade Alert</div>
-                    <div class="alert-banner-name"  id="alert-banner-name">New alert</div>
-                </div>
-                <button class="alert-banner-btn" onclick="event.stopPropagation();_goToAlert()">View →</button>
+        <!-- Market Quick Preview — Trades / Updates dual-tab (replaces alert banner in UAT) -->
+        <div id="market-quick-preview">
+            <div class="mqp-tab-strip">
+                <button class="mqp-tab-btn active" id="mqp-btn-trades" onclick="mqpSwitch('trades')">Trades</button>
+                <button class="mqp-tab-btn" id="mqp-btn-updates" onclick="mqpSwitch('updates')">Updates</button>
+            </div>
+            <div id="mqp-body-trades">
+                <div class="mqp-skel"></div>
+                <div class="mqp-skel" style="opacity:0.6;"></div>
+                <div class="mqp-skel" style="opacity:0.35;"></div>
+            </div>
+            <div id="mqp-body-updates" style="display:none;">
+                <div class="mqp-skel"></div>
+                <div class="mqp-skel" style="opacity:0.6;"></div>
+                <div class="mqp-skel" style="opacity:0.35;"></div>
             </div>
         </div>
     </div>
@@ -1077,7 +1099,7 @@
             }
         }
         if (tabId === 'performance') fetchPerformance();
-        if (tabId === 'markets') fetchMarketData();
+        if (tabId === 'markets') { fetchMarketData(); fetchMarketPreview(); }
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -1388,6 +1410,179 @@
             }
         }
     }
+
+    // ── MARKET QUICK PREVIEW (dual-tab: Trades / Updates) ───────────────────────
+    function _mqpScrollAfterRender() {
+        if (!window._mqpScrollToPostId) return;
+        const _sid = window._mqpScrollToPostId;
+        window._mqpScrollToPostId = null;
+        setTimeout(() => {
+            const el = document.getElementById('ucard-' + _sid);
+            if (!el) return;
+            el.scrollIntoView({ behavior:'smooth', block:'center' });
+            el.style.transition = 'background-color 0.4s ease';
+            el.style.backgroundColor = '#ede9fe';
+            setTimeout(() => { el.style.backgroundColor = ''; setTimeout(() => { el.style.transition = ''; }, 500); }, 1800);
+        }, 200);
+    }
+
+    function mqpSwitch(tab) {
+        document.getElementById('mqp-btn-trades').classList.toggle('active', tab === 'trades');
+        document.getElementById('mqp-btn-updates').classList.toggle('active', tab === 'updates');
+        document.getElementById('mqp-body-trades').style.display  = tab === 'trades'  ? 'block' : 'none';
+        document.getElementById('mqp-body-updates').style.display = tab === 'updates' ? 'block' : 'none';
+    }
+
+    function _mqpNavTrade(postId, instrument, optType, strike) {
+        if (instrument && optType && strike) window._highlightTradeKey = `${instrument}-${optType}-${strike}`;
+        const tabEl = document.querySelector('.tab[onclick*="\'trades\'"]');
+        if (tabEl) switchTab('trades', tabEl);
+    }
+
+    function _mqpNavUpdate(postId) {
+        window._mqpScrollToPostId = postId;
+        const tabEl = document.querySelector('.tab[onclick*="\'updates\'"]');
+        if (tabEl) switchTab('updates', tabEl);
+    }
+
+    async function fetchMarketPreview() {
+        const tradesBody  = document.getElementById('mqp-body-trades');
+        const updatesBody = document.getElementById('mqp-body-updates');
+        if (!tradesBody || !updatesBody) return;
+
+        // Resolve member access level (use cached value if available — avoids extra Supabase round-trip)
+        let isAdmin = false, memberTier = 'free';
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (window._cachedMember) {
+            isAdmin    = window._cachedMember.is_admin === true;
+            memberTier = window._cachedMember.tier || 'free';
+        } else if (memberId) {
+            try {
+                const _mv = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin`, { method:'GET' });
+                if (_mv && _mv[0]) { isAdmin = _mv[0].is_admin === true; memberTier = _mv[0].tier || 'free'; }
+            } catch(e) {}
+        }
+        const canSeePremium = isAdmin || memberTier === 'paid';
+
+        // ── TRADES SUB-TAB ──────────────────────────────────────────────────────
+        try {
+            const [tradeParents, allFollowUps] = await Promise.all([
+                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=20&select=id,content,sent_at,created_at,audience', { method:'GET' }),
+                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=300&select=id,content,parent_id,sent_at', { method:'GET' })
+            ]);
+            const replyMap = {};
+            allFollowUps.forEach(r => { if (!replyMap[r.parent_id]) replyMap[r.parent_id] = []; replyMap[r.parent_id].push(r); });
+
+            const activeTrades = [], closedTrades = [];
+            tradeParents.forEach(post => {
+                const replies = replyMap[post.id] || [];
+                (isTradeFullyClosed(post, replies) ? closedTrades : activeTrades).push(post);
+            });
+            // Active newest-first, closed newest-first; combined max 5
+            const byDate = (a, b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
+            activeTrades.sort(byDate); closedTrades.sort(byDate);
+            const preview = [...activeTrades, ...closedTrades].slice(0, 5);
+
+            if (!preview.length) {
+                tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No active trades right now.</div>';
+            } else {
+                tradesBody.innerHTML = preview.map(post => {
+                    const replies  = replyMap[post.id] || [];
+                    const f        = extractTradeAlertFields(post.content || '');
+                    const isClosed = closedTrades.includes(post);
+                    const isSell   = (f.action || '').toUpperCase() === 'SELL';
+                    const expLabel = f.expiry ? formatExpiryDisplay(f.expiry, f.instrument, post.sent_at||post.created_at) : 'Monthly';
+                    const instrLabel = (f.instrument && f.optType && f.strike)
+                        ? `[${f.optType}] ${f.instrument} ${f.strike} (${expLabel})`
+                        : (post.content || '').substring(0, 45).replace(/\n/g,' ').trim() + '…';
+                    const statusLabel = isClosed ? 'Closed' : 'Active';
+
+                    let pnlHtml = '';
+                    if (!canSeePremium) {
+                        pnlHtml = `<div class="mqp-pnl lock" onclick="event.stopPropagation();showPopup();">🔒 Premium</div>`;
+                    } else {
+                        let maxPts = null;
+                        if (isSell) {
+                            const lowPx = extractLowFromReplies(replies);
+                            if (lowPx !== null && f.entry) maxPts = f.entry - lowPx;
+                            if (maxPts === null) { const cm = calculateMinPrice(f.entry, replies); if (cm) maxPts = cm.pts; }
+                        } else {
+                            const highPx = extractHighFromReplies(replies);
+                            if (highPx !== null && f.entry && highPx > f.entry) maxPts = highPx - f.entry;
+                            if (maxPts === null) { const cm = calculateMaxProfit(f.entry, replies); if (cm) maxPts = cm.pts; }
+                        }
+                        if (maxPts !== null && maxPts > 0 && f.instrument) {
+                            const lotSize = getLotSize(f.instrument);
+                            const pnlRs   = Math.round(maxPts * lotSize);
+                            pnlHtml = `<div class="mqp-pnl profit">+${maxPts.toFixed(0)} pts<br><span style="font-size:0.65rem;font-weight:600;">+₹${pnlRs.toLocaleString()}</span></div>`;
+                        } else {
+                            pnlHtml = `<div class="mqp-pnl" style="color:var(--text-muted);font-weight:600;">Max: —</div>`;
+                        }
+                    }
+
+                    const pId  = post.id;
+                    const nav  = `_mqpNavTrade('${pId}','${f.instrument||''}','${f.optType||''}','${f.strike||''}')`;
+                    return `<div class="mqp-card" onclick="${nav}">
+                        <div class="mqp-card-left">
+                            <div class="mqp-card-name">${sanitizeHtml(instrLabel)}</div>
+                            <div class="mqp-card-meta">${statusLabel} · Max Profit</div>
+                        </div>
+                        ${pnlHtml}
+                        <div class="mqp-arrow">›</div>
+                    </div>`;
+                }).join('');
+            }
+        } catch(e) {
+            tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">Unable to load trades.</div>';
+        }
+
+        // ── UPDATES SUB-TAB ─────────────────────────────────────────────────────
+        try {
+            let updatePosts = null;
+            if (_cachedPosts && _cachedPosts.length) {
+                updatePosts = _cachedPosts
+                    .filter(p => !p.parent_id && ['general','market_update'].includes(p.post_type))
+                    .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at))
+                    .slice(0, 5);
+            } else {
+                updatePosts = await sbFetch(
+                    'posts?is_deleted=eq.false&post_type=in.(general,market_update)&parent_id=is.null&order=sent_at.desc&limit=5&select=id,content,post_type,sent_at,created_at,audience',
+                    { method:'GET' }
+                );
+            }
+            if (!updatePosts || !updatePosts.length) {
+                updatesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No recent updates.</div>';
+            } else {
+                updatesBody.innerHTML = updatePosts.map(post => {
+                    const isPaidOnly = post.audience === 'paid_only';
+                    const canSee     = canSeePremium || !isPaidOnly;
+                    const typeLabel  = post.post_type === 'market_update' ? '📊 Market' : '💬 General';
+                    const nav        = `_mqpNavUpdate('${post.id}')`;
+                    if (!canSee) {
+                        return `<div class="mqp-card" onclick="${nav}">
+                            <div class="mqp-card-left">
+                                <div class="mqp-card-name" style="color:var(--text-muted);">🔒 Premium Update</div>
+                                <div class="mqp-card-meta">${typeLabel}</div>
+                            </div>
+                            <div class="mqp-arrow">›</div>
+                        </div>`;
+                    }
+                    const rawText = (post.content || '').replace(/\n/g, ' ').trim();
+                    const preview = rawText.length > 60 ? rawText.substring(0, 60).trim() + '…' : rawText;
+                    return `<div class="mqp-card" onclick="${nav}">
+                        <div class="mqp-card-left">
+                            <div class="mqp-card-name">${sanitizeHtml(preview)}</div>
+                            <div class="mqp-card-meta">${typeLabel}</div>
+                        </div>
+                        <div class="mqp-arrow">›</div>
+                    </div>`;
+                }).join('');
+            }
+        } catch(e) {
+            updatesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">Unable to load updates.</div>';
+        }
+    }
+    // ── END MARKET QUICK PREVIEW ────────────────────────────────────────────────
 
     async function fetchMarketData() {
         // Step 1: Render from cache immediately — instant display, no loading state
@@ -3673,6 +3868,7 @@
         const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000);
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+            _mqpScrollAfterRender();
             (_uc.posts||[]).filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
             // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
         }
@@ -3745,6 +3941,7 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            _mqpScrollAfterRender();
             if (_fudCompose) {
                 const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
                 if (_fudBox) {
@@ -4263,6 +4460,7 @@
         } else {
             // Pre-load trade alerts in background so tab is instant when user switches
             fetchTradeAlerts();
+            fetchMarketPreview();
         }
         // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -4767,10 +4965,13 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             ? `${m[1].toUpperCase()} ${m[2]} ${m[3].toUpperCase()==='CE'?'Call':'Put'} alert`
             : (isTradeAlert ? 'New Trade Alert' : 'New Market Update');
 
-        // Banner
-        document.getElementById('alert-banner-type').textContent = isTradeAlert ? 'New Trade Alert' : 'New Market Update';
-        document.getElementById('alert-banner-name').textContent = label;
-        document.getElementById('alert-banner-section').style.display = 'block';
+        // Banner (alert-banner-section removed in UAT; null-guard these elements)
+        const _abt = document.getElementById('alert-banner-type');
+        const _abn = document.getElementById('alert-banner-name');
+        if (_abt) _abt.textContent = isTradeAlert ? 'New Trade Alert' : 'New Market Update';
+        if (_abn) _abn.textContent = label;
+        const _abEl = document.getElementById('alert-banner-section');
+        if (_abEl) _abEl.style.display = 'block';
 
         // Popup content
         document.getElementById('alert-popup-type-label').textContent = isTradeAlert ? 'Trade Alert' : 'Market Update';
