@@ -1497,9 +1497,17 @@
                     const isSell   = (f.action || '').toUpperCase() === 'SELL';
                     const _pnlDir  = isSell ? -1 : 1;
                     const expLabel = f.expiry ? formatExpiryDisplay(f.expiry, f.instrument, post.sent_at||post.created_at) : 'Monthly';
-                    const instrLabel = (f.instrument && f.optType && f.strike)
-                        ? `[${f.optType}] ${f.instrument} ${f.strike} (${expLabel})`
-                        : (post.content || '').substring(0, 45).replace(/\n/g,' ').trim() + '…';
+
+                    // CE/PE badge reuses existing .type-box.ce / .type-box.pe CSS from Trade Alert tab
+                    const _optClass  = (f.optType || '').toLowerCase(); // 'ce' or 'pe'
+                    const _typeBox   = f.optType
+                        ? `<div class="type-box ${_optClass}" style="flex-shrink:0;width:26px;height:26px;font-size:0.72rem;">${f.optType}</div>`
+                        : '';
+
+                    // Instrument name without redundant [CE]/[PE] prefix — badge carries optType
+                    const instrLabel = (f.instrument && f.strike)
+                        ? `${f.instrument} ${f.strike} · ${expLabel}`
+                        : (post.content || '').substring(0, 50).replace(/\n/g,' ').trim() + '…';
 
                     let pnlHtml = '', cardBorder = '';
                     if (!canSeePremium) {
@@ -1507,7 +1515,10 @@
                     } else {
                         let pnlPts = null;
                         if (isClosed) {
-                            // Mirror Section 3 exactly: resolve SL (including 'Cost / No Loss') then weighted exit
+                            // Mirrors Section 3 P&L path exactly:
+                            // 1. Resolve SL — getLastSLNumeric(), fall back to entry when SL is 'Cost (No Loss)'
+                            // 2. getWeightedExitPrice with SL-slippage fix + CLOSEPRICE + SL fallback
+                            // 3. direction multiplier: SELL → entry−exit, BUY → exit−entry
                             const _slRes = getLastSLNumeric(replies) ||
                                 (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
                             const exitPx = getWeightedExitPrice(replies, {
@@ -1517,7 +1528,7 @@
                             });
                             if (f.entry && exitPx !== null) pnlPts = Math.round((exitPx - f.entry) * _pnlDir);
                         } else {
-                            // Active: try live CMP from Kotak LTP feed (same key format as updateTradeCMPs)
+                            // Active: same _lastOptionLTPs global used by updateTradeCMPs / computePlBadgeAttrs
                             const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
                             const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
                             if (liveCmp != null && f.entry) pnlPts = Math.round((liveCmp - f.entry) * _pnlDir);
@@ -1536,6 +1547,7 @@
 
                     const nav = `_mqpNavTrade('${post.id}','${f.instrument||''}','${f.optType||''}','${f.strike||''}')`;
                     return `<div class="mqp-card" onclick="${nav}" style="${cardBorder}">
+                        ${_typeBox}
                         <div class="mqp-card-left">
                             <div class="mqp-card-name">${sanitizeHtml(instrLabel)}</div>
                         </div>
