@@ -401,7 +401,7 @@
         .mqp-pnl.profit { color:#15803d; }
         .mqp-pnl.loss   { color:#dc2626; }
         .mqp-pnl.lock   { color:var(--primary); }
-        .mqp-arrow { color:var(--border); font-size:0.85rem; flex-shrink:0; line-height:1; }
+        .mqp-arrow { color:#9ca3af; font-size:1rem; font-weight:700; flex-shrink:0; line-height:1; }
         .mqp-skel { background:linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; border-radius:10px; margin-bottom:6px; height:50px; }
         .alert-popup-overlay { position:fixed; inset:0; background:rgba(10,8,20,0.55); display:flex; align-items:center; justify-content:center; z-index:400; padding:24px; opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
         .alert-popup-overlay.visible { opacity:1; pointer-events:auto; }
@@ -1515,18 +1515,36 @@
                     } else {
                         let pnlPts = null;
                         if (isClosed) {
-                            // Mirrors Section 3 P&L path exactly:
-                            // 1. Resolve SL — getLastSLNumeric(), fall back to entry when SL is 'Cost (No Loss)'
-                            // 2. getWeightedExitPrice with SL-slippage fix + CLOSEPRICE + SL fallback
-                            // 3. direction multiplier: SELL → entry−exit, BUY → exit−entry
-                            const _slRes = getLastSLNumeric(replies) ||
-                                (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
-                            const exitPx = getWeightedExitPrice(replies, {
-                                sl: _slRes,
-                                closePrice: extractClosePriceFromReplies(replies),
-                                isSell
-                            });
-                            if (f.entry && exitPx !== null) pnlPts = Math.round((exitPx - f.entry) * _pnlDir);
+                            // Exact Section 3 P&L chain — parse latestCmp, compute _effectiveExitPrice,
+                            // use adjusted-entry formula for partial exits (mirrors buildTradeAlertCard Section 3)
+                            let _mqpCmp = null;
+                            for (const _r of replies) {
+                                const _fp = parseFollowUpContent(_r.content||'');
+                                if (_fp.cmp && _fp.cmp < 10000) { _mqpCmp = _fp.cmp; break; }
+                                if (_fp.price && _fp.price < 10000 && (_fp.type==='cmp_update'||_fp.type==='status')) { _mqpCmp = _fp.price; break; }
+                            }
+                            const _mqpClosePrice = extractClosePriceFromReplies(replies);
+                            const _mqpSlNum = getLastSLNumeric(replies);
+                            const _mqpSlRes = _mqpSlNum || (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
+                            const _mqpExitPx = getWeightedExitPrice(replies, { sl: _mqpSlRes, closePrice: _mqpClosePrice, isSell });
+                            const _mqpCumExit = getCumulativeExit(replies);
+                            const _mqpEffExit = (_mqpCumExit > 0 && _mqpCumExit < 100 && !_mqpClosePrice && _mqpCmp && !(_mqpSlNum && _mqpSlNum < 5000))
+                                ? _mqpCmp : _mqpExitPx;
+                            if (f.entry && _mqpEffExit) {
+                                if (_mqpCumExit > 0 && _mqpCumExit < 100 && _mqpCmp && !(_mqpSlNum && _mqpSlNum < 5000)) {
+                                    // Adjusted-entry breakeven for partial exits (mirrors Section 3 _banked loop)
+                                    let _mqpBanked = 0;
+                                    [...replies].reverse().forEach(_r => {
+                                        const _fp = parseFollowUpContent(_r.content||'');
+                                        const _prc = _fp.price || (_fp.exitPct && _fp.cmp && _fp.cmp < 10000 ? _fp.cmp : null);
+                                        if (_fp.exitPct && _prc) _mqpBanked += (_prc - f.entry) * _fp.exitPct;
+                                    });
+                                    const _mqpAdjEnt = f.entry - _mqpBanked / (100 - _mqpCumExit);
+                                    pnlPts = Math.round((_mqpCmp - _mqpAdjEnt) * _pnlDir);
+                                } else {
+                                    pnlPts = Math.round((_mqpEffExit - f.entry) * _pnlDir);
+                                }
+                            }
                         } else {
                             // Active: same _lastOptionLTPs global used by updateTradeCMPs / computePlBadgeAttrs
                             const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
