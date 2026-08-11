@@ -1434,9 +1434,35 @@
     }
 
     function _mqpNavTrade(postId, instrument, optType, strike) {
-        if (instrument && optType && strike) window._highlightTradeKey = `${instrument}-${optType}-${strike}`;
-        const tabEl = document.querySelector('.tab[onclick*="\'trades\'"]');
-        if (tabEl) switchTab('trades', tabEl);
+        const tradesTab  = document.querySelector('.tab[onclick*="\'trades\'"]');
+        const targetCard = document.getElementById('ucard-' + postId);
+
+        if (targetCard && tradesTab) {
+            // Fast path: card already in DOM — switch tabs synchronously, no scroll-to-top, no fetch wait
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+            tradesTab.classList.add('active');
+            document.getElementById('trades').classList.add('active');
+            localStorage.setItem('t2s_last_tab', 'trades');
+            if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
+            if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
+            setTabBadge('trades', 0);
+            const _cmp2 = document.getElementById('admin-trade-compose');
+            if (_cmp2 && _cmp2.dataset.isAdmin === 'true') _cmp2.style.display = 'block';
+            // Instant scroll — card visible immediately, no Supabase fetch delay
+            targetCard.scrollIntoView({ behavior: 'instant', block: 'center' });
+            targetCard.style.transition = 'background-color 0.4s ease';
+            targetCard.style.backgroundColor = '#ede9fe';
+            setTimeout(() => { targetCard.style.backgroundColor = ''; setTimeout(() => { targetCard.style.transition = ''; }, 500); }, 1800);
+            // Start 30s background refresh only during market hours
+            const _ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
+            const _istM = _ist.getHours() * 60 + _ist.getMinutes();
+            if (_istM >= 9 * 60 + 15 && _istM < 16 * 60) _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
+        } else {
+            // Slow path: card not yet in DOM — set highlight key and let switchTab fetch + scroll after render
+            if (instrument && optType && strike) window._highlightTradeKey = `${instrument}-${optType}-${strike}`;
+            if (tradesTab) switchTab('trades', tradesTab);
+        }
     }
 
     function _mqpNavUpdate(postId) {
@@ -1584,7 +1610,7 @@
                             <div class="mqp-card-left">
                                 <div class="mqp-card-name" style="color:var(--text-muted);">🔒 Premium Update</div>
                             </div>
-                            <div class="mqp-arrow">›</div>
+                            <div class="mqp-arrow">→</div>
                         </div>`;
                     }
                     // Strip leading markdown chars (>, *, #) per line and collapse to single line
@@ -1600,7 +1626,7 @@
                         <div class="mqp-card-left">
                             <div class="mqp-card-name">${sanitizeHtml(preview)}</div>
                         </div>
-                        <div class="mqp-arrow">›</div>
+                        <div class="mqp-arrow">→</div>
                     </div>`;
                 }).join('');
             }
