@@ -1501,6 +1501,17 @@
     function _mqpCachePut(updates) {
         try { localStorage.setItem('t2s_summary_cache', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
     }
+    // Format post timestamp for Markets summary cards — IST-aware, relative labels
+    function _mqpFmtTime(iso) {
+        if (!iso) return '';
+        const d   = new Date(iso);
+        const now = new Date();
+        const yest = new Date(now); yest.setDate(now.getDate() - 1);
+        const hm  = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true, timeZone:'Asia/Kolkata' });
+        if (d.toDateString() === now.toDateString())  return `Today, ${hm}`;
+        if (d.toDateString() === yest.toDateString()) return `Yesterday, ${hm}`;
+        return `${d.toLocaleDateString('en-IN', { day:'numeric', month:'short', timeZone:'Asia/Kolkata' })}, ${hm}`;
+    }
 
     // Synchronous Markets Trades sub-tab renderer.
     // Always called AFTER renderTradeAlerts() so _mqpPnlStore is guaranteed populated.
@@ -1668,10 +1679,13 @@
                     { method:'GET' }
                 );
             }
-            // Delta check — skip re-render if update IDs unchanged
+            // Session guard: always re-render on first page load so timestamps are fresh
+            const _updFirstRender = !window._mqpUpdRendered;
+            window._mqpUpdRendered = true;
+            // Delta check — skip re-render if same IDs and not a first-load (timestamps would be stale otherwise)
             const _newUpdIds = (updatePosts || []).map(p => p.id);
             const _scUpd = _mqpCacheGet();
-            if (_newUpdIds.length > 0 && _scUpd.updateIds &&
+            if (!_updFirstRender && _newUpdIds.length > 0 && _scUpd.updateIds &&
                 _scUpd.updateIds.length === _newUpdIds.length &&
                 _newUpdIds.every((id, i) => id === _scUpd.updateIds[i]) &&
                 updatesBody.children.length > 0) return; // same content — keep DOM intact
@@ -1687,6 +1701,7 @@
                         return `<div class="mqp-card" onclick="${nav}">
                             <div class="mqp-card-left">
                                 <div class="mqp-card-name" style="color:var(--text-muted);">🔒 Premium Update</div>
+                                <div class="mqp-card-meta">${_mqpFmtTime(post.sent_at||post.created_at)}</div>
                             </div>
                             <div class="mqp-arrow">→</div>
                         </div>`;
@@ -1703,6 +1718,7 @@
                     return `<div class="mqp-card" onclick="${nav}">
                         <div class="mqp-card-left">
                             <div class="mqp-card-name">${sanitizeHtml(preview)}</div>
+                            <div class="mqp-card-meta">${_mqpFmtTime(post.sent_at||post.created_at)}</div>
                         </div>
                         <div class="mqp-arrow">→</div>
                     </div>`;
@@ -4995,11 +5011,13 @@
   </div>
 </div>
 
-<!-- A2HS FAB -->
-<!-- Install App FAB — pill button, bottom-right -->
-<div id="a2hs-fab" onclick="triggerA2HS()" style="display:none;position:fixed;bottom:50px;right:14px;z-index:500;background:#4a2a78;border-radius:24px;padding:10px 16px;align-items:center;gap:8px;box-shadow:0 4px 18px rgba(74,42,120,0.45);cursor:pointer;border:none;">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="6" x2="12" y2="14"/><polyline points="9 11 12 14 15 11"/></svg>
-  <span style="color:white;font-size:13px;font-weight:700;white-space:nowrap;font-family:'Plus Jakarta Sans',sans-serif;">Install App</span>
+<!-- A2HS FAB — compact circular icon button -->
+<div id="a2hs-fab" onclick="triggerA2HS()" title="Install App" style="display:none;position:fixed;bottom:50px;right:14px;z-index:500;background:#4a2a78;border-radius:50%;width:46px;height:46px;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(74,42,120,0.45);cursor:pointer;border:none;">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="6" x2="12" y2="14"/><polyline points="9 11 12 14 15 11"/></svg>
+</div>
+<!-- Global Share FAB — circular icon button, bottom-left -->
+<div id="share-fab" onclick="_shareApp()" title="Share this app" style="position:fixed;bottom:50px;left:14px;z-index:500;background:#4a2a78;border-radius:50%;width:46px;height:46px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(74,42,120,0.35);cursor:pointer;border:none;">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
 </div>
 
 <!-- A2HS Guide Modal — platform-aware -->
@@ -5094,6 +5112,22 @@ async function triggerA2HS() {
   }
 }
 document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); _startAlertPolling(); });
+function _shareApp() {
+  const url   = 'https://trade2spend.github.io/Trade2Spend-Tracker/';
+  const title = 'Trade2Spend — Live Trade Alerts & Market Updates';
+  const text  = 'Get live NSE trade alerts and market updates from Trade2Spend!';
+  if (navigator.share) {
+    navigator.share({ title, text, url }).catch(() => {});
+  } else {
+    navigator.clipboard ? navigator.clipboard.writeText(url).then(() => {
+      const t = document.createElement('div');
+      t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:8px 18px;border-radius:20px;font-size:0.78rem;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;';
+      t.textContent = '🔗 Link copied to clipboard!';
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 2500);
+    }).catch(() => {}) : prompt('Copy this link:', url);
+  }
+}
 
     /* ── ALERT NOTIFICATION SYSTEM ─────────────────────────────────────────── */
     let _pendingAlertType = null;
