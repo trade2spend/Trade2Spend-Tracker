@@ -1466,9 +1466,32 @@
     }
 
     function _mqpNavUpdate(postId) {
-        window._mqpScrollToPostId = postId;
-        const tabEl = document.querySelector('.tab[onclick*="\'updates\'"]');
-        if (tabEl) switchTab('updates', tabEl);
+        const updatesTab = document.querySelector('.tab[onclick*="\'updates\'"]');
+        const targetCard = document.getElementById('ucard-' + postId);
+
+        if (targetCard && updatesTab) {
+            // Fast path: card already in DOM — switch tabs synchronously, scroll instantly
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+            updatesTab.classList.add('active');
+            document.getElementById('updates').classList.add('active');
+            localStorage.setItem('t2s_last_tab', 'updates');
+            if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
+            if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
+            _updatesTabViewed = true;
+            setTimeout(() => setTabBadge('updates', 0), 2500);
+            // Instant scroll — no async fetch delay
+            targetCard.scrollIntoView({ behavior: 'instant', block: 'center' });
+            targetCard.style.transition = 'background-color 0.4s ease';
+            targetCard.style.backgroundColor = '#ede9fe';
+            setTimeout(() => { targetCard.style.backgroundColor = ''; setTimeout(() => { targetCard.style.transition = ''; }, 500); }, 1800);
+            // Background 60s refresh — same as switchTab('updates') sets up
+            _updatesRefreshTimer = setInterval(fetchUpdates, 60000);
+        } else {
+            // Slow path: card not yet in DOM — set scroll key and let switchTab fetch + scroll after render
+            window._mqpScrollToPostId = postId;
+            if (updatesTab) switchTab('updates', updatesTab);
+        }
     }
 
     // Synchronous Markets Trades sub-tab renderer.
