@@ -1494,6 +1494,14 @@
         }
     }
 
+    // ── MARKETS SUMMARY CACHE ────────────────────────────────────────────────────
+    function _mqpCacheGet() {
+        try { return JSON.parse(localStorage.getItem('t2s_summary_cache') || '{}'); } catch(e) { return {}; }
+    }
+    function _mqpCachePut(updates) {
+        try { localStorage.setItem('t2s_summary_cache', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
+    }
+
     // Synchronous Markets Trades sub-tab renderer.
     // Always called AFTER renderTradeAlerts() so _mqpPnlStore is guaranteed populated.
     // Also called from switchTab('markets') for instant re-render using cached data.
@@ -1518,8 +1526,23 @@
         const activeSlice = activeTrades.slice(0, 5);
         const closedSlice = closedTrades.slice(0, Math.max(0, 5 - activeSlice.length));
 
+        // State key encodes ordered IDs + active/closed status + member tier (catches tier upgrades)
+        const _newStateIds = [...activeSlice.map(p => p.id+':a'), ...closedSlice.map(p => p.id+':c')];
+        const _tierKey = isAdminMqp ? 'a' : tierMqp[0]; // 'a'=admin, 'p'=paid, 'f'=free
+        const _mqpSc = _mqpCacheGet();
+        if (_mqpSc.tierKey === _tierKey &&
+            _mqpSc.tradeStateIds &&
+            _mqpSc.tradeStateIds.length === _newStateIds.length &&
+            _newStateIds.every((s, i) => s === _mqpSc.tradeStateIds[i]) &&
+            tradesBody.children.length > 0) {
+            // Same structure — update only live P&L on active cards, no DOM rebuild
+            _updateMqpActivePnl(activeSlice, replyMap, canSeePremium);
+            return;
+        }
+
         if (!activeSlice.length && !closedSlice.length) {
             tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No active trades right now.</div>';
+            _mqpCachePut({ tradeStateIds: [], tierKey: _tierKey, tradesHtml: tradesBody.innerHTML });
             return;
         }
 
@@ -1568,7 +1591,7 @@
                 }
             }
             const nav = `_mqpNavTrade('${post.id}','${f.instrument||''}','${f.optType||''}','${f.strike||''}')`;
-            return `<div class="mqp-card" onclick="${nav}" style="${cardBorder}">
+            return `<div class="mqp-card" data-post-id="${post.id}" onclick="${nav}" style="${cardBorder}">
                 ${_typeBox}
                 <div class="mqp-card-left">
                     <div class="mqp-card-name">${sanitizeHtml(instrLabel)}</div>
@@ -1582,6 +1605,30 @@
         if (activeSlice.length) { html += _sectionHdr('Active Trades'); html += activeSlice.map(p => _buildMqpCard(p, false)).join(''); }
         if (closedSlice.length) { html += _sectionHdr('Closed Trades'); html += closedSlice.map(p => _buildMqpCard(p, true)).join(''); }
         tradesBody.innerHTML = html;
+        _mqpCachePut({ tradeStateIds: _newStateIds, tierKey: _tierKey, tradesHtml: tradesBody.innerHTML });
+    }
+
+    // In-place P&L update for active trade cards — no DOM rebuild, no flicker.
+    // Called by _renderMqpTrades() delta path when structure is unchanged.
+    function _updateMqpActivePnl(activeSlice, replyMap, canSeePremium) {
+        if (!canSeePremium || !activeSlice.length) return;
+        activeSlice.forEach(post => {
+            const card = document.querySelector(`#mqp-body-trades .mqp-card[data-post-id="${post.id}"]`);
+            if (!card) return;
+            const f = extractTradeAlertFields(post.content || '');
+            const isSell = (f.action || '').toUpperCase() === 'SELL';
+            const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
+            const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
+            const pnlDiv = card.querySelector('.mqp-pnl');
+            if (!pnlDiv || liveCmp == null || !f.entry) return;
+            const pnlPts = Math.round((liveCmp - f.entry) * (isSell ? -1 : 1));
+            const pnlRs  = Math.round(pnlPts * getLotSize(f.instrument));
+            const sign   = pnlPts >= 0 ? '+' : '';
+            const cls    = pnlPts >= 0 ? 'profit' : 'loss';
+            pnlDiv.className = `mqp-pnl ${cls}`;
+            pnlDiv.innerHTML = `${sign}${pnlPts} pts<br><span style="font-size:0.65rem;font-weight:600;">${sign}₹${Math.abs(pnlRs).toLocaleString()}</span>`;
+            card.style.borderLeft = pnlPts >= 0 ? '3px solid #bbf7d0' : '3px solid #fca5a5';
+        });
     }
 
     async function fetchMarketPreview() {
@@ -1621,6 +1668,14 @@
                     { method:'GET' }
                 );
             }
+            // Delta check — skip re-render if update IDs unchanged
+            const _newUpdIds = (updatePosts || []).map(p => p.id);
+            const _scUpd = _mqpCacheGet();
+            if (_newUpdIds.length > 0 && _scUpd.updateIds &&
+                _scUpd.updateIds.length === _newUpdIds.length &&
+                _newUpdIds.every((id, i) => id === _scUpd.updateIds[i]) &&
+                updatesBody.children.length > 0) return; // same content — keep DOM intact
+
             if (!updatePosts || !updatePosts.length) {
                 updatesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No recent updates.</div>';
             } else {
@@ -1652,6 +1707,7 @@
                         <div class="mqp-arrow">→</div>
                     </div>`;
                 }).join('');
+                _mqpCachePut({ updateIds: _newUpdIds, updatesHtml: updatesBody.innerHTML });
             }
         } catch(e) {
             updatesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">Unable to load updates.</div>';
@@ -4538,6 +4594,16 @@
         const lastTab  = localStorage.getItem('t2s_last_tab');
         const restoreTab = startTab || lastTab;
         if (startTab) localStorage.removeItem('t2s_start_tab');
+        // Paint Markets summary from cache immediately — eliminates skeleton flash on page load/refresh
+        (function() {
+            try {
+                const _sc = _mqpCacheGet();
+                const _tb = document.getElementById('mqp-body-trades');
+                const _ub = document.getElementById('mqp-body-updates');
+                if (_tb && _sc.tradesHtml) _tb.innerHTML = _sc.tradesHtml;
+                if (_ub && _sc.updatesHtml) _ub.innerHTML = _sc.updatesHtml;
+            } catch(e) {}
+        })();
         if (restoreTab && restoreTab !== 'markets') {
             const tabEl = document.querySelector(`.tab[onclick*="'${restoreTab}'"]`);
             if (tabEl) switchTab(restoreTab, tabEl);
