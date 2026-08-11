@@ -1,23 +1,28 @@
-<!-- DEPLOY: T2S-PROD-20260806-001 | Member PWA: SL hit slippage fix — when follow-up contains "SL hit/triggered/breached" AND effective premium SL (<5000) exists AND exit price slipped past SL (BUY: price<SL, SELL: price>SL), use SL as conceptual exit price. (1) getWeightedExitPrice + getExitLegs: _rawPrice + _slRe override replaces slippage price with SL in weighted exit and legs breakdown. (2) 'Cost (No Loss)' SL resolution: _slResolved3/_slResolved25/_slResolvedPerf = getLastSLNumeric || (cost SL → fields.entry) — getLastSLNumeric skips cost entries so resolving it was the root cause fix. (3) isSell added to opts at 5 call sites (Performance, S2.5 weighted/legs, S3 weighted/legs) so SELL slippage (price above SL) is also handled. (4) Rendering loop: parsed.price overridden with _slResolved3 before renderFollowUpCard — EXIT PRICE row in follow-up card shows SL, raw advisory text unchanged. All normal profit/partial exits unchanged. Spot SLs (>5000) excluded by guard. Rollback: revert _rawPrice lines in getWeightedExitPrice + getExitLegs to `const price =`; remove _slRe lines; remove _slResolved* defs; revert call sites to getLastSLNumeric(postReplies) without isSell; revert rendering loop. -->
-<!-- DEPLOY: T2S-PROD-20260805-004 | Member PWA: Like blink fix — 3 call sites changed from _userInteracted.forEach(updateLikeUI) to allPostIds.forEach(updateLikeUI). fetchTradeAlerts: tradeParents.map(p=>p.id); fetchUpdates cache branch: _uc.posts parent filter; fetchUpdates full: posts parent filter. Reads _likeCounts (in-memory, populated by previous fetchLikes) instead of only _userInteracted, so all known like counts restore synchronously after every card rebuild — eliminates the 0→N flash on the 30s auto-refresh. fetchLikes() still runs async after each call as server-reconciliation (unchanged). Zero impact on like storage, toggleLike, SL logic, P&L, Session High/Low, push notifications. Rollback: revert 3 lines back to _userInteracted.forEach(id => updateLikeUI(id)). -->
-<!-- DEPLOY: T2S-PROD-20260805-003 | Member PWA: isTradeFullyClosed SL-breach block — cum>0 changed to cum>=0. Now auto-closes trades with 100% open positions (no partial exits) when live CMP crosses revised premium SL. Previously only fired for partial-exit positions (cum>0). updateTradeCMPs SL breach indicator + fetchTradeAlerts trigger unchanged — those already work for all cum values. Spot SL guard (_slNum<5000) unchanged. No impact on P&L, Session High/Low, exit breakdown, Performance tab, partial-exit logic, or any other feature. Rollback: revert cum>=0 to cum>0 at isTradeFullyClosed SL-breach block; update comment. -->
-<!-- DEPLOY: T2S-PROD-20260804-004 | Member PWA: SL multi-revision display + session high floor fix. (1) parseFollowUpContent slPats[0]: extended regex — "modifying SL of remaining to 157" now parsed as slRevised=157 (phrase "of remaining" between SL and number was blocking all patterns). Additive change: all existing SL phrases unaffected. (2) getPenultimateSL(replies): new helper returning second-to-last numeric SL revision; adjacent to getCurrentSL. (3) _prevRevSL3 in Section 3 SL display: strikethrough now uses previous revision (₹142) not original post SL (₹24530) when multiple revisions exist — shows ~~142~~ → ₹157 instead of ~~24530~~ → ₹157. Single/zero revision behaviour unchanged. (4) Session high/low floor (port from T2S-UAT-20260726-001): _initialHigh3/_initialLow3 computed from max/min exit price via _activeLegs3 (already available); Section 3 active card session high span seeded at max(entry, exit_price) for BUY and min(entry, exit_price) for SELL — prevents card rebuild from resetting below a known traded price. Zero impact on P&L, isTradeFullyClosed, getWeightedExitPrice, exit breakdown, or any other calculation. Rollback: revert slPats[0]; remove getPenultimateSL; remove _prevRevSL3 + revert strikethrough to initSL3; remove 4 _exitMin/Max/initial lines + revert session high span. -->
-<!-- DEPLOY: T2S-PROD-20260804-003 | Member PWA: Special comment display (Style B purple chip) — ⚠️ *text* pattern from Admin PWA "Special Comments" field now rendered on trade cards for paid members and admin. Extraction: _specialCommentMatch regex + _specialComment const at buildTradeAlertCard entry. Rendered as purple chip (💬 text, #f3f0f8 bg, #4a2a78 color, 10px border-radius) via _cmtHtml const. Two injection points: Section 3 closed card (between metrics row and why-section) + Section 3 active card (between metrics row and Session High/Low row). Free members: _cmtHtml='' (isFreeViewer guard). No comment: _cmtHtml='' (empty string when no ⚠️ *...* found). Zero impact on calculations, P&L, SL logic, getExitLegs, isTradeFullyClosed, or any other feature. Rollback: remove 5-line _specialComment block; remove ${_cmtHtml} from 2 Section 3 HTML locations. -->
-<!-- DEPLOY: T2S-PROD-20260804-002 | Member PWA: Exit breakdown display — getExitLegs + buildExitBreakdownHtml added (display-only, no calculation impact). Section 2.5 and Section 3 closed cards: label switches to "Effective Exit" for multi-leg exits, breakdown "50% @₹160 / 50% @₹140" renders below price. Active partial-exit trigger banner: holdingText updated to show per-leg prices ("Holding 50% exited 50% @₹160"). Single-exit trades unchanged (buildExitBreakdownHtml returns '' for ≤1 leg). Rollback: remove getExitLegs + buildExitBreakdownHtml functions; revert _exitLegs25/_exitLabel25/_exitBreakdown25 and Section 2.5 HTML; revert _exitLegs3/_exitLabel3/_exitBreakdown3 and Section 3 HTML; revert 3 holdingText lines to single-line ternary. -->
-<!-- DEPLOY: T2S-PROD-20260804-001 | Member PWA: P1 complete — SL-breach auto-close, correct exit price, correct P&L. (1) updateTradeCMPs: first SL-breach event triggers fetchTradeAlerts() via 1s debounce, one-shot per card. (2) isTradeFullyClosed: SL-breach block — cum>0&&cum<100 + live LTP crossed revised premium SL (<5000) returns true; index-level SLs excluded. (3) _effectiveExitPrice: _slForExit3 guard — uses weighted exit (SL-based) not latestCmp. (4) maxPnlPts3: same _slForExit3 guard on adjusted-entry branch — P&L in closed bar now correct for SL-breach auto-close. Rollback: (1) revert 5-line updateTradeCMPs block to single slbEl.style.display line; (2) remove 11-line isTradeFullyClosed block; (3) remove _slForExit3 line + revert _effectiveExitPrice condition; (4) remove guard from maxPnlPts3 condition and revert comment. -->
-<!-- DEPLOY: T2S-PROD-20260803-001 | server.js: RC-9 — stock instrument support in refreshActiveContracts() (+4 lines, stock fallback regex). index.html: RC-10 — Section 1 data-live-cmp on CMP cell + Session High row for free member progressive unlock view (+1 line). -->
-<!-- DEPLOY: T2S-PROD-20260801-003 | Member PWA: RC-6 — Paid-only reply scope fix for free member code paths. (1) fetchPerformance closedTrades filter: getTradeState now receives (replyMap[p.id]||[]).filter(r => r.audience !== 'paid_only') — paid-only cancel replies no longer exclude triggered trades from Performance tab. (2) buildTradeAlertCard Section 2: _pubReplies2 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState and getFreeUnlockedFields receive _pubReplies2 — paid-only trigger/SL replies no longer cause false Triggered state or field unlock for free members. (3) buildTradeAlertCard Section 2.5: _pubReplies25 = postReplies.filter(r => r.audience !== 'paid_only') declared at section entry; getTradeState receives _pubReplies25 — paid-only cancel replies no longer suppress full closed card. isTradeFullyClosed, P&L calculations (getWeightedExitPrice, calculateMaxProfit, extractHighFromReplies, extractLowFromReplies, extractClosePriceFromReplies, getLastSLNumeric, getCurrentSL), and Section 3 all retain full postReplies. -->
-<!-- DEPLOY: T2S-PROD-20260801-002 | Member PWA: RC-5 — SELL Max Possible HIGH→LOW. (1) extractLowFromReplies() added after extractHighFromReplies. (2) calculateMinPrice() added after calculateMaxProfit. (3) S2.5 max possible block: !_loss25 gate + SELL/BUY branch. (4) S2.5 template: _maxPossLabel25. (5) S3 block: _lossShLabel3 + !_loss3 gate + SELL/BUY branch. (6) S3 template: _maxPossLabel3/_lossShLabel3 branches. (7) fetchPerformance mp+validDayHigh: f.action!==SELL guards. -->
-<!-- DEPLOY: T2S-PROD-20260801-001 | Member PWA: RC-3 — isTradeFullyClosed reply-order fix. (1) const reps: added [...].reverse() for oldest-first hasHolding semantics. (2) reps[0] → reps[reps.length-1] in stale-trade check. -->
-<!-- DEPLOY: T2S-PROD-20260731-001 | Member PWA: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp fallback with fp.cmp<10000 guard — when admin writes "CMP 115, exiting 50%", parseFollowUpContent stores exit price in fp.cmp not fp.price; the function was silently skipping these legs. Now correctly captures CMP-phrased exits; <10000 guard prevents spot index values (Nifty 24000+) from being mistaken as option prices. (2) _bankedPerf loop in fetchPerformance: added _prc2 fallback — CMP-phrased exits now correctly contribute to the banked profit used in adjusted-entry P&L for partial-exit trades in the Performance tab. (3) _banked loop in buildTradeAlertCard S3: added _prc fallback — adjusted-entry formula in closed card S3 now includes CMP-phrased exit legs. Rollback: (1) remove `const price` line, revert `if (!fp.price...)` to original, revert `weightedSum += fp.price * pct`; (2) remove `_prc2` line, revert `if (_fp2.exitPct && _prc2)` to `if (_fp2.exitPct && _fp2.price)`; (3) remove `_prc` line, revert `if (fp.exitPct && _prc)` to `if (fp.exitPct && fp.price)`. -->
-<!-- DEPLOY: T2S-PROD-20260730-003 | Member PWA: Trade identity engine — permanent fix for session high/low bleeding across trades with identical strike. (1) _lastOptionHighsPostIds global added; updateTradeHighs() now accepts optionHighsPostIds parameter — before applying a session high, checks that VM's tracked postId for that liveCmpKey matches the card's own post.id; skips if different post is being tracked (RC-3 fix). (2) _sessionOptionLows re-keyed from liveCmpKey to post.id — data-live-low now stores post.id; new data-live-low-key stores liveCmpKey for LTP lookup; _sessionOptionLows dict updated throughout (RC-4 fix). (3) All 3 data-live-high render locations: data-post-id="${post.id}" added. All 3 data-live-low render locations: data-live-low="${post.id}" + data-live-low-key="${liveCmpKey}" (was data-live-low="${liveCmpKey}"). (4) getTradeState() validReplies filter: system markers [HIGH:X], [LOW:X], [CLOSEPRICE:X] now excluded — previously they passed through and could cause false "Triggered" state on trades that had only system marker follow-ups (RC-5 fix). Rollback: remove _lastOptionHighsPostIds decl; revert updateTradeHighs() to single param (remove postId block); revert 2 call sites to single-arg; remove data-post-id attrs from 3 live-high spans; revert data-live-low to liveCmpKey + remove data-live-low-key attrs; revert _sessionOptionLows tracking block to use key=liveLow; remove /^\[(HIGH|LOW|CLOSEPRICE).../ line from getTradeState. -->
-<!-- DEPLOY: T2S-PROD-20260730-002 | Member PWA: system marker filter hardening — [LOW:X] and [CLOSEPRICE:X] now filtered at all 5 display points: renderFollowUpCard, _freeVisReplies2, _cf25Vis, visibleReplies (Section 3), visibleReplies (Section 3 free-viewer). Previously only [HIGH:X] was filtered at all points; [LOW:X] was absent from prod; [CLOSEPRICE:X] was absent from the two visibleReplies filters. Result: no VM system marker can ever appear as a visible follow-up card to any member, regardless of trade direction or member tier. Zero logic change — purely additive filter lines. Rollback: remove [LOW:X] and [CLOSEPRICE:X] filter lines from the 5 locations listed. -->
-<!-- DEPLOY: T2S-PROD-20260730-001 | Member PWA: Performance tab P&L sync fix — (1) extractClosePriceFromReplies() function added to prod (existed only in UAT). (2) getWeightedExitPrice: added opts.closePrice branch — VM-posted [CLOSEPRICE:X] at 3:35 PM now fills remaining unexited qty in weighted average, before SL fallback. (3) Performance tab latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (4) Performance tab getWeightedExitPrice call: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. (5) Section 2.5 getWeightedExitPrice: now passes closePrice. (6) Section 3 getWeightedExitPrice: now passes closePrice; _effectiveExitPrice now prefers exitPrice (weighted with closePrice) over latestCmp when [CLOSEPRICE:X] is available. Rollback: remove extractClosePriceFromReplies function; revert getWeightedExitPrice opts block to single else-if; remove _closePricePerf line + closePrice from Performance call; remove <10000 guards from latestCmpPerf loop; remove _closePrice25 line + closePrice from Section 2.5; remove _closePrice3 line + closePrice from Section 3 + revert _effectiveExitPrice condition to remove !_closePrice3. -->
-<!-- DEPLOY: T2S-PROD-20260729-002 | Member PWA: 4 permanent fixes for trade card display correctness. (1) getWeightedExitPrice: SL fallback now skips spot/index SLs (opts.sl>5000) — only option-price SLs (<=5000) used as exit fallback. (2) renderFollowUpCard + _freeVisReplies2 + _cf25Vis: [CLOSEPRICE:X] system marker filtered out — never shows as a visible follow-up card to members. (3) latestCmp loops (Sections 1/2/3): added fp.cmp<10000 and fp.price<10000 guards — spot index CMPs (e.g. "CMP 24261" in SL updates) can no longer pollute _effectiveExitPrice on closed trade cards. (4) activePosts/closedPosts forEach: per-card try/catch — a single bad card no longer crashes the entire render. (5) "Closed today" UX banner: when trades close on the current IST day, a green tap-to-scroll banner appears at top of active section so users never miss same-day closed trades. Rollback: remove opts.sl<=5000 condition (revert to bare opts.sl), remove 2 [CLOSEPRICE] filter lines, remove <10000 guards from 3 latestCmp loops, revert forEach to single-line without try/catch, remove closed-today-banner block and revert closed-section div.
-<!-- DEPLOY: T2S-PROD-20260723-001 | Production hotfix: 3 trade state bugs. (1) Session High/Low direction fix — SELL cards now show "Session Low" with data-live-low; BUY cards show "Session High" with data-live-high. Added _sessionOptionLows dict; client-side low tracking in updateTradeCMPs (VM sends highs not lows); re-apply after DOM rebuild. Added data-entry to both spans for entry-price initialization. All 3 card sections updated (S2 free, S3 closed, S3 active). (2) "Yet to trigger" state pill now auto-updates when CMP arrives post-render — added data-state-pill/data-entry/data-live-key attrs to yet_to_trigger spans in S1/S2/S3; updateTradeCMPs re-evaluates and replaces pill in-place. (3) SL breach indicator restored with < 5000 guard — only fires for revised premium SLs (not index SLs). Added data-sl-key/num/sell/post to trigger-banner; hidden slb-{id} span toggles visible on breach. Rollback: remove _sessionOptionLows dict decl, remove session-low + state-pill + SL-breach blocks in updateTradeCMPs, remove session-low re-apply after DOM rebuild, revert 3 Session High template locations, revert statePill3/stateBanner2/_statePill data attrs, revert Section 3 trigger-banner. -->
-<!-- DEPLOY: T2S-PROD-20260722-003 | SL Breached auto-detection fully removed. Removed: _isSlBreached/_isSellTrade3/_slBreachDir3/_slBannerData/_liveOptionCmp/_currentSlNum vars, dynamic forEach block in updateTradeCMPs, data-sl-key/num/sell/cum attrs on trigger-banner. statePill3 now shows only "Yet to trigger" or "Triggered / Holding X%" — no automated SL state. SL breach shown only when admin explicitly posts a follow-up. Rollback: reinstate T2S-PROD-20260722-002 block. -->
-<!-- DEPLOY: T2S-PROD-20260722-002 | SL Engine permanent fix — production hotfix for false SL Breached + stuck-in-Holding bugs. (1) Added _currentSlNum<5000 index SL guard: prevents index-level SLs (e.g. 23975) from being compared against option premium CMP — was root cause of "CMP ₹153 < SL ₹23975" false alarm. (2) Added SELL direction awareness: _isSellTrade3 flag so SELL SL breach fires when CMP > SL not < SL. (3) Added _slBannerData attrs (data-sl-key, data-sl-num, data-sl-sell, data-sl-cum) to trigger-banner element for premium SL trades. (4) Added dynamic SL breach re-evaluation in updateTradeCMPs: forEach on trigger-banners with data-sl-key — updates statePill innerHTML in-place every CMP tick, fixes "Holding 100%" stuck state even after CMP crosses revised premium SL. Rollback: revert _isSlBreached line to original (remove < 5000 guard + direction), remove _isSellTrade3/_slBreachDir3/_slBannerData lines, remove ${_slBannerData?' '+_slBannerData:''} from trigger-banner, remove 20-line querySelectorAll block in updateTradeCMPs. -->
-<!-- DEPLOY: T2S-PROD-20260720-003 | Spot SL exit condition display: extractTradeAlertFields() now captures slDirection (above/below) and slSustainMinutes from post content. New spotSLNote() helper appends direction word inline after spot SL value. slLabelFor() label updated to "SL (15 min candle)". All 4 card sections (S1/S2/S2.5/S3) show direction for spot SL (>5000); price-based SL unchanged. Zero schema/server/logic changes. Rollback: remove spotSLNote(), revert slLabelFor label, revert 8 slDisplay lines, revert extractTradeAlertFields SL regex to (?:below|above) non-capturing + remove slDirection/slSustainMinutes lines. -->
+<!-- T2S-PROD-20260811-001 | index.html: Markets tab Dual-Tab Quick Preview. (1) _renderMqpTrades(): synchronous render at end of renderTradeAlerts() — Trades sub-tab shows up to 5 trade cards; closed-trade P&L inherited strictly from _mqpPnlStore[post.id] written by buildTradeAlertCard Section 3 (zero re-computation). Active-trade P&L updated in-place by _updateMqpActivePnl() via data-post-id selectors. (2) fetchMarketPreview(): Updates sub-tab shows up to 5 recent posts with IST timestamps via _mqpFmtTime(); session guard (_mqpUpdRendered) forces re-render on first page load to refresh Today/Yesterday labels. (3) Delta check: tradeStateIds (id:a / id:c) + tierKey stored in t2s_summary_cache localStorage — identical → in-place P&L update only, no DOM rebuild, no skeleton flash. Cache also stores rendered HTML for synchronous restore before any fetches fire. (4) Fast-path navigation: _mqpNavTrade() + _mqpNavUpdate() check if target card already in DOM — if yes, sync tab switch + scrollIntoView(instant) in same frame (<10ms); slow path falls back to switchTab(). (5) UI: compact circular install FAB (46×46px, icon-only, bottom-right); global share FAB (bottom-left) with navigator.share + clipboard fallback + toast. Rollback: remove _mqpPnlStore write from buildTradeAlertCard S3; remove _renderMqpTrades/_updateMqpActivePnl/_mqpNavTrade/_mqpNavUpdate/_mqpFmtTime/_mqpCacheGet/_mqpCachePut; remove store-write + _renderMqpTrades() call from end of renderTradeAlerts(); remove switchTab markets block changes; revert a2hs-fab to pill; remove share-fab + _shareApp(). -->
+<!-- T2S-UAT-20260806-001 | uat.html: SL hit slippage fix — when follow-up contains "SL hit/triggered/breached" AND revised premium SL (<5000) exists AND exit price slipped past SL (BUY: price<SL, SELL: price>SL), use SL price as conceptual exit. (1) getWeightedExitPrice + getExitLegs: _rawPrice + _slRe override replaces raw exit price with SL when slippage past SL detected. (2) 5 call sites: isSell added to opts. (3) 'Cost (No Loss)' SL resolution: _slResolved3/_slResolved25/_slResolvedPerf compute effective SL as entry price when getLastSLNumeric returns null but SL was set to cost — this was root cause (getLastSLNumeric skips 'cost' entries, returning null → override never fired). (4) Rendering loop: uses _slResolved3 directly (dropped _slMap-based _slAtReply which was NaN for cost SL). Raw advisory text unchanged. All normal profit/partial exits unchanged. Rollback: revert _rawPrice lines to `const price =`; remove _slRe lines; remove isSell; remove _slResolved* lines and revert call sites to getLastSLNumeric(postReplies); revert rendering loop. -->
+<!-- T2S-UAT-20260805-002 | uat.html: Like blink fix — same 3-site fix as T2S-PROD-20260805-004. fetchTradeAlerts + fetchUpdates (cache + full): _userInteracted.forEach → allPostIds.forEach. Reads _likeCounts in-memory so all known counts restore synchronously after card rebuild. Rollback: revert 3 lines to _userInteracted.forEach(id => updateLikeUI(id)). -->
+<!-- T2S-UAT-20260805-001 | uat.html: SL breach auto-close for 100% open positions + D_CMT key fix. (1) isTradeFullyClosed: SL-breach block condition changed from cum>0 to cum>=0 — now auto-closes when CMP crosses revised premium SL even for positions with no prior partial exits (100% holding). Spot SLs (>5000) still excluded via _slNum<5000 guard. (2) D_CMT dummy card: strike changed from 24600 to 24700 — removes LTP key clash with real active NIFTY-24600-CE Supabase trade. (3) _UAT_MOCK_LTPS: 'NIFTY-24700-CE':126 added for D_CMT; 'NIFTY-24600-CE':126 kept for real active trade (needed by isTradeFullyClosed at render time — _lastOptionLTPs is seeded from mock before card render). No impact on partial-exit logic, P&L, Session High/Low, prod index.html, or any other feature. Rollback: revert cum>=0 to cum>0; change D_CMT card back to 24600; remove 'NIFTY-24700-CE' entry; keep 'NIFTY-24600-CE' as D_CMT LTP comment. -->
+<!-- T2S-UAT-20260804-004 | uat.html: SL multi-revision display fix. (1) parseFollowUpContent slPats[0]: extended to handle "of remaining/rest" between SL and number — "modifying SL of remaining to 157" now parsed as slRevised=157, type=sl_update. (2) getPenultimateSL(replies): new helper returning second-to-last SL revision value (numeric), adjacent to getCurrentSL. (3) Section 3 _prevRevSL3: getPenultimateSL used as strikethrough when 2+ revisions — shows ~~142~~ → ₹157 instead of ~~24530~~ → ₹157. (4) D_SL2 dummy card added: BUY NIFTY 24500 PE at 142, spot SL 24530, rev 1 ₹142, rev 2 ₹157 via "of remaining" phrasing, LTP 163. Session high fix (T2S-UAT-20260726-001) was already present. Rollback: revert slPats[0] to previous regex; remove getPenultimateSL; revert _prevRevSL3 declaration + strikethrough from _prevRevSL3||initSL3 back to initSL3; remove dummy-dsl2 post+replies+LTP. -->
+<!-- T2S-UAT-20260804-003b | uat.html: Special comment display — Style B (purple chip) finalised. ⚠️ *...* pattern from Admin PWA "Special Comments" field extracted as _specialComment; rendered as purple chip (💬 text, #f3f0f8 bg, #4a2a78 color, 10px border-radius) between metrics and Session High/Low (active) or metrics and why-section (closed). Paid/admin only. D_CMT card shows it live. DS2 (RELIANCE) also shows it. Rollback: remove _specialComment + _cmtHtmlUAT block; remove ${_cmtHtmlUAT} from 2 Section 3 locations; remove dummy-dcmt data + NIFTY-24600-CE LTP. -->
+<!-- T2S-UAT-20260803-001 | uat.html: P1 SL-breach auto-close validation. (1) isTradeFullyClosed: SL-breach block — partial exits with breached premium SL now auto-close. (2) _effectiveExitPrice: _slForExit3 guard — SL-based remaining leg uses weighted exit price, not latestCmp. (3) maxPnlPts3: same _slForExit3 guard added to adjusted-entry branch — P&L in closed-trade bar also uses weighted exit, not latestCmp. (4) getExitLegs: opts.sl fallback leg — breakdown shows SL exit leg when closePrice absent. (5) _exitLegs25/_exitLegs3 call sites: sl:getLastSLNumeric() added. (6) dummy-dsl card: BUY NIFTY 24450 at 150, 50%@160 first exit, SL revised to 140, remaining 50% auto-exits at SL, [HIGH:166] session peak. Mock LTP 139.75. Expected: CLOSED, Effective Exit ₹150, breakdown "50%@160/50%@140", P&L 0pts/₹0, Max possible +16pts (High ₹166). Rollback: remove guard from maxPnlPts3 condition; revert _effectiveExitPrice guard; revert getExitLegs; remove dummy-dsl data and 'NIFTY-24450-CE' from _UAT_MOCK_LTPS. -->
+<!-- T2S-UAT-20260731-001 | uat.html: RC-2 — CMP-based exit price fallback. (1) getWeightedExitPrice: added fp.cmp<10000 guard to the existing fp.cmp fallback — prevents spot index CMPs (24000+) from being mistaken as option exit prices. (2) getExitLegs: same fp.cmp<10000 guard added (mirrors getWeightedExitPrice). (3) computePlBadgeAttrs: added fp.cmp fallback with <10000 guard and use of resolved price variable throughout (fixes live P&L badge breakeven for CMP-phrased partial exits). (4) _bankedPerf loop in fetchPerformance: added fp.cmp fallback with <10000 guard — CMP-phrased partial exits now correctly adjust the banked profit in adjusted-entry P&L calculation. (5) _banked loop in buildTradeAlertCard S3: same fp.cmp fallback added — adjusted-entry formula now correctly includes CMP-phrased exit legs. Rollback: (1)+(2) remove &amp;&amp; fp.cmp < 10000 from price fallback in both functions; (3) revert computePlBadgeAttrs loop to original fp.price checks; (4)+(5) remove _prc2/_prc lines and revert if conditions to _fp2.price / fp.price. -->
+<!-- T2S-UAT-20260730-003 | uat.html: Trade identity engine — same root-cause fix as T2S-PROD-20260730-003. (1) _lastOptionHighsPostIds global added. (2) updateTradeHighs() + 2 call sites: postId gating added. (3) _sessionOptionLows + _sessionOptionHighs: re-keyed from liveCmpKey to post.id in updateTradeCMPs() — data-live-low now stores post.id, data-live-low-key stores liveCmpKey for LTP lookup; data-live-high elements use data-post-id for high tracking key. (4) All 3 session high/low render locations updated with new attributes. (5) getTradeState() validReplies filter: system markers [HIGH:X],[LOW:X],[CLOSEPRICE:X] excluded. Rollback: same as T2S-PROD-20260730-003 rollback instructions applied to uat.html. -->
+<!-- T2S-UAT-20260730-002 | uat.html: [CLOSEPRICE:X] added to visibleReplies filters (Section 3 both) — was missing alongside existing [HIGH:X] and [LOW:X] filters. Purely additive. Rollback: remove [CLOSEPRICE:X] filter lines from the two visibleReplies blocks. -->
+<!-- T2S-UAT-20260730-001 | uat.html: Performance tab P&L sync fix — (1) latestCmpPerf loop: added <10000 guard — spot index CMPs (e.g. "CMP 24261" from SL updates) can no longer pollute partial-exit P&L in Performance tab. (2) getWeightedExitPrice call in Performance: now passes closePrice from extractClosePriceFromReplies — Performance P&L matches Trade Alert tab exactly. Rollback: remove _closePricePerf line + closePrice from Performance getWeightedExitPrice call; remove <10000 guards from latestCmpPerf loop. -->
+<!-- T2S-UAT-20260729-002 | uat.html: latestCmp spot-price bug fixed — all 3 latestCmp loops (Sections 1/2/3) now have fp.cmp<10000 and fp.price<10000 guards; spot index CMPs (e.g. "CMP 24261" in SL updates) can no longer pollute _effectiveExitPrice on closed trade cards. Also added per-card try/catch in both activePosts and closedPosts forEach — a single bad card no longer crashes the entire render. Rollback: remove <10000 guards from 3 latestCmp loops; revert forEach to single-line without try/catch.
+<!-- T2S-UAT-20260729-001 | uat.html: Permanent fix for wrong exit price on auto-closed trades — (1) renderFollowUpCard: added [CLOSEPRICE:X] filter (system marker, not shown to members — same pattern as [HIGH:X] and [LOW:X]). (2) _freeVisReplies2 and _cf25Vis filters: same [CLOSEPRICE:X] exclusion added so system marker never counts as visible follow-up. (3) getWeightedExitPrice: SL fallback now skips spot/index SLs (opts.sl > 5000) — index-level values (e.g. 24050) must never be used as option exit prices; shows — instead of wrong index price. [CLOSEPRICE:X] is now posted by VM at 3:35 PM (server.js T2S-PROD-20260729-001) so this safety net is only needed when Kotak session expired before close. Rollback: remove [CLOSEPRICE] filter lines from renderFollowUpCard, _freeVisReplies2, _cf25Vis; revert opts.sl condition to bare opts.sl; revert opts.sl comment.
+<!-- T2S-UAT-20260728-001 | uat.html: Stock option support in extractTradeAlertFields — (1) STOCK_LOT_SIZES lookup table added (20 NSE F&O stocks, fallback=1 per-unit). getLotSize now checks _kotakLotSizes → LOT_SIZES (indices) → STOCK_LOT_SIZES → 1. (2) extractTradeAlertFields: stock fallback regex /\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i fires only when f.instrument is still null after index matching — sets instrument/strike/optType from stock option pattern. (3) DS1 dummy post added: RELIANCE 1280 Monthly CE at 1.7 with trigger reply. Rollback: remove STOCK_LOT_SIZES const + revert getLotSize to single-line; remove 8-line stock fallback block in extractTradeAlertFields; remove dummy-stock1 post and reply entries. -->
+<!-- T2S-UAT-20260726-001 | uat.html: Session HIGH/LOW seed fix for partial-exit active cards — (1) Section 3 BUY active cards: data-entry and display value now use _initialHigh3 (= max(entry, exit_price)) instead of bare fields.entry — fixes D7 session HIGH showing entry 102 when it should seed at 115 (exit price). (2) Holding text in all 3 sections: removed ₹ symbol from @₹${l.price} exit leg text → now renders as "Holding 50% exited 50% @115" per spec. Sections 1/2 SELL logic (_initialLow2) was already correct from prior session. D1–D5 unaffected (no partial exits, _activeLegs empty). Rollback: revert line 3444 BUY data-entry and display from _initialHigh3 back to fields.entry; revert @${l.price} to @₹${l.price} in holdingText3 (line 3401), holdingText2 (line 2914), _holdingText1 (line 2762). -->
+<!-- T2S-UAT-20260725-002 | uat.html: D1 card new layout — (1) Label changes from "D1" to "CE · Nifty 24100 · Monthly (30 Jul)" built from extractTradeAlertFields; purple brand colour instead of indigo. (2) D1 card header: no trade-title-box (CE box + instrument name + expiry removed from inside card); header becomes single row with date/time LEFT and BUY/SELL+P&L badge RIGHT. D2–D14 labels and headers unchanged. Rollback: revert _s1Header ternary to the original <div class="trade-header"> block; revert label injection forEach to single lbl.textContent = p._uatLabel branch. -->
+<!-- T2S-UAT-20260725-001 | uat.html: Exit breakdown root-cause fix — parseFollowUpContent stores CMP value in fp.cmp (not fp.price) for messages like "CMP 115, exiting 50% holding rest". Both getWeightedExitPrice and getExitLegs checked !fp.price and skipped these replies, so no exit legs were found. Fix: added fp.cmp fallback — when fp.price is null but fp.cmp exists and message is an exit type (exitPct or isFullExit), use fp.cmp as the exit price. Now D6/D7 active trigger banners show "50% @₹91 / 50% Remaining"; D13/D14 closed cards show "Effective Exit" label + breakdown "50% @₹210 / 50% @₹195". Rollback: remove the `const price = ...` line and revert `!fp.price` checks in both functions; revert `price` references back to `fp.price`. -->
+<!-- T2S-UAT-20260723-005 | uat.html: (1) Exit breakdown separator changed from · to / with space before @ — now renders as "50% @₹100 / 25% @₹110 / 25% @₹140" in both closed-card breakdowns and active-card trigger banner. (2) Card header layout: BUY/SELL pill and P&L/status badge now on SAME row (reverts 004 stacked rows back to side-by-side per user-confirmed image). S1/S2 active: pill + P&L span wrapped in one flex row. S2.5/S3 closed: BUY span + badge in one flex row. S3 active: actionBadge3 + P&L span in one flex row. Rollback: revert join(' / ') to join(' · ') and `% @` to `% @ ` in 4 places; revert S1/S2 from wrapper-div to bare span + outer div; revert S2.5/S3 closed from single-row to two separate elements; revert S3 active from wrapper-div to bare actionBadge3 + outer div. -->
+<!-- T2S-UAT-20260723-004 | uat.html: Card header layout standardisation — P&L/status badge now always in its own row BELOW the BUY/SELL pill across ALL card types. Previously: active cards (S1/S2/S3) had P&L badge inline (same row as BUY/SELL pill); Section 2.5 closed had Profit/Loss as display:inline-block alongside BUY. Now: all 4 sections move the badge to a flex row below BUY/SELL, matching Section 3 closed card format. Zero functional change — purely layout position of the badge. Rollback: revert S1 header to display:flex gap:5px wrapper, revert S2 header same, revert S2.5 badge from flex-div wrapper to inline-block span, revert S3 active header from separate rows to inner flex gap:5px wrapper. -->
+<!-- T2S-UAT-20260723-003 | uat.html: Exit breakdown display — (1) getExitLegs() helper extracts each partial exit leg [{pct,price}] from follow-ups (mirrors getWeightedExitPrice logic); (2) buildExitBreakdownHtml() renders "50%@₹115 · 25%@₹132 · 25%@₹149" only when ≥2 legs; (3) Closed trade cards (Sections 2.5 + 3): "Exit" label changes to "Effective Exit" for multi-exit trades, breakdown appears below the price value; (4) Active partial-exit trigger banner (Sections 1/2/3): holdingText changed from "Exited 50% · Remaining 50%" to "50% @ ₹115 · 50% Remaining" — price of locked portion now visible. Single-exit closed trades (D10/D11/D12) unchanged. Rollback: remove getExitLegs+buildExitBreakdownHtml functions; revert _holdingText1/_activeLegs1, holdingText2/_activeLegs2, holdingText3/_activeLegs3 to single-line ternaries; remove _exitLegs25/label/breakdown and _exitLegs3/label/breakdown vars; revert metric-label template literals back to hardcoded "Exit". -->
+<!-- T2S-UAT-20260723-002 | uat.html: D2/D3/D4 feedback fixes — (1) D-number labels (D1–D14) stamped on each dummy card via DOM injection after render; (2) Session high/low initialized from entry price so high≥entry (BUY) and low≤entry (SELL) always — data-entry attr added to spans, updateTradeCMPs seeds dict from entry before comparing LTP; (3) All BankNifty dummies changed weekly→monthly (BankNifty is monthly-only); all Nifty dummies changed weekly→monthly (Jul 28 = last Tuesday = monthly); (4) Dummy follow-up CMPs fixed to be near entry price to avoid trigger-at-wrong-price confusion; "session high/low X" text removed from follow-up content; D4 follow-up "SL at 51000 spot" removed (was causing false SL revision display). -->
+<!-- T2S-UAT-20260723-001 | uat.html: D1 feedback fixes — (1) Card header layout compressed to 2 rows: date/time top, BUY/SELL pill + P&L badge same row below (Sections 1/2/3 active); (2) "Yet to Trigger" label added below entry metric when trade not yet triggered (all sections); (3) Session high tracking added inside updateTradeCMPs so mock CMPs correctly update data-live-high elements (was only driven by VM optionHighs data, not CMP LTPs). -->
+<!-- T2S-UAT-20260722-001 | uat.html: Trade Alert Card Logic fixes — (1) Live P&L badge on active triggered trades (BUY/SELL), with adjusted threshold after partial exits; (2) 2:45 PM free member time-based unlock; (3) SL field unlock for free members after trade closes; (4) Session High→Low label fixed for SELL in Section 2; (5) Loss trade: static session high/low instead of live updating data-live-high; (6) [CLOSEPRICE:X] support for Scenario 4 remaining position close price; (7) UAT dummy posts for all 15 trade scenarios (deleted after Tushar confirms). Rollback: revert getTradeState/isTradeFullyClosed mock overrides, revert getFreeUnlockedFields to previous signature, remove computePlBadgeAttrs/calculateMinPrice/extractClosePriceFromReplies, remove P&L badge spans from sections 1/2/3, revert Section 2 Session High label, revert Section 3 closed loss session display, revert getWeightedExitPrice to single-opts.sl block, remove UAT dummy data injection, remove _UAT_DUMMY_* vars. -->
+<!-- DEPLOY: T2S-PROD-20260721-003 | uat.html: Max possible gate — removed _loss condition from both Section 2.5 and Section 3. Now shows for ALL closed trades where SL was NOT hit (profit OR loss). Previously was _loss25 && !_isSlHit25 / _loss3 && !_isSlHit3; now simply !_isSlHit25 / !_isSlHit3. _loss25 and _loss3 vars retained (used for bar color/badge styling). Rollback: re-add _loss25 && before !_isSlHit25 on ~line 2718, re-add _loss3 && before !_isSlHit3 on ~line 2965. -->
+<!-- DEPLOY: T2S-PROD-20260721-002 | uat.html: Max possible conditions + SELL LOW support — added extractLowFromReplies() mirroring extractHighFromReplies but matching [LOW:X]; Section 2.5 and Section 3 max possible now only renders when: isClosed=true AND SL NOT hit (new _isSlHit check: any reply with "SL hit/triggered/gone/breached") AND trade is in loss (_loss=true); BUY uses [HIGH:X] session high; SELL uses [LOW:X] session low with formula entry−low. Old "suppress SELL" comment replaced. Rollback: revert both closed-card blocks to their original _optHigh/_bestHigh/_maxPoss lines, remove extractLowFromReplies function. -->
 <!-- DEPLOY: T2S-PROD-20260720-001 | Notification guided tour: single-screen overlay highlights bell button, shown every browser session until member enables push. Two functions added (initNotifGuide, _closeNotifGuide) + 1 guard in _showNotifNudge + setTimeout trigger. Zero existing code modified. Also: server.js test-push congratulations message updated. Rollback: remove initNotifGuide + _closeNotifGuide functions, remove setTimeout(initNotifGuide,2500) line, remove guard line in _showNotifNudge. -->
 <!-- DEPLOY: T2S-PROD-20260717-004 | Member PWA push notifications: subscribeToPush() now takes forceNew param. Bell tap always unsubscribes old endpoint + creates fresh (forceNew=true). Auto page-load checks if DB row was deleted by server (expired 410) — if missing, force-fresh instead of re-saving stale endpoint. Fixes: notification loop where expired endpoint kept being re-saved then deleted. Rollback: revert subscribeToPush to no param + original body, revert two subscribeToPush(true) calls in enableNotifications() back to subscribeToPush(). -->
 <!-- DEPLOY: T2S-PROD-20260717-003 | Member PWA: (1) sendReply() now receives clicked button as 3rd arg (btnEl) and scopes getElementById/querySelector to that button's compose box — fixes follow-up posting failing on general posts that appear in both Trade Alert and Updates tabs (duplicate IDs caused getElementById to return wrong/empty textarea). (2) Unlock button hidden on audience='all' posts (no unlock needed, everyone sees it). (3) Unlock button hidden on closed trades (free members already see all details per existing logic). Rollback: revert sendReply signature + 2 lookup lines + btn line, revert 3 button onclick attrs to remove ',this', revert 2 forceUnlock buttons to unconditional. -->
@@ -48,6 +53,8 @@
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <script>
     (function(){
+      // UAT: skip auth redirect when opening as a local file (file:// protocol)
+      if (window.location.protocol === 'file:') return;
       var mode=localStorage.getItem('t2s_mode');
       var mid=localStorage.getItem('t2s_member_id');
       var last=parseInt(localStorage.getItem('t2s_last_login')||'0');
@@ -381,6 +388,22 @@
         .alert-banner-type { font-size:0.6rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:1px; }
         .alert-banner-name { font-size:0.84rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
+        /* Market Quick Preview — Trades / Updates dual-tab */
+        #market-quick-preview { margin-top:10px; }
+        .mqp-tab-strip { display:flex; gap:6px; margin-bottom:8px; }
+        .mqp-tab-btn { flex:1; padding:7px 0; border:none; border-radius:8px; font-size:0.8rem; font-weight:700; font-family:inherit; cursor:pointer; background:var(--primary-light); color:var(--primary); touch-action:manipulation; }
+        .mqp-tab-btn.active { background:var(--primary); color:#fff; }
+        .mqp-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:6px; cursor:pointer; display:flex; align-items:center; gap:10px; }
+        .mqp-card:last-child { margin-bottom:0; }
+        .mqp-card-left { flex:1; min-width:0; }
+        .mqp-card-name { font-size:0.82rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mqp-card-meta { font-size:0.69rem; color:var(--text-muted); margin-top:2px; }
+        .mqp-pnl { font-size:0.74rem; font-weight:700; white-space:nowrap; flex-shrink:0; text-align:right; }
+        .mqp-pnl.profit { color:#15803d; }
+        .mqp-pnl.loss   { color:#dc2626; }
+        .mqp-pnl.lock   { color:var(--primary); }
+        .mqp-arrow { color:#9ca3af; font-size:1rem; font-weight:700; flex-shrink:0; line-height:1; }
+        .mqp-skel { background:linear-gradient(90deg,#ede8f5 25%,#f5f0fc 50%,#ede8f5 75%); background-size:200% 100%; animation:t2s-shimmer 1.5s infinite; border-radius:10px; margin-bottom:6px; height:50px; }
         .alert-popup-overlay { position:fixed; inset:0; background:rgba(10,8,20,0.55); display:flex; align-items:center; justify-content:center; z-index:400; padding:24px; opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
         .alert-popup-overlay.visible { opacity:1; pointer-events:auto; }
         .alert-popup-card { background:#fff; border-radius:20px; width:100%; max-width:340px; overflow:hidden; transform:scale(0.92) translateY(12px); transition:transform 0.3s cubic-bezier(0.34,1.3,0.64,1); box-shadow:0 20px 60px rgba(10,8,20,0.22); }
@@ -407,6 +430,27 @@
         #tour-arrow-down { bottom:-7px; clip-path:polygon(0% 0%,100% 0%,50% 100%); }
         .tour-dot { width:6px; height:6px; border-radius:50%; background:#e5e7eb; transition:all .2s; flex-shrink:0; }
         .tour-dot.active { background:#4a2a78; width:18px; border-radius:3px; }
+
+        /* ── UAT card group designs (applied at stylesheet load, no JS required) ── */
+
+        /* G2: Amber — CMP hero spans full row at bottom of metrics grid */
+        #ucard-dummy-d2,#ucard-dummy-d11,#ucard-dummy-d4,#ucard-dummy-d8{border-left:5px solid #d97706!important;background:#fffbf0!important;}
+        #ucard-dummy-d2 .trade-metrics,#ucard-dummy-d11 .trade-metrics,#ucard-dummy-d4 .trade-metrics,#ucard-dummy-d8 .trade-metrics{grid-template-columns:1fr 1fr!important;}
+        #ucard-dummy-d2 .metric-col:last-child,#ucard-dummy-d11 .metric-col:last-child,#ucard-dummy-d4 .metric-col:last-child,#ucard-dummy-d8 .metric-col:last-child{grid-column:1/-1!important;background:#d97706!important;border-radius:10px!important;margin:4px 0 6px!important;padding:14px 8px!important;text-align:center!important;}
+        #ucard-dummy-d2 .metric-col:last-child .metric-label,#ucard-dummy-d11 .metric-col:last-child .metric-label,#ucard-dummy-d4 .metric-col:last-child .metric-label,#ucard-dummy-d8 .metric-col:last-child .metric-label{color:rgba(255,255,255,0.75)!important;}
+        #ucard-dummy-d2 .metric-col:last-child .metric-value,#ucard-dummy-d11 .metric-col:last-child .metric-value,#ucard-dummy-d4 .metric-col:last-child .metric-value,#ucard-dummy-d8 .metric-col:last-child .metric-value{font-size:1.9rem!important;font-weight:900!important;color:#fff!important;display:block!important;}
+
+        /* G3: Teal — 2×2 grid for active (D9), coloured labels for all */
+        #ucard-dummy-d1,#ucard-dummy-d13,#ucard-dummy-d6,#ucard-dummy-d12{border-left:5px solid #0891b2!important;background:#f0f8ff!important;}
+        #ucard-dummy-d1 .trade-metrics{grid-template-columns:1fr 1fr!important;gap:1px!important;background:#bae6fd!important;border-radius:8px!important;overflow:hidden!important;}
+        #ucard-dummy-d1 .metric-col{background:#f0f8ff!important;padding:10px 12px!important;}
+        #ucard-dummy-d1 .metric-label,#ucard-dummy-d13 .metric-label,#ucard-dummy-d6 .metric-label,#ucard-dummy-d12 .metric-label{color:#0891b2!important;font-weight:700!important;}
+        #ucard-dummy-d1 .metric-value,#ucard-dummy-d13 .metric-value,#ucard-dummy-d6 .metric-value,#ucard-dummy-d12 .metric-value{color:#0c4a6e!important;}
+
+        /* G4: Green — coloured labels; exit value enlarged via JS below */
+        #ucard-dummy-d7,#ucard-dummy-d5{border-left:5px solid #059669!important;background:#f0fff4!important;}
+        #ucard-dummy-d7 .metric-label,#ucard-dummy-d5 .metric-label{color:#059669!important;font-weight:700!important;}
+        #ucard-dummy-d7 .metric-value,#ucard-dummy-d5 .metric-value{color:#065f46!important;}
     </style>
 </head>
 <body>
@@ -516,15 +560,21 @@
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
-        <!-- Alert banner — appears below gainers/losers when a new post is detected -->
-        <div id="alert-banner-section">
-            <div class="alert-banner" onclick="_showAlertPopup()">
-                <span class="alert-banner-dot"></span>
-                <div class="alert-banner-text">
-                    <div class="alert-banner-type" id="alert-banner-type">New Trade Alert</div>
-                    <div class="alert-banner-name"  id="alert-banner-name">New alert</div>
-                </div>
-                <button class="alert-banner-btn" onclick="event.stopPropagation();_goToAlert()">View →</button>
+        <!-- Market Quick Preview — Trades / Updates dual-tab (replaces alert banner in UAT) -->
+        <div id="market-quick-preview">
+            <div class="mqp-tab-strip">
+                <button class="mqp-tab-btn active" id="mqp-btn-trades" onclick="mqpSwitch('trades')">Trades</button>
+                <button class="mqp-tab-btn" id="mqp-btn-updates" onclick="mqpSwitch('updates')">Updates</button>
+            </div>
+            <div id="mqp-body-trades">
+                <div class="mqp-skel"></div>
+                <div class="mqp-skel" style="opacity:0.6;"></div>
+                <div class="mqp-skel" style="opacity:0.35;"></div>
+            </div>
+            <div id="mqp-body-updates" style="display:none;">
+                <div class="mqp-skel"></div>
+                <div class="mqp-skel" style="opacity:0.6;"></div>
+                <div class="mqp-skel" style="opacity:0.35;"></div>
             </div>
         </div>
     </div>
@@ -689,13 +739,177 @@
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null;         // latest session highs — re-applied after trade card rebuilds
-    let _lastOptionHighsPostIds = null;  // postId map from VM — used to gate session highs per trade post
-    let _sessionOptionLows = {}; // client-side session low per post.id — for SELL trade cards
+    let _lastOptionHighsPostIds = null;  // postId map from VM — gates session highs per trade post
+    let _sessionOptionLows = {}; // session low per post.id — for SELL trade cards (data-live-low)
+    let _sessionOptionHighs = {}; // session high per post.id — for BUY trade cards (data-live-high)
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
     const _myLikes = new Set();    // postIds liked by current member
     const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
+
+    // ── UAT DUMMY DATA (deleted after Tushar confirms) ───────────────────────
+    // 15 scenarios: BUY/SELL × Yet-to-trigger / Triggered / Partial exit / Closed profit / Closed loss
+    window._UAT_TIME_2_45 = false; // toggle for testing 2:45 PM free member unlock
+    window._UAT_DUMMY_POSTS = [
+      // ── GROUP 1 (G1 · Purple #4a2a78) — existing card format ─────────────
+      // D1: BUY paid-only at 15:00 — toggle "2:45 PM" button to test free-member time-unlock
+      { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T15:00:00+05:30', created_at:'2026-08-06T15:00:00+05:30', _mockClosed:false, _uatLabel:'D1', _uatGroup:'G1' },
+      // D2: SELL triggered in loss — CMP 205 > entry 180 → badge Loss
+      { id:'dummy-d10', content:'Selling Banknifty 52000 monthly call at 180 CMP 183, SL if spot sustains above 52000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:45:00+05:30', created_at:'2026-08-06T14:45:00+05:30', _mockClosed:false, _uatLabel:'D2', _uatGroup:'G1' },
+      // D3: SELL triggered in profit — CMP 82 < entry 95 → badge Profit
+      { id:'dummy-d9', content:'Selling Nifty 24200 monthly call at 95 CMP 98, SL if spot sustains above 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:30:00+05:30', created_at:'2026-08-06T14:30:00+05:30', _mockClosed:false, _uatLabel:'D3', _uatGroup:'G1' },
+      // D4: BUY triggered in loss — CMP 190 < entry 210 → badge Loss
+      { id:'dummy-d3', content:'Buying Banknifty 51500 monthly call at 210 CMP 205, SL if spot sustains below 51000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:15:00+05:30', created_at:'2026-08-06T14:15:00+05:30', _mockClosed:false, _uatLabel:'D4', _uatGroup:'G1' },
+      // ── GROUP 2 (G2 · Amber #d97706) — amber border + tint, larger CMP ───
+      // D5: BUY triggered in profit — CMP 106 > entry 85 → badge Profit
+      { id:'dummy-d2', content:'I am buying Nifty 24300 monthly call at 85 CMP 83, SL if spot sustains below 24150 for 15 minutes.\nWhy: Momentum breakout above 24200.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:00:00+05:30', created_at:'2026-08-06T14:00:00+05:30', _mockClosed:false, _uatLabel:'D5', _uatGroup:'G2' },
+      // D6: SELL 50% exited — adjusted threshold=113, CMP 100 → badge Profit (locked 11 pts)
+      { id:'dummy-d11', content:'Selling Nifty 24350 monthly call at 102 CMP 105, SL if spot sustains above 24350 for 15 minutes.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:45:00+05:30', created_at:'2026-08-06T13:45:00+05:30', _mockClosed:false, _uatLabel:'D6', _uatGroup:'G2' },
+      // D7: BUY 50% exited — adjusted threshold=89, CMP 91 → badge Profit (locked 13 pts)
+      { id:'dummy-d4', content:'I am buying Nifty 24400 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Key breakout level.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:30:00+05:30', created_at:'2026-08-06T13:30:00+05:30', _mockClosed:false, _uatLabel:'D7', _uatGroup:'G2' },
+      // D8: SELL yet-to-trigger, paid-only — label shows "Session Low" not "Session High"
+      { id:'dummy-d8', content:'I am selling Nifty 24150 monthly call at 102 CMP 105, SL if spot sustains above 24250 for 15 minutes.\nWhy: Resistance zone, expecting reversal.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:15:00+05:30', created_at:'2026-08-06T13:15:00+05:30', _mockClosed:false, _uatLabel:'D8', _uatGroup:'G2' },
+      // ── GROUP 3 (G3 · Teal #0891b2) — teal border + tint, larger CMP ─────
+      // D9: BUY yet-to-trigger, paid-only — free member sees locked fields
+      { id:'dummy-d1', content:'I am buying Nifty 24250 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong support at 24200, Nifty forming double bottom.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:00:00+05:30', created_at:'2026-08-06T13:00:00+05:30', _mockClosed:false, _uatLabel:'D9', _uatGroup:'G3' },
+      // D10: SELL closed loss — SL hit above entry, [LOW:145] session low
+      { id:'dummy-d13', content:'Selling Banknifty 51800 monthly call at 150 CMP 152, SL if spot sustains above 51800 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T11:00:00+05:30', created_at:'2026-08-06T11:00:00+05:30', _mockClosed:true, _uatLabel:'D10', _uatGroup:'G3' },
+      // D11: BUY closed loss — SL hit below entry, [HIGH:80] session high
+      { id:'dummy-d6', content:'Buying Nifty 24500 monthly call at 65 CMP 63, SL if spot sustains below 24300 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:45:00+05:30', created_at:'2026-08-06T10:45:00+05:30', _mockClosed:true, _uatLabel:'D11', _uatGroup:'G3' },
+      // D12: SELL closed profit — full exit at 40, [LOW:62] max possible
+      { id:'dummy-d12', content:'Selling Nifty 24600 monthly call at 55 CMP 58, SL if spot sustains above 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:30:00+05:30', created_at:'2026-08-06T10:30:00+05:30', _mockClosed:true, _uatLabel:'D12', _uatGroup:'G3' },
+      // ── GROUP 4 (G4 · Green #059669) — green border + tint, larger CMP ───
+      // D13: BUY closed — 50% exit at 210, remaining closed via [CLOSEPRICE:195]
+      { id:'dummy-d7', content:'Buying Sensex 80000 monthly call at 180 CMP 175, SL if spot sustains below 79500 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:15:00+05:30', created_at:'2026-08-06T10:15:00+05:30', _mockClosed:true, _uatLabel:'D13', _uatGroup:'G4' },
+      // D14: BUY closed profit — 50%+25% exits, SL at cost, revised SL 150, SL hit at 149
+      { id:'dummy-d5', content:'Buying Nifty 24250 monthly call at 102 CMP 101, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong momentum.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:00:00+05:30', created_at:'2026-08-06T10:00:00+05:30', _mockClosed:true, _uatLabel:'D14', _uatGroup:'G4' },
+      // ── SPECIAL CARDS (active, for UAT-only feature tests) ────────────────
+      // (no label) not-triggered + closed corner case — will appear at bottom of active section
+      { id:'dummy-d15', content:'Buying Nifty 24800 monthly call at 30 CMP 25, SL if spot sustains below 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:48:00+05:30', created_at:'2026-08-06T12:48:00+05:30', _mockState:'not_triggered', _mockClosed:true },
+      // DS1: Stock option parsing — RELIANCE 1280 Monthly CE (per-unit P&L, lot_size=1)
+      { id:'dummy-stock1', content:'I am Buying RELIANCE 1280 Monthly CE at 1.7, CMP 1.5\nSL if spot sustains below 1275 for 15 minutes.\nWhy: Expiry day hero/zero play.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:00:00+05:30', created_at:'2026-08-06T12:00:00+05:30', _mockClosed:false, _uatLabel:'DS1' },
+      // DS2: Stock option + special comment chip (paid-only)
+      { id:'dummy-stock2', content:'I am Buying RELIANCE 1280 Monthly CE at 33, CMP 32.5\nSL if spot sustains below 1273 for 15 minutes, CMP 1276\n⚠️ *August expiry*\n\nOnly for informational purposes. Please trade based on your own analysis.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T11:45:00+05:30', created_at:'2026-08-06T11:45:00+05:30', _mockClosed:false, _uatLabel:'DS2' },
+      // D_SL: SL breach auto-close — 50% exit @160, revised SL ₹140, CMP 139.75 → auto-close
+      // No _mockClosed set — card must fall through to isTradeFullyClosed() SL-breach logic
+      { id:'dummy-dsl', content:'Buying Nifty 24450 monthly call at 150 CMP 148, SL if spot sustains below 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:45:00+05:30', created_at:'2026-08-06T12:45:00+05:30', _uatLabel:'D_SL' },
+      // D_CMT: Special comment purple chip — ⚠️ *...* pattern from Admin PWA "Special Comments" field
+      { id:'dummy-dcmt', content:'Buying Nifty 24700 monthly call at 120 CMP 118, SL if spot sustains below 24400 for 15 minutes.\n\n⚠️ *Risky trade, go with small quantity only*', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:30:00+05:30', created_at:'2026-08-06T12:30:00+05:30', _mockClosed:false, _uatLabel:'D_CMT' },
+      // D_SL2: Two SL revisions — spot 24530 → premium 142 → premium 157 via "of remaining" phrasing
+      { id:'dummy-dsl2', content:'Buying Nifty 24500 next weekly put at 142 CMP 140, SL if spot sustains above 24530 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:15:00+05:30', created_at:'2026-08-06T12:15:00+05:30', _mockClosed:false, _uatLabel:'D_SL2' }
+    ];
+    window._UAT_DUMMY_REPLIES = {
+      // ── G1 replies (D1-D4) ───────────────────────────────────────────────
+      // D1: BUY paid-only, 2:45 PM unlock test — trigger CMP near entry (78)
+      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-08-06T15:05:00+05:30', created_at:'2026-08-06T15:05:00+05:30' }],
+      // D2: SELL triggered in loss — trigger CMP near entry (180), live mock 205
+      'dummy-d10': [{ id:'dummy-d10-r1', content:'CMP 180\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d10', sent_at:'2026-08-06T14:50:00+05:30', created_at:'2026-08-06T14:50:00+05:30' }],
+      // D3: SELL triggered in profit — trigger CMP near entry (95), live mock 82
+      'dummy-d9': [{ id:'dummy-d9-r1', content:'CMP 94\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d9', sent_at:'2026-08-06T14:35:00+05:30', created_at:'2026-08-06T14:35:00+05:30' }],
+      // D4: BUY triggered in loss — trigger CMP near entry (210), live mock 190
+      'dummy-d3': [{ id:'dummy-d3-r1', content:'CMP 210\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d3', sent_at:'2026-08-06T14:20:00+05:30', created_at:'2026-08-06T14:20:00+05:30' }],
+      // ── G2 replies (D5-D8) ───────────────────────────────────────────────
+      // D5: BUY triggered in profit — trigger CMP near entry (85), live mock 106
+      'dummy-d2': [{ id:'dummy-d2-r1', content:'CMP 87\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d2', sent_at:'2026-08-06T14:05:00+05:30', created_at:'2026-08-06T14:05:00+05:30' }],
+      // D6: SELL 50% exited at 91 → adjusted threshold=113, mock CMP 100 → Profit
+      'dummy-d11': [
+        { id:'dummy-d11-r2', content:'CMP 100, holding remaining 50%. Overall trade still in profit (locked 11 pts from first exit).', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-08-06T14:00:00+05:30', created_at:'2026-08-06T14:00:00+05:30' },
+        { id:'dummy-d11-r1', content:'CMP 91, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-08-06T13:55:00+05:30', created_at:'2026-08-06T13:55:00+05:30' },
+        { id:'dummy-d11-r0', content:'CMP 102\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-08-06T13:47:00+05:30', created_at:'2026-08-06T13:47:00+05:30' }
+      ],
+      // D7: BUY 50% exited at 115 → adjusted threshold=89, mock CMP 91 → Profit
+      'dummy-d4': [
+        { id:'dummy-d4-r2', content:'CMP 91, holding remaining 50%. Overall trade still in profit due to locked gains.', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-08-06T13:45:00+05:30', created_at:'2026-08-06T13:45:00+05:30' },
+        { id:'dummy-d4-r1', content:'CMP 115, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-08-06T13:40:00+05:30', created_at:'2026-08-06T13:40:00+05:30' },
+        { id:'dummy-d4-r0', content:'CMP 102\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-08-06T13:32:00+05:30', created_at:'2026-08-06T13:32:00+05:30' }
+      ],
+      // D8: SELL yet-to-trigger, paid-only — trigger CMP at entry (102)
+      'dummy-d8': [{ id:'dummy-d8-r1', content:'CMP 102\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d8', sent_at:'2026-08-06T13:20:00+05:30', created_at:'2026-08-06T13:20:00+05:30' }],
+      // ── G3 replies (D9-D12) ──────────────────────────────────────────────
+      // D9: BUY yet-to-trigger, paid-only — trigger CMP at entry (102)
+      'dummy-d1': [{ id:'dummy-d1-r1', content:'CMP 102\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d1', sent_at:'2026-08-06T13:05:00+05:30', created_at:'2026-08-06T13:05:00+05:30' }],
+      // D10: SELL closed loss — SL hit above entry, [LOW:145] session low
+      'dummy-d13': [
+        { id:'dummy-d13-r3', content:'[LOW:145]', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-08-06T12:00:00+05:30', created_at:'2026-08-06T12:00:00+05:30' },
+        { id:'dummy-d13-r2', content:'SL hit. Spot sustained above 51800. Exiting with 190 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-08-06T11:30:00+05:30', created_at:'2026-08-06T11:30:00+05:30' },
+        { id:'dummy-d13-r0', content:'CMP 150\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-08-06T11:05:00+05:30', created_at:'2026-08-06T11:05:00+05:30' }
+      ],
+      // D11: BUY closed loss — SL hit, [HIGH:80] session high
+      'dummy-d6': [
+        { id:'dummy-d6-r4', content:'[HIGH:80]', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-08-06T11:45:00+05:30', created_at:'2026-08-06T11:45:00+05:30' },
+        { id:'dummy-d6-r3', content:'SL gone. Spot sustained below 24300 for 15 min. Exiting with 42 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-08-06T11:05:00+05:30', created_at:'2026-08-06T11:05:00+05:30' },
+        { id:'dummy-d6-r1', content:'CMP 67\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-08-06T10:50:00+05:30', created_at:'2026-08-06T10:50:00+05:30' }
+      ],
+      // D12: SELL closed profit — full exit at 40, [LOW:62] session low (max possible)
+      'dummy-d12': [
+        { id:'dummy-d12-r2', content:'[LOW:32]', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-08-06T11:30:00+05:30', created_at:'2026-08-06T11:30:00+05:30' },
+        { id:'dummy-d12-r1', content:'CMP 40, exiting full position at 40', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-08-06T11:00:00+05:30', created_at:'2026-08-06T11:00:00+05:30' },
+        { id:'dummy-d12-r0', content:'CMP 55\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-08-06T10:35:00+05:30', created_at:'2026-08-06T10:35:00+05:30' }
+      ],
+      // ── G4 replies (D13-D14) ─────────────────────────────────────────────
+      // D13: BUY closed — 50% exit at 210, remaining closed via [CLOSEPRICE:195]
+      'dummy-d7': [
+        { id:'dummy-d7-r3', content:'[CLOSEPRICE:195]', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T15:35:00+05:30', created_at:'2026-08-06T15:35:00+05:30' },
+        { id:'dummy-d7-r2', content:'[HIGH:235]', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T15:35:00+05:30', created_at:'2026-08-06T15:35:00+05:30' },
+        { id:'dummy-d7-r1', content:'CMP 210, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T10:45:00+05:30', created_at:'2026-08-06T10:45:00+05:30' },
+        { id:'dummy-d7-r0', content:'CMP 180\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T10:20:00+05:30', created_at:'2026-08-06T10:20:00+05:30' }
+      ],
+      // D14: BUY closed profit — 50%+25% exits, SL at cost, revised SL 150, SL hit at 149
+      'dummy-d5': [
+        { id:'dummy-d5-r6', content:'[HIGH:170]', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T15:35:00+05:30', created_at:'2026-08-06T15:35:00+05:30' },
+        { id:'dummy-d5-r5', content:'SL hit. Exiting with 150 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T11:15:00+05:30', created_at:'2026-08-06T11:15:00+05:30' },
+        { id:'dummy-d5-r4', content:'CMP 162, modifying SL to 150', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T11:00:00+05:30', created_at:'2026-08-06T11:00:00+05:30' },
+        { id:'dummy-d5-r3', content:'CMP 132, exiting another 25% holding rest with SL at cost', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:45:00+05:30', created_at:'2026-08-06T10:45:00+05:30' },
+        { id:'dummy-d5-r2', content:'CMP 125, modifying SL to 24225', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:30:00+05:30', created_at:'2026-08-06T10:30:00+05:30' },
+        { id:'dummy-d5-r1', content:'CMP 115, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:15:00+05:30', created_at:'2026-08-06T10:15:00+05:30' },
+        { id:'dummy-d5-r0', content:'CMP 102\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:05:00+05:30', created_at:'2026-08-06T10:05:00+05:30' }
+      ],
+      // ── Special card replies ──────────────────────────────────────────────
+      // DS1: RELIANCE stock option trigger reply
+      'dummy-stock1': [{ id:'dummy-stock1-r1', content:'CMP 1.7\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock1', sent_at:'2026-08-06T12:05:00+05:30', created_at:'2026-08-06T12:05:00+05:30' }],
+      // DS2: RELIANCE 1280 August CE trigger reply
+      'dummy-stock2': [{ id:'dummy-stock2-r1', content:'CMP 33\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock2', sent_at:'2026-08-06T11:50:00+05:30', created_at:'2026-08-06T11:50:00+05:30' }],
+      // D_SL: 50% exit @160, SL revised ₹140, CMP 139.75 → SL breach auto-close
+      'dummy-dsl': [
+        { id:'dummy-dsl-r3', content:'[HIGH:166]', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T13:45:00+05:30', created_at:'2026-08-06T13:45:00+05:30' },
+        { id:'dummy-dsl-r2', content:'CMP 152, modifying SL to 140', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T13:15:00+05:30', created_at:'2026-08-06T13:15:00+05:30' },
+        { id:'dummy-dsl-r1', content:'CMP 160, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T13:00:00+05:30', created_at:'2026-08-06T13:00:00+05:30' },
+        { id:'dummy-dsl-r0', content:'CMP 150\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T12:50:00+05:30', created_at:'2026-08-06T12:50:00+05:30' }
+      ],
+      // D_CMT: triggered, special comment chip visible to paid/admin
+      'dummy-dcmt': [
+        { id:'dummy-dcmt-r0', content:'CMP 120\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dcmt', sent_at:'2026-08-06T12:35:00+05:30', created_at:'2026-08-06T12:35:00+05:30' }
+      ],
+      // D_SL2: two SL revisions — 2nd uses "of remaining" phrasing
+      'dummy-dsl2': [
+        { id:'dummy-dsl2-r2', content:'CMP 176, modifying SL of remaining to 157', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl2', sent_at:'2026-08-06T12:58:00+05:30', created_at:'2026-08-06T12:58:00+05:30' },
+        { id:'dummy-dsl2-r1', content:'CMP 152, modifying SL to 142', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl2', sent_at:'2026-08-06T12:40:00+05:30', created_at:'2026-08-06T12:40:00+05:30' },
+        { id:'dummy-dsl2-r0', content:'CMP 142\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl2', sent_at:'2026-08-06T12:20:00+05:30', created_at:'2026-08-06T12:20:00+05:30' }
+      ]
+    };
+    // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
+    window._UAT_MOCK_LTPS = {
+      'NIFTY-24300-CE': 106,      // D5: BUY, entry 85, CMP 106 → Profit
+      'BANKNIFTY-51500-CE': 190,  // D4: BUY, entry 210, CMP 190 → Loss
+      'NIFTY-24400-CE': 91,       // D7: BUY 50% exit, threshold=89, CMP 91 → Profit
+      'NIFTY-24200-CE': 82,       // D3: SELL, entry 95, CMP 82 → Profit
+      'BANKNIFTY-52000-CE': 205,  // D2: SELL, entry 180, CMP 205 → Loss
+      'NIFTY-24350-CE': 100,      // D6: SELL 50% exit, threshold=113, CMP 100 → Profit
+      'NIFTY-24100-CE': 82,       // D1: BUY, entry 78, CMP 82 → Profit
+      'NIFTY-24150-CE': 102,      // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
+      'NIFTY-24250-CE': 102,      // D9: BUY, entry 102, CMP 102 → Triggered (price touched buy level)
+      'RELIANCE-1280-CE': 32.9,   // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 32.9 (actual)
+      'NIFTY-24450-CE': 139.75,   // D_SL: BUY at 150, 50% exited @160, revised SL ₹140 → breached at ₹139.75
+      'NIFTY-24600-CE': 126,      // Real trade (5 Aug BUY NIFTY 24600 CE at 172) — CMP 126 < SL 152 → SL breach test
+      'NIFTY-24700-CE': 126,      // D_CMT: BUY at 120 (strike 24700), CMP 126 → active, in profit
+      'NIFTY-24500-PE': 163       // D_SL2: BUY PE at 142, SL revised to 157, CMP 163 → active, above SL
+    };
+    // Intraday highs (BUY) / lows (SELL) — applied BEFORE _UAT_MOCK_LTPS so session peaks are
+    // seeded correctly even when current CMP differs from the day's high/low
+    window._UAT_MOCK_SESSION_PEAKS = {
+      'RELIANCE-1280-CE': 33.9   // DS2: actual session high 33.9, CMP 32.9 (pulled back from peak)
+    };
 
     // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
     function _applyLikeState(btn, postId) {
@@ -886,7 +1100,7 @@
             }
         }
         if (tabId === 'performance') fetchPerformance();
-        if (tabId === 'markets') fetchMarketData();
+        if (tabId === 'markets') { fetchMarketData(); _renderMqpTrades(); fetchMarketPreview(); }
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -1070,7 +1284,7 @@
     function extractHighFromReplies(replies) {
         let max = null;
         for (const r of replies) {
-            const m = (r.content || '').match(/^\[HIGH:([\d.]+)\]$/);
+            const m = (r.content || '').trim().match(/^\[HIGH:([\d.]+)\]$/);
             if (m) { const v = parseFloat(m[1]); if (max === null || v > max) max = v; }
         }
         return max;
@@ -1107,6 +1321,8 @@
 
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
+        // UAT: merge mock LTPs so stock/test keys persist even when real VM data overwrites
+        if (window._UAT_MOCK_LTPS) optionLTPs = Object.assign({}, optionLTPs, window._UAT_MOCK_LTPS);
         _lastOptionLTPs = optionLTPs;
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
             const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-CE"
@@ -1128,50 +1344,60 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
-        // Session low tracking for SELL trades (client-side; VM sends highs not lows)
-        // RC-4 FIX: keyed by post.id (data-live-low) not liveCmpKey — prevents cross-trade contamination
+        // Track session lows for SELL trade cards — keyed by post.id (data-live-low) to prevent cross-trade contamination
         document.querySelectorAll('[data-live-low]').forEach(el => {
-            const postId = el.dataset.liveLow;       // post.id of this trade card
-            const key    = el.dataset.liveLowKey;    // liveCmpKey for LTP lookup
+            const postId = el.dataset.liveLow;      // post.id of this trade card
+            const key    = el.dataset.liveLowKey;   // liveCmpKey for LTP lookup
             const ltp = optionLTPs[key];
             if (ltp != null && ltp > 0) {
                 if (_sessionOptionLows[postId] == null) {
                     const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0) _sessionOptionLows[postId] = entryVal; // init at entry: low can only go ≤ entry
+                    if (entryVal > 0) _sessionOptionLows[postId] = entryVal;
                 }
                 if (_sessionOptionLows[postId] == null || ltp < _sessionOptionLows[postId])
                     _sessionOptionLows[postId] = ltp;
                 el.textContent = `₹${_sessionOptionLows[postId].toFixed(2)}`;
             }
         });
-        // Re-evaluate stale "yet to trigger" state pills when CMP arrives after render
-        document.querySelectorAll('[data-state-pill]').forEach(pill => {
-            const key = pill.dataset.liveKey;
-            const entry = parseFloat(pill.dataset.entry || '') || 0;
-            if (!key || !entry) return;
+        // Track session highs for BUY trade cards — keyed by post.id (data-post-id on data-live-high elements) to prevent cross-trade contamination
+        document.querySelectorAll('[data-live-high]').forEach(el => {
+            const postId = el.dataset.postId;       // post.id of this trade card
+            const key    = el.dataset.liveHigh;     // liveCmpKey for LTP lookup
             const ltp = optionLTPs[key];
-            if (ltp != null && ltp > 0 && ltp >= entry) {
-                pill.outerHTML = `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">Holding 100%</span></div>`;
+            if (ltp != null && ltp > 0 && postId) {
+                if (_sessionOptionHighs[postId] == null) {
+                    const entryVal = parseFloat(el.dataset.entry || '') || 0;
+                    if (entryVal > 0) _sessionOptionHighs[postId] = entryVal;
+                }
+                if (_sessionOptionHighs[postId] == null || ltp > _sessionOptionHighs[postId])
+                    _sessionOptionHighs[postId] = ltp;
+                el.textContent = `₹${_sessionOptionHighs[postId].toFixed(2)}`;
             }
         });
-        // SL breach indicator for triggered trades with premium revised SL (revNum < 5000 = premium, not index)
-        document.querySelectorAll('[data-sl-key]').forEach(banner => {
-            const key = banner.dataset.slKey;
-            const slNum = parseFloat(banner.dataset.slNum || '') || 0;
-            const isSell = banner.dataset.slSell === '1';
-            const postId = banner.dataset.slPost;
+        // Live P&L badge on active triggered trade cards — updates every 5s with CMP
+        // Badge threshold adjusts for locked profit from prior partial exits (computePlBadgeAttrs pre-computes breakeven)
+        document.querySelectorAll('[data-pl-badge]').forEach(el => {
+            const key = el.dataset.plBadge;
             const ltp = optionLTPs[key];
-            if (!key || !slNum || !postId || ltp == null || ltp <= 0) return;
-            const slbEl = document.getElementById(`slb-${postId}`);
-            if (!slbEl) return;
-            const _slNowBreach = isSell ? ltp > slNum : ltp < slNum;
-            const _slWasBreach = slbEl.style.display === 'inline';
-            slbEl.style.display = _slNowBreach ? 'inline' : 'none';
-            // First breach only: re-run fetchTradeAlerts so isTradeFullyClosed() can close the partial-exit position.
-            if (_slNowBreach && !_slWasBreach) {
-                clearTimeout(window._slBreachRenderTimer);
-                window._slBreachRenderTimer = setTimeout(() => fetchTradeAlerts(), 1000);
+            if (ltp == null || ltp <= 0) return;
+            const be = parseFloat(el.dataset.be);
+            const action = (el.dataset.action||'BUY').toUpperCase();
+            if (isNaN(be)) return;
+            const THRESHOLD = 0.1; // within ±0.1 pts of breakeven → show nothing
+            let plText = '', plColor = '';
+            if (action === 'SELL') {
+                // SELL: profit when CMP falls (premium drops), loss when CMP rises
+                if (ltp < be - THRESHOLD)      { plText = 'Profit'; plColor = '#15803d'; }
+                else if (ltp > be + THRESHOLD) { plText = 'Loss';   plColor = '#dc2626'; }
+            } else {
+                // BUY: profit when CMP rises (premium goes up), loss when CMP falls
+                if (ltp > be + THRESHOLD)      { plText = 'Profit'; plColor = '#15803d'; }
+                else if (ltp < be - THRESHOLD) { plText = 'Loss';   plColor = '#dc2626'; }
             }
+            el.textContent = plText;
+            el.style.color = plColor;
+            el.style.fontWeight = plText ? '700' : '';
+            el.style.display = plText ? '' : 'none';
         });
         // Show "● Live · HH:MM" chip (admin only) when Kotak is sending real LTPs
         if (Object.values(optionLTPs).some(v => v > 0)) {
@@ -1185,6 +1411,326 @@
             }
         }
     }
+
+    // ── MARKET QUICK PREVIEW (dual-tab: Trades / Updates) ───────────────────────
+    function _mqpScrollAfterRender() {
+        if (!window._mqpScrollToPostId) return;
+        const _sid = window._mqpScrollToPostId;
+        window._mqpScrollToPostId = null;
+        setTimeout(() => {
+            const el = document.getElementById('ucard-' + _sid);
+            if (!el) return;
+            el.scrollIntoView({ behavior:'smooth', block:'center' });
+            el.style.transition = 'background-color 0.4s ease';
+            el.style.backgroundColor = '#ede9fe';
+            setTimeout(() => { el.style.backgroundColor = ''; setTimeout(() => { el.style.transition = ''; }, 500); }, 1800);
+        }, 200);
+    }
+
+    function mqpSwitch(tab) {
+        document.getElementById('mqp-btn-trades').classList.toggle('active', tab === 'trades');
+        document.getElementById('mqp-btn-updates').classList.toggle('active', tab === 'updates');
+        document.getElementById('mqp-body-trades').style.display  = tab === 'trades'  ? 'block' : 'none';
+        document.getElementById('mqp-body-updates').style.display = tab === 'updates' ? 'block' : 'none';
+    }
+
+    function _mqpNavTrade(postId, instrument, optType, strike) {
+        const tradesTab  = document.querySelector('.tab[onclick*="\'trades\'"]');
+        const targetCard = document.getElementById('ucard-' + postId);
+
+        if (targetCard && tradesTab) {
+            // Fast path: card already in DOM — switch tabs synchronously, no scroll-to-top, no fetch wait
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+            tradesTab.classList.add('active');
+            document.getElementById('trades').classList.add('active');
+            localStorage.setItem('t2s_last_tab', 'trades');
+            if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
+            if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
+            setTabBadge('trades', 0);
+            const _cmp2 = document.getElementById('admin-trade-compose');
+            if (_cmp2 && _cmp2.dataset.isAdmin === 'true') _cmp2.style.display = 'block';
+            // Instant scroll — card visible immediately, no Supabase fetch delay
+            targetCard.scrollIntoView({ behavior: 'instant', block: 'center' });
+            targetCard.style.transition = 'background-color 0.4s ease';
+            targetCard.style.backgroundColor = '#ede9fe';
+            setTimeout(() => { targetCard.style.backgroundColor = ''; setTimeout(() => { targetCard.style.transition = ''; }, 500); }, 1800);
+            // Start 30s background refresh only during market hours
+            const _ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
+            const _istM = _ist.getHours() * 60 + _ist.getMinutes();
+            if (_istM >= 9 * 60 + 15 && _istM < 16 * 60) _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
+        } else {
+            // Slow path: card not yet in DOM — set highlight key and let switchTab fetch + scroll after render
+            if (instrument && optType && strike) window._highlightTradeKey = `${instrument}-${optType}-${strike}`;
+            if (tradesTab) switchTab('trades', tradesTab);
+        }
+    }
+
+    function _mqpNavUpdate(postId) {
+        const updatesTab = document.querySelector('.tab[onclick*="\'updates\'"]');
+        const targetCard = document.getElementById('ucard-' + postId);
+
+        if (targetCard && updatesTab) {
+            // Fast path: card already in DOM — switch tabs synchronously, scroll instantly
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+            updatesTab.classList.add('active');
+            document.getElementById('updates').classList.add('active');
+            localStorage.setItem('t2s_last_tab', 'updates');
+            if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
+            if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
+            _updatesTabViewed = true;
+            setTimeout(() => setTabBadge('updates', 0), 2500);
+            // Instant scroll — no async fetch delay
+            targetCard.scrollIntoView({ behavior: 'instant', block: 'center' });
+            targetCard.style.transition = 'background-color 0.4s ease';
+            targetCard.style.backgroundColor = '#ede9fe';
+            setTimeout(() => { targetCard.style.backgroundColor = ''; setTimeout(() => { targetCard.style.transition = ''; }, 500); }, 1800);
+            // Background 60s refresh — same as switchTab('updates') sets up
+            _updatesRefreshTimer = setInterval(fetchUpdates, 60000);
+        } else {
+            // Slow path: card not yet in DOM — set scroll key and let switchTab fetch + scroll after render
+            window._mqpScrollToPostId = postId;
+            if (updatesTab) switchTab('updates', updatesTab);
+        }
+    }
+
+    // ── MARKETS SUMMARY CACHE ────────────────────────────────────────────────────
+    function _mqpCacheGet() {
+        try { return JSON.parse(localStorage.getItem('t2s_summary_cache') || '{}'); } catch(e) { return {}; }
+    }
+    function _mqpCachePut(updates) {
+        try { localStorage.setItem('t2s_summary_cache', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
+    }
+    // Format post timestamp for Markets summary cards — IST-aware, relative labels
+    function _mqpFmtTime(iso) {
+        if (!iso) return '';
+        const d   = new Date(iso);
+        const now = new Date();
+        const yest = new Date(now); yest.setDate(now.getDate() - 1);
+        const hm  = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true, timeZone:'Asia/Kolkata' });
+        if (d.toDateString() === now.toDateString())  return `Today, ${hm}`;
+        if (d.toDateString() === yest.toDateString()) return `Yesterday, ${hm}`;
+        return `${d.toLocaleDateString('en-IN', { day:'numeric', month:'short', timeZone:'Asia/Kolkata' })}, ${hm}`;
+    }
+
+    // Synchronous Markets Trades sub-tab renderer.
+    // Always called AFTER renderTradeAlerts() so _mqpPnlStore is guaranteed populated.
+    // Also called from switchTab('markets') for instant re-render using cached data.
+    function _renderMqpTrades() {
+        const tradesBody = document.getElementById('mqp-body-trades');
+        if (!tradesBody) return;
+        const tradePosts = window._mqpLastTradePosts; // undefined until renderTradeAlerts fires
+        if (tradePosts === undefined) return;         // keep skeleton HTML — data not ready yet
+        const replyMap      = window._mqpLastReplyMap   || {};
+        const _mi           = window._mqpLastMemberInfo  || {};
+        const isAdminMqp    = _mi.isAdmin    || false;
+        const tierMqp       = _mi.memberTier || 'free';
+        const canSeePremium = isAdminMqp || tierMqp === 'paid';
+
+        const activeTrades = [], closedTrades = [];
+        tradePosts.forEach(post => {
+            const replies = replyMap[post.id] || [];
+            (isTradeFullyClosed(post, replies) ? closedTrades : activeTrades).push(post);
+        });
+        const byDate = (a, b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
+        activeTrades.sort(byDate); closedTrades.sort(byDate);
+        const activeSlice = activeTrades.slice(0, 5);
+        const closedSlice = closedTrades.slice(0, Math.max(0, 5 - activeSlice.length));
+
+        // State key encodes ordered IDs + active/closed status + member tier (catches tier upgrades)
+        const _newStateIds = [...activeSlice.map(p => p.id+':a'), ...closedSlice.map(p => p.id+':c')];
+        const _tierKey = isAdminMqp ? 'a' : tierMqp[0]; // 'a'=admin, 'p'=paid, 'f'=free
+        const _mqpSc = _mqpCacheGet();
+        if (_mqpSc.tierKey === _tierKey &&
+            _mqpSc.tradeStateIds &&
+            _mqpSc.tradeStateIds.length === _newStateIds.length &&
+            _newStateIds.every((s, i) => s === _mqpSc.tradeStateIds[i]) &&
+            tradesBody.children.length > 0) {
+            // Same structure — update only live P&L on active cards, no DOM rebuild
+            _updateMqpActivePnl(activeSlice, replyMap, canSeePremium);
+            return;
+        }
+
+        if (!activeSlice.length && !closedSlice.length) {
+            tradesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No active trades right now.</div>';
+            _mqpCachePut({ tradeStateIds: [], tierKey: _tierKey, tradesHtml: tradesBody.innerHTML });
+            return;
+        }
+
+        const _sectionHdr = label =>
+            `<div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;padding:${label==='Active Trades'?'4px':'12px'} 2px 5px;">${label}</div>`;
+
+        const _buildMqpCard = (post, isClosed) => {
+            const replies  = replyMap[post.id] || [];
+            const f        = extractTradeAlertFields(post.content || '');
+            const isSell   = (f.action || '').toUpperCase() === 'SELL';
+            const _pnlDir  = isSell ? -1 : 1;
+            const expLabel = f.expiry ? formatExpiryDisplay(f.expiry, f.instrument, post.sent_at||post.created_at) : 'Monthly';
+            const _optClass = (f.optType || '').toLowerCase();
+            const _typeBox  = f.optType
+                ? `<div class="type-box ${_optClass}" style="flex-shrink:0;width:26px;height:26px;font-size:0.72rem;">${f.optType}</div>`
+                : '';
+            const instrLabel = (f.instrument && f.strike)
+                ? `${f.instrument} ${f.strike} · ${expLabel}`
+                : (post.content || '').substring(0, 50).replace(/\n/g,' ').trim() + '…';
+
+            let pnlHtml = '', cardBorder = '';
+            if (!canSeePremium) {
+                pnlHtml = `<div class="mqp-pnl lock" onclick="event.stopPropagation();showPopup();">🔒 Premium</div>`;
+            } else {
+                let pnlPts = null;
+                if (isClosed) {
+                    // Finalized P&L from store — written by buildTradeAlertCard Section 3.
+                    // _renderMqpTrades() is ALWAYS called after renderTradeAlerts() fills the store.
+                    const _stored = window._mqpPnlStore && window._mqpPnlStore[post.id];
+                    if (_stored !== undefined) pnlPts = _stored.pts;
+                } else {
+                    // Active trade: mirror live badge — same _lastOptionLTPs as updateTradeCMPs
+                    const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
+                    const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
+                    if (liveCmp != null && f.entry) pnlPts = Math.round((liveCmp - f.entry) * _pnlDir);
+                }
+                if (pnlPts !== null && f.instrument) {
+                    const lotSize = getLotSize(f.instrument);
+                    const pnlRs   = Math.round(pnlPts * lotSize);
+                    const sign    = pnlPts >= 0 ? '+' : '';
+                    const cls     = pnlPts >= 0 ? 'profit' : 'loss';
+                    cardBorder    = pnlPts >= 0 ? 'border-left:3px solid #bbf7d0;' : 'border-left:3px solid #fca5a5;';
+                    pnlHtml = `<div class="mqp-pnl ${cls}">${sign}${pnlPts} pts<br><span style="font-size:0.65rem;font-weight:600;">${sign}₹${Math.abs(pnlRs).toLocaleString()}</span></div>`;
+                } else {
+                    pnlHtml = `<div class="mqp-pnl" style="color:var(--text-muted);font-weight:600;">—</div>`;
+                }
+            }
+            const nav = `_mqpNavTrade('${post.id}','${f.instrument||''}','${f.optType||''}','${f.strike||''}')`;
+            return `<div class="mqp-card" data-post-id="${post.id}" onclick="${nav}" style="${cardBorder}">
+                ${_typeBox}
+                <div class="mqp-card-left">
+                    <div class="mqp-card-name">${sanitizeHtml(instrLabel)}</div>
+                </div>
+                ${pnlHtml}
+                <div class="mqp-arrow">›</div>
+            </div>`;
+        };
+
+        let html = '';
+        if (activeSlice.length) { html += _sectionHdr('Active Trades'); html += activeSlice.map(p => _buildMqpCard(p, false)).join(''); }
+        if (closedSlice.length) { html += _sectionHdr('Closed Trades'); html += closedSlice.map(p => _buildMqpCard(p, true)).join(''); }
+        tradesBody.innerHTML = html;
+        _mqpCachePut({ tradeStateIds: _newStateIds, tierKey: _tierKey, tradesHtml: tradesBody.innerHTML });
+    }
+
+    // In-place P&L update for active trade cards — no DOM rebuild, no flicker.
+    // Called by _renderMqpTrades() delta path when structure is unchanged.
+    function _updateMqpActivePnl(activeSlice, replyMap, canSeePremium) {
+        if (!canSeePremium || !activeSlice.length) return;
+        activeSlice.forEach(post => {
+            const card = document.querySelector(`#mqp-body-trades .mqp-card[data-post-id="${post.id}"]`);
+            if (!card) return;
+            const f = extractTradeAlertFields(post.content || '');
+            const isSell = (f.action || '').toUpperCase() === 'SELL';
+            const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
+            const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
+            const pnlDiv = card.querySelector('.mqp-pnl');
+            if (!pnlDiv || liveCmp == null || !f.entry) return;
+            const pnlPts = Math.round((liveCmp - f.entry) * (isSell ? -1 : 1));
+            const pnlRs  = Math.round(pnlPts * getLotSize(f.instrument));
+            const sign   = pnlPts >= 0 ? '+' : '';
+            const cls    = pnlPts >= 0 ? 'profit' : 'loss';
+            pnlDiv.className = `mqp-pnl ${cls}`;
+            pnlDiv.innerHTML = `${sign}${pnlPts} pts<br><span style="font-size:0.65rem;font-weight:600;">${sign}₹${Math.abs(pnlRs).toLocaleString()}</span>`;
+            card.style.borderLeft = pnlPts >= 0 ? '3px solid #bbf7d0' : '3px solid #fca5a5';
+        });
+    }
+
+    async function fetchMarketPreview() {
+        const tradesBody  = document.getElementById('mqp-body-trades');
+        const updatesBody = document.getElementById('mqp-body-updates');
+        if (!tradesBody || !updatesBody) return;
+
+        // Resolve member access level (use cached value if available — avoids extra Supabase round-trip)
+        let isAdmin = false, memberTier = 'free';
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (window._cachedMember) {
+            isAdmin    = window._cachedMember.is_admin === true;
+            memberTier = window._cachedMember.tier || 'free';
+        } else if (memberId) {
+            try {
+                const _mv = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin`, { method:'GET' });
+                if (_mv && _mv[0]) { isAdmin = _mv[0].is_admin === true; memberTier = _mv[0].tier || 'free'; }
+            } catch(e) {}
+        }
+        const canSeePremium = isAdmin || memberTier === 'paid';
+
+        // ── TRADES SUB-TAB: handled by _renderMqpTrades() ───────────────────────
+        // Populated synchronously by renderTradeAlerts() after _mqpPnlStore is filled.
+        // No async fetch — reads from window._mqpLastTradePosts set by renderTradeAlerts.
+
+        // ── UPDATES SUB-TAB ─────────────────────────────────────────────────────
+        try {
+            let updatePosts = null;
+            if (_cachedPosts && _cachedPosts.length) {
+                updatePosts = _cachedPosts
+                    .filter(p => !p.parent_id && ['general','market_update'].includes(p.post_type))
+                    .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at))
+                    .slice(0, 5);
+            } else {
+                updatePosts = await sbFetch(
+                    'posts?is_deleted=eq.false&post_type=in.(general,market_update)&parent_id=is.null&order=sent_at.desc&limit=5&select=id,content,post_type,sent_at,created_at,audience',
+                    { method:'GET' }
+                );
+            }
+            // Session guard: always re-render on first page load so timestamps are fresh
+            const _updFirstRender = !window._mqpUpdRendered;
+            window._mqpUpdRendered = true;
+            // Delta check — skip re-render if same IDs and not a first-load (timestamps would be stale otherwise)
+            const _newUpdIds = (updatePosts || []).map(p => p.id);
+            const _scUpd = _mqpCacheGet();
+            if (!_updFirstRender && _newUpdIds.length > 0 && _scUpd.updateIds &&
+                _scUpd.updateIds.length === _newUpdIds.length &&
+                _newUpdIds.every((id, i) => id === _scUpd.updateIds[i]) &&
+                updatesBody.children.length > 0) return; // same content — keep DOM intact
+
+            if (!updatePosts || !updatePosts.length) {
+                updatesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">No recent updates.</div>';
+            } else {
+                updatesBody.innerHTML = updatePosts.map(post => {
+                    const isPaidOnly = post.audience === 'paid_only';
+                    const canSee     = canSeePremium || !isPaidOnly;
+                    const nav        = `_mqpNavUpdate('${post.id}')`;
+                    if (!canSee) {
+                        return `<div class="mqp-card" onclick="${nav}">
+                            <div class="mqp-card-left">
+                                <div class="mqp-card-name" style="color:var(--text-muted);">🔒 Premium Update</div>
+                                <div class="mqp-card-meta">${_mqpFmtTime(post.sent_at||post.created_at)}</div>
+                            </div>
+                            <div class="mqp-arrow">→</div>
+                        </div>`;
+                    }
+                    // Strip leading markdown chars (>, *, #) per line and collapse to single line
+                    const cleaned = (post.content || '')
+                        .split('\n')
+                        .map(l => l.replace(/^[>*#\s]+/, '').replace(/\*\*/g, '').replace(/\*/g, '').trim())
+                        .filter(Boolean)
+                        .join(' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    const preview = cleaned.length > 65 ? cleaned.substring(0, 65).trim() + '…' : cleaned;
+                    return `<div class="mqp-card" onclick="${nav}">
+                        <div class="mqp-card-left">
+                            <div class="mqp-card-name">${sanitizeHtml(preview)}</div>
+                            <div class="mqp-card-meta">${_mqpFmtTime(post.sent_at||post.created_at)}</div>
+                        </div>
+                        <div class="mqp-arrow">→</div>
+                    </div>`;
+                }).join('');
+                _mqpCachePut({ updateIds: _newUpdIds, updatesHtml: updatesBody.innerHTML });
+            }
+        } catch(e) {
+            updatesBody.innerHTML = '<div style="text-align:center;padding:18px;color:#888;font-size:0.82rem;">Unable to load updates.</div>';
+        }
+    }
+    // ── END MARKET QUICK PREVIEW ────────────────────────────────────────────────
 
     async function fetchMarketData() {
         // Step 1: Render from cache immediately — instant display, no loading state
@@ -1247,9 +1793,19 @@
 
     // Strict lot size lookup — never use .includes() for instrument matching
     const LOT_SIZES = { NIFTY: 65, BANKNIFTY: 15, SENSEX: 20, MIDCAP: 75, NIFTYFIN: 25 }; // fallback — overridden by Kotak scrip master via /market
-    const STOCK_LOT_SIZES = { RELIANCE:250, TCS:175, INFY:300, HDFCBANK:550, ICICIBANK:700, WIPRO:1500, AXISBANK:625, SBIN:1500, BAJFINANCE:125, LT:175, MARUTI:25, TITAN:175, SUNPHARMA:350, ULTRACEMCO:100, NESTLEIND:40, KOTAKBANK:400, HINDUNILVR:300, ASIANPAINT:200, ITC:1600, BHARTIARTL:500 };
+    // NSE F&O stock lot sizes (mid-2026). Fallback=1 (per-unit P&L) when stock not listed — never 0.
+    const STOCK_LOT_SIZES = {
+        RELIANCE: 250, TCS: 175, INFY: 300, HDFCBANK: 550, ICICIBANK: 700,
+        WIPRO: 1500, AXISBANK: 625, SBIN: 1500, BAJFINANCE: 125, LT: 175,
+        MARUTI: 25, TITAN: 175, SUNPHARMA: 350, ULTRACEMCO: 100, NESTLEIND: 40,
+        KOTAKBANK: 400, HINDUNILVR: 300, ASIANPAINT: 200, ITC: 1600, BHARTIARTL: 500
+    };
     let _kotakLotSizes = {}; // populated from /market response after TOTP
-    function getLotSize(instrument) { const k=(instrument||'').toUpperCase(); return _kotakLotSizes[k] || LOT_SIZES[k] || STOCK_LOT_SIZES[k] || 1; }
+    function getLotSize(instrument) {
+        if (!instrument) return 1;
+        const key = instrument.toUpperCase();
+        return _kotakLotSizes[key] || LOT_SIZES[key] || STOCK_LOT_SIZES[key] || 1;
+    }
 
     // Strip premium fields from trade payload before rendering
     function sanitizeTrade(trade, canSeePremium) {
@@ -1443,9 +1999,10 @@
             const tradeData = closedTrades.map(p => {
                 const replies = replyMap[p.id] || [];
                 const f = extractTradeAlertFields(p.content);
-                // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
+                // T2S-UAT-20260721-003: direction multiplier — SELL profit = entry - exit, BUY = exit - entry
                 const _dirMult = (f.action === 'SELL') ? -1 : 1;
                 // P&L priority: adjusted-entry (partial exit + CMP) > VM Day High > weighted exit > calculateMaxProfit
+                // For SELL: dayHigh (highest premium) and calculateMaxProfit are wrong signals — skip them
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const _closePricePerf = extractClosePriceFromReplies(replies);
                 const _slResolvedPerf = getLastSLNumeric(replies) || (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
@@ -1962,10 +2519,15 @@
         else if (/\bbankex\b/i.test(content)) f.instrument='BANKEX';
         const sm = content.match(/(?:nifty|banknifty|bank\s*nifty|sensex|finnifty)\s+(\d{4,6})/i);
         if (sm) f.strike = sm[1];
-        // Stock option fallback — fires only when no index was matched
+        // Fallback: stock option detection — fires only when no index instrument was matched
+        // Pattern: "RELIANCE 1280 Monthly CE" → instrument=RELIANCE, strike=1280, optType=CE
         if (!f.instrument) {
-            const stk = content.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i);
-            if (stk) { f.instrument=stk[1].toUpperCase(); f.strike=stk[2]; f.optType=stk[3].toUpperCase(); }
+            const stockM = content.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i);
+            if (stockM) {
+                f.instrument = stockM[1].toUpperCase();
+                if (!f.strike) f.strike = stockM[2];
+                if (!f.optType) f.optType = stockM[3].toUpperCase();
+            }
         }
         if (/\bce\b|\bcall\b/i.test(content)) f.optType='CE'; else if (/\bpe\b|\bput\b/i.test(content)) f.optType='PE';
         if (/next\s+weekly/i.test(lo)) f.expiry='Next Weekly';
@@ -1978,6 +2540,11 @@
         if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
         const slm = content.match(/(below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
         if (slm) { f.sl = parseFloat(slm[2]); f.slDirection = slm[1].toLowerCase(); }
+        // Fallback: derive direction from action + optType if not explicit in content
+        if (!f.slDirection && f.action && f.optType) {
+            const _bullish = (f.action==='BUY'&&f.optType==='CE')||(f.action==='SELL'&&f.optType==='PE');
+            f.slDirection = _bullish ? 'below' : 'above';
+        }
         const sustM = content.match(/for\s+(\d+)\s+min/i);
         if (sustM) f.slSustainMinutes = parseInt(sustM[1]);
         return f;
@@ -2000,6 +2567,7 @@
     // Status-only messages don't count as "triggered" — only actual entry/exit signals do
     const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['’]?t\s+(?:take|enter))/i;
     function getTradeState(post, replies) {
+        if (post._mockState) return post._mockState; // UAT dummy data override
         // Admin saying "ignore/cancel" in any follow-up = order was never triggered, remove from active
         const hasIgnore = (replies||[]).some(r => /\b(ignore|cancel(?:l?ing|l?ed)?|avoid(?:ing)?)\b/i.test(r.content||''));
         if (hasIgnore) return 'not_triggered';
@@ -2018,7 +2586,8 @@
             if (f.instrument && f.strike && f.optType && f.entry) {
                 const key = `${f.instrument}-${f.strike}-${f.optType}`;
                 const liveCMP = _lastOptionLTPs[key];
-                if (liveCMP != null && liveCMP >= f.entry) return 'triggered';
+                const _sellTrigger = f.action === 'SELL' ? liveCMP <= f.entry : liveCMP >= f.entry;
+                if (liveCMP != null && _sellTrigger) return 'triggered';
             }
         }
         const tz = { timeZone:'Asia/Kolkata' };
@@ -2033,14 +2602,16 @@
 
     // ── PROGRESSIVE FIELD UNLOCK FOR FREE MEMBERS ────────────────────────────
     // Unlock Entry/Expiry/Call-Put/CMP only when: 50%+ exit, SL hit/gone, full exit, or admin unlock
-    function getFreeUnlockedFields(replies) {
+    // Fix 8: postSentAt added — enables 2:45 PM time-based unlock (posts created before 14:45 IST)
+    // Fix 8: SL field now also unlocks on full exit (so free members see SL after trade closes)
+    function getFreeUnlockedFields(replies, postSentAt) {
         const u = { callPut:false, entry:false, expiry:false, cmp:false, sl:false, all:false };
         let cumExit = 0;
         for (const r of (replies||[])) {
             const c = r.content||'';
             if (c.includes('[T2S_UNLOCK]')) { u.all=true; return u; }
             const p = parseFollowUpContent(c);
-            if (p.isFullExit) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
+            if (p.isFullExit) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; u.sl=true; }
             if (p.exitPct) {
                 cumExit = Math.min(100, cumExit + p.exitPct);
                 if (cumExit >= 50) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
@@ -2048,6 +2619,17 @@
             if (p.slRevised) u.sl=true;
         }
         if (u.sl) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
+        // Fix 7: 2:45 PM time-based unlock — paid-only posts created BEFORE 14:45 IST auto-unlock for free members after 14:45
+        // Posts created AT or AFTER 14:45 as paid_only follow normal progressive unlock rules
+        if (postSentAt && !u.all) {
+            const tz = { timeZone: 'Asia/Kolkata' };
+            const nowIST = new Date(new Date().toLocaleString('en-US', tz));
+            const nowMins = window._UAT_TIME_2_45 ? 14*60+46 : (nowIST.getHours()*60 + nowIST.getMinutes());
+            const postIST = new Date(new Date(postSentAt).toLocaleString('en-US', tz));
+            const isSameDay = postIST.toDateString() === nowIST.toDateString();
+            const postMins = postIST.getHours()*60 + postIST.getMinutes();
+            if (isSameDay && postMins < 14*60+45 && nowMins >= 14*60+45) u.all = true;
+        }
         return u;
     }
 
@@ -2084,12 +2666,15 @@
             if (fp.isFullExit || totalPct >= 100) break;
         }
         // For auto-closed remaining position: use CLOSEPRICE (VM-posted LTP at ~3:30 PM) if available,
-        // else fall back to last known SL (only option-price SLs <= ₹5000; spot/index SLs ignored)
+        // else fall back to last known SL (less accurate but better than nothing)
         if (totalPct < 100 && opts) {
             if (opts.closePrice) {
                 weightedSum += opts.closePrice * (100 - totalPct);
                 totalPct = 100;
             } else if (opts.sl && opts.sl <= 5000) {
+                // Only use SL as fallback when it is an option price (<= ₹5000).
+                // Spot/index SLs (e.g. "SL if spot below 24000") are > 5000 and must never
+                // be used as option exit prices — they are index levels, not option LTPs.
                 weightedSum += opts.sl * (100 - totalPct);
                 totalPct = 100;
             }
@@ -2097,30 +2682,14 @@
         return totalPct > 0 ? Math.round(weightedSum / totalPct * 100) / 100 : null;
     }
 
-    function extractClosePriceFromReplies(replies) {
-        for (const r of (replies||[])) {
-            const m = (r.content||'').trim().match(/^\[CLOSEPRICE:([\d.]+)\]$/);
-            if (m) return parseFloat(m[1]);
-        }
-        return null;
-    }
-
-    // Returns numeric option-price SL from most recent SL update reply (replies are newest-first)
-    function getLastSLNumeric(replies) {
-        for (const r of (replies||[])) {
-            const p = parseFollowUpContent(r.content||'');
-            if (p.slRevised && p.slRevised !== 'cost') return parseFloat(p.slRevised);
-        }
-        return null;
-    }
-
-    // ── EXIT LEGS + BREAKDOWN ─────────────────────────────────────────────────
     function getExitLegs(replies, opts) {
         const sorted = [...(replies||[])].reverse();
         const legs = [];
         let totalPct = 0;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
+            // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
+            // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
             const _rawPrice = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             // SL hit slippage fix: when "SL hit/triggered/breached" and exit price slipped past SL, use SL as conceptual exit price
             const _slRe = /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i;
@@ -2141,9 +2710,19 @@
         }
         return legs;
     }
+
     function buildExitBreakdownHtml(legs) {
         if (!legs || legs.length <= 1) return '';
         return `<div style="font-size:0.62rem;color:var(--text-muted);margin-top:1px;line-height:1.4;">${legs.map(l=>`${l.pct}% @₹${l.price}`).join(' / ')}</div>`;
+    }
+
+    // Returns numeric option-price SL from most recent SL update reply (replies are newest-first)
+    function getLastSLNumeric(replies) {
+        for (const r of (replies||[])) {
+            const p = parseFollowUpContent(r.content||'');
+            if (p.slRevised && p.slRevised !== 'cost') return parseFloat(p.slRevised);
+        }
+        return null;
     }
 
     // ── LATEST SL VALUE ───────────────────────────────────────────────────────
@@ -2153,17 +2732,11 @@
         for (const r of sorted) { const p=parseFollowUpContent(r.content||''); if(p.slRevised) sl=p.slRevised; }
         return sl ? (sl==='cost'?'Cost (No Loss)':'₹'+sl) : null;
     }
-    // Returns the second-to-last SL revision (numeric) — used as strikethrough when multiple revisions exist
-    function getPenultimateSL(replies, entryPrice) {
+    // Returns the second-to-last SL revision value (numeric) — used as strikethrough when multiple revisions exist
+    function getPenultimateSL(replies) {
         const sorted = [...(replies||[])].reverse(); // oldest → newest
         const revs = [];
-        for (const r of sorted) {
-            const p = parseFollowUpContent(r.content||'');
-            if (p.slRevised) {
-                const val = p.slRevised === 'cost' ? (entryPrice || null) : parseFloat(p.slRevised);
-                if (val) revs.push(val);
-            }
-        }
+        for (const r of sorted) { const p=parseFollowUpContent(r.content||''); if(p.slRevised&&p.slRevised!=='cost') revs.push(parseFloat(p.slRevised)); }
         return revs.length >= 2 ? revs[revs.length - 2] : null;
     }
 
@@ -2188,6 +2761,7 @@
     }
 
     function isTradeFullyClosed(post, replies) {
+        if (post._mockClosed !== undefined) return post._mockClosed; // UAT dummy data override
         const reps = [...(replies||[])].reverse();  // oldest → newest; hasHolding reflects most recent action
         let cum=0, hasHolding=false;
         for (const r of reps) {
@@ -2270,6 +2844,44 @@
         return minP < entry ? { min: minP, pts: parseFloat((entry - minP).toFixed(2)) } : null;
     }
 
+    // Extract close price from [CLOSEPRICE:X] follow-up — posted by VM at ~3:30 PM for auto-closed remaining positions
+    function extractClosePriceFromReplies(replies) {
+        for (const r of (replies||[])) {
+            const m = (r.content||'').trim().match(/^\[CLOSEPRICE:([\d.]+)\]$/);
+            if (m) return parseFloat(m[1]);
+        }
+        return null;
+    }
+
+    // Compute breakeven for the live P&L badge — accounts for locked profits from prior partial exits
+    // Returns data-attribute string to embed in the badge <span>, or '' if not computable
+    function computePlBadgeAttrs(fields, postReplies, liveCmpKey) {
+        if (!fields.entry || !liveCmpKey) return '';
+        const sorted = [...(postReplies||[])].reverse(); // oldest first
+        let lockedPnl = 0, totalExitPct = 0;
+        for (const r of sorted) {
+            const fp = parseFollowUpContent(r.content||'');
+            // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
+            // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
+            const price = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            const pct = fp.isFullExit ? (100 - totalExitPct) : (fp.exitPct||0);
+            if (pct <= 0) continue;
+            // BUY profit: price > entry is good. SELL profit: price < entry is good.
+            const pnlPerUnit = fields.action === 'SELL' ? (fields.entry - price) : (price - fields.entry);
+            lockedPnl += pnlPerUnit * (pct / 100);
+            totalExitPct += pct;
+            if (fp.isFullExit || totalExitPct >= 100) break;
+        }
+        const remaining = Math.max(0, 100 - totalExitPct) / 100;
+        // Breakeven = CMP at which total_pnl = 0 (locked + unrealised on remaining)
+        // BUY: entry - lockedPnl/remaining  |  SELL: entry + lockedPnl/remaining
+        const breakeven = remaining > 0
+            ? (fields.action === 'SELL' ? fields.entry + lockedPnl / remaining : fields.entry - lockedPnl / remaining)
+            : fields.entry;
+        return `data-pl-badge="${liveCmpKey}" data-be="${breakeven.toFixed(2)}" data-action="${fields.action||'BUY'}"`;
+    }
+
     // ── RENDER STRUCTURED FOLLOW-UP CARD ─────────────────────────────────────
     function renderFollowUpCard(reply, parsed, cumulativeExit, prevSL) {
         if (parsed.isAdminUnlock||(reply.content||'').includes('[T2S_UNLOCK]')) return '';
@@ -2306,8 +2918,9 @@
             }
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
-            const _exitExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
-            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_exitExtra}</div>`;
+            // Fix 3: raw message text shown BELOW structured fields, muted style
+            const _exitMsgBelow = rawText ? `<div style="padding:6px 12px 8px;font-size:13px;color:#9ca3af;line-height:1.5;">${rawText}</div>` : '';
+            return `<div class="reply-card reply-exit-card"><div class="reply-header"><span class="update-badge badge-follow-up">📤 Exit Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_exitMsgBelow}</div>`;
         }
 
         if (parsed.type==='sl_update'&&parsed.slRevised) {
@@ -2316,12 +2929,14 @@
             let rows=`<div class="fu-row"><span class="fu-label">SL Revised</span><span class="fu-val">${osl}${nsl}</span></div>`;
             if (parsed.cmp) rows+=`<div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.cmp}</span></div>`;
             if (parsed.noLossPossible) rows+=`<div class="fu-no-loss">✅ No loss possible</div>`;
-            const _slExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
-            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_slExtra}</div>`;
+            // Fix 3: raw message text shown BELOW structured fields, muted style
+            const _slMsgBelow = rawText ? `<div style="padding:6px 12px 8px;font-size:13px;color:#9ca3af;line-height:1.5;">${rawText}</div>` : '';
+            return `<div class="reply-card reply-sl-card"><div class="reply-header"><span class="update-badge badge-sl-update">📊 SL Update</span><span class="update-time">${ts}</span></div><div class="fu-body">${rows}</div>${_slMsgBelow}</div>`;
         }
 
         if (parsed.type==='cmp_update'&&parsed.price) {
-            const _cmpExtra = rawText ? `<div class="reply-body" style="padding-top:0">${rawText}</div>` : '';
+            // Fix 3: raw message text shown BELOW structured fields, muted style
+            const _cmpExtra = rawText ? `<div style="padding:6px 12px 8px;font-size:13px;color:#9ca3af;line-height:1.5;">${rawText}</div>` : '';
             return `<div class="reply-card"><div class="reply-header"><span class="update-badge badge-follow-up">📈 CMP Update</span><span class="update-time">${ts}</span></div><div class="fu-body"><div class="fu-row"><span class="fu-label">CMP</span><span class="fu-val">₹${parsed.price}</span></div></div>${_cmpExtra}</div>`;
         }
 
@@ -2413,8 +3028,67 @@
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
                 replyMap[r.parent_id].push(r);
             });
+            // UAT: inject dummy test posts for all 15 trade scenarios (removed after Tushar confirms)
+            if (window._UAT_DUMMY_POSTS && window._UAT_DUMMY_POSTS.length) {
+                tradeParents.unshift(...window._UAT_DUMMY_POSTS);
+                window._UAT_DUMMY_POSTS.forEach(p => {
+                    if (window._UAT_DUMMY_REPLIES && window._UAT_DUMMY_REPLIES[p.id])
+                        replyMap[p.id] = [...window._UAT_DUMMY_REPLIES[p.id]]; // newest-first (as Supabase returns)
+                });
+            }
             container.dataset.loaded = '1';
+            // UAT: seed _lastOptionLTPs so getTradeState() auto-trigger logic can use mock prices
+            if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
+                _lastOptionLTPs = window._UAT_MOCK_LTPS;
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
+            // UAT: first pass — seed session highs/lows to intraday peaks (before current CMP)
+            if (window._UAT_MOCK_SESSION_PEAKS && Object.keys(window._UAT_MOCK_SESSION_PEAKS).length)
+                updateTradeCMPs(window._UAT_MOCK_SESSION_PEAKS);
+            // UAT: second pass — apply current CMPs (session peaks won't decrease)
+            if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
+                updateTradeCMPs(window._UAT_MOCK_LTPS);
+            // UAT: stamp D-number label on each dummy card header so Tushar can reference by number
+            if (window._UAT_DUMMY_POSTS) {
+                window._UAT_DUMMY_POSTS.forEach(p => {
+                    if (!p._uatLabel) return;
+                    const el = document.getElementById(`ucard-${p.id}`);
+                    if (el) {
+                        const lbl = document.createElement('div');
+                        const _grpC = { G1:'#4a2a78', G2:'#d97706', G3:'#0891b2', G4:'#059669' }[p._uatGroup] || '#6366f1';
+                        if (p._uatLabel === 'D1') {
+                            // D1: show instrument info as label instead of D-number
+                            const _lf = extractTradeAlertFields(p.content||'');
+                            const _lOpt = _lf.optType || '';
+                            const _lInstr = _lf.instrument || '';
+                            const _lStrike = _lf.strike ? ' ' + _lf.strike : '';
+                            const _lExpiry = _lf.expiry ? ' · ' + formatExpiryDisplay(_lf.expiry, _lf.instrument, p.sent_at||p.created_at) : '';
+                            const _pillHtml = _lOpt ? `<span style="background:#4a2a78;color:#fff;padding:2px 10px;border-radius:5px;font-size:0.82rem;font-weight:800;margin-right:8px;">${_lOpt}</span>` : '';
+                            lbl.innerHTML = `${_pillHtml}<span style="font-size:0.78rem;font-weight:700;color:#4a2a78;">${_lInstr}${_lStrike}${_lExpiry}</span>`;
+                            lbl.style.cssText = 'background:#e0f2fe;border:1px solid #bae6fd;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;';
+                        } else {
+                            lbl.textContent = p._uatLabel;
+                            lbl.style.cssText = `background:${_grpC};color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;`;
+                        }
+                        el.insertBefore(lbl, el.firstChild);
+                        // G4: enlarge exit price value (CSS handles border/bg/labels)
+                        if (p._uatGroup === 'G4') {
+                            const exitLbl = Array.from(el.querySelectorAll('.metric-label')).find(l => l.textContent.includes('Exit'));
+                            if (exitLbl && exitLbl.nextElementSibling) {
+                                const ev = exitLbl.nextElementSibling;
+                                ev.style.fontSize = '1.9rem';
+                                ev.style.fontWeight = '900';
+                                ev.style.display = 'block';
+                                ev.style.textAlign = 'center';
+                            }
+                        }
+                        // D_SL: hide badge when P&L = 0 (SL breach at breakeven)
+                        if (p._uatLabel === 'D_SL') {
+                            const badge = el.querySelector('.badge');
+                            if (badge) badge.style.display = 'none';
+                        }
+                    }
+                });
+            }
             tradeParents.map(p => p.id).forEach(id => updateLikeUI(id)); // instantly restore all known like counts after re-render (prevents blink on 30s refresh)
             fetchLikes(tradeParents.map(p => p.id));
             _cSave('t2s_alerts_html', container.innerHTML);
@@ -2475,7 +3149,15 @@
             .filter(p => getTradeState(p, _pubReplies(p)) !== 'not_triggered')
             .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
 
-        let html = '';
+        // UAT panel — visible only when dummy data is loaded (deleted after Tushar confirms)
+        const _hasDummies = tradePosts.some(p => (p.id||'').startsWith('dummy-'));
+        let html = _hasDummies ? `<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.75rem;color:#92400e;line-height:1.5;">
+            <b>🧪 UAT Test Mode</b> — ${window._UAT_DUMMY_POSTS.length} dummy scenarios loaded<br>
+            <button onclick="window._UAT_TIME_2_45=!window._UAT_TIME_2_45;fetchTradeAlerts();" style="margin-top:4px;padding:3px 10px;background:#d97706;color:#fff;border:none;border-radius:4px;font-size:0.7rem;cursor:pointer;font-family:inherit;">
+              Toggle 2:45 PM Unlock (${window._UAT_TIME_2_45?'ON — free members see all paid trades':'OFF — normal rules'})
+            </button>
+            <div style="margin-top:4px;font-size:0.68rem;color:#b45309;">D7: BUY 50% exit — badge shows Profit even though CMP(91)&lt;entry(102) because adjusted threshold=89 &nbsp;|&nbsp; D6: SELL 50% exit — badge shows Profit because CMP(100)&lt;threshold(113)</div>
+        </div>` : '';
 
         function sectionHeader(label, dotColor, glow, trailingHtml='') {
             return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -2493,16 +3175,7 @@
             activePosts.forEach(p => { try { html += buildTradeAlertCard(p, replyMap[p.id]||[], memberTier, isAdmin, isFreeViewer); } catch(e) { console.error('[card]', p.id, e.message); } });
         }
         if (closedPosts.length) {
-            // Banner: alert when trades closed TODAY — tap to scroll straight to the closed section
-            const _todayIST = new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'});
-            const _closedToday = closedPosts.filter(p => new Date(p.sent_at||p.created_at).toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'}) === _todayIST);
-            if (_closedToday.length > 0) {
-                html += `<div id="closed-today-banner" onclick="document.getElementById('closed-section').scrollIntoView({behavior:'smooth',block:'start'})" style="display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:9px 14px;margin-bottom:12px;cursor:pointer;">
-                    <span style="font-size:0.8rem;font-weight:600;color:#15803d;">✅ ${_closedToday.length} trade${_closedToday.length>1?'s':''} closed today</span>
-                    <span style="font-size:0.75rem;color:#15803d;font-weight:500;">View below ↓</span>
-                </div>`;
-            }
-            html += `<div id="closed-section" style="margin-top:18px;">` + sectionHeader('Closed Trades','#9ca3af',false);
+            html += `<div style="margin-top:18px;">` + sectionHeader('Closed Trades','#9ca3af',false);
             closedPosts.forEach(p => { try { html += buildTradeAlertCard(p, replyMap[p.id]||[], memberTier, isAdmin, isFreeViewer); } catch(e) { console.error('[card]', p.id, e.message); } });
             html += `</div>`;
         }
@@ -2510,14 +3183,6 @@
         container.innerHTML = html;
         if (_lastOptionLTPs  && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
         if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs, _lastOptionHighsPostIds);
-        // Re-apply session lows after DOM rebuild (session highs re-applied by updateTradeHighs above)
-        if (_lastOptionLTPs && !isMarketClosedNow()) {
-            document.querySelectorAll('[data-live-low]').forEach(el => {
-                const key = el.dataset.liveLow;
-                const v = _sessionOptionLows[key];
-                if (v != null) el.textContent = `₹${v.toFixed(2)}`;
-            });
-        }
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
@@ -2560,6 +3225,12 @@
                 }
             }, 700);
         }
+        // Publish trade data and trigger synchronous Markets quick preview rebuild.
+        // Runs AFTER all buildTradeAlertCard() calls — _mqpPnlStore is fully populated.
+        window._mqpLastTradePosts = tradePosts;
+        window._mqpLastReplyMap   = replyMap;
+        window._mqpLastMemberInfo = { memberTier, isAdmin };
+        _renderMqpTrades();
     }
 
     function buildTradeAlertCard(post, postReplies, memberTier, isAdmin, isFreeViewer) {
@@ -2578,10 +3249,11 @@
 
         if (why) _whyMap[post.id] = why;
 
-        // Special comment from Admin PWA "Special Comments" field — embedded as ⚠️ *text* in post content
+        // ── SPECIAL COMMENT (⚠️ *...* embedded by Admin PWA "Special Comments" field) ─────────
         const _specialCommentMatch = (post.content||'').match(/⚠️ \*([^*\n]+)\*/);
         const _specialComment = _specialCommentMatch ? _specialCommentMatch[1].trim() : '';
-        const _cmtHtml = (!isFreeViewer && _specialComment)
+        // UAT: show all 3 style options so Tushar can pick one before production
+        const _cmtHtmlUAT = (!isFreeViewer && _specialComment)
             ? `<div style="margin:0 12px 8px;"><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${_specialComment}</span></div>`
             : '';
 
@@ -2597,7 +3269,7 @@
                 if (r.audience==='paid_only') return false;
                 return true;
             });
-            const _u1 = getFreeUnlockedFields(pubReplies_s1);
+            const _u1 = getFreeUnlockedFields(pubReplies_s1, post.sent_at);
             const showCP1 = _u1.all || _u1.callPut;
             const showEn1 = _u1.all || _u1.entry;
             const showEx1 = _u1.all || _u1.expiry;
@@ -2637,11 +3309,12 @@
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
             const _activeLegs1 = cumExit1 > 0 && cumExit1 < 100 ? getExitLegs(pubReplies_s1) : [];
             const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully'
-                : cumExit1 > 0 && _activeLegs1.length > 0 ? `Holding ${100-cumExit1}% exited ${_activeLegs1.map(l=>`${l.pct}% @${l.price}`).join('/')}`
-                : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%`
-                : 'Holding 100%';
+                : cumExit1 > 0 && _activeLegs1.length > 0
+                    ? `Holding ${100-cumExit1}% exited ${_activeLegs1.map(l=>`${l.pct}% @${l.price}`).join('/')}`
+                    : cumExit1 > 0 ? `Exited ${cumExit1}% · Remaining ${100-cumExit1}%`
+                    : 'Holding 100%';
             const _statePill = _trState==='yet_to_trigger'
-                ? `<span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
+                ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
                 : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${_holdingText1}</span></div>`;
             let s1RepliesHtml = '';
             if (pubReplies_s1.length > 0 && _trState === 'triggered') {
@@ -2666,8 +3339,14 @@
                 : ((_slS1Display && _slS1InitSL > 5000 ? spotSLNote(fields.slDirection) : '') + (_slS1Display || '—'));
             const _slS1Html = showSL1 ? _slS1HtmlVal : lockBtn;
             const _slS1Label = (showSL1 && _slS1Display) ? slLabelFor(_slS1Display) : 'SL';
-            return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
-                <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+            const _buyPill1 = `<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>`;
+            const _plBadge1 = _trState==='triggered'&&showCmp1?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,pubReplies_s1,liveCmpKey)}></span>`:'';
+            const _s1Header = post._uatLabel === 'D1'
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
+                    <span class="update-time" style="font-size:0.72rem;color:var(--text-muted);">${dateTimeStr}</span>
+                    <div style="display:flex;align-items:center;gap:5px;">${_buyPill1}${_plBadge1}</div>
+                </div>`
+                : `<div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
                     <div class="trade-title-box">
                         ${typeBoxS1}
                         <div>
@@ -2676,14 +3355,16 @@
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
                         <span class="update-time">${dateTimeStr}</span>
+                        <div style="display:flex;align-items:center;gap:5px;">${_buyPill1}${_plBadge1}</div>
                     </div>
-                </div>
+                </div>`;
+            return `<div class="update-card" id="ucard-${post.id}" data-trade-key="${tradeKey}">
+                ${_s1Header}
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEn1&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${_trState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${_slS1Label}</span><span class="metric-value" style="font-size:0.82rem;">${_slS1Html}</span></div>
-                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp1&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
+                    <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp1&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp1?(latestCmp1?`₹${latestCmp1}`:'🔓'):lockBtn}</span></div>
                 </div>
                 ${showCmp1&&liveCmpKey?(fields.action==='SELL'?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`:`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${fields.entry||''}">—</span></div>`):''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
@@ -2717,7 +3398,7 @@
             }
 
             // Determine unlock state
-            const unlocked  = getFreeUnlockedFields(_pubReplies2);
+            const unlocked  = getFreeUnlockedFields(_pubReplies2, post.sent_at);
             // Past-day triggered trade → unlock all fields for free members (trade is history)
             const _postDay = new Date(post.sent_at||post.created_at).toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'});
             if (tradeState === 'triggered' && _postDay < new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'})) unlocked.all = true;
@@ -2766,10 +3447,26 @@
 
             const cumExit = getCumulativeExit(postReplies);
             const _activeLegs2 = cumExit > 0 && cumExit < 100 ? getExitLegs(postReplies) : [];
+            // Session low seed: cap at exit price for SELL trades with partial exits (price must have reached exit level)
+            const _exitMinPriceSell2 = fields.action === 'SELL' && _activeLegs2.length > 0
+                ? Math.min(..._activeLegs2.map(l => l.price))
+                : null;
+            const _initialLow2 = (_exitMinPriceSell2 !== null && fields.entry)
+                ? Math.min(fields.entry, _exitMinPriceSell2)
+                : fields.entry;
+            // Session high seed: for BUY trades with partial exits, option price already reached exit price
+            // so session high cannot be below that level. Initialize at max(entry, exit_price).
+            const _exitMaxPriceBuy2 = fields.action !== 'SELL' && _activeLegs2.length > 0
+                ? Math.max(..._activeLegs2.map(l => l.price))
+                : null;
+            const _initialHigh2 = (_exitMaxPriceBuy2 !== null && fields.entry)
+                ? Math.max(fields.entry, _exitMaxPriceBuy2)
+                : fields.entry;
             const holdingText2 = cumExit >= 100 ? 'Exited Fully'
-                : cumExit > 0 && _activeLegs2.length > 0 ? `Holding ${100-cumExit}% exited ${_activeLegs2.map(l=>`${l.pct}% @${l.price}`).join('/')}`
-                : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%`
-                : 'Holding 100%';
+                : cumExit > 0 && _activeLegs2.length > 0
+                    ? `Holding ${100-cumExit}% exited ${_activeLegs2.map(l=>`${l.pct}% @${l.price}`).join('/')}`
+                    : cumExit > 0 ? `Exited ${cumExit}% · Remaining ${100-cumExit}%`
+                    : 'Holding 100%';
 
             // Public follow-ups — collapsed by default, toggle to expand
             let freeRepliesHtml2 = '';
@@ -2798,7 +3495,7 @@
             const _shareBtn2 = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_shareSvg2}</button>`;
             const _likeBtns2 = `<div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${_shareBtn2}</div>`;
             const stateBanner2 = tradeState === 'yet_to_trigger'
-                ? `<div class="trigger-banner" style="justify-content:space-between;"><span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>${_likeBtns2}</div>`
+                ? `<div class="trigger-banner" style="justify-content:space-between;"><span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger — watching for entry</span>${_likeBtns2}</div>`
                 : tradeState === 'triggered'
                 ? `<div class="trigger-banner" style="justify-content:space-between;"><div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText2}</span></div>${_likeBtns2}</div>`
                 : `<div class="update-footer">${_likeBtns2}</div>`;
@@ -2813,18 +3510,19 @@
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                        <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
                         <span class="update-time">${dateTimeStr}</span>
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            <span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELLING':'📈 BUYING'}</span>
+                            ${tradeState==='triggered'&&showCmp&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        </div>
                     </div>
                 </div>
                 <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
-                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span></div>
+                    <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${showEntry&&fields.entry?`₹${fields.entry}`:lockBtn}</span>${tradeState==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
-                    <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
+                    <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
-                ${showCmp&&liveCmpKey?(fields.action==='SELL'
-                    ?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`
-                    :`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${fields.entry||''}">—</span></div>`):''}
+                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow2||fields.entry||''):(_initialHigh2||fields.entry||'')}">${fields.action==='SELL'?(_initialLow2?`₹${_initialLow2}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh2?`₹${_initialHigh2}`:(fields.entry?`₹${fields.entry}`:'—'))}</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -2866,11 +3564,8 @@
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
-            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: _slResolved25, isSell: fields.action === 'SELL' });
-            const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
-            const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             const lotSize25 = getLotSize(fields.instrument);
-            // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
+            // Fix 2: direction multiplier — SELL profit = entry - exit (same as Section 3), BUY = exit - entry
             const _pnlDir25 = fields.action === 'SELL' ? -1 : 1;
             let maxPnlPts25 = null, maxPnlRs25 = null;
             if (fields.entry && displayPrice25) {
@@ -2907,22 +3602,31 @@
             const _barStyle25 = _loss25 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle25 = _loss25 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel25 = _loss25 ? '🔴 Loss' : (maxPnlPts25 !== null ? '🟢 Profit' : '✅ Closed Trade');
+            // Max possible: shown when overall trade is in PROFIT (not when overall loss)
+            // BUY trades → session HIGH ([HIGH:XXX]); SELL trades → session LOW ([LOW:XXX])
             let _maxPoss25 = null, _maxPossLabel25 = '';
             if (!_loss25) {
                 if (fields.action === 'SELL') {
+                    // SELL: max possible = how much the option dropped from entry (profit when premium falls)
                     const _optLow25 = extractLowFromReplies(postReplies);
                     if (_optLow25 != null && fields.entry && _optLow25 < fields.entry) {
-                        _maxPoss25 = Math.round(fields.entry - _optLow25);
+                        const _lowPts25 = Math.round(fields.entry - _optLow25);
+                        _maxPoss25 = _lowPts25;
                         _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_optLow25})</span></div>`;
                     }
                 } else {
+                    // BUY: max possible = how much the option rose above entry (profit when premium rises)
                     const _optHigh25 = extractHighFromReplies(postReplies);
                     if (_optHigh25 != null && fields.entry && _optHigh25 > fields.entry) {
-                        _maxPoss25 = Math.round(_optHigh25 - fields.entry);
+                        const _highPts25 = Math.round(_optHigh25 - fields.entry);
+                        _maxPoss25 = _highPts25;
                         _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh25})</span></div>`;
                     }
                 }
             }
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: _slResolved25, isSell: fields.action === 'SELL' });
+            const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
+            const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -2934,7 +3638,10 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
-                        <span class="update-badge badge-closed-trade" style="display:inline-block;margin-top:3px;${_badgeStyle25}">${_barLabel25}</span>
+                        <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end;margin-top:3px;">
+                            ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELL':'📈 BUY'}</span>`:''}
+                            <span class="update-badge badge-closed-trade" style="${_badgeStyle25}">${_barLabel25}</span>
+                        </div>
                     </div>
                 </div>
                 <div style="display:flex;align-items:flex-start;padding:4px 12px 8px;gap:0;">
@@ -2968,6 +3675,7 @@
         }
         if (!latestCmp&&!isClosed) { const _rf3=parseFollowUpContent(post.content||''); if(_rf3.cmp&&_rf3.cmp<10000) latestCmp=_rf3.cmp; }
         const _closePrice3 = extractClosePriceFromReplies(postReplies);
+        // Resolve 'cost' SL (= entry price, no-loss level) to numeric for exit price calculation
         const _slResolved3 = getLastSLNumeric(postReplies) || (getCurrentSL(postReplies) === 'Cost (No Loss)' && fields.entry && fields.entry < 5000 ? fields.entry : null);
         const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: _slResolved3, closePrice: _closePrice3, isSell: fields.action === 'SELL' } : null);
         // For auto-closed partial exits: prefer getWeightedExitPrice (which now includes [CLOSEPRICE:X])
@@ -2976,9 +3684,6 @@
         const _slForExit3 = getLastSLNumeric(postReplies);
         const _effectiveExitPrice = (isClosed && _cumExitDisp > 0 && _cumExitDisp < 100 && !_closePrice3 && latestCmp && !(_slForExit3 && _slForExit3 < 5000))
             ? latestCmp : exitPrice;
-        const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slResolved3, isSell: fields.action === 'SELL' });
-        const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
-        const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
 
         // Non-trade posts (general / market_update that appear in trade alert feed)
         if (!fields.instrument) {
@@ -3037,11 +3742,10 @@
         const initSL3 = fields.sl;
         const revSL3  = getCurrentSL(postReplies);
         const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
-        const _prevRevSL3 = getPenultimateSL(postReplies, fields.entry); // second-to-last revision — strikethrough when multiple revisions exist
+        const _prevRevSL3 = getPenultimateSL(postReplies); // second-to-last revision — strikethrough target when multiple revisions exist
         let slDisplay3, slLabel3 = 'SL';
-        let revNum3 = 0; // exposed outside if block for SL breach detection below
         if (revSL3) {
-            revNum3 = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
+            const revNum3  = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
             if (slChanged3) {
@@ -3088,7 +3792,7 @@
                     <div class="thread-replies" id="${tid}" style="display:none;">`;
                 visibleReplies.forEach(reply=>{
                     const parsed=parseFollowUpContent(reply.content||'');
-                    // SL hit slippage fix: override EXIT PRICE row in follow-up card when price slipped past SL
+                    // SL hit slippage fix: override EXIT PRICE shown in follow-up card when price slipped past SL
                     if (parsed.isFullExit && parsed.price && _slResolved3 && _slResolved3 < 5000 && /\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/i.test(reply.content||'')) {
                         if ((fields.action||'').toUpperCase()!=='SELL' ? parsed.price < _slResolved3 : parsed.price > _slResolved3) parsed.price = _slResolved3;
                     }
@@ -3132,7 +3836,7 @@
         // CLOSED trade card — matches Section 2.5 layout
         if (isClosed) {
             const lotSize3 = getLotSize(fields.instrument);
-            // RC-1: direction multiplier — SELL profit = entry - exit, BUY profit = exit - entry
+            // T2S-UAT-20260721-002: direction multiplier — SELL profit = entry - exit, BUY = exit - entry
             const _pnlDir3 = fields.action === 'SELL' ? -1 : 1;
             let maxPnlPts3 = null, maxPnlRs3 = null;
             if (fields.entry && _effectiveExitPrice) {
@@ -3152,11 +3856,16 @@
                     maxPnlPts3 = Math.round((_effectiveExitPrice - fields.entry) * _pnlDir3);
                 }
                 maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
+                // Publish finalized P&L to Markets quick preview store — strict inheritance, no re-computation
+                window._mqpPnlStore = window._mqpPnlStore || {};
+                window._mqpPnlStore[post.id] = { pts: maxPnlPts3, rs: maxPnlRs3 };
             }
             const _loss3 = maxPnlPts3 !== null && maxPnlPts3 < 0;
             const _barStyle3 = _loss3 ? 'background:#fee2e2;border-top:1px solid #fca5a5;' : '';
             const _badgeStyle3 = _loss3 ? 'background:#fee2e2;color:#dc2626;' : '';
             const _barLabel3 = _loss3 ? '🔴 Loss' : (maxPnlPts3 !== null ? '🟢 Profit' : '✅ Closed Trade');
+            // Fix: for LOSS trades, compute static session high/low from follow-up CMPs (frozen at exit time)
+            // so we don't show live data-live-high updating after SL was hit
             const _lossShLabel3 = (() => {
                 if (!_loss3 || !fields.entry) return '';
                 const _lmp = fields.action === 'SELL' ? calculateMinPrice(fields.entry, postReplies) : calculateMaxProfit(fields.entry, postReplies);
@@ -3165,6 +3874,7 @@
                 const _shLbl = fields.action === 'SELL' ? 'Session Low' : 'Session High';
                 return `<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${_shLbl}</span><span style="font-size:0.8rem;font-weight:700;color:#9ca3af;">₹${_shVal}</span></div>`;
             })();
+            // Max possible: shown when overall trade is in PROFIT (not when overall loss)
             let _maxPoss3 = null, _maxPossLabel3 = '';
             if (!_loss3) {
                 if (fields.action === 'SELL') {
@@ -3181,6 +3891,9 @@
                     }
                 }
             }
+            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slResolved3, isSell: fields.action === 'SELL' });
+            const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
+            const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px 6px;">
                     <div class="trade-title-box">
@@ -3192,7 +3905,8 @@
                     </div>
                     <div style="text-align:right;">
                         <div class="update-time">${dateTimeStr}</div>
-                        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:3px;">
+                        <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end;margin-top:3px;">
+                            ${fields.action?`<span style="background:${fields.action==='SELL'?'#fee2e2':'#dcfce7'};color:${fields.action==='SELL'?'#b91c1c':'#15803d'};padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">${fields.action==='SELL'?'📉 SELL':'📈 BUY'}</span>`:''}
                             <span class="update-badge badge-closed-trade" style="${_badgeStyle3}">${_barLabel3}</span>
                             ${_audBadge3}
                         </div>
@@ -3203,7 +3917,7 @@
                     <div style="flex:1;min-width:0;padding-right:4px;"><span class="metric-label">${_exitLabel3}</span><span class="metric-value ${_effectiveExitPrice&&_effectiveExitPrice<fields.entry?'val-down':'val-up'}" style="display:block;font-size:0.82rem;">${_effectiveExitPrice?`₹${_effectiveExitPrice}`:'—'}</span>${_exitBreakdown3}</div>
                     <div style="flex:1;min-width:0;"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="display:block;font-size:0.72rem;">${slDisplay3}</span></div>
                 </div>
-                ${_cmtHtml}
+                ${_cmtHtmlUAT}
                 ${why ? (whyVisible
                     ? `<div class="why-section"><div class="why-label">📝 Why this trade</div><div class="why-content">${sanitizeHtml(why).replace(/\n/g,'<br>')}</div></div>`
                     : `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>`
@@ -3219,11 +3933,8 @@
                             :(_loss3
                                 ?_lossShLabel3
                                 :(!isMarketClosedNow()&&liveCmpKey)
-                                    ?(fields.action==='SELL'
-                                        ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${fields.entry||''}">—</span></div>`
-                                        :`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${fields.entry||''}">—</span></div>`)
+                                    ?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}">—</span></div>`
                                     :'')}
-
                     </div>
                     <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div>
                 </div>
@@ -3236,53 +3947,75 @@
         const actionBadge3 = fields.action==='SELL'
             ? `<span style="background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📉 SELLING</span>`
             : `<span style="background:#dcfce7;color:#15803d;padding:3px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;">📈 BUYING</span>`;
+        // T2S-PROD-20260722-003: SL Breached auto-detection removed — state shown only via explicit follow-up messages
         const _activeLegs3 = cumExit3 > 0 && cumExit3 < 100 ? getExitLegs(postReplies) : [];
-        // Session high/low floor: seeded from highest (BUY) or lowest (SELL) known exit price so card rebuild doesn't reset below a known traded price
-        const _exitMinPriceSell3 = fields.action === 'SELL' && _activeLegs3.length > 0 ? Math.min(..._activeLegs3.map(l => l.price)) : null;
-        const _initialLow3 = (_exitMinPriceSell3 !== null && fields.entry) ? Math.min(fields.entry, _exitMinPriceSell3) : fields.entry;
-        const _exitMaxPriceBuy3 = fields.action !== 'SELL' && _activeLegs3.length > 0 ? Math.max(..._activeLegs3.map(l => l.price)) : null;
-        const _initialHigh3 = (_exitMaxPriceBuy3 !== null && fields.entry) ? Math.max(fields.entry, _exitMaxPriceBuy3) : fields.entry;
+        // Session low seed: for SELL trades with a partial exit, the option price already reached the exit price,
+        // so session low cannot be higher than that exit price. Cap the seed at min(entry, exit_price).
+        const _exitMinPriceSell3 = fields.action === 'SELL' && _activeLegs3.length > 0
+            ? Math.min(..._activeLegs3.map(l => l.price))
+            : null;
+        const _initialLow3 = (_exitMinPriceSell3 !== null && fields.entry)
+            ? Math.min(fields.entry, _exitMinPriceSell3)
+            : fields.entry;
+        // Session high seed: for BUY trades with a partial exit, the option price already reached the exit price,
+        // so session high cannot be below that level. Initialize at max(entry, exit_price).
+        const _exitMaxPriceBuy3 = fields.action !== 'SELL' && _activeLegs3.length > 0
+            ? Math.max(..._activeLegs3.map(l => l.price))
+            : null;
+        const _initialHigh3 = (_exitMaxPriceBuy3 !== null && fields.entry)
+            ? Math.max(fields.entry, _exitMaxPriceBuy3)
+            : fields.entry;
         const holdingText3 = cumExit3 >= 100 ? 'Exited Fully'
-            : cumExit3 > 0 && _activeLegs3.length > 0 ? `Holding ${100-cumExit3}% exited ${_activeLegs3.map(l=>`${l.pct}% @${l.price}`).join('/')}`
-            : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%`
-            : 'Holding 100%';
+            : cumExit3 > 0 && _activeLegs3.length > 0
+                ? `Holding ${100-cumExit3}% exited ${_activeLegs3.map(l=>`${l.pct}% @${l.price}`).join('/')}`
+                : cumExit3 > 0 ? `Exited ${cumExit3}% · Remaining ${100-cumExit3}%`
+                : 'Holding 100%';
         const statePill3 = tradeState3 === 'yet_to_trigger'
-            ? `<span data-state-pill="${post.id}" data-entry="${fields.entry||''}" data-live-key="${liveCmpKey||''}" style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
+            ? `<span style="font-size:0.72rem;color:#6366f1;font-weight:700;">⏳ Yet to trigger</span>`
             : `<div style="display:flex;align-items:center;gap:5px;"><span style="font-size:0.72rem;color:#15803d;font-weight:700;">✅ Triggered</span><span style="font-size:0.68rem;color:var(--text-muted);">${holdingText3}</span></div>`;
-        // SL breach attrs: only when triggered + revised premium SL (revNum3 < 5000 = option premium, not index level)
-        const _slBannerAttrs3 = (tradeState3 === 'triggered' && revNum3 > 0 && revNum3 < 5000 && liveCmpKey)
-            ? ` data-sl-key="${liveCmpKey}" data-sl-num="${revNum3}" data-sl-sell="${fields.action==='SELL'?'1':'0'}" data-sl-post="${post.id}"`
-            : '';
 
         return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}">
             <div class="trade-header" style="border-bottom:1px dashed var(--border);padding:6px 12px 8px;">
-                <div class="trade-title-box">
+                ${post._uatLabel !== 'D1' ? `<div class="trade-title-box">
                     ${typeBoxHtml3}
                     <div>
                         <div class="trade-name">${fields.instrument}${fields.strike?` <span style="font-weight:700;color:#888;font-size:0.9em;">${fields.strike}</span>`:''}</div>
                         <div class="trade-expiry">${formatExpiryDisplay(fields.expiry||'', fields.instrument, post.sent_at||post.created_at)}</div>
                     </div>
-                </div>
-                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
-                    ${actionBadge3}
-                    <span class="update-time">${dateTimeStr}</span>
-                    ${_audBadge3}
-                </div>
+                </div>` : ''}
+                ${post._uatLabel === 'D1'
+                    ? `<div style="display:flex;justify-content:space-between;align-items:center;flex:1;">
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            ${actionBadge3}
+                            ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        </div>
+                        <span class="update-time">${dateTimeStr}</span>
+                    </div>`
+                    : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <span class="update-time">${dateTimeStr}</span>
+                            ${_audBadge3}
+                        </div>
+                        <div style="display:flex;align-items:center;gap:5px;">
+                            ${actionBadge3}
+                            ${tradeState3==='triggered'&&liveCmpKey?`<span style="font-size:0.7rem;display:none;" ${computePlBadgeAttrs(fields,postReplies,liveCmpKey)}></span>`:''}
+                        </div>
+                    </div>`
+                }
             </div>
             <div class="trade-metrics" style="padding:6px 12px 10px;grid-template-columns:repeat(3,1fr);">
-                <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span></div>
+                <div class="metric-col"><span class="metric-label">Entry</span><span class="metric-value" style="font-size:0.82rem;">${fields.entry?`₹${fields.entry}`:'—'}</span>${tradeState3==='yet_to_trigger'?`<span style="font-size:0.58rem;color:#6366f1;font-weight:600;display:block;margin-top:1px;">Yet to Trigger</span>`:''}</div>
                 <div class="metric-col"><span class="metric-label">${slLabel3}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay3}</span></div>
-                <div class="metric-col"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
+                <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;" data-live-cmp="${liveCmpKey}">${latestCmp?`₹${latestCmp}`:'—'}</span></div>
             </div>
-            ${_cmtHtml}
+            ${_cmtHtmlUAT}
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
-                ${fields.action==='SELL'
-                    ?`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session Low</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-low="${post.id}" data-live-low-key="${liveCmpKey}" data-entry="${_initialLow3||fields.entry||''}">${_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')}</span>`
-                    :`<span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Session High</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" data-live-high="${liveCmpKey}" data-post-id="${post.id}" data-entry="${_initialHigh3||fields.entry||''}">${_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—')}</span>`}
+                <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow3||fields.entry||''):(_initialHigh3||fields.entry||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—'))}</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
-            <div class="trigger-banner" style="justify-content:space-between;"${_slBannerAttrs3}>${statePill3}<span id="slb-${post.id}" style="display:none;font-size:0.72rem;color:#dc2626;font-weight:700;margin-left:4px;">⚠️ SL Breached</span><div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div></div>
+            <div class="trigger-banner" style="justify-content:space-between;">${statePill3}<div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${shareBtn3}</div></div>
         </div>
         ${adminHtml3}`;
     }
@@ -3292,6 +4025,7 @@
         const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000);
         if (_uc && _uc.posts && _cachedTier) {
             renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+            _mqpScrollAfterRender();
             (_uc.posts||[]).filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
             // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
         }
@@ -3364,6 +4098,7 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            _mqpScrollAfterRender();
             if (_fudCompose) {
                 const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
                 if (_fudBox) {
@@ -3876,12 +4611,23 @@
         const lastTab  = localStorage.getItem('t2s_last_tab');
         const restoreTab = startTab || lastTab;
         if (startTab) localStorage.removeItem('t2s_start_tab');
+        // Paint Markets summary from cache immediately — eliminates skeleton flash on page load/refresh
+        (function() {
+            try {
+                const _sc = _mqpCacheGet();
+                const _tb = document.getElementById('mqp-body-trades');
+                const _ub = document.getElementById('mqp-body-updates');
+                if (_tb && _sc.tradesHtml) _tb.innerHTML = _sc.tradesHtml;
+                if (_ub && _sc.updatesHtml) _ub.innerHTML = _sc.updatesHtml;
+            } catch(e) {}
+        })();
         if (restoreTab && restoreTab !== 'markets') {
             const tabEl = document.querySelector(`.tab[onclick*="'${restoreTab}'"]`);
             if (tabEl) switchTab(restoreTab, tabEl);
         } else {
             // Pre-load trade alerts in background so tab is instant when user switches
             fetchTradeAlerts();
+            fetchMarketPreview();
         }
         // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -4266,11 +5012,13 @@
   </div>
 </div>
 
-<!-- A2HS FAB -->
-<!-- Install App FAB — pill button, bottom-right -->
-<div id="a2hs-fab" onclick="triggerA2HS()" style="display:none;position:fixed;bottom:50px;right:14px;z-index:500;background:#4a2a78;border-radius:24px;padding:10px 16px;align-items:center;gap:8px;box-shadow:0 4px 18px rgba(74,42,120,0.45);cursor:pointer;border:none;">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="6" x2="12" y2="14"/><polyline points="9 11 12 14 15 11"/></svg>
-  <span style="color:white;font-size:13px;font-weight:700;white-space:nowrap;font-family:'Plus Jakarta Sans',sans-serif;">Install App</span>
+<!-- A2HS FAB — compact circular icon button -->
+<div id="a2hs-fab" onclick="triggerA2HS()" title="Install App" style="display:none;position:fixed;bottom:50px;right:14px;z-index:500;background:#4a2a78;border-radius:50%;width:46px;height:46px;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(74,42,120,0.45);cursor:pointer;border:none;">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="6" x2="12" y2="14"/><polyline points="9 11 12 14 15 11"/></svg>
+</div>
+<!-- Global Share FAB — circular icon button, bottom-left -->
+<div id="share-fab" onclick="_shareApp()" title="Share this app" style="position:fixed;bottom:50px;left:14px;z-index:500;background:#4a2a78;border-radius:50%;width:46px;height:46px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(74,42,120,0.35);cursor:pointer;border:none;">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
 </div>
 
 <!-- A2HS Guide Modal — platform-aware -->
@@ -4365,6 +5113,22 @@ async function triggerA2HS() {
   }
 }
 document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); _startAlertPolling(); });
+function _shareApp() {
+  const url   = 'https://trade2spend.github.io/Trade2Spend-Tracker/';
+  const title = 'Trade2Spend — Live Trade Alerts & Market Updates';
+  const text  = 'Get live NSE trade alerts and market updates from Trade2Spend!';
+  if (navigator.share) {
+    navigator.share({ title, text, url }).catch(() => {});
+  } else {
+    navigator.clipboard ? navigator.clipboard.writeText(url).then(() => {
+      const t = document.createElement('div');
+      t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:8px 18px;border-radius:20px;font-size:0.78rem;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;';
+      t.textContent = '🔗 Link copied to clipboard!';
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 2500);
+    }).catch(() => {}) : prompt('Copy this link:', url);
+  }
+}
 
     /* ── ALERT NOTIFICATION SYSTEM ─────────────────────────────────────────── */
     let _pendingAlertType = null;
@@ -4386,10 +5150,13 @@ document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); in
             ? `${m[1].toUpperCase()} ${m[2]} ${m[3].toUpperCase()==='CE'?'Call':'Put'} alert`
             : (isTradeAlert ? 'New Trade Alert' : 'New Market Update');
 
-        // Banner
-        document.getElementById('alert-banner-type').textContent = isTradeAlert ? 'New Trade Alert' : 'New Market Update';
-        document.getElementById('alert-banner-name').textContent = label;
-        document.getElementById('alert-banner-section').style.display = 'block';
+        // Banner (alert-banner-section removed in UAT; null-guard these elements)
+        const _abt = document.getElementById('alert-banner-type');
+        const _abn = document.getElementById('alert-banner-name');
+        if (_abt) _abt.textContent = isTradeAlert ? 'New Trade Alert' : 'New Market Update';
+        if (_abn) _abn.textContent = label;
+        const _abEl = document.getElementById('alert-banner-section');
+        if (_abEl) _abEl.style.display = 'block';
 
         // Popup content
         document.getElementById('alert-popup-type-label').textContent = isTradeAlert ? 'Trade Alert' : 'Market Update';
