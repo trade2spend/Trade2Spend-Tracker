@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20260812-002 | uat.html: T2S_ShareGuard centralised share module — IIFE window.T2S_ShareGuard with CANONICAL_URL='https://app.trade2spend.com' hard-coded; trigger() routes navigator.share + clipboard + prompt fallbacks; github.io guardrail strips any non-canonical URL before share. sharePost() and _shareApp() both rewritten to call T2S_ShareGuard.trigger(). Rollback: remove T2S_ShareGuard IIFE; revert sharePost() and _shareApp() to their navigator.share inline blocks. -->
+<!-- T2S-UAT-20260812-001 | uat.html: SVG symbol standardisation — <symbol id="icon-t2s-share"> added after <body> tag; all 7 inline share SVG paths replaced with <svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>; .t2s-share-icon CSS: 16x16px, inline-block, vertical-align:middle, flex-shrink:0; share-fab inline style adds color:white so currentColor resolves correctly. Rollback: remove <svg display:none> symbol block; replace all <use href="#icon-t2s-share"> instances with inline SVG paths; remove .t2s-share-icon CSS rule; remove color:white from share-fab. -->
 <!-- T2S-UAT-20260811-002 | uat.html: Global share FAB icon normalised — replaced upload-arrow SVG with canonical three-node share-graph icon (circle cx=18/6/18 + two connecting lines, stroke=white, 20×20) matching all card-level share buttons. stroke-width changed from 2.5 to 2.2 to match cards. Rollback: revert share-fab SVG to polyline upload-arrow, stroke-width to 2.5. -->
 <!-- T2S-UAT-20260811-001 | uat.html: Global share URL enforcement — sharePost() url changed from t.me/trade2spend to app.trade2spend.com; _shareApp() url changed from trade2spend.github.io/Trade2Spend-Tracker/ to app.trade2spend.com. All Web Share API payloads and clipboard copy operations now emit the official domain. Rollback: revert both url const lines to their previous values. -->
 <!-- T2S-UAT-20260806-001 | uat.html: SL hit slippage fix — when follow-up contains "SL hit/triggered/breached" AND revised premium SL (<5000) exists AND exit price slipped past SL (BUY: price<SL, SELL: price>SL), use SL price as conceptual exit. (1) getWeightedExitPrice + getExitLegs: _rawPrice + _slRe override replaces raw exit price with SL when slippage past SL detected. (2) 5 call sites: isSell added to opts. (3) 'Cost (No Loss)' SL resolution: _slResolved3/_slResolved25/_slResolvedPerf compute effective SL as entry price when getLastSLNumeric returns null but SL was set to cost — this was root cause (getLastSLNumeric skips 'cost' entries, returning null → override never fired). (4) Rendering loop: uses _slResolved3 directly (dropped _slMap-based _slAtReply which was NaN for cost SL). Raw advisory text unchanged. All normal profit/partial exits unchanged. Rollback: revert _rawPrice lines to `const price =`; remove _slRe lines; remove isSell; remove _slResolved* lines and revert call sites to getLastSLNumeric(postReplies); revert rendering loop. -->
@@ -256,6 +258,7 @@
         .update-disclaimer { font-size: 0.68rem; color: #a8a29e; font-style: italic; }
         .update-share { background: none; border: none; cursor: pointer; color: #c4b8d8; padding: 5px 6px; display:flex;align-items:center; border-radius:6px; }
         .update-share:hover { color: var(--primary); background: var(--primary-light); }
+        .t2s-share-icon { width: 16px; height: 16px; display: inline-block; vertical-align: middle; flex-shrink: 0; }
         .update-like { background:none; border:none; cursor:pointer; color:#c4b8d8; padding:4px 5px; display:flex; align-items:center; gap:3px; border-radius:6px; touch-action:manipulation; outline:none; -webkit-tap-highlight-color:transparent; }
         .update-like:hover { color:#ef4444; }
         .update-like.liked { color:#ef4444; }
@@ -455,6 +458,9 @@
     </style>
 </head>
 <body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="icon-t2s-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></symbol>
+</svg>
 
 <div class="app-container">
     <!-- STICKY HEADER -->
@@ -2333,17 +2339,37 @@
     function _cSave(k,v){try{localStorage.setItem(k,JSON.stringify({_t:Date.now(),_v:v}));}catch(e){}}
     function _cLoad(k,ms){try{const x=JSON.parse(localStorage.getItem(k)||'null');if(!x)return null;if(ms&&Date.now()-x._t>ms)return null;return x._v;}catch(e){return null;}}
 
+    window.T2S_ShareGuard = (function() {
+        var CANONICAL_URL = 'https://app.trade2spend.com';
+        return Object.freeze({
+            getPayload: function(customTitle, customText) {
+                return {
+                    title: customTitle || 'Trade2Spend — Live Trade Alerts & Market Updates',
+                    text:  customText  || 'Get live NSE trade alerts and market updates on Trade2Spend:',
+                    url:   CANONICAL_URL
+                };
+            },
+            trigger: function(customTitle, customText) {
+                var payload = this.getPayload(customTitle, customText);
+                if (payload.url.includes('github.io') || payload.url !== CANONICAL_URL) payload.url = CANONICAL_URL;
+                if (navigator.share) {
+                    navigator.share(payload).catch(function() {});
+                } else if (navigator.clipboard) {
+                    navigator.clipboard.writeText(CANONICAL_URL).then(function() {
+                        if (typeof _bellToast === 'function') _bellToast('🔗 Link copied to clipboard!');
+                    }).catch(function() {});
+                } else {
+                    window.prompt('Copy link:', CANONICAL_URL);
+                }
+            }
+        });
+    })();
+
     async function sharePost(postId) {
         const card = document.getElementById('ucard-' + postId);
         const content = card ? (card.dataset.content || '') : '';
-        const url  = 'https://app.trade2spend.com';
-        const text = `${content.substring(0, 120)}...\n\nMore updates: ${url}`;
-        if(navigator.share) {
-            try { await navigator.share({ title: 'Trade2Spend Update', text, url }); } catch(e) {}
-        } else {
-            await navigator.clipboard.writeText(text).catch(() => {});
-            alert('Link copied!');
-        }
+        const text = `${content.substring(0, 120)}...\n\nMore updates: https://app.trade2spend.com`;
+        window.T2S_ShareGuard.trigger('Trade2Spend Update', text);
     }
 
     async function deletePost(postId) {
@@ -3306,7 +3332,7 @@
                 </div>`;
             }
 
-            const _s1ShareSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+            const _s1ShareSvg = `<svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>`;
             const _s1ShareBtn = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_s1ShareSvg}</button>`;
             const _activeLegs1 = cumExit1 > 0 && cumExit1 < 100 ? getExitLegs(pubReplies_s1) : [];
             const _holdingText1 = cumExit1 >= 100 ? 'Exited Fully'
@@ -3492,7 +3518,7 @@
                 freeRepliesHtml2 += `</div>`;
             }
 
-            const _shareSvg2 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+            const _shareSvg2 = `<svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>`;
             const _shareBtn2 = `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_shareSvg2}</button>`;
             const _likeBtns2 = `<div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${_shareBtn2}</div>`;
             const stateBanner2 = tradeState === 'yet_to_trigger'
@@ -3660,7 +3686,7 @@
                         </div>
                         ${_maxPossLabel25}
                     </div>
-                    <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}<button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button></div>
+                    <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}<button class="update-share" onclick="sharePost('${post.id}')" title="Share"><svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg></button></div>
                 </div>
             </div>`;
         }
@@ -3691,7 +3717,7 @@
             const _audBadgeNT = isAdmin ? (post.audience==='paid_only'
                 ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
                 : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`) : '';
-            const _svgNT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+            const _svgNT = `<svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>`;
             const _shareNT = post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_svgNT}</button>` : '';
             let repliesNT = '';
             const visRepliesNT = postReplies.filter(r => !(r.content||'').includes('[T2S_UNLOCK]'));
@@ -3768,7 +3794,7 @@
             ? `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#fce7f3;color:#9d174d;">🔒 Paid</span>`
             : `<span style="font-size:0.62rem;padding:2px 6px;border-radius:8px;font-weight:700;background:#dcfce7;color:#166534;">🌐 All</span>`) : '';
 
-        const _shareSvg3 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+        const _shareSvg3 = `<svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>`;
         const shareBtn3  = post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share">${_shareSvg3}</button>` : '';
 
         // Follow-ups
@@ -4248,7 +4274,7 @@
                     <div class="update-card ${isNew?'unread':''}" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" style="border-left:3px solid ${_cardBorder};">
                         <div class="update-header">
                             <div style="display:flex;align-items:center;gap:7px;flex:1;min-width:0;">${_typeBadge}<span class="update-time">${timeStr}</span></div>
-                            <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share this update"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>` : ''}</div>
+                            <div style="display:flex;align-items:center;gap:2px;">${mkLikeBtn(post.id)}${post.allow_sharing ? `<button class="update-share" onclick="sharePost('${post.id}')" title="Share this update"><svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg></button>` : ''}</div>
                         </div>
                         <div class="update-body"><div class="update-content">${renderedContent}</div></div>
                         ${whyHtml}
@@ -5018,8 +5044,8 @@
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="6" x2="12" y2="14"/><polyline points="9 11 12 14 15 11"/></svg>
 </div>
 <!-- Global Share FAB — circular icon button, bottom-left -->
-<div id="share-fab" onclick="_shareApp()" title="Share this app" style="position:fixed;bottom:50px;left:14px;z-index:500;background:#4a2a78;border-radius:50%;width:46px;height:46px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(74,42,120,0.35);cursor:pointer;border:none;">
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+<div id="share-fab" onclick="_shareApp()" title="Share this app" style="position:fixed;bottom:50px;left:14px;z-index:500;background:#4a2a78;color:white;border-radius:50%;width:46px;height:46px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(74,42,120,0.35);cursor:pointer;border:none;">
+  <svg class="t2s-share-icon" style="width:20px;height:20px;"><use href="#icon-t2s-share"></use></svg>
 </div>
 
 <!-- A2HS Guide Modal — platform-aware -->
@@ -5115,20 +5141,10 @@ async function triggerA2HS() {
 }
 document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); _startAlertPolling(); });
 function _shareApp() {
-  const url   = 'https://app.trade2spend.com';
-  const title = 'Trade2Spend — Live Trade Alerts & Market Updates';
-  const text  = 'Get live NSE trade alerts and market updates from Trade2Spend!';
-  if (navigator.share) {
-    navigator.share({ title, text, url }).catch(() => {});
-  } else {
-    navigator.clipboard ? navigator.clipboard.writeText(url).then(() => {
-      const t = document.createElement('div');
-      t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#4a2a78;color:#fff;padding:8px 18px;border-radius:20px;font-size:0.78rem;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;';
-      t.textContent = '🔗 Link copied to clipboard!';
-      document.body.appendChild(t);
-      setTimeout(() => t.remove(), 2500);
-    }).catch(() => {}) : prompt('Copy this link:', url);
-  }
+  window.T2S_ShareGuard.trigger(
+    'Trade2Spend — Live Trade Alerts & Market Updates',
+    'Get live NSE trade alerts and market updates from Trade2Spend!'
+  );
 }
 
     /* ── ALERT NOTIFICATION SYSTEM ─────────────────────────────────────────── */
