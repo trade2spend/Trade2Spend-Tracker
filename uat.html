@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260813-002 | uat.html: Revised SL parser + state sync + Performance cap — (1) parseFollowUpContent slPats: 3 new patterns added after "moving sl to": trail(?:ing)?\s+sl[:\s]* captures "trail sl 160"/"trailing sl: 160"; sl\s+updated?[:\s]* captures "sl updated: 160"/"sl updated 160" (sl-first order not covered by pattern 1); revised?\s+sl[:\s]* captures "revised sl: 160" colon variant (pattern 1 requires space, not colon). All 3 break on first match like existing patterns. (2) Section 2.5 SL display: "(Adjusting)" relabeled to "Revised" — matches Section 3 display for consistency. (3) fetchPerformance loss cap: after both P&L branches (adjusted-entry + else-if), guard block added — if pnlPts<0 AND _slResolvedPerf<5000 (premium SL, not spot) AND slDistPts>0 (SL on correct side of entry), caps |pnlPts| to slDistPts = (entry−slPrice)×dirMult; recalculates pnlRs. Ensures no loss exceeds the revised SL risk distance. Spot SLs (>5000) excluded by guard. isWin unchanged (still false). Rollback: revert slPats by removing 3 new lines; revert "(Adjusting)" label; remove 3-line loss cap block from fetchPerformance. -->
 <!-- T2S-UAT-20260813-001 | uat.html: Peak tracker persistence + Max Profit always visible + Performance tab 1-Lot labels — (1) _sessionOptionHighs/_sessionOptionLows: restored from sessionStorage on page load (IIFE after var declarations, IST-date-keyed, auto-expires next day); saved back to sessionStorage inside updateTradeCMPs after data-live-high forEach completes — peaks survive page refresh within same browser tab. (2) Section 2.5 + Section 3 closed trade cards: calculateMaxProfit/calculateMinPrice fallback block added after extractHighFromReplies/extractLowFromReplies blocks — when [HIGH/LOW:XXX] marker absent and trade is a profit (!_loss), scans follow-up text for highest/lowest price seen; renders same "📈 Max possible +N pts" label so the row appears on profit cards even before VM posts the daily [HIGH:XXX] follow-up. (3) renderPerfTradeRows: added "Max Profit (1 Lot)" / "Max Risk / SL (1 Lot)" label above ₹P&L value for each trade row — explicit 1-lot basis label per prompt spec; value unchanged (already 1-lot: pnlPts × lotSize). Rollback: remove IIFE after var declarations; remove sessionStorage.setItem line from updateTradeCMPs; remove both calculateMaxProfit/MinPrice fallback blocks; remove label div from renderPerfTradeRows. -->
 <!-- T2S-UAT-20260812-004 | uat.html: Silent Market Data Watchdog — window.T2S_MarketWatchdog IIFE added (recordTick/start/stop, STALL_THRESHOLD_MS=12000, isMarketClosedNow guard); recordTick() hooked inside updateTradeCMPs after _lastOptionLTPs assignment; reinitMarketFeed() defined in init() closure (clearTimeout _marketRefreshTimer + immediate fetchMarketData + scheduleMarketRefresh chain); T2S_MarketWatchdog.start(reinitMarketFeed) called after _mktLoad resolves; document visibilitychange listener added (records tick to reset stall clock + calls reinitMarketFeed on foreground wake). Zero DOM changes, zero new backend polling, zero P&L logic touched. Rollback: remove T2S_MarketWatchdog IIFE; remove recordTick() line from updateTradeCMPs; remove reinitMarketFeed/watchdog.start/visibilitychange block from init(). -->
 <!-- T2S-UAT-20260812-003 | uat.html: Strip all UAT dummy data — removed window._UAT_DUMMY_POSTS (15 mock trades), window._UAT_DUMMY_REPLIES, window._UAT_MOCK_LTPS, window._UAT_MOCK_SESSION_PEAKS, window._UAT_TIME_2_45; removed #ucard-dummy-* CSS block; removed all injection/label-stamp/UAT-panel code from fetchTradeAlerts and renderTradeAlerts; simplified nowMins to real IST time; removed UAT mock LTP merge from updateTradeCMPs; bumped t2s_summary_cache→t2s_summary_cache_v2 to force cache bust. Rollback: re-insert dummy data block + CSS block + injection code + UAT panel; revert nowMins ternary; revert cache key. -->
@@ -1907,6 +1908,10 @@
                     pnlRs = pnlPts * lotSize;
                     isWin = pnlPts > 0;
                 }
+                if (pnlPts !== null && pnlPts < 0 && _slResolvedPerf && _slResolvedPerf < 5000 && f.entry) {
+                    const _slDistPts = Math.round((f.entry - _slResolvedPerf) * _dirMult);
+                    if (_slDistPts > 0 && Math.abs(pnlPts) > _slDistPts) { pnlPts = -_slDistPts; pnlRs = pnlPts * lotSize; }
+                }
                 const d = new Date(p.sent_at || p.created_at);
                 return {
                     postId: p.id,
@@ -2383,6 +2388,9 @@
                 /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
                 /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
                 /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i,
+                /trail(?:ing)?\s+sl\b[:\s]*(\d+(?:\.\d+)?)/i,           // "trail sl 160", "trailing sl: 160"
+                /sl\s+updated?\b[:\s]*(\d+(?:\.\d+)?)/i,                 // "sl updated: 160", "sl updated 160"
+                /revised?\s+sl\b[:\s]*(\d+(?:\.\d+)?)/i,                 // "revised sl: 160" colon variant
                 /(\d+(?:\.\d+)?)\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/i,  // "163 as SL" / "163 as my SL"
                 /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
             ];
@@ -3402,7 +3410,7 @@
             if (revSL25) {
                 const rn25 = parseFloat(String(revSL25).replace(/[^0-9.]/g,''));
                 if (initSL25 && initSL25 > 5000 && rn25 < 5000) {
-                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">(Adjusting)</span>`;
+                    slDisp25 = `<s style="color:var(--text-muted);font-weight:400;font-size:0.8em;">₹${initSL25}</s> → ${revSL25}<br><span style="font-size:0.6rem;color:#6b7280;">Revised</span>`;
                 } else { slDisp25 = revSL25; slLabel25 = slLabelFor(revSL25); }
             } else if (initSL25) {
                 slDisp25 = (initSL25 > 5000 ? spotSLNote(fields.slDirection) : '') + `₹${initSL25}`;
