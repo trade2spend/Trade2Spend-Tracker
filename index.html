@@ -628,7 +628,6 @@
         </div>
         <!-- T2S-PROD-20260709-001: Live CMP from Kotak Neo — pre-market contract load + URL auto-switch (mis↔gw-napi) in server.js; CMP live status chip (admin-only) shows ● Live · HH:MM when Kotak LTPs are flowing -->
         <!-- T2S-PROD-20260709-002: Session High fix — _lastOptionHighs global added; re-applied after card rebuild (no more 30s blink); updateTradeHighs only updates DOM when new high > current (never moves down) -->
-<!-- T2S-PROD-CMP-FIX: updateTradeCMPs must always repaint CMP span on card rebuild even when value equals last seen — remove equality short-circuit so _lastOptionLTPs are re-applied after fetchTradeAlerts DOM wipe -->
         <!-- T2S-PROD-20260709-003: Auto-close at market end — isTradeFullyClosed() now returns true after 3:30 PM IST if no explicit holding keyword in follow-ups (covers full + partial positions); removed "Holding 100%" label from all 3 card sections -->
         <div id="cmp-live-dot" style="display:none;margin:0 0 8px;padding:4px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;font-size:0.72rem;font-weight:700;color:#15803d;width:fit-content;letter-spacing:0.02em;">● Live CMP</div>
         <div id="trade-alert-container">
@@ -754,7 +753,7 @@
     // ── UAT DUMMY DATA (deleted after Tushar confirms) ───────────────────────
     // 15 scenarios: BUY/SELL × Yet-to-trigger / Triggered / Partial exit / Closed profit / Closed loss
     window._UAT_TIME_2_45 = false; // toggle for testing 2:45 PM free member unlock
-    window._UAT_DUMMY_POSTS = [
+    window._UAT_DUMMY_POSTS = (location.hostname === 'app.trade2spend.com') ? [] : [
       // ── GROUP 1 (G1 · Purple #4a2a78) — existing card format ─────────────
       // D1: BUY paid-only at 15:00 — toggle "2:45 PM" button to test free-member time-unlock
       { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T15:00:00+05:30', created_at:'2026-08-06T15:00:00+05:30', _mockClosed:false, _uatLabel:'D1', _uatGroup:'G1' },
