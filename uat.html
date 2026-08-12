@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260812-004 | uat.html: Silent Market Data Watchdog — window.T2S_MarketWatchdog IIFE added (recordTick/start/stop, STALL_THRESHOLD_MS=12000, isMarketClosedNow guard); recordTick() hooked inside updateTradeCMPs after _lastOptionLTPs assignment; reinitMarketFeed() defined in init() closure (clearTimeout _marketRefreshTimer + immediate fetchMarketData + scheduleMarketRefresh chain); T2S_MarketWatchdog.start(reinitMarketFeed) called after _mktLoad resolves; document visibilitychange listener added (records tick to reset stall clock + calls reinitMarketFeed on foreground wake). Zero DOM changes, zero new backend polling, zero P&L logic touched. Rollback: remove T2S_MarketWatchdog IIFE; remove recordTick() line from updateTradeCMPs; remove reinitMarketFeed/watchdog.start/visibilitychange block from init(). -->
 <!-- T2S-UAT-20260812-003 | uat.html: Strip all UAT dummy data — removed window._UAT_DUMMY_POSTS (15 mock trades), window._UAT_DUMMY_REPLIES, window._UAT_MOCK_LTPS, window._UAT_MOCK_SESSION_PEAKS, window._UAT_TIME_2_45; removed #ucard-dummy-* CSS block; removed all injection/label-stamp/UAT-panel code from fetchTradeAlerts and renderTradeAlerts; simplified nowMins to real IST time; removed UAT mock LTP merge from updateTradeCMPs; bumped t2s_summary_cache→t2s_summary_cache_v2 to force cache bust. Rollback: re-insert dummy data block + CSS block + injection code + UAT panel; revert nowMins ternary; revert cache key. -->
 <!-- T2S-UAT-20260812-002 | uat.html: T2S_ShareGuard centralised share module — IIFE window.T2S_ShareGuard with CANONICAL_URL='https://app.trade2spend.com' hard-coded; trigger() routes navigator.share + clipboard + prompt fallbacks; github.io guardrail strips any non-canonical URL before share. sharePost() and _shareApp() both rewritten to call T2S_ShareGuard.trigger(). Rollback: remove T2S_ShareGuard IIFE; revert sharePost() and _shareApp() to their navigator.share inline blocks. -->
 <!-- T2S-UAT-20260812-001 | uat.html: SVG symbol standardisation — <symbol id="icon-t2s-share"> added after <body> tag; all 7 inline share SVG paths replaced with <svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>; .t2s-share-icon CSS: 16x16px, inline-block, vertical-align:middle, flex-shrink:0; share-fab inline style adds color:white so currentColor resolves correctly. Rollback: remove <svg display:none> symbol block; replace all <use href="#icon-t2s-share"> instances with inline SVG paths; remove .t2s-share-icon CSS rule; remove color:white from share-fab. -->
@@ -1145,9 +1146,43 @@
         });
     }
 
+    // ── MARKET DATA WATCHDOG ─────────────────────────────────────────────────
+    // Passive, zero-DOM, zero-backend-poll stall detector.
+    // recordTick() is called inside updateTradeCMPs on every valid LTP payload.
+    // If no tick lands for STALL_THRESHOLD_MS during market hours, reconnectFn fires.
+    window.T2S_MarketWatchdog = (function() {
+        let lastTickTimestamp = Date.now();
+        let watchdogInterval = null;
+        let isReconnecting = false;
+        const STALL_THRESHOLD_MS = 12000;
+
+        return Object.freeze({
+            recordTick: function() {
+                lastTickTimestamp = Date.now();
+            },
+            start: function(reconnectFn) {
+                if (watchdogInterval) clearInterval(watchdogInterval);
+                watchdogInterval = setInterval(function() {
+                    if (isMarketClosedNow()) return; // no LTPs outside market hours — suppress false alarms
+                    const timeSinceLastTick = Date.now() - lastTickTimestamp;
+                    if (timeSinceLastTick > STALL_THRESHOLD_MS && !isReconnecting) {
+                        isReconnecting = true;
+                        console.warn('[T2S Watchdog] Feed stall detected in local memory. Reconnecting...');
+                        if (typeof reconnectFn === 'function') reconnectFn();
+                        setTimeout(function() { isReconnecting = false; }, 3000);
+                    }
+                }, 5000);
+            },
+            stop: function() {
+                if (watchdogInterval) clearInterval(watchdogInterval);
+            }
+        });
+    })();
+
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
         _lastOptionLTPs = optionLTPs;
+        window.T2S_MarketWatchdog.recordTick();
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
             const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-CE"
             const ltp = optionLTPs[key];
@@ -4453,6 +4488,23 @@
             }, 5000);
         }
         _mktLoad.then(d => scheduleMarketRefresh(d));
+
+        // ── WATCHDOG WIRING ──────────────────────────────────────────────────
+        // reinitMarketFeed defined here (inside init closure) so it can access
+        // _marketRefreshTimer and scheduleMarketRefresh without leaking scope.
+        function reinitMarketFeed() {
+            clearTimeout(_marketRefreshTimer);
+            fetchMarketData().then(d => scheduleMarketRefresh(d));
+        }
+        window.T2S_MarketWatchdog.start(reinitMarketFeed);
+        // On mobile screen-unlock / tab foreground: reset stall clock + fetch immediately
+        // so CMP updates resume instantly without waiting for the next 5s poll.
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                window.T2S_MarketWatchdog.recordTick(); // suppress false-stall on wake
+                reinitMarketFeed();
+            }
+        });
     })();
 
     // ── PWA INSTALL PROMPT ──
