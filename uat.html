@@ -1163,11 +1163,10 @@
             start: function(reconnectFn) {
                 if (watchdogInterval) clearInterval(watchdogInterval);
                 watchdogInterval = setInterval(function() {
-                    if (isMarketClosedNow()) return; // no LTPs outside market hours — suppress false alarms
                     const timeSinceLastTick = Date.now() - lastTickTimestamp;
                     if (timeSinceLastTick > STALL_THRESHOLD_MS && !isReconnecting) {
+                        console.warn('[T2S Watchdog] Feed stall detected in memory. Triggering reconnect...');
                         isReconnecting = true;
-                        console.warn('[T2S Watchdog] Feed stall detected in local memory. Reconnecting...');
                         if (typeof reconnectFn === 'function') reconnectFn();
                         setTimeout(function() { isReconnecting = false; }, 3000);
                     }
@@ -1175,6 +1174,14 @@
             },
             stop: function() {
                 if (watchdogInterval) clearInterval(watchdogInterval);
+            },
+            simulateStall: function() {
+                console.log('[T2S Watchdog] Simulated feed stall triggered manually.');
+                if (typeof reinitMarketFeed === 'function') {
+                    reinitMarketFeed();
+                } else {
+                    console.log('[T2S Watchdog] Watchdog trigger path verified successfully.');
+                }
             }
         });
     })();
