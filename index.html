@@ -2340,7 +2340,7 @@
         const url  = 'https://app.trade2spend.com';
         const text = `${content.substring(0, 120)}...\n\nMore updates: ${url}`;
         if(navigator.share) {
-            try { await navigator.share({ title: 'Trade2Spend Update', text, url }); } catch(e) {}
+            try { await if (navigator.share) navigator.share({ title: 'Trade2Spend Update', text, url }); } catch(e) {}
         } else {
             await navigator.clipboard.writeText(text).catch(() => {});
             alert('Link copied!');
