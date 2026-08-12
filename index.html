@@ -753,7 +753,7 @@
     // ── UAT DUMMY DATA (deleted after Tushar confirms) ───────────────────────
     // 15 scenarios: BUY/SELL × Yet-to-trigger / Triggered / Partial exit / Closed profit / Closed loss
     window._UAT_TIME_2_45 = false; // toggle for testing 2:45 PM free member unlock
-    window._UAT_DUMMY_POSTS = (location.hostname === 'app.trade2spend.com') ? [] : [
+    window._UAT_DUMMY_POSTS = [];var _UAT_DUMMY_POSTS_DISABLED = true; window._UAT_DUMMY_POSTS = (false) ? [
       // ── GROUP 1 (G1 · Purple #4a2a78) — existing card format ─────────────
       // D1: BUY paid-only at 15:00 — toggle "2:45 PM" button to test free-member time-unlock
       { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T15:00:00+05:30', created_at:'2026-08-06T15:00:00+05:30', _mockClosed:false, _uatLabel:'D1', _uatGroup:'G1' },
