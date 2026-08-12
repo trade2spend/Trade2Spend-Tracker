@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260813-001 | uat.html: Peak tracker persistence + Max Profit always visible + Performance tab 1-Lot labels — (1) _sessionOptionHighs/_sessionOptionLows: restored from sessionStorage on page load (IIFE after var declarations, IST-date-keyed, auto-expires next day); saved back to sessionStorage inside updateTradeCMPs after data-live-high forEach completes — peaks survive page refresh within same browser tab. (2) Section 2.5 + Section 3 closed trade cards: calculateMaxProfit/calculateMinPrice fallback block added after extractHighFromReplies/extractLowFromReplies blocks — when [HIGH/LOW:XXX] marker absent and trade is a profit (!_loss), scans follow-up text for highest/lowest price seen; renders same "📈 Max possible +N pts" label so the row appears on profit cards even before VM posts the daily [HIGH:XXX] follow-up. (3) renderPerfTradeRows: added "Max Profit (1 Lot)" / "Max Risk / SL (1 Lot)" label above ₹P&L value for each trade row — explicit 1-lot basis label per prompt spec; value unchanged (already 1-lot: pnlPts × lotSize). Rollback: remove IIFE after var declarations; remove sessionStorage.setItem line from updateTradeCMPs; remove both calculateMaxProfit/MinPrice fallback blocks; remove label div from renderPerfTradeRows. -->
 <!-- T2S-UAT-20260812-004 | uat.html: Silent Market Data Watchdog — window.T2S_MarketWatchdog IIFE added (recordTick/start/stop, STALL_THRESHOLD_MS=12000, isMarketClosedNow guard); recordTick() hooked inside updateTradeCMPs after _lastOptionLTPs assignment; reinitMarketFeed() defined in init() closure (clearTimeout _marketRefreshTimer + immediate fetchMarketData + scheduleMarketRefresh chain); T2S_MarketWatchdog.start(reinitMarketFeed) called after _mktLoad resolves; document visibilitychange listener added (records tick to reset stall clock + calls reinitMarketFeed on foreground wake). Zero DOM changes, zero new backend polling, zero P&L logic touched. Rollback: remove T2S_MarketWatchdog IIFE; remove recordTick() line from updateTradeCMPs; remove reinitMarketFeed/watchdog.start/visibilitychange block from init(). -->
 <!-- T2S-UAT-20260812-003 | uat.html: Strip all UAT dummy data — removed window._UAT_DUMMY_POSTS (15 mock trades), window._UAT_DUMMY_REPLIES, window._UAT_MOCK_LTPS, window._UAT_MOCK_SESSION_PEAKS, window._UAT_TIME_2_45; removed #ucard-dummy-* CSS block; removed all injection/label-stamp/UAT-panel code from fetchTradeAlerts and renderTradeAlerts; simplified nowMins to real IST time; removed UAT mock LTP merge from updateTradeCMPs; bumped t2s_summary_cache→t2s_summary_cache_v2 to force cache bust. Rollback: re-insert dummy data block + CSS block + injection code + UAT panel; revert nowMins ternary; revert cache key. -->
 <!-- T2S-UAT-20260812-002 | uat.html: T2S_ShareGuard centralised share module — IIFE window.T2S_ShareGuard with CANONICAL_URL='https://app.trade2spend.com' hard-coded; trigger() routes navigator.share + clipboard + prompt fallbacks; github.io guardrail strips any non-canonical URL before share. sharePost() and _shareApp() both rewritten to call T2S_ShareGuard.trigger(). Rollback: remove T2S_ShareGuard IIFE; revert sharePost() and _shareApp() to their navigator.share inline blocks. -->
@@ -731,6 +732,7 @@
     let _lastOptionHighsPostIds = null;  // postId map from VM — gates session highs per trade post
     let _sessionOptionLows = {}; // session low per post.id — for SELL trade cards (data-live-low)
     let _sessionOptionHighs = {}; // session high per post.id — for BUY trade cards (data-live-high)
+    (function(){ try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); const _p=JSON.parse(sessionStorage.getItem('t2s_peaks')||'null'); if(_p&&_p.date===_d){_sessionOptionHighs=_p.highs||{};_sessionOptionLows=_p.lows||{};} } catch(_e){} })();
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _likeCounts = {};          // postId → total like count
@@ -1240,6 +1242,7 @@
                 el.textContent = `₹${_sessionOptionHighs[postId].toFixed(2)}`;
             }
         });
+        try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_peaks',JSON.stringify({date:_d,highs:_sessionOptionHighs,lows:_sessionOptionLows})); } catch(_e){}
         // Live P&L badge on active triggered trade cards — updates every 5s with CMP
         // Badge threshold adjusts for locked profit from prior partial exits (computePlBadgeAttrs pre-computes breakeven)
         document.querySelectorAll('[data-pl-badge]').forEach(el => {
@@ -1830,6 +1833,7 @@
                     <div style="font-size:0.67rem;color:var(--text-muted);margin-top:2px;">${t.date}${t.entry?' &nbsp;·&nbsp; ₹'+t.entry+' → ₹'+(t.exit||'—'):''}</div>
                 </div>
                 <div style="text-align:right;">
+                    <div style="font-size:0.6rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1px;">${t.isWin?'Max Profit (1 Lot)':'Max Risk / SL (1 Lot)'}</div>
                     <div style="font-weight:700;font-size:0.9rem;color:${pts>=0?'var(--green)':'var(--red)'};">${pts>=0?'+':'-'}₹${Math.abs(pnl).toLocaleString()} <span style="font-size:0.7rem;">(${pts>=0?'+':''}${pts}pt)</span></div>
                     <span class="${t.isWin?'trade-win-badge':'trade-loss-badge'}">${t.isWin?'WIN':'LOSS'}</span>
                 </div>
@@ -3443,6 +3447,15 @@
                     }
                 }
             }
+            if (_maxPoss25 === null && !_loss25 && fields.entry) {
+                if (fields.action === 'SELL') {
+                    const _cm25 = calculateMinPrice(fields.entry, postReplies);
+                    if (_cm25 && _cm25.min < fields.entry) { _maxPoss25 = Math.round(fields.entry - _cm25.min); _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_cm25.min})</span></div>`; }
+                } else {
+                    const _cm25 = calculateMaxProfit(fields.entry, postReplies);
+                    if (_cm25 && _cm25.max > fields.entry) { _maxPoss25 = Math.round(_cm25.pts); _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_cm25.max})</span></div>`; }
+                }
+            }
             const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: _slResolved25, isSell: fields.action === 'SELL' });
             const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
             const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
@@ -3708,6 +3721,15 @@
                         _maxPoss3 = Math.round(_optHigh3 - fields.entry);
                         _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`;
                     }
+                }
+            }
+            if (_maxPoss3 === null && !_loss3 && fields.entry) {
+                if (fields.action === 'SELL') {
+                    const _cm3 = calculateMinPrice(fields.entry, postReplies);
+                    if (_cm3 && _cm3.min < fields.entry) { _maxPoss3 = Math.round(fields.entry - _cm3.min); _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_cm3.min})</span></div>`; }
+                } else {
+                    const _cm3 = calculateMaxProfit(fields.entry, postReplies);
+                    if (_cm3 && _cm3.max > fields.entry) { _maxPoss3 = Math.round(_cm3.pts); _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_cm3.max})</span></div>`; }
                 }
             }
             const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slResolved3, isSell: fields.action === 'SELL' });
