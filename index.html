@@ -1,4 +1,5 @@
-<!-- T2S-PROD-20260812-001 | index.html: SVG symbol standardisation + T2S_ShareGuard module promoted from UAT. All 7 share SVG paths now reference <symbol id=icon-t2s-share>; window.T2S_ShareGuard IIFE enforces app.trade2spend.com canonical URL; sharePost() and _shareApp() route through guard; .t2s-share-icon CSS class; share-fab color:white. Source: T2S-UAT-20260812-001 + T2S-UAT-20260812-002. Rollback: revert to T2S-PROD-20260811-001 state. -->
+<!-- T2S-PROD-20260812-002 | index.html: Strip all UAT dummy data from production. Removed 15 mock trade posts + replies, mock LTPs, mock session peaks, UAT CSS group styles, injection/label-stamp/UAT-panel JS blocks; nowMins simplified; t2s_summary_cache→t2s_summary_cache_v2 cache bust. Source: T2S-UAT-20260812-003. Rollback: revert to T2S-PROD-20260812-001 state. -->
+<!-- T2S-UAT-20260812-003 | uat.html: Strip all UAT dummy data — removed window._UAT_DUMMY_POSTS (15 mock trades), window._UAT_DUMMY_REPLIES, window._UAT_MOCK_LTPS, window._UAT_MOCK_SESSION_PEAKS, window._UAT_TIME_2_45; removed #ucard-dummy-* CSS block; removed all injection/label-stamp/UAT-panel code from fetchTradeAlerts and renderTradeAlerts; simplified nowMins to real IST time; removed UAT mock LTP merge from updateTradeCMPs; bumped t2s_summary_cache→t2s_summary_cache_v2 to force cache bust. Rollback: re-insert dummy data block + CSS block + injection code + UAT panel; revert nowMins ternary; revert cache key. -->
 <!-- T2S-UAT-20260812-002 | uat.html: T2S_ShareGuard centralised share module — IIFE window.T2S_ShareGuard with CANONICAL_URL='https://app.trade2spend.com' hard-coded; trigger() routes navigator.share + clipboard + prompt fallbacks; github.io guardrail strips any non-canonical URL before share. sharePost() and _shareApp() both rewritten to call T2S_ShareGuard.trigger(). Rollback: remove T2S_ShareGuard IIFE; revert sharePost() and _shareApp() to their navigator.share inline blocks. -->
 <!-- T2S-UAT-20260812-001 | uat.html: SVG symbol standardisation — <symbol id="icon-t2s-share"> added after <body> tag; all 7 inline share SVG paths replaced with <svg class="t2s-share-icon"><use href="#icon-t2s-share"></use></svg>; .t2s-share-icon CSS: 16x16px, inline-block, vertical-align:middle, flex-shrink:0; share-fab inline style adds color:white so currentColor resolves correctly. Rollback: remove <svg display:none> symbol block; replace all <use href="#icon-t2s-share"> instances with inline SVG paths; remove .t2s-share-icon CSS rule; remove color:white from share-fab. -->
 <!-- T2S-UAT-20260811-002 | uat.html: Global share FAB icon normalised — replaced upload-arrow SVG with canonical three-node share-graph icon (circle cx=18/6/18 + two connecting lines, stroke=white, 20×20) matching all card-level share buttons. stroke-width changed from 2.5 to 2.2 to match cards. Rollback: revert share-fab SVG to polyline upload-arrow, stroke-width to 2.5. -->
@@ -436,26 +437,6 @@
         .tour-dot { width:6px; height:6px; border-radius:50%; background:#e5e7eb; transition:all .2s; flex-shrink:0; }
         .tour-dot.active { background:#4a2a78; width:18px; border-radius:3px; }
 
-        /* ── UAT card group designs (applied at stylesheet load, no JS required) ── */
-
-        /* G2: Amber — CMP hero spans full row at bottom of metrics grid */
-        #ucard-dummy-d2,#ucard-dummy-d11,#ucard-dummy-d4,#ucard-dummy-d8{border-left:5px solid #d97706!important;background:#fffbf0!important;}
-        #ucard-dummy-d2 .trade-metrics,#ucard-dummy-d11 .trade-metrics,#ucard-dummy-d4 .trade-metrics,#ucard-dummy-d8 .trade-metrics{grid-template-columns:1fr 1fr!important;}
-        #ucard-dummy-d2 .metric-col:last-child,#ucard-dummy-d11 .metric-col:last-child,#ucard-dummy-d4 .metric-col:last-child,#ucard-dummy-d8 .metric-col:last-child{grid-column:1/-1!important;background:#d97706!important;border-radius:10px!important;margin:4px 0 6px!important;padding:14px 8px!important;text-align:center!important;}
-        #ucard-dummy-d2 .metric-col:last-child .metric-label,#ucard-dummy-d11 .metric-col:last-child .metric-label,#ucard-dummy-d4 .metric-col:last-child .metric-label,#ucard-dummy-d8 .metric-col:last-child .metric-label{color:rgba(255,255,255,0.75)!important;}
-        #ucard-dummy-d2 .metric-col:last-child .metric-value,#ucard-dummy-d11 .metric-col:last-child .metric-value,#ucard-dummy-d4 .metric-col:last-child .metric-value,#ucard-dummy-d8 .metric-col:last-child .metric-value{font-size:1.9rem!important;font-weight:900!important;color:#fff!important;display:block!important;}
-
-        /* G3: Teal — 2×2 grid for active (D9), coloured labels for all */
-        #ucard-dummy-d1,#ucard-dummy-d13,#ucard-dummy-d6,#ucard-dummy-d12{border-left:5px solid #0891b2!important;background:#f0f8ff!important;}
-        #ucard-dummy-d1 .trade-metrics{grid-template-columns:1fr 1fr!important;gap:1px!important;background:#bae6fd!important;border-radius:8px!important;overflow:hidden!important;}
-        #ucard-dummy-d1 .metric-col{background:#f0f8ff!important;padding:10px 12px!important;}
-        #ucard-dummy-d1 .metric-label,#ucard-dummy-d13 .metric-label,#ucard-dummy-d6 .metric-label,#ucard-dummy-d12 .metric-label{color:#0891b2!important;font-weight:700!important;}
-        #ucard-dummy-d1 .metric-value,#ucard-dummy-d13 .metric-value,#ucard-dummy-d6 .metric-value,#ucard-dummy-d12 .metric-value{color:#0c4a6e!important;}
-
-        /* G4: Green — coloured labels; exit value enlarged via JS below */
-        #ucard-dummy-d7,#ucard-dummy-d5{border-left:5px solid #059669!important;background:#f0fff4!important;}
-        #ucard-dummy-d7 .metric-label,#ucard-dummy-d5 .metric-label{color:#059669!important;font-weight:700!important;}
-        #ucard-dummy-d7 .metric-value,#ucard-dummy-d5 .metric-value{color:#065f46!important;}
     </style>
 </head>
 <body>
@@ -756,168 +737,6 @@
     const _myLikes = new Set();    // postIds liked by current member
     const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
 
-    // ── UAT DUMMY DATA (deleted after Tushar confirms) ───────────────────────
-    // 15 scenarios: BUY/SELL × Yet-to-trigger / Triggered / Partial exit / Closed profit / Closed loss
-    window._UAT_TIME_2_45 = false; // toggle for testing 2:45 PM free member unlock
-    window._UAT_DUMMY_POSTS = [
-      // ── GROUP 1 (G1 · Purple #4a2a78) — existing card format ─────────────
-      // D1: BUY paid-only at 15:00 — toggle "2:45 PM" button to test free-member time-unlock
-      { id:'dummy-d14', content:'Buying Nifty 24100 monthly call at 78 CMP 76, SL if spot sustains below 24000 for 15 minutes.\nWhy: Strong intraday support.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T15:00:00+05:30', created_at:'2026-08-06T15:00:00+05:30', _mockClosed:false, _uatLabel:'D1', _uatGroup:'G1' },
-      // D2: SELL triggered in loss — CMP 205 > entry 180 → badge Loss
-      { id:'dummy-d10', content:'Selling Banknifty 52000 monthly call at 180 CMP 183, SL if spot sustains above 52000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:45:00+05:30', created_at:'2026-08-06T14:45:00+05:30', _mockClosed:false, _uatLabel:'D2', _uatGroup:'G1' },
-      // D3: SELL triggered in profit — CMP 82 < entry 95 → badge Profit
-      { id:'dummy-d9', content:'Selling Nifty 24200 monthly call at 95 CMP 98, SL if spot sustains above 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:30:00+05:30', created_at:'2026-08-06T14:30:00+05:30', _mockClosed:false, _uatLabel:'D3', _uatGroup:'G1' },
-      // D4: BUY triggered in loss — CMP 190 < entry 210 → badge Loss
-      { id:'dummy-d3', content:'Buying Banknifty 51500 monthly call at 210 CMP 205, SL if spot sustains below 51000 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:15:00+05:30', created_at:'2026-08-06T14:15:00+05:30', _mockClosed:false, _uatLabel:'D4', _uatGroup:'G1' },
-      // ── GROUP 2 (G2 · Amber #d97706) — amber border + tint, larger CMP ───
-      // D5: BUY triggered in profit — CMP 106 > entry 85 → badge Profit
-      { id:'dummy-d2', content:'I am buying Nifty 24300 monthly call at 85 CMP 83, SL if spot sustains below 24150 for 15 minutes.\nWhy: Momentum breakout above 24200.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T14:00:00+05:30', created_at:'2026-08-06T14:00:00+05:30', _mockClosed:false, _uatLabel:'D5', _uatGroup:'G2' },
-      // D6: SELL 50% exited — adjusted threshold=113, CMP 100 → badge Profit (locked 11 pts)
-      { id:'dummy-d11', content:'Selling Nifty 24350 monthly call at 102 CMP 105, SL if spot sustains above 24350 for 15 minutes.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:45:00+05:30', created_at:'2026-08-06T13:45:00+05:30', _mockClosed:false, _uatLabel:'D6', _uatGroup:'G2' },
-      // D7: BUY 50% exited — adjusted threshold=89, CMP 91 → badge Profit (locked 13 pts)
-      { id:'dummy-d4', content:'I am buying Nifty 24400 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Key breakout level.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:30:00+05:30', created_at:'2026-08-06T13:30:00+05:30', _mockClosed:false, _uatLabel:'D7', _uatGroup:'G2' },
-      // D8: SELL yet-to-trigger, paid-only — label shows "Session Low" not "Session High"
-      { id:'dummy-d8', content:'I am selling Nifty 24150 monthly call at 102 CMP 105, SL if spot sustains above 24250 for 15 minutes.\nWhy: Resistance zone, expecting reversal.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:15:00+05:30', created_at:'2026-08-06T13:15:00+05:30', _mockClosed:false, _uatLabel:'D8', _uatGroup:'G2' },
-      // ── GROUP 3 (G3 · Teal #0891b2) — teal border + tint, larger CMP ─────
-      // D9: BUY yet-to-trigger, paid-only — free member sees locked fields
-      { id:'dummy-d1', content:'I am buying Nifty 24250 monthly call at 102 CMP 100, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong support at 24200, Nifty forming double bottom.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T13:00:00+05:30', created_at:'2026-08-06T13:00:00+05:30', _mockClosed:false, _uatLabel:'D9', _uatGroup:'G3' },
-      // D10: SELL closed loss — SL hit above entry, [LOW:145] session low
-      { id:'dummy-d13', content:'Selling Banknifty 51800 monthly call at 150 CMP 152, SL if spot sustains above 51800 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T11:00:00+05:30', created_at:'2026-08-06T11:00:00+05:30', _mockClosed:true, _uatLabel:'D10', _uatGroup:'G3' },
-      // D11: BUY closed loss — SL hit below entry, [HIGH:80] session high
-      { id:'dummy-d6', content:'Buying Nifty 24500 monthly call at 65 CMP 63, SL if spot sustains below 24300 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:45:00+05:30', created_at:'2026-08-06T10:45:00+05:30', _mockClosed:true, _uatLabel:'D11', _uatGroup:'G3' },
-      // D12: SELL closed profit — full exit at 40, [LOW:62] max possible
-      { id:'dummy-d12', content:'Selling Nifty 24600 monthly call at 55 CMP 58, SL if spot sustains above 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:30:00+05:30', created_at:'2026-08-06T10:30:00+05:30', _mockClosed:true, _uatLabel:'D12', _uatGroup:'G3' },
-      // ── GROUP 4 (G4 · Green #059669) — green border + tint, larger CMP ───
-      // D13: BUY closed — 50% exit at 210, remaining closed via [CLOSEPRICE:195]
-      { id:'dummy-d7', content:'Buying Sensex 80000 monthly call at 180 CMP 175, SL if spot sustains below 79500 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:15:00+05:30', created_at:'2026-08-06T10:15:00+05:30', _mockClosed:true, _uatLabel:'D13', _uatGroup:'G4' },
-      // D14: BUY closed profit — 50%+25% exits, SL at cost, revised SL 150, SL hit at 149
-      { id:'dummy-d5', content:'Buying Nifty 24250 monthly call at 102 CMP 101, SL if spot sustains below 24200 for 15 minutes.\nWhy: Strong momentum.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T10:00:00+05:30', created_at:'2026-08-06T10:00:00+05:30', _mockClosed:true, _uatLabel:'D14', _uatGroup:'G4' },
-      // ── SPECIAL CARDS (active, for UAT-only feature tests) ────────────────
-      // (no label) not-triggered + closed corner case — will appear at bottom of active section
-      { id:'dummy-d15', content:'Buying Nifty 24800 monthly call at 30 CMP 25, SL if spot sustains below 24600 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:48:00+05:30', created_at:'2026-08-06T12:48:00+05:30', _mockState:'not_triggered', _mockClosed:true },
-      // DS1: Stock option parsing — RELIANCE 1280 Monthly CE (per-unit P&L, lot_size=1)
-      { id:'dummy-stock1', content:'I am Buying RELIANCE 1280 Monthly CE at 1.7, CMP 1.5\nSL if spot sustains below 1275 for 15 minutes.\nWhy: Expiry day hero/zero play.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:00:00+05:30', created_at:'2026-08-06T12:00:00+05:30', _mockClosed:false, _uatLabel:'DS1' },
-      // DS2: Stock option + special comment chip (paid-only)
-      { id:'dummy-stock2', content:'I am Buying RELIANCE 1280 Monthly CE at 33, CMP 32.5\nSL if spot sustains below 1273 for 15 minutes, CMP 1276\n⚠️ *August expiry*\n\nOnly for informational purposes. Please trade based on your own analysis.', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T11:45:00+05:30', created_at:'2026-08-06T11:45:00+05:30', _mockClosed:false, _uatLabel:'DS2' },
-      // D_SL: SL breach auto-close — 50% exit @160, revised SL ₹140, CMP 139.75 → auto-close
-      // No _mockClosed set — card must fall through to isTradeFullyClosed() SL-breach logic
-      { id:'dummy-dsl', content:'Buying Nifty 24450 monthly call at 150 CMP 148, SL if spot sustains below 24250 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:45:00+05:30', created_at:'2026-08-06T12:45:00+05:30', _uatLabel:'D_SL' },
-      // D_CMT: Special comment purple chip — ⚠️ *...* pattern from Admin PWA "Special Comments" field
-      { id:'dummy-dcmt', content:'Buying Nifty 24700 monthly call at 120 CMP 118, SL if spot sustains below 24400 for 15 minutes.\n\n⚠️ *Risky trade, go with small quantity only*', post_type:'trade_alert', audience:'paid_only', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:30:00+05:30', created_at:'2026-08-06T12:30:00+05:30', _mockClosed:false, _uatLabel:'D_CMT' },
-      // D_SL2: Two SL revisions — spot 24530 → premium 142 → premium 157 via "of remaining" phrasing
-      { id:'dummy-dsl2', content:'Buying Nifty 24500 next weekly put at 142 CMP 140, SL if spot sustains above 24530 for 15 minutes.', post_type:'trade_alert', audience:'all', allow_sharing:true, is_deleted:false, parent_id:null, sent_at:'2026-08-06T12:15:00+05:30', created_at:'2026-08-06T12:15:00+05:30', _mockClosed:false, _uatLabel:'D_SL2' }
-    ];
-    window._UAT_DUMMY_REPLIES = {
-      // ── G1 replies (D1-D4) ───────────────────────────────────────────────
-      // D1: BUY paid-only, 2:45 PM unlock test — trigger CMP near entry (78)
-      'dummy-d14': [{ id:'dummy-d14-r1', content:'CMP 79\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d14', sent_at:'2026-08-06T15:05:00+05:30', created_at:'2026-08-06T15:05:00+05:30' }],
-      // D2: SELL triggered in loss — trigger CMP near entry (180), live mock 205
-      'dummy-d10': [{ id:'dummy-d10-r1', content:'CMP 180\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d10', sent_at:'2026-08-06T14:50:00+05:30', created_at:'2026-08-06T14:50:00+05:30' }],
-      // D3: SELL triggered in profit — trigger CMP near entry (95), live mock 82
-      'dummy-d9': [{ id:'dummy-d9-r1', content:'CMP 94\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d9', sent_at:'2026-08-06T14:35:00+05:30', created_at:'2026-08-06T14:35:00+05:30' }],
-      // D4: BUY triggered in loss — trigger CMP near entry (210), live mock 190
-      'dummy-d3': [{ id:'dummy-d3-r1', content:'CMP 210\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d3', sent_at:'2026-08-06T14:20:00+05:30', created_at:'2026-08-06T14:20:00+05:30' }],
-      // ── G2 replies (D5-D8) ───────────────────────────────────────────────
-      // D5: BUY triggered in profit — trigger CMP near entry (85), live mock 106
-      'dummy-d2': [{ id:'dummy-d2-r1', content:'CMP 87\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d2', sent_at:'2026-08-06T14:05:00+05:30', created_at:'2026-08-06T14:05:00+05:30' }],
-      // D6: SELL 50% exited at 91 → adjusted threshold=113, mock CMP 100 → Profit
-      'dummy-d11': [
-        { id:'dummy-d11-r2', content:'CMP 100, holding remaining 50%. Overall trade still in profit (locked 11 pts from first exit).', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-08-06T14:00:00+05:30', created_at:'2026-08-06T14:00:00+05:30' },
-        { id:'dummy-d11-r1', content:'CMP 91, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-08-06T13:55:00+05:30', created_at:'2026-08-06T13:55:00+05:30' },
-        { id:'dummy-d11-r0', content:'CMP 102\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d11', sent_at:'2026-08-06T13:47:00+05:30', created_at:'2026-08-06T13:47:00+05:30' }
-      ],
-      // D7: BUY 50% exited at 115 → adjusted threshold=89, mock CMP 91 → Profit
-      'dummy-d4': [
-        { id:'dummy-d4-r2', content:'CMP 91, holding remaining 50%. Overall trade still in profit due to locked gains.', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-08-06T13:45:00+05:30', created_at:'2026-08-06T13:45:00+05:30' },
-        { id:'dummy-d4-r1', content:'CMP 115, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-08-06T13:40:00+05:30', created_at:'2026-08-06T13:40:00+05:30' },
-        { id:'dummy-d4-r0', content:'CMP 102\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d4', sent_at:'2026-08-06T13:32:00+05:30', created_at:'2026-08-06T13:32:00+05:30' }
-      ],
-      // D8: SELL yet-to-trigger, paid-only — trigger CMP at entry (102)
-      'dummy-d8': [{ id:'dummy-d8-r1', content:'CMP 102\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d8', sent_at:'2026-08-06T13:20:00+05:30', created_at:'2026-08-06T13:20:00+05:30' }],
-      // ── G3 replies (D9-D12) ──────────────────────────────────────────────
-      // D9: BUY yet-to-trigger, paid-only — trigger CMP at entry (102)
-      'dummy-d1': [{ id:'dummy-d1-r1', content:'CMP 102\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d1', sent_at:'2026-08-06T13:05:00+05:30', created_at:'2026-08-06T13:05:00+05:30' }],
-      // D10: SELL closed loss — SL hit above entry, [LOW:145] session low
-      'dummy-d13': [
-        { id:'dummy-d13-r3', content:'[LOW:145]', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-08-06T12:00:00+05:30', created_at:'2026-08-06T12:00:00+05:30' },
-        { id:'dummy-d13-r2', content:'SL hit. Spot sustained above 51800. Exiting with 190 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-08-06T11:30:00+05:30', created_at:'2026-08-06T11:30:00+05:30' },
-        { id:'dummy-d13-r0', content:'CMP 150\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d13', sent_at:'2026-08-06T11:05:00+05:30', created_at:'2026-08-06T11:05:00+05:30' }
-      ],
-      // D11: BUY closed loss — SL hit, [HIGH:80] session high
-      'dummy-d6': [
-        { id:'dummy-d6-r4', content:'[HIGH:80]', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-08-06T11:45:00+05:30', created_at:'2026-08-06T11:45:00+05:30' },
-        { id:'dummy-d6-r3', content:'SL gone. Spot sustained below 24300 for 15 min. Exiting with 42 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-08-06T11:05:00+05:30', created_at:'2026-08-06T11:05:00+05:30' },
-        { id:'dummy-d6-r1', content:'CMP 67\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d6', sent_at:'2026-08-06T10:50:00+05:30', created_at:'2026-08-06T10:50:00+05:30' }
-      ],
-      // D12: SELL closed profit — full exit at 40, [LOW:62] session low (max possible)
-      'dummy-d12': [
-        { id:'dummy-d12-r2', content:'[LOW:32]', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-08-06T11:30:00+05:30', created_at:'2026-08-06T11:30:00+05:30' },
-        { id:'dummy-d12-r1', content:'CMP 40, exiting full position at 40', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-08-06T11:00:00+05:30', created_at:'2026-08-06T11:00:00+05:30' },
-        { id:'dummy-d12-r0', content:'CMP 55\nSelling triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d12', sent_at:'2026-08-06T10:35:00+05:30', created_at:'2026-08-06T10:35:00+05:30' }
-      ],
-      // ── G4 replies (D13-D14) ─────────────────────────────────────────────
-      // D13: BUY closed — 50% exit at 210, remaining closed via [CLOSEPRICE:195]
-      'dummy-d7': [
-        { id:'dummy-d7-r3', content:'[CLOSEPRICE:195]', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T15:35:00+05:30', created_at:'2026-08-06T15:35:00+05:30' },
-        { id:'dummy-d7-r2', content:'[HIGH:235]', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T15:35:00+05:30', created_at:'2026-08-06T15:35:00+05:30' },
-        { id:'dummy-d7-r1', content:'CMP 210, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T10:45:00+05:30', created_at:'2026-08-06T10:45:00+05:30' },
-        { id:'dummy-d7-r0', content:'CMP 180\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d7', sent_at:'2026-08-06T10:20:00+05:30', created_at:'2026-08-06T10:20:00+05:30' }
-      ],
-      // D14: BUY closed profit — 50%+25% exits, SL at cost, revised SL 150, SL hit at 149
-      'dummy-d5': [
-        { id:'dummy-d5-r6', content:'[HIGH:170]', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T15:35:00+05:30', created_at:'2026-08-06T15:35:00+05:30' },
-        { id:'dummy-d5-r5', content:'SL hit. Exiting with 150 as SL', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T11:15:00+05:30', created_at:'2026-08-06T11:15:00+05:30' },
-        { id:'dummy-d5-r4', content:'CMP 162, modifying SL to 150', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T11:00:00+05:30', created_at:'2026-08-06T11:00:00+05:30' },
-        { id:'dummy-d5-r3', content:'CMP 132, exiting another 25% holding rest with SL at cost', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:45:00+05:30', created_at:'2026-08-06T10:45:00+05:30' },
-        { id:'dummy-d5-r2', content:'CMP 125, modifying SL to 24225', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:30:00+05:30', created_at:'2026-08-06T10:30:00+05:30' },
-        { id:'dummy-d5-r1', content:'CMP 115, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:15:00+05:30', created_at:'2026-08-06T10:15:00+05:30' },
-        { id:'dummy-d5-r0', content:'CMP 102\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-d5', sent_at:'2026-08-06T10:05:00+05:30', created_at:'2026-08-06T10:05:00+05:30' }
-      ],
-      // ── Special card replies ──────────────────────────────────────────────
-      // DS1: RELIANCE stock option trigger reply
-      'dummy-stock1': [{ id:'dummy-stock1-r1', content:'CMP 1.7\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock1', sent_at:'2026-08-06T12:05:00+05:30', created_at:'2026-08-06T12:05:00+05:30' }],
-      // DS2: RELIANCE 1280 August CE trigger reply
-      'dummy-stock2': [{ id:'dummy-stock2-r1', content:'CMP 33\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-stock2', sent_at:'2026-08-06T11:50:00+05:30', created_at:'2026-08-06T11:50:00+05:30' }],
-      // D_SL: 50% exit @160, SL revised ₹140, CMP 139.75 → SL breach auto-close
-      'dummy-dsl': [
-        { id:'dummy-dsl-r3', content:'[HIGH:166]', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T13:45:00+05:30', created_at:'2026-08-06T13:45:00+05:30' },
-        { id:'dummy-dsl-r2', content:'CMP 152, modifying SL to 140', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T13:15:00+05:30', created_at:'2026-08-06T13:15:00+05:30' },
-        { id:'dummy-dsl-r1', content:'CMP 160, exiting 50% holding rest', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T13:00:00+05:30', created_at:'2026-08-06T13:00:00+05:30' },
-        { id:'dummy-dsl-r0', content:'CMP 150\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl', sent_at:'2026-08-06T12:50:00+05:30', created_at:'2026-08-06T12:50:00+05:30' }
-      ],
-      // D_CMT: triggered, special comment chip visible to paid/admin
-      'dummy-dcmt': [
-        { id:'dummy-dcmt-r0', content:'CMP 120\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dcmt', sent_at:'2026-08-06T12:35:00+05:30', created_at:'2026-08-06T12:35:00+05:30' }
-      ],
-      // D_SL2: two SL revisions — 2nd uses "of remaining" phrasing
-      'dummy-dsl2': [
-        { id:'dummy-dsl2-r2', content:'CMP 176, modifying SL of remaining to 157', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl2', sent_at:'2026-08-06T12:58:00+05:30', created_at:'2026-08-06T12:58:00+05:30' },
-        { id:'dummy-dsl2-r1', content:'CMP 152, modifying SL to 142', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl2', sent_at:'2026-08-06T12:40:00+05:30', created_at:'2026-08-06T12:40:00+05:30' },
-        { id:'dummy-dsl2-r0', content:'CMP 142\nBuying triggered', post_type:'follow_up', audience:'all', parent_id:'dummy-dsl2', sent_at:'2026-08-06T12:20:00+05:30', created_at:'2026-08-06T12:20:00+05:30' }
-      ]
-    };
-    // Mock CMPs for active dummy posts (drives P&L badge via updateTradeCMPs)
-    window._UAT_MOCK_LTPS = {
-      'NIFTY-24300-CE': 106,      // D5: BUY, entry 85, CMP 106 → Profit
-      'BANKNIFTY-51500-CE': 190,  // D4: BUY, entry 210, CMP 190 → Loss
-      'NIFTY-24400-CE': 91,       // D7: BUY 50% exit, threshold=89, CMP 91 → Profit
-      'NIFTY-24200-CE': 82,       // D3: SELL, entry 95, CMP 82 → Profit
-      'BANKNIFTY-52000-CE': 205,  // D2: SELL, entry 180, CMP 205 → Loss
-      'NIFTY-24350-CE': 100,      // D6: SELL 50% exit, threshold=113, CMP 100 → Profit
-      'NIFTY-24100-CE': 82,       // D1: BUY, entry 78, CMP 82 → Profit
-      'NIFTY-24150-CE': 102,      // D8: SELL, entry 102, CMP 102 → Triggered (price touched sell level)
-      'NIFTY-24250-CE': 102,      // D9: BUY, entry 102, CMP 102 → Triggered (price touched buy level)
-      'RELIANCE-1280-CE': 32.9,   // DS2: RELIANCE 1280 CE Aug expiry, entry 33, CMP 32.9 (actual)
-      'NIFTY-24450-CE': 139.75,   // D_SL: BUY at 150, 50% exited @160, revised SL ₹140 → breached at ₹139.75
-      'NIFTY-24600-CE': 126,      // Real trade (5 Aug BUY NIFTY 24600 CE at 172) — CMP 126 < SL 152 → SL breach test
-      'NIFTY-24700-CE': 126,      // D_CMT: BUY at 120 (strike 24700), CMP 126 → active, in profit
-      'NIFTY-24500-PE': 163       // D_SL2: BUY PE at 142, SL revised to 157, CMP 163 → active, above SL
-    };
-    // Intraday highs (BUY) / lows (SELL) — applied BEFORE _UAT_MOCK_LTPS so session peaks are
-    // seeded correctly even when current CMP differs from the day's high/low
-    window._UAT_MOCK_SESSION_PEAKS = {
-      'RELIANCE-1280-CE': 33.9   // DS2: actual session high 33.9, CMP 32.9 (pulled back from peak)
-    };
 
     // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
     function _applyLikeState(btn, postId) {
@@ -1329,8 +1148,6 @@
 
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
-        // UAT: merge mock LTPs so stock/test keys persist even when real VM data overwrites
-        if (window._UAT_MOCK_LTPS) optionLTPs = Object.assign({}, optionLTPs, window._UAT_MOCK_LTPS);
         _lastOptionLTPs = optionLTPs;
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
             const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-CE"
@@ -1505,10 +1322,10 @@
 
     // ── MARKETS SUMMARY CACHE ────────────────────────────────────────────────────
     function _mqpCacheGet() {
-        try { return JSON.parse(localStorage.getItem('t2s_summary_cache') || '{}'); } catch(e) { return {}; }
+        try { return JSON.parse(localStorage.getItem('t2s_summary_cache_v2') || '{}'); } catch(e) { return {}; }
     }
     function _mqpCachePut(updates) {
-        try { localStorage.setItem('t2s_summary_cache', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
+        try { localStorage.setItem('t2s_summary_cache_v2', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
     }
     // Format post timestamp for Markets summary cards — IST-aware, relative labels
     function _mqpFmtTime(iso) {
@@ -2652,7 +2469,7 @@
         if (postSentAt && !u.all) {
             const tz = { timeZone: 'Asia/Kolkata' };
             const nowIST = new Date(new Date().toLocaleString('en-US', tz));
-            const nowMins = window._UAT_TIME_2_45 ? 14*60+46 : (nowIST.getHours()*60 + nowIST.getMinutes());
+            const nowMins = nowIST.getHours()*60 + nowIST.getMinutes();
             const postIST = new Date(new Date(postSentAt).toLocaleString('en-US', tz));
             const isSameDay = postIST.toDateString() === nowIST.toDateString();
             const postMins = postIST.getHours()*60 + postIST.getMinutes();
@@ -3056,67 +2873,8 @@
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
                 replyMap[r.parent_id].push(r);
             });
-            // UAT: inject dummy test posts for all 15 trade scenarios (removed after Tushar confirms)
-            if (window._UAT_DUMMY_POSTS && window._UAT_DUMMY_POSTS.length) {
-                tradeParents.unshift(...window._UAT_DUMMY_POSTS);
-                window._UAT_DUMMY_POSTS.forEach(p => {
-                    if (window._UAT_DUMMY_REPLIES && window._UAT_DUMMY_REPLIES[p.id])
-                        replyMap[p.id] = [...window._UAT_DUMMY_REPLIES[p.id]]; // newest-first (as Supabase returns)
-                });
-            }
             container.dataset.loaded = '1';
-            // UAT: seed _lastOptionLTPs so getTradeState() auto-trigger logic can use mock prices
-            if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
-                _lastOptionLTPs = window._UAT_MOCK_LTPS;
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
-            // UAT: first pass — seed session highs/lows to intraday peaks (before current CMP)
-            if (window._UAT_MOCK_SESSION_PEAKS && Object.keys(window._UAT_MOCK_SESSION_PEAKS).length)
-                updateTradeCMPs(window._UAT_MOCK_SESSION_PEAKS);
-            // UAT: second pass — apply current CMPs (session peaks won't decrease)
-            if (window._UAT_MOCK_LTPS && Object.keys(window._UAT_MOCK_LTPS).length)
-                updateTradeCMPs(window._UAT_MOCK_LTPS);
-            // UAT: stamp D-number label on each dummy card header so Tushar can reference by number
-            if (window._UAT_DUMMY_POSTS) {
-                window._UAT_DUMMY_POSTS.forEach(p => {
-                    if (!p._uatLabel) return;
-                    const el = document.getElementById(`ucard-${p.id}`);
-                    if (el) {
-                        const lbl = document.createElement('div');
-                        const _grpC = { G1:'#4a2a78', G2:'#d97706', G3:'#0891b2', G4:'#059669' }[p._uatGroup] || '#6366f1';
-                        if (p._uatLabel === 'D1') {
-                            // D1: show instrument info as label instead of D-number
-                            const _lf = extractTradeAlertFields(p.content||'');
-                            const _lOpt = _lf.optType || '';
-                            const _lInstr = _lf.instrument || '';
-                            const _lStrike = _lf.strike ? ' ' + _lf.strike : '';
-                            const _lExpiry = _lf.expiry ? ' · ' + formatExpiryDisplay(_lf.expiry, _lf.instrument, p.sent_at||p.created_at) : '';
-                            const _pillHtml = _lOpt ? `<span style="background:#4a2a78;color:#fff;padding:2px 10px;border-radius:5px;font-size:0.82rem;font-weight:800;margin-right:8px;">${_lOpt}</span>` : '';
-                            lbl.innerHTML = `${_pillHtml}<span style="font-size:0.78rem;font-weight:700;color:#4a2a78;">${_lInstr}${_lStrike}${_lExpiry}</span>`;
-                            lbl.style.cssText = 'background:#e0f2fe;border:1px solid #bae6fd;padding:6px 16px;letter-spacing:0.03em;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;';
-                        } else {
-                            lbl.textContent = p._uatLabel;
-                            lbl.style.cssText = `background:${_grpC};color:#fff;font-size:0.6rem;font-weight:700;padding:2px 10px;text-align:center;letter-spacing:0.1em;border-radius:8px 8px 0 0;`;
-                        }
-                        el.insertBefore(lbl, el.firstChild);
-                        // G4: enlarge exit price value (CSS handles border/bg/labels)
-                        if (p._uatGroup === 'G4') {
-                            const exitLbl = Array.from(el.querySelectorAll('.metric-label')).find(l => l.textContent.includes('Exit'));
-                            if (exitLbl && exitLbl.nextElementSibling) {
-                                const ev = exitLbl.nextElementSibling;
-                                ev.style.fontSize = '1.9rem';
-                                ev.style.fontWeight = '900';
-                                ev.style.display = 'block';
-                                ev.style.textAlign = 'center';
-                            }
-                        }
-                        // D_SL: hide badge when P&L = 0 (SL breach at breakeven)
-                        if (p._uatLabel === 'D_SL') {
-                            const badge = el.querySelector('.badge');
-                            if (badge) badge.style.display = 'none';
-                        }
-                    }
-                });
-            }
             tradeParents.map(p => p.id).forEach(id => updateLikeUI(id)); // instantly restore all known like counts after re-render (prevents blink on 30s refresh)
             fetchLikes(tradeParents.map(p => p.id));
             _cSave('t2s_alerts_html', container.innerHTML);
@@ -3177,15 +2935,7 @@
             .filter(p => getTradeState(p, _pubReplies(p)) !== 'not_triggered')
             .sort((a,b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at));
 
-        // UAT panel — visible only when dummy data is loaded (deleted after Tushar confirms)
-        const _hasDummies = tradePosts.some(p => (p.id||'').startsWith('dummy-'));
-        let html = _hasDummies ? `<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.75rem;color:#92400e;line-height:1.5;">
-            <b>🧪 UAT Test Mode</b> — ${window._UAT_DUMMY_POSTS.length} dummy scenarios loaded<br>
-            <button onclick="window._UAT_TIME_2_45=!window._UAT_TIME_2_45;fetchTradeAlerts();" style="margin-top:4px;padding:3px 10px;background:#d97706;color:#fff;border:none;border-radius:4px;font-size:0.7rem;cursor:pointer;font-family:inherit;">
-              Toggle 2:45 PM Unlock (${window._UAT_TIME_2_45?'ON — free members see all paid trades':'OFF — normal rules'})
-            </button>
-            <div style="margin-top:4px;font-size:0.68rem;color:#b45309;">D7: BUY 50% exit — badge shows Profit even though CMP(91)&lt;entry(102) because adjusted threshold=89 &nbsp;|&nbsp; D6: SELL 50% exit — badge shows Profit because CMP(100)&lt;threshold(113)</div>
-        </div>` : '';
+        let html = '';
 
         function sectionHeader(label, dotColor, glow, trailingHtml='') {
             return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
