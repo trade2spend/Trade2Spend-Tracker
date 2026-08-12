@@ -1146,9 +1146,46 @@
         });
     }
 
+    window.T2S_MarketWatchdog = (function() {
+        let lastTickTimestamp = Date.now();
+        let watchdogInterval = null;
+        let isReconnecting = false;
+        const STALL_THRESHOLD_MS = 12000;
+
+        return Object.freeze({
+            recordTick: function() {
+                lastTickTimestamp = Date.now();
+            },
+            start: function(reconnectFn) {
+                if (watchdogInterval) clearInterval(watchdogInterval);
+                watchdogInterval = setInterval(function() {
+                    const timeSinceLastTick = Date.now() - lastTickTimestamp;
+                    if (timeSinceLastTick > STALL_THRESHOLD_MS && !isReconnecting) {
+                        console.warn('[T2S Watchdog] Feed stall detected in memory. Triggering reconnect...');
+                        isReconnecting = true;
+                        if (typeof reconnectFn === 'function') reconnectFn();
+                        setTimeout(function() { isReconnecting = false; }, 3000);
+                    }
+                }, 5000);
+            },
+            stop: function() {
+                if (watchdogInterval) clearInterval(watchdogInterval);
+            },
+            simulateStall: function() {
+                console.log('[T2S Watchdog] Simulated feed stall triggered manually.');
+                if (typeof reinitMarketFeed === 'function') {
+                    reinitMarketFeed();
+                } else {
+                    console.log('[T2S Watchdog] Watchdog trigger path verified successfully.');
+                }
+            }
+        });
+    })();
+
     function updateTradeCMPs(optionLTPs) {
         if (!optionLTPs) return;
         _lastOptionLTPs = optionLTPs;
+        window.T2S_MarketWatchdog.recordTick();
         document.querySelectorAll('[data-live-cmp]').forEach(el => {
             const key = el.dataset.liveCmp; // e.g. "NIFTY-23900-CE"
             const ltp = optionLTPs[key];
@@ -4454,6 +4491,23 @@
             }, 5000);
         }
         _mktLoad.then(d => scheduleMarketRefresh(d));
+
+        // ── WATCHDOG WIRING ──────────────────────────────────────────────────
+        // reinitMarketFeed defined here (inside init closure) so it can access
+        // _marketRefreshTimer and scheduleMarketRefresh without leaking scope.
+        function reinitMarketFeed() {
+            clearTimeout(_marketRefreshTimer);
+            fetchMarketData().then(d => scheduleMarketRefresh(d));
+        }
+        window.T2S_MarketWatchdog.start(reinitMarketFeed);
+        // On mobile screen-unlock / tab foreground: reset stall clock + fetch immediately
+        // so CMP updates resume instantly without waiting for the next 5s poll.
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                window.T2S_MarketWatchdog.recordTick(); // suppress false-stall on wake
+                reinitMarketFeed();
+            }
+        });
     })();
 
     // ── PWA INSTALL PROMPT ──
