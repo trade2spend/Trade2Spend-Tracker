@@ -404,6 +404,25 @@
         .alert-banner-type { font-size:0.6rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:1px; }
         .alert-banner-name { font-size:0.84rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
+        /* === Live Banner Ticker === */
+        #live-ticker-wrap { display:none; overflow:hidden; background:#1e293b; border-top:1px solid #0f172a; cursor:pointer; user-select:none; -webkit-user-select:none; }
+        #live-ticker-inner { display:flex; align-items:center; height:30px; }
+        #live-ticker-label { background:#ef4444; color:#fff; font-size:0.6rem; font-weight:800; padding:2px 7px; border-radius:3px; letter-spacing:0.08em; flex-shrink:0; margin:0 10px; white-space:nowrap; }
+        #live-ticker-track { flex:1; overflow:hidden; min-width:0; }
+        #live-ticker-anim { display:inline-flex; align-items:center; white-space:nowrap; animation:tickerScroll 32s linear infinite; will-change:transform; }
+        #live-ticker-anim:hover { animation-play-state:paused; }
+        @keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+        .ticker-msg-text { font-size:0.78rem; color:#38bdf8; font-weight:500; padding:0 16px; }
+        .ticker-msg-sep { color:#475569; font-size:0.78rem; padding:0 4px; }
+        /* === Admin Updates Compose === */
+        #admin-updates-compose-wrap { display:none; margin:0 0 12px; }
+        #admin-updates-compose { display:none; background:var(--primary-light); border:1px solid #c4b5fd; border-radius:10px; padding:12px; margin-top:8px; }
+        .banner-toggle-row { display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; background:#fff3cd; border:1px solid #fcd34d; border-radius:8px; cursor:pointer; }
+        .banner-toggle-row input[type=checkbox] { width:17px; height:17px; accent-color:#ef4444; cursor:pointer; flex-shrink:0; }
+        .banner-toggle-label { font-size:0.81rem; font-weight:600; color:#92400e; user-select:none; -webkit-user-select:none; }
+        /* === Banner pinned cards (admin view) === */
+        .banner-pin-card { border:1.5px solid #ef4444 !important; border-left:4px solid #ef4444 !important; background:#fff8f8; }
+        .live-banner-badge { display:inline-flex; align-items:center; background:#ef4444; color:#fff; font-size:0.58rem; font-weight:800; padding:2px 5px; border-radius:3px; letter-spacing:0.07em; margin-right:5px; vertical-align:middle; }
         /* Market Quick Preview — Trades / Updates dual-tab */
         #market-quick-preview { margin-top:10px; }
         .mqp-tab-strip { display:flex; gap:6px; margin-bottom:8px; }
@@ -497,6 +516,13 @@
             <div class="tab" onclick="switchTab('performance', this)">Performance</div>
             <div class="tab" onclick="switchTab('learning', this)">Learning</div>
             <div class="tab" onclick="switchTab('about', this)">About</div>
+        </div>
+        <!-- Live Banner Ticker — filled by renderLiveTicker(); click opens t.me/tusharview -->
+        <div id="live-ticker-wrap" onclick="window.open('https://t.me/tusharview','_blank')">
+            <div id="live-ticker-inner">
+                <span id="live-ticker-label">LIVE</span>
+                <div id="live-ticker-track"><div id="live-ticker-anim"></div></div>
+            </div>
         </div>
     </div>
     <!-- MARKETS TAB -->
@@ -668,6 +694,26 @@
             <span class="notif-banner-text">🔔 Enable notifications for instant trade alerts</span>
             <button class="notif-enable-btn" onclick="enableNotifications()">Enable</button>
         </div>
+        <!-- Admin compose for Updates tab — shown only for is_admin=true -->
+        <div id="admin-updates-compose-wrap">
+            <button id="upd-compose-btn" onclick="toggleUpdCompose()" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:0.82rem;font-weight:700;cursor:pointer;font-family:inherit;width:100%;touch-action:manipulation;">＋ Post Update</button>
+            <div id="admin-updates-compose">
+                <textarea class="admin-compose-textarea" id="upd-compose-text" placeholder="Type your update message..." style="min-height:80px;font-size:16px;"></textarea>
+                <label class="banner-toggle-row" for="upd-banner-chk">
+                    <input type="checkbox" id="upd-banner-chk">
+                    <span class="banner-toggle-label">🔴 Post as Live Banner (scrolling ticker for all members)</span>
+                </label>
+                <div class="admin-audience-row" style="margin-top:8px;">
+                    <button class="admin-aud-btn selected" id="upd-aud-all" onclick="selectUpdAud('all')" style="touch-action:manipulation;">All Members</button>
+                    <button class="admin-aud-btn" id="upd-aud-paid" onclick="selectUpdAud('paid_only')" style="touch-action:manipulation;">Paid Only</button>
+                    <button class="admin-aud-btn" id="upd-aud-cug" onclick="selectUpdAud('cug_test')" style="touch-action:manipulation;">CUG Test</button>
+                </div>
+                <div class="admin-compose-row">
+                    <button class="admin-compose-cancel" onclick="toggleUpdCompose()" style="touch-action:manipulation;">Cancel</button>
+                    <button class="admin-compose-send" id="upd-compose-send-btn" onclick="sendNewUpdate()" style="touch-action:manipulation;">Post →</button>
+                </div>
+            </div>
+        </div>
         <div id="updates-container">
             <div style="text-align:center; padding: 40px; color: #888;">Loading updates...</div>
         </div>
@@ -735,6 +781,7 @@
     // --- UI LOGIC ---
     let _tradeRefreshTimer   = null;
     let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
+    let _updComposeAud = 'all'; // audience selection for admin Updates compose
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null;         // latest session highs — re-applied after trade card rebuilds
@@ -4025,6 +4072,9 @@
 
     function renderUpdates(allPosts, memberTier, isAdmin, readMap) {
         const container = document.getElementById('updates-container');
+        // Show/hide admin compose panel
+        const _updWrap = document.getElementById('admin-updates-compose-wrap');
+        if (_updWrap) _updWrap.style.display = isAdmin ? 'block' : 'none';
         const generalTypes = ['market_update','general'];
 
         if(!allPosts || allPosts.length === 0) {
@@ -4033,6 +4083,8 @@
         }
 
         const allParents = allPosts.filter(p => !p.parent_id);
+        const bannerPosts = allParents.filter(p => p.post_type === 'banner');
+        renderLiveTicker(bannerPosts, memberTier, isAdmin);
         const parentPosts = allParents.filter(p => generalTypes.includes(p.post_type));
         const replies = allPosts.filter(p => p.parent_id);
 
@@ -4045,7 +4097,30 @@
         replies.forEach(r => { if(!replyMap[r.parent_id]) replyMap[r.parent_id]=[]; replyMap[r.parent_id].push(r); });
 
         const isFreeViewer = !isAdmin && memberTier !== 'paid';
-        let html = '', lastDate = '';
+        let html = '', lastDate = '', bannerHtml = '';
+
+        // Admin: pin active banner posts at top of Updates list with deactivate button
+        if (isAdmin && bannerPosts.length > 0) {
+            bannerHtml += `<div style="font-size:0.67rem;font-weight:800;color:#ef4444;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding:2px 0;">📌 Active Banners</div>`;
+            bannerPosts.forEach(function(bp) {
+                const _bAud = bp.audience === 'paid_only' ? 'PAID' : bp.audience === 'cug_test' ? 'CUG' : 'ALL';
+                const _bTime = formatPostTime(bp.sent_at || bp.created_at);
+                const _bContent = sanitizeHtml((bp.content || '').trim()).replace(/\n/g, '<br>');
+                bannerHtml += `
+                    <div class="update-card banner-pin-card" id="ucard-${bp.id}">
+                        <div class="update-header">
+                            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">
+                                <span class="live-banner-badge">LIVE BANNER — ${_bAud}</span>
+                                <span class="update-time">${_bTime}</span>
+                            </div>
+                        </div>
+                        <div class="update-body"><div class="update-content">${_bContent}</div></div>
+                        <div style="margin-top:6px;">
+                            <button class="admin-delete-btn" onclick="deletePost('${bp.id}')">🗑 Deactivate Banner</button>
+                        </div>
+                    </div>`;
+            });
+        }
 
         // Pre-count unread
         const newCountByDate = {};
@@ -4174,7 +4249,7 @@
             _savedCompose = { postId: _pId, text: _ta ? _ta.value : '', audience: replyAudience[_pId] || 'all' };
         }
 
-        container.innerHTML = html;
+        container.innerHTML = bannerHtml + html;
 
         // Restore compose box state after re-render
         if (_savedCompose) {
@@ -4251,6 +4326,85 @@
         const paidBtn = document.getElementById('na-aud-paid');
         if(allBtn)  allBtn.classList.toggle('selected', val === 'all');
         if(paidBtn) paidBtn.classList.toggle('selected', val === 'paid_only');
+    }
+
+    // ── ADMIN UPDATES COMPOSE (general posts + live banners) ─────────────────
+    function selectUpdAud(val) {
+        _updComposeAud = val;
+        const map = { 'all': 'upd-aud-all', 'paid_only': 'upd-aud-paid', 'cug_test': 'upd-aud-cug' };
+        Object.entries(map).forEach(([k, id]) => {
+            const btn = document.getElementById(id);
+            if (btn) btn.classList.toggle('selected', k === val);
+        });
+    }
+
+    function toggleUpdCompose() {
+        const box = document.getElementById('admin-updates-compose');
+        const btn = document.getElementById('upd-compose-btn');
+        if (!box) return;
+        const willOpen = box.style.display === 'none' || box.style.display === '';
+        box.style.display = willOpen ? 'block' : 'none';
+        if (btn) btn.textContent = willOpen ? '✕ Cancel' : '＋ Post Update';
+    }
+
+    async function sendNewUpdate() {
+        const text = (document.getElementById('upd-compose-text').value || '').trim();
+        if (!text) { alert('Enter a message.'); return; }
+        const isBanner = document.getElementById('upd-banner-chk').checked;
+        const btn = document.getElementById('upd-compose-send-btn');
+        btn.disabled = true; btn.textContent = 'Posting...';
+        try {
+            // Note: if Supabase rejects post_type='banner', run in SQL Editor:
+            // ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_post_type_check;
+            // ALTER TABLE posts ADD CONSTRAINT posts_post_type_check CHECK (post_type IN ('trade_alert','follow_up','market_update','general','banner'));
+            await sbFetch('posts', {
+                method: 'POST',
+                body: JSON.stringify({
+                    content: text,
+                    post_type: isBanner ? 'banner' : 'general',
+                    audience: _updComposeAud,
+                    allow_sharing: false,
+                    is_deleted: false,
+                    sent_at: new Date().toISOString()
+                })
+            });
+            document.getElementById('upd-compose-text').value = '';
+            document.getElementById('upd-banner-chk').checked = false;
+            const box = document.getElementById('admin-updates-compose');
+            const btn2 = document.getElementById('upd-compose-btn');
+            if (box) box.style.display = 'none';
+            if (btn2) btn2.textContent = '＋ Post Update';
+            fetchUpdates();
+        } catch(e) {
+            alert('Failed to post: ' + (e.message || 'unknown error'));
+        } finally {
+            btn.disabled = false; btn.textContent = 'Post →';
+        }
+    }
+
+    // renderLiveTicker — builds the sticky scrolling news ticker from banner posts
+    function renderLiveTicker(bannerPosts, memberTier, isAdmin) {
+        const wrap = document.getElementById('live-ticker-wrap');
+        if (!wrap) return;
+        const mobile = localStorage.getItem('t2s_mobile') || '';
+        const isCug = isAdmin || mobile === '8888888888';
+        const visible = (bannerPosts || []).filter(function(p) {
+            if (p.audience === 'cug_test') return isCug;
+            if (p.audience === 'paid_only') return isAdmin || memberTier === 'paid';
+            return true;
+        });
+        if (!visible.length) { wrap.style.display = 'none'; return; }
+        const msgs = visible.map(function(p) { return sanitizeHtml((p.content || '').trim()); });
+        // Two identical chunks for seamless translateX(-50%) loop
+        function makeChunk() {
+            return '<span style="display:inline-flex;align-items:center;">' +
+                msgs.map(function(m) {
+                    return '<span class="ticker-msg-text">' + m + '</span><span class="ticker-msg-sep">•</span>';
+                }).join('') + '</span>';
+        }
+        const animEl = document.getElementById('live-ticker-anim');
+        animEl.innerHTML = makeChunk() + makeChunk();
+        wrap.style.display = 'block';
     }
 
     async function sendNewAlert() {
