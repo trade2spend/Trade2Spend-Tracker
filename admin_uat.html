@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260815-002 | admin_uat: postId + post_type added to confirmPushToMembers push call for UAT testing of permanent dedup. -->
 <!-- DEPLOY: T2S-PROD-20260717-001 | Admin PWA Trade tab + Posts tab: "Send Follow-up →" button hidden in both locations. No JS logic touched — functions sendFollowUp() and sendPostsReply() remain. Rollback: restore the two <button> lines (Trade tab line ~688, Posts tab line ~5199 in original). -->
 <!DOCTYPE html>
 <html lang="en">
@@ -5177,7 +5178,7 @@ async function confirmPushToMembers(){
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates' })
+      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', postId: _savedPost?.id, post_type: pushMsgType === 'trade' ? 'trade_alert' : 'general' })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
       fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
