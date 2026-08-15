@@ -736,6 +736,19 @@
     let _likeCounts = {};          // postId → total like count
     const _myLikes = new Set();    // postIds liked by current member
     const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
+    const _sblAutoClosedPostIds = new Set(); // FSM: SL-breach auto-closed post IDs — one-way, never reverts on LTP bounce
+    (function(){
+        try {
+            const _now = new Date();
+            const _cutoff = new Date(_now.getFullYear(), _now.getMonth() - 2, 1); // first of T-2 months
+            const _stored = JSON.parse(localStorage.getItem('t2s_sbl_closed_v2')||'{}');
+            const _cleaned = {};
+            Object.entries(_stored).forEach(([id, dateStr]) => {
+                if (new Date(dateStr) >= _cutoff) { _cleaned[id] = dateStr; _sblAutoClosedPostIds.add(id); }
+            });
+            localStorage.setItem('t2s_sbl_closed_v2', JSON.stringify(_cleaned));
+        } catch(_e) {}
+    })();
 
 
     // Apply liked/count state directly to a button element — mutates SVG attrs, never replaces innerHTML
@@ -1868,7 +1881,8 @@
                 const dayHighPerf   = extractHighFromReplies(replies);
                 const _closePricePerf = extractClosePriceFromReplies(replies);
                 const _slResolvedPerf = getLastSLNumeric(replies) || (getCurrentSL(replies) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
-                const exitPricePerf = getWeightedExitPrice(replies, { sl: _slResolvedPerf, closePrice: _closePricePerf, isSell: f.action === 'SELL' });
+                const _isSlBreachPerf = _sblAutoClosedPostIds.has(p.id); // Path A: SL-breach-closed → ignore VM close price
+                const exitPricePerf = getWeightedExitPrice(replies, { sl: _slResolvedPerf, closePrice: _isSlBreachPerf ? null : _closePricePerf, isSell: f.action === 'SELL' });
                 const mp = (f.action !== 'SELL' && f.entry) ? calculateMaxProfit(f.entry, replies) : null;
                 const validDayHigh = (f.action !== 'SELL' && dayHighPerf && f.entry && dayHighPerf >= f.entry) ? dayHighPerf : null;
                 const maxPrice = exitPricePerf || validDayHigh || (mp ? mp.max : null);
@@ -2551,7 +2565,9 @@
         // else fall back to last known SL (less accurate but better than nothing)
         if (totalPct < 100 && opts) {
             if (opts.closePrice) {
-                weightedSum += opts.closePrice * (100 - totalPct);
+                // Option B: if VM close price is worse than revised premium SL → SL was breached, floor to SL
+                const _cpWorse = opts.sl && opts.sl < 5000 && (!opts.isSell ? opts.closePrice < opts.sl : opts.closePrice > opts.sl);
+                weightedSum += (_cpWorse ? opts.sl : opts.closePrice) * (100 - totalPct);
                 totalPct = 100;
             } else if (opts.sl && opts.sl <= 5000) {
                 // Only use SL as fallback when it is an option price (<= ₹5000).
@@ -2585,7 +2601,8 @@
         }
         if (totalPct < 100 && opts) {
             if (opts.closePrice) {
-                legs.push({ pct: 100 - totalPct, price: opts.closePrice });
+                const _cpWorse = opts.sl && opts.sl < 5000 && (!opts.isSell ? opts.closePrice < opts.sl : opts.closePrice > opts.sl);
+                legs.push({ pct: 100 - totalPct, price: _cpWorse ? opts.sl : opts.closePrice });
             } else if (opts.sl && opts.sl < 5000) {
                 legs.push({ pct: 100 - totalPct, price: opts.sl });
             }
@@ -2644,6 +2661,7 @@
 
     function isTradeFullyClosed(post, replies) {
         if (post._mockClosed !== undefined) return post._mockClosed; // UAT dummy data override
+        if (_sblAutoClosedPostIds.has(post.id)) return true; // FSM terminal guard — SL-breach close is one-way; survives LTP bounce
         const reps = [...(replies||[])].reverse();  // oldest → newest; hasHolding reflects most recent action
         let cum=0, hasHolding=false;
         for (const r of reps) {
@@ -2657,13 +2675,24 @@
         // Requires: premium SL revision in replies (sl<5000 excludes spot index SLs), live LTP available.
         // cum >= 0 covers both partial-exit (cum>0) and fully-open (cum=0) positions.
         if (cum >= 0 && cum < 100 && _lastOptionLTPs) {
-            const _slNum = getLastSLNumeric(replies);
+            const _f = extractTradeAlertFields(post.content || '');
+            const _slNum = getLastSLNumeric(replies) ||
+                (getCurrentSL(replies) === 'Cost (No Loss)' && _f.entry && _f.entry < 5000 ? _f.entry : null);
             if (_slNum && _slNum < 5000) {
-                const _f = extractTradeAlertFields(post.content || '');
                 if (_f.instrument && _f.strike && _f.optType) {
                     const _ltp = _lastOptionLTPs[`${_f.instrument}-${_f.strike}-${_f.optType}`];
                     const _isSell = (_f.action || '').toUpperCase() === 'SELL';
-                    if (_ltp != null && _ltp > 0 && (_isSell ? _ltp > _slNum : _ltp < _slNum)) return true;
+                    if (_ltp != null && _ltp > 0 && (_isSell ? _ltp > _slNum : _ltp < _slNum)) {
+                        if (post.id) {
+                            _sblAutoClosedPostIds.add(post.id);
+                            try {
+                                const _stored = JSON.parse(localStorage.getItem('t2s_sbl_closed_v2')||'{}');
+                                _stored[post.id] = new Date().toISOString().slice(0, 10);
+                                localStorage.setItem('t2s_sbl_closed_v2', JSON.stringify(_stored));
+                            } catch(_e) {}
+                        }
+                        return true;
+                    }
                 }
             }
         }
@@ -3375,7 +3404,8 @@
             // Exit price: weighted average across all partial exits (e.g. 50%@180 + 50%@158 = avg 169)
             const _closePrice25 = extractClosePriceFromReplies(postReplies);
             const _slResolved25 = getLastSLNumeric(postReplies) || (getCurrentSL(postReplies) === 'Cost (No Loss)' && fields.entry && fields.entry < 5000 ? fields.entry : null);
-            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: _slResolved25, closePrice: _closePrice25, isSell: fields.action === 'SELL' });
+            const _isSlBreachClosed25 = _sblAutoClosedPostIds.has(post.id); // Path A: SL-breach-closed → ignore VM close price
+            const exitPrice25 = getWeightedExitPrice(postReplies, { sl: _slResolved25, closePrice: _isSlBreachClosed25 ? null : _closePrice25, isSell: fields.action === 'SELL' });
             // Use exit price if available, else max seen; label changes accordingly
             const displayPrice25 = exitPrice25 || maxPrice25;
             const displayPriceLabel25 = exitPrice25 ? 'Exit Price' : 'Max (Post Trigger)';
@@ -3439,7 +3469,7 @@
                     }
                 }
             }
-            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _closePrice25, sl: _slResolved25, isSell: fields.action === 'SELL' });
+            const _exitLegs25 = getExitLegs(postReplies, { closePrice: _isSlBreachClosed25 ? null : _closePrice25, sl: _slResolved25, isSell: fields.action === 'SELL' });
             const _exitLabel25 = _exitLegs25.length > 1 ? 'Effective Exit' : (exitPrice25 ? 'Exit' : 'Max (Post Trigger)');
             const _exitBreakdown25 = buildExitBreakdownHtml(_exitLegs25);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss25?'#fca5a5':'#bbf7d0'};">
@@ -3492,7 +3522,8 @@
         const _closePrice3 = extractClosePriceFromReplies(postReplies);
         // Resolve 'cost' SL (= entry price, no-loss level) to numeric for exit price calculation
         const _slResolved3 = getLastSLNumeric(postReplies) || (getCurrentSL(postReplies) === 'Cost (No Loss)' && fields.entry && fields.entry < 5000 ? fields.entry : null);
-        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: _slResolved3, closePrice: _closePrice3, isSell: fields.action === 'SELL' } : null);
+        const _isSlBreachClosed3 = _sblAutoClosedPostIds.has(post.id); // Path A: SL-breach-closed → ignore VM close price, use SL as exit
+        const exitPrice = getWeightedExitPrice(postReplies, isClosed ? { sl: _slResolved3, closePrice: _isSlBreachClosed3 ? null : _closePrice3, isSell: fields.action === 'SELL' } : null);
         // For auto-closed partial exits: prefer getWeightedExitPrice (which now includes [CLOSEPRICE:X])
         // Fall back to latestCmp only when no CLOSEPRICE is available (older behaviour)
         const _cumExitDisp = getCumulativeExit(postReplies);
@@ -3706,7 +3737,7 @@
                     }
                 }
             }
-            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _closePrice3, sl: _slResolved3, isSell: fields.action === 'SELL' });
+            const _exitLegs3 = getExitLegs(postReplies, { closePrice: _isSlBreachClosed3 ? null : _closePrice3, sl: _slResolved3, isSell: fields.action === 'SELL' });
             const _exitLabel3 = _exitLegs3.length > 1 ? 'Effective Exit' : 'Exit';
             const _exitBreakdown3 = buildExitBreakdownHtml(_exitLegs3);
             return `<div class="update-card" id="ucard-${post.id}" data-content="${sanitizeHtml(mainContent)}" data-trade-key="${tradeKey}" style="border-left:3px solid ${_loss3?'#fca5a5':'#bbf7d0'};">
