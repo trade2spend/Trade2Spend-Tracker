@@ -511,7 +511,7 @@ let _lastPushTs          = 0;    // dedup guard: timestamp of last broadcast pus
 // postId-based push dedup — persisted to disk so VM restarts don't reset it
 const PUSH_SENT_FILE = path.join(__dirname, '.push_sent.json');
 const _pushSentMap   = new Map(); // postId → timestamp (ms)
-(function loadPushSent() {
+function loadPushSent() {
   try {
     const raw = JSON.parse(fs.readFileSync(PUSH_SENT_FILE, 'utf8'));
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -520,7 +520,7 @@ const _pushSentMap   = new Map(); // postId → timestamp (ms)
     }
     console.log(`[push-dedup] Loaded ${_pushSentMap.size} sent postIds from disk`);
   } catch {}
-})();
+}
 function savePushSent() {
   try { fs.writeFileSync(PUSH_SENT_FILE, JSON.stringify(Object.fromEntries(_pushSentMap))); } catch {}
 }
@@ -4292,6 +4292,7 @@ process.on('unhandledRejection', (reason) => {
 
 loadState();
 loadHolidayState();
+loadPushSent();
 loadNifty50Cache();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
 
