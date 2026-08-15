@@ -408,7 +408,7 @@
         /* === Live Banner Ticker === */
         #live-ticker-wrap { display:none; overflow:hidden; background:#4a2a78; border-top:2px solid #3a1f60; cursor:pointer; user-select:none; -webkit-user-select:none; }
         #live-ticker-inner { display:flex; align-items:center; height:32px; }
-        #live-ticker-track { flex:1; overflow:hidden; min-width:0; }
+        #live-ticker-track { flex:1; overflow:hidden; min-width:0; display:flex; align-items:center; height:100%; }
         #live-ticker-anim { display:inline-flex; align-items:center; white-space:nowrap; animation:tickerScroll 18s linear infinite; will-change:transform; }
         #live-ticker-anim:hover { animation-play-state:paused; }
         @keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
@@ -4403,7 +4403,13 @@
         }
         const animEl = document.getElementById('live-ticker-anim');
         animEl.innerHTML = makeChunk() + makeChunk();
-        wrap.style.display = 'block';
+        // Set duration based on actual content width so speed is consistent (~70px/s)
+        requestAnimationFrame(function() {
+            var chunkWidth = animEl.scrollWidth / 2;
+            var duration = Math.max(6, chunkWidth / 70);
+            animEl.style.animationDuration = duration.toFixed(1) + 's';
+            wrap.style.display = 'block';
+        });
     }
 
     async function sendNewAlert() {
