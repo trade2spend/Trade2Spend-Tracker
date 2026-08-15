@@ -46,6 +46,7 @@
 <!-- DEPLOY: T2S-PROD-20260716-001 | Trade Alert tab + Performance tab: "not triggered" trades now excluded from Closed Trades display and Performance P&L calculation. Trades with _STATUS_ONLY_RE-matching follow-ups (e.g. "Not triggered. Now avoiding...") and no valid trigger/exit data are correctly hidden after market close — were rendering as "✅ Closed Trade" with no exit since T2S-PROD-20260709-003 auto-close. Two-line fix: closedPosts gets a getTradeState!=='not_triggered' filter; closedTrades gets same guard. Rollback: revert closedPosts to single isTradeFullyClosed filter; revert closedTrades to single isTradeFullyClosed filter. -->
 <!-- DEPLOY: T2S-PROD-20260715-010 | Member PWA — fetchUpdates() stale-while-revalidate: removed early return on cache hit so Supabase is always fetched fresh in background. Cached content still shows instantly for UX. Fixes: new post not appearing when cache was < 30 min old (Realtime race), CUG posts not visible on first tab visit. Rollback: add back `return;` after _userInteracted.forEach on cache hit block. -->
 <!-- DEPLOY: T2S-PROD-20260715-009 | Member PWA — Realtime: (1) subscription changed INSERT→* so UPDATE/DELETE events fire (deleted posts now disappear instantly); (2) fetchUpdates() always called on any Realtime event, not just when on Updates tab; (3) _updatesRefreshTimer added — 60s polling while on Updates tab as fallback if Realtime misses. No other logic changed. Rollback: revert event:* to INSERT, revert always-fetchUpdates to tab-gated, remove _updatesRefreshTimer var + 2 usages. -->
+<!-- DEPLOY: T2S-UAT-20260815-001 | UAT sendReply(): capture sbFetch response to extract postId; pass postId + post_type:'follow_up' in /send-push call for both trades and updates tabs. Server-side postId dedup now prevents same follow-up from being pushed twice regardless of how many code paths call /send-push. Rollback: revert await sbFetch to not capture return value; remove _replyData/_replyPost/_replyPostId lines; remove postId+post_type from both send-push fetch bodies. -->
 <!-- DEPLOY: T2S-PROD-20260715-005 | Member PWA — cug_test posts filtered: trade alerts and updates with audience=cug_test are hidden from all members except mobile 8888888888 and admins. One line filter added after each post-fetch in fetchTradeAlerts() and fetchUpdates(). Rollback: remove the two _isCug + filter lines. -->
 <!-- DEPLOY: T2S-PROD-20260715-001 | Trade Alert + Performance tab calculation fixes: (1) extractHighFromReplies now returns MAX of all [HIGH:XXX] replies (VM posts one per trading day — first-found was picking wrong/stale value). (2) parseFollowUpContent: when SL hit already detected (isFullExit=true), "exiting with N as SL" now extracts N as exit price — fixes 10 Jul loss showing as profit. (3) Performance tab P&L now uses actual exit price as primary (not HIGH) — HIGH used only as fallback when no exit exists. (4) "Max possible" display: falls back to calculateMaxProfit (highest price in follow-up text) when [HIGH:XXX] is below entry or absent — fixes missing Max possible on 6 Jul, 13 Jul cards. (5) Both Section 2.5 and Section 3 "Max possible" show best available high (VM HIGH if valid, else highest exit seen). Rollback: revert extractHighFromReplies to first-found, remove slHitExitM block, revert maxPrice order, revert _calcMax+_bestHigh lines to original _maxPoss single-line, revert display to _optHighX. -->
 <!-- DEPLOY: T2S-PROD-20260714-007 | Updates tab follow-up notifications: (1) sendReply() button in renderUpdates now passes 'updates' as fromTab arg. (2) else-if branch added in sendReply() fires /send-push with title "📢 Trade2Spend Update" when fromTab==='updates'. Previously only fromTab==='trades' triggered a push — Updates tab follow-ups were silently skipped. Rollback: revert onclick to sendReply('${post.id}') and remove else-if block. -->
@@ -4340,7 +4341,7 @@
         btn.textContent = 'Sending...';
 
         try {
-            await sbFetch('posts', {
+            const _replyData = await sbFetch('posts', {
                 method: 'POST',
                 body: JSON.stringify({
                     content:       text,
@@ -4352,22 +4353,24 @@
                     sent_at:       new Date().toISOString()
                 })
             });
+            const _replyPost   = Array.isArray(_replyData) ? _replyData[0] : _replyData;
+            const _replyPostId = _replyPost?.id;
 
             // Refresh the correct tab
             if (fromTab === 'trades') fetchTradeAlerts();
             else fetchUpdates();
-            // Push notification for follow-ups
+            // Push notification for follow-ups — pass postId so server dedup prevents duplicates
             if (fromTab === 'trades') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-                    body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades' })
+                    body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades', postId: _replyPostId, post_type: 'follow_up' })
                 }).catch(() => {});
             } else if (fromTab === 'updates') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-                    body: JSON.stringify({ title: '📢 Trade2Spend Update', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates' })
+                    body: JSON.stringify({ title: '📢 Trade2Spend Update', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _replyPostId, post_type: 'follow_up' })
                 }).catch(() => {});
             }
 
