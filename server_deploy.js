@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260815-002 | server.js: Push notification dedup + tier-aware content. (1) postId-based persistent dedup (_pushSentMap + .push_sent.json) — each postId pushed exactly once, survives VM restarts; body dedup kept as fallback when no postId. (2) Per-member dedup removed — all subscribed devices receive notification (previously only 1 device per member, causing missed notifications). (3) Tier-aware body — paid members see full message, free members see reference only (e.g. "📊 Trade Alert — Open app to view"). (4) Disabled members skipped. (5) Unique tag per post (t2s-post-{postId}) so multiple posts don't collapse each other. Rollback: remove _pushSentMap/PUSH_SENT_FILE/savePushSent block; revert /send-push endpoint to previous version (see T2S-PROD-20260715-009 rollback notes).
 // DEPLOY: T2S-PROD-20260805-001 | server.js: GET / response now includes kotakLtpRunning field — Admin PWA dot logic reads this to show green when LTP poll is active, even if session age check reports loggedIn:false. One new field added to GET / JSON response. No other endpoint, logic, or calculation touched. Rollback: remove kotakLtpRunning line from GET / res.end() block.
 // DEPLOY: T2S-PROD-20260731-001 | server.js: Phone emergency commands — /pwa and /reset-high. (1) /pwa: clean PWA health snapshot via Telegram — shows scraper status, Kotak session, all tracked contracts with live CMP, session high/low, and LTP age (⚠️ if stale >30s). Zero new data sources — reads _activeContracts, _optionChain, _optionHighs, _optionLows, _optionChainTs, _marketScraperInterval. (2) /reset-high NIFTY 24250 PE: resets _optionHighs[key] and _optionLows[key] for a specific contract from Telegram, preserves postId, calls saveState(). Returns usage hint on bad input. Both commands are purely additive — no existing command modified. Rollback: remove the /pwa block (lines 2809–2838) and /reset-high block (lines 2840–2857) from handleMessage().
 // DEPLOY: T2S-PROD-20260730-003 | server.js: Trade identity engine — permanent fix for session high/low bleeding across trades with the same strike. (1) refreshActiveContracts(): postId-change detection — when a new trade is posted for the same instrument-strike-type key, _optionHighs[key] and _optionLows[key] are reset to zero; the null guard means server restarts (where postId is null from state.json restore) do NOT trigger spurious resets. (2) _latestMarketData snapshot: optionHighsPostIds added — member PWA now receives {liveCmpKey → postId} map alongside optionHighs, enabling client-side postId gating. Rollback: remove the RC-1 FIX block in refreshActiveContracts (12 lines); remove optionHighsPostIds line from _latestMarketData snapshot.
@@ -505,8 +506,24 @@ let _pendingBugFixes     = {};   // uuid → { file, find, replace, summary } aw
 let _ltpZeroSince        = 0;    // timestamp when optionLTPs first went empty during market hours
 let _ltpConsecFailures   = 0;    // consecutive network failures on current LTP URL — triggers failover to backup
 let _optionChainTs       = {};   // key → Date.now() of last successful LTP fetch — staleness detection
-let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent
+let _lastPushBody        = '';   // dedup guard: body of last broadcast push sent (fallback when no postId)
 let _lastPushTs          = 0;    // dedup guard: timestamp of last broadcast push sent
+// postId-based push dedup — persisted to disk so VM restarts don't reset it
+const PUSH_SENT_FILE = path.join(__dirname, '.push_sent.json');
+const _pushSentMap   = new Map(); // postId → timestamp (ms)
+(function loadPushSent() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(PUSH_SENT_FILE, 'utf8'));
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    for (const [id, ts] of Object.entries(raw)) {
+      if (ts > cutoff) _pushSentMap.set(id, ts);
+    }
+    console.log(`[push-dedup] Loaded ${_pushSentMap.size} sent postIds from disk`);
+  } catch {}
+})();
+function savePushSent() {
+  try { fs.writeFileSync(PUSH_SENT_FILE, JSON.stringify(Object.fromEntries(_pushSentMap))); } catch {}
+}
 let _lastRealPriceTs     = 0;    // timestamp of last cycle where ≥1 index price came from a live source (not cache fallback)
 let _scraperRanTodayIST  = null; // IST date string of first scraper start today — distinguishes normal 9:15 start from mid-session crash
 
@@ -4066,19 +4083,32 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       res.setHeader('Content-Type', 'application/json');
       let payload = {};
       try { payload = JSON.parse(rawBody); } catch {}
-      let { title = 'Trade2Spend', body: msgBody = 'New update', tag = 't2s-notif', url = 'https://app.trade2spend.com/#updates' } = payload;
-      if (payload.audience === 'cug_test') url = 'https://app.trade2spend.com/uat.html#updates'; // T2S-PROD-20260715-008: CUG notifications open uat.html
-      // T2S-PROD-20260715-002: dedup guard — skip if identical body sent within 30s
-      const _pNow = Date.now();
-      if (msgBody === _lastPushBody && _pNow - _lastPushTs < 30000) {
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'dedup' }));
-        return;
+      let { title = 'Trade2Spend', body: msgBody = 'New update', tag = 't2s-notif', url = 'https://app.trade2spend.com/#updates', postId } = payload;
+      if (payload.audience === 'cug_test') url = 'https://app.trade2spend.com/uat.html#updates';
+      // T2S-PROD-20260815-002: postId-based dedup — each postId is pushed exactly once, persists across VM restarts
+      if (postId) {
+        if (_pushSentMap.has(postId)) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'already_sent' }));
+          return;
+        }
+        _pushSentMap.set(postId, Date.now()); // lock immediately — handles race conditions from double-tap
+        savePushSent();
+      } else {
+        // Fallback body dedup for callers that don't pass postId
+        const _pNow = Date.now();
+        if (msgBody === _lastPushBody && _pNow - _lastPushTs < 30000) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, sent: 0, skipped: 'dedup' }));
+          return;
+        }
+        _lastPushBody = msgBody;
+        _lastPushTs   = _pNow;
       }
-      _lastPushBody = msgBody;
-      _lastPushTs   = _pNow;
+      // Reference body shown to free members (full content only for paid)
+      const _freeBody = { 'trade_alert': '📊 Trade Alert — Open app to view', 'follow_up': '📊 Trade Update — Open app to view', 'market_update': '📈 Market Update — Open app to view', 'general': '💬 New Message — Open app to view' }[payload.post_type] || '🔔 New Update — Open app to view';
       try {
-        // T2S-PROD-20260715-003: CUG routing — audience=cug_test sends only to CUG member devices
+        // CUG routing — audience=cug_test sends only to CUG member devices
         let subs;
         if (payload.audience === 'cug_test') {
           const cugMembers = await sbFetch(`members?mobile=in.(${CUG_MOBILES.map(m => m.replace(/\+/g, '%2B')).join(',')})&select=id`);
@@ -4088,7 +4118,10 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         } else {
           subs = await sbFetch('push_subscriptions?select=id,member_id,subscription_json&order=last_used.desc');
         }
-        // T2S-PROD-20260715-007: deduplicate by endpoint — one push per unique browser registration, even if DB has multiple rows for same device
+        // Build member tier+status map for content filtering and disabled-member skip
+        const _allMembers = await sbFetch('members?select=id,tier,status').catch(() => []);
+        const _tierMap = Object.fromEntries((_allMembers || []).map(m => [m.id, { tier: m.tier, status: m.status }]));
+        // Deduplicate by endpoint — one push per unique browser registration (handles multiple DB rows for same device)
         const _seenEps = new Set();
         const _dedupedSubs = subs.filter(sub => {
           try {
@@ -4098,30 +4131,28 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             return true;
           } catch { return true; }
         });
-        // T2S-PROD-20260715-009: per-member dedup — max 1 notification per member regardless of how many devices they subscribed from
-        const _seenMembers = new Set();
-        const _finalSubs = _dedupedSubs.filter(sub => {
-          if (!sub.member_id) return true;
-          if (_seenMembers.has(sub.member_id)) return false;
-          _seenMembers.add(sub.member_id);
-          return true;
-        });
-        // T2S-PROD-20260715-002: parallel delivery — all notifications fire simultaneously so browser tag-dedup works correctly
-        const _pResults = await Promise.all(_finalSubs.map(async sub => {
+        // Unique tag per post — prevents notifications from collapsing each other when multiple posts arrive quickly
+        const _notifTag = postId ? `t2s-post-${postId.slice(0, 8)}` : tag;
+        // Send to ALL subscribed devices (per-member dedup removed — allows all devices to receive)
+        const _pResults = await Promise.all(_dedupedSubs.map(async sub => {
           try {
-            const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body: msgBody, tag, url }));
+            const memberInfo = sub.member_id ? _tierMap[sub.member_id] : null;
+            if (memberInfo && memberInfo.status === 'disabled') return { id: sub.id, skipped: true };
+            const notifBody = (memberInfo && memberInfo.tier === 'paid') ? msgBody : _freeBody;
+            const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body: notifBody, tag: _notifTag, url }));
             return { id: sub.id, expired: sc === 410 || sc === 404 };
           } catch(e) { return { id: sub.id, failed: true }; }
         }));
-        const sent    = _pResults.filter(r => !r.expired && !r.failed).length;
+        const sent    = _pResults.filter(r => !r.expired && !r.failed && !r.skipped).length;
         const failed  = _pResults.filter(r => r.failed).length;
+        const skipped = _pResults.filter(r => r.skipped).length;
         const toDelete = _pResults.filter(r => r.expired).map(r => r.id);
         for (const id of toDelete) {
           await sbFetch(`push_subscriptions?id=eq.${id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
         }
-        console.log(`Push: ${sent} sent, ${failed} failed, ${toDelete.length} expired cleaned`);
+        console.log(`Push: ${sent} sent, ${failed} failed, ${skipped} skipped (disabled), ${toDelete.length} expired cleaned`);
         res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, sent, failed, cleaned: toDelete.length, total: subs.length }));
+        res.end(JSON.stringify({ ok: true, sent, failed, skipped, cleaned: toDelete.length, total: subs.length }));
       } catch (e) {
         console.error('/send-push error:', e.message);
         res.writeHead(500);
