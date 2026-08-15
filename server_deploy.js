@@ -38,15 +38,20 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
-import { redactPostForFreeMember } from '../stability_harness/src/redactor.js';
-import { formatOptionPrice } from '../stability_harness/src/pricing/foMath.js';
-import { createAtomicWriter } from '../stability_harness/src/state/atomicWriter.js';
-import { createMutex }       from '../stability_harness/src/async/mutex.js';
-
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE   = path.join(__dirname, 'state.json');
-const _stateWriter = createAtomicWriter(STATE_FILE);
 const HOLIDAY_FILE = path.join(__dirname, '.holiday_state.json');
+
+function redactPostForFreeMember(post, tier) {
+  if (tier === 'paid') return post;
+  const refs = {
+    trade_alert:   '📊 Trade Alert — Open app to view',
+    follow_up:     '📊 Trade Update — Open app to view',
+    market_update: '📈 Market Update — Open app to view',
+    general:       '💬 New Message — Open app to view'
+  };
+  return { ...post, content: refs[post.post_type] || '🔔 New Update — Open app to view' };
+}
 const PORT       = process.env.PORT || 3000;
 
 // ── ENV ──────────────────────────────────────────────────────────────────────
@@ -489,7 +494,7 @@ let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min
 let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...}, ... } from scrip master
 let _activeContracts     = []; // [{instrument,strike,type,expiry,postId}] parsed from Supabase
 let _activeContractsTs   = 0;  // last Supabase refresh timestamp
-const _contractsMutex    = createMutex(); // prevents parallel refreshActiveContracts() executions
+let _contractsMutexLocked = false; // prevents parallel refreshActiveContracts() executions
 let _optionHighs         = {}; // key → { high: number, postId: string } — max LTP since session start
 let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
@@ -584,7 +589,7 @@ async function saveState() {
     const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
     const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, { high: v.high, last: v.last || 0, postId: v.postId || null }])); // RC-4 FIX: persist postId for new-trade detection after VM restart
     const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action, postId: v.postId || null }])); // RC-4 FIX: persist postId
-    _stateWriter.schedule(JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2));
+    try { fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2)); } catch {}
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -1353,8 +1358,9 @@ function buildExpiryDates() {
 // Parse active option contracts from recent Supabase trade_alert posts
 async function refreshActiveContracts() {
   if (Date.now() - _activeContractsTs < 60 * 1000) return; // fast throttle — no lock needed
-  const _release = _contractsMutex.tryAcquire();
-  if (!_release) return; // a refresh is already in flight — skip, result will arrive shortly
+  if (_contractsMutexLocked) return; // a refresh is already in flight — skip
+  _contractsMutexLocked = true;
+  const _release = () => { _contractsMutexLocked = false; };
   _activeContractsTs = Date.now();
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1475,7 +1481,7 @@ async function fetchKotakOptionLTPs() {
         continue;
       }
       const d = await r.json();
-      const ltp = formatOptionPrice(parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp)) ?? 0;
+      const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp) || 0;
       if (ltp > 0) {
         const key = `${c.instrument}-${c.strike}-${c.type}`;
         _optionChain[key] = ltp;
