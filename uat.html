@@ -407,13 +407,13 @@
         .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
         /* === Live Banner Ticker === */
         #live-ticker-wrap { display:none; overflow:hidden; background:#4a2a78; border-top:2px solid #3a1f60; cursor:pointer; user-select:none; -webkit-user-select:none; }
-        #live-ticker-inner { display:flex; align-items:center; height:32px; }
-        #live-ticker-track { flex:1; overflow:hidden; min-width:0; display:flex; align-items:center; height:100%; }
+        #live-ticker-inner { padding:7px 0; overflow:hidden; }
+        #live-ticker-track { overflow:hidden; }
         #live-ticker-anim { display:inline-flex; align-items:center; white-space:nowrap; animation:tickerScroll 18s linear infinite; will-change:transform; }
         #live-ticker-anim:hover { animation-play-state:paused; }
         @keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
-        .ticker-msg-text { font-size:0.8rem; color:#ffffff; font-weight:500; padding:0 18px; }
-        .ticker-msg-sep { color:rgba(255,255,255,0.35); font-size:0.8rem; padding:0 2px; }
+        .ticker-msg-text { font-size:0.8rem; color:#ffffff; font-weight:500; padding:0 18px; line-height:1; }
+        .ticker-msg-sep { color:rgba(255,255,255,0.35); font-size:0.8rem; line-height:1; }
         /* === Admin Updates Compose === */
         #admin-updates-compose-wrap { display:none; margin:0 0 12px; }
         #admin-updates-compose { display:none; background:var(--primary-light); border:1px solid #c4b5fd; border-radius:10px; padding:12px; margin-top:8px; }
@@ -4406,7 +4406,7 @@
         // Set duration based on actual content width so speed is consistent (~70px/s)
         requestAnimationFrame(function() {
             var chunkWidth = animEl.scrollWidth / 2;
-            var duration = Math.max(6, chunkWidth / 70);
+            var duration = Math.max(4, chunkWidth / 120);
             animEl.style.animationDuration = duration.toFixed(1) + 's';
             wrap.style.display = 'block';
         });
