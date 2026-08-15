@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260815-003 | Admin PWA push callers: postId + post_type added to all 3 /send-push calls (sendFollowUp, confirmPushToMembers, sendPostsReply). Enables permanent postId-based dedup on VM — same post never pushed twice even after VM restart. Rollback: remove postId and post_type from the 3 JSON.stringify bodies. -->
 <!-- T2S-PROD-20260805-002 | Admin PWA: checkKotakStatus() dot logic — _kotakConnected now set to true when either loggedIn OR kotakLtpRunning is true (was loggedIn only). Fixes header dot showing red while CMP is live. One condition changed on one line. No push to members, no Supabase, no member PWA, no calculations touched. Rollback: revert _kotakConnected = !!(d.loggedIn || d.kotakLtpRunning) back to _kotakConnected = !!d.loggedIn. -->
 <!-- T2S-PROD-20260717-004 | Admin PWA Posts tab: (1) Restored "↳ Add follow-up" button (was disabled in T2S-PROD-20260717-001). (2) Restored "Send Follow-up →" button in reply box. (3) Unlock button now only shows for paid_only non-trade_alert posts — hidden for all-audience posts and trade alerts (trade alerts use their own unlock mechanism). Rollback: remove Add follow-up button, remove Send Follow-up button, revert Unlock condition to unconditional. -->
 <!-- T2S-PROD-20260717-001: Admin PWA — "Send Follow-up →" button hidden in Trade tab and Posts tab. JS functions sendFollowUp() and sendPostsReply() untouched. Rollback: restore the two <button> lines (Trade tab ~line 692, Posts tab ~line 5201). -->
@@ -1946,7 +1947,7 @@ async function sendFollowUp() {
         fetch('https://api.trade2spend.com/send-push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-          body: JSON.stringify({ title: '📣 New Follow-up — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates' })
+          body: JSON.stringify({ title: '📣 New Follow-up — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _fuPost?.id, post_type: 'follow_up' })
         }).catch(() => {});
         document.getElementById('fu-text').value = '';
         document.getElementById('fu-intent-preview').style.display = 'none';
@@ -5184,7 +5185,7 @@ async function confirmPushToMembers(){
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', audience: pushAudience })
+      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', audience: pushAudience, postId: _savedPost?.id, post_type: pushMsgType === 'trade' ? 'trade_alert' : 'general' })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
       fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
@@ -5343,7 +5344,7 @@ async function sendPostsReply(parentId, btn) {
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: '📣 New Follow-up — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates' })
+      body: JSON.stringify({ title: '📣 New Follow-up — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _fuPost?.id, post_type: 'follow_up' })
     }).catch(() => {});
     loadPostsFeed();
   } catch(e) {
