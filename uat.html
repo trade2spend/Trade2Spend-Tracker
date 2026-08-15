@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260815-001 | uat.html: localStorage T-2 months + Option B SL floor on closePrice — (1) _sblAutoClosedPostIds persistence changed from sessionStorage (date-keyed, expires midnight) to localStorage key 't2s_sbl_closed_v2' (per-post-id: {postId:"YYYY-MM-DD"}); restore IIFE on page load drops entries older than first of T-2 months (e.g. in Aug: entries before Jun 1 cleaned); on SL-breach detection: post.id + ISO date saved to localStorage — persists across page refreshes, app restarts, and days. (2) getWeightedExitPrice closePrice fallback: Option B — if VM [CLOSEPRICE:X] is worse than revised premium SL (BUY: closePrice<sl; SELL: closePrice>sl; guard: sl<5000 excludes spot SLs) → use opts.sl as exit (VM missed posting SL hit); otherwise use closePrice as-is. (3) getExitLegs closePrice fallback: same Option B guard — floors leg price at SL when VM close price crossed revised SL. Rollback: revert restore IIFE back to sessionStorage block; revert isTradeFullyClosed save to sessionStorage; revert getWeightedExitPrice fallback to bare opts.closePrice; revert getExitLegs fallback to bare opts.closePrice. -->
 <!-- T2S-UAT-20260814-005 | uat.html: Two-path exit price architecture — reverts closePrice SL floor (T2S-UAT-20260814-004 Fix 1); implements clean split: Path A (SL breach confirmed via _sblAutoClosedPostIds) → closePrice passed as null to getWeightedExitPrice/getExitLegs → SL used as exit, VM close price ignored; Path B (SL not breached) → closePrice passed as-is → VM close price is the exit. Changes: (1) getWeightedExitPrice closePrice fallback reverted to bare opts.closePrice (SL floor removed). (2) getExitLegs closePrice fallback reverted to bare opts.closePrice leg. (3) _isSlBreachClosed3/_isSlBreachClosed25/_isSlBreachPerf added at 3 call sites; closePrice arg changed to `_isSlBreach ? null : _closePrice`. Rollback: remove _isSlBreach* vars and revert closePrice args to bare _closePrice*; re-add SL floor block to getWeightedExitPrice + getExitLegs fallbacks. -->
 <!-- T2S-UAT-20260814-004 | uat.html: closePrice SL floor + Set persistence + Cost SL breach — (1) getWeightedExitPrice fallback block: opts.closePrice now applies same SL floor as main loop — corrupted/expired ≤0.10 values nulled; BUY: Math.max(closePrice,sl); SELL: Math.min(closePrice,sl); if rawCp is null, falls to opts.sl; guard: opts.sl<5000 (premium SLs only). (2) getExitLegs fallback block: same floor + guard applied to breakdown leg price. (3) _sblAutoClosedPostIds persistence: restore IIFE added after _tradeTargetHits (reads sessionStorage 't2s_sbl_closed' with IST date key on page load); Set.add block in isTradeFullyClosed now also writes to sessionStorage after each add — survives page refresh within same trading day. (4) isTradeFullyClosed SL-breach block: extractTradeAlertFields moved before _slNum declaration; _slNum now resolves Cost SL trades via getCurrentSL==='Cost (No Loss)' → uses _f.entry as the SL level (same pattern as _slResolved3 in card rendering) — cost SL trades now auto-close intra-day when CMP falls below entry. Impact: Today CE exit shows ₹188 (0pts); 24400 PE shows ₹142.50 (+19.5pts); 24600 CE shows ₹152 (-20pts). Rollback: revert getWeightedExitPrice fallback to bare opts.closePrice*; revert getExitLegs fallback to bare opts.closePrice leg; remove restore IIFE + revert Set.add to single line; revert isTradeFullyClosed block to original _slNum=getLastSLNumeric + original _f position. -->
 <!-- T2S-UAT-20260814-003 | uat.html: FSM hardening — (1) Corrupt tick guard: updateTradeCMPs forEach guards changed from ltp>0 to !isNaN(ltp)&&ltp>0.10 across all 4 usage points (data-live-cmp, data-live-low, data-live-high, data-pl-badge) — sub-₹0.10 and NaN ticks discarded at entry before any display or peak tracking update. (2) FSM terminal guard: _sblAutoClosedPostIds Set added (global); isTradeFullyClosed checks Set first (returns true immediately on match); when SL-breach block fires and returns true, post.id is added to Set — prevents state resurrection if LTP bounces back above SL before next card rebuild. (3) Target once-latch: t1Hit/t2Hit/t3Hit fields added to parseFollowUpContent return object; regex patterns detect "T1 hit / T2 hit / T3 hit / target 1 hit" variants; _tradeTargetHits Map (global) accumulates hits per post.id — getTradeTargetHits(postId,replies) helper applies latches and returns current state; hits are never reset to false once set. Rollback: (1) revert 4 forEach guards back to ltp>0 / ltp<=0; (2) remove _sblAutoClosedPostIds Set + remove Set.has check at top of isTradeFullyClosed + remove Set.add line from SL-breach block; (3) remove t1Hit/t2Hit/t3Hit from r object init + remove 3 target-hit regex lines before return r + remove _tradeTargetHits var + remove getTradeTargetHits function. -->
@@ -749,10 +750,14 @@
     const _tradeTargetHits = {};             // FSM: post.id → {t1,t2,t3} — target hit latches, never reset to false
     (function(){
         try {
-            const _d = new Date().toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata'});
-            const _s = JSON.parse(sessionStorage.getItem('t2s_sbl_closed')||'null');
-            if (_s && _s.date === _d && Array.isArray(_s.ids))
-                _s.ids.forEach(id => _sblAutoClosedPostIds.add(id));
+            const _now = new Date();
+            const _cutoff = new Date(_now.getFullYear(), _now.getMonth() - 2, 1); // first of T-2 months
+            const _stored = JSON.parse(localStorage.getItem('t2s_sbl_closed_v2')||'{}');
+            const _cleaned = {};
+            Object.entries(_stored).forEach(([id, dateStr]) => {
+                if (new Date(dateStr) >= _cutoff) { _cleaned[id] = dateStr; _sblAutoClosedPostIds.add(id); }
+            });
+            localStorage.setItem('t2s_sbl_closed_v2', JSON.stringify(_cleaned));
         } catch(_e) {}
     })();
 
@@ -2589,7 +2594,9 @@
         // else fall back to last known SL (less accurate but better than nothing)
         if (totalPct < 100 && opts) {
             if (opts.closePrice) {
-                weightedSum += opts.closePrice * (100 - totalPct);
+                // Option B: if VM close price is worse than revised premium SL → SL was breached, floor to SL
+                const _cpWorse = opts.sl && opts.sl < 5000 && (!opts.isSell ? opts.closePrice < opts.sl : opts.closePrice > opts.sl);
+                weightedSum += (_cpWorse ? opts.sl : opts.closePrice) * (100 - totalPct);
                 totalPct = 100;
             } else if (opts.sl && opts.sl <= 5000) {
                 // Only use SL as fallback when it is an option price (<= ₹5000).
@@ -2623,7 +2630,8 @@
         }
         if (totalPct < 100 && opts) {
             if (opts.closePrice) {
-                legs.push({ pct: 100 - totalPct, price: opts.closePrice });
+                const _cpWorse = opts.sl && opts.sl < 5000 && (!opts.isSell ? opts.closePrice < opts.sl : opts.closePrice > opts.sl);
+                legs.push({ pct: 100 - totalPct, price: _cpWorse ? opts.sl : opts.closePrice });
             } else if (opts.sl && opts.sl < 5000) {
                 legs.push({ pct: 100 - totalPct, price: opts.sl });
             }
@@ -2720,8 +2728,9 @@
                         if (post.id) {
                             _sblAutoClosedPostIds.add(post.id);
                             try {
-                                const _d = new Date().toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata'});
-                                sessionStorage.setItem('t2s_sbl_closed', JSON.stringify({date:_d, ids:[..._sblAutoClosedPostIds]}));
+                                const _stored = JSON.parse(localStorage.getItem('t2s_sbl_closed_v2')||'{}');
+                                _stored[post.id] = new Date().toISOString().slice(0, 10);
+                                localStorage.setItem('t2s_sbl_closed_v2', JSON.stringify(_stored));
                             } catch(_e) {}
                         }
                         return true;
