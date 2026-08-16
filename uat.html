@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260816-004 | uat.html: Updates tab silent background refresh — (1) switchTab() cache path: removed renderUpdates() call entirely; DOM is preserved between tab switches so re-render is unnecessary; (2) fetchUpdates() loading wipe removed: 'Loading updates...' only shown on true first load (no _cachedPosts and no localStorage cache); subsequent fetches keep existing posts visible; (3) renderLiveTicker() content guard: _lastTickerKey tracks last rendered banner IDs; if content unchanged and wrap already showing, returns early without restarting animation. Rollback: restore renderUpdates() call in switchTab cache path; restore unconditional container.innerHTML=Loading line; remove _lastTickerKey var and the 3-line guard block in renderLiveTicker. -->
 <!-- T2S-UAT-20260816-003 | uat.html: Updates tab no-refetch on tab switch — switchTab() now checks _cachedPosts; if populated, calls renderUpdates() directly (no Supabase calls, no loading flash); fetchUpdates() only fires on first load (cache null); 60s polling timer removed; all mutation events (sendReply, sendNewUpdate, deletePost, Realtime) still call fetchUpdates() to keep cache current. Rollback: restore original one-liner: if (tabId==='updates'){...fetchUpdates();_updatesRefreshTimer=setInterval(fetchUpdates,60000);} -->
 <!-- T2S-UAT-20260815-002 | uat.html: Live Scrolling Banner Module — (1) CSS: #live-ticker-wrap (dark #1e293b sticky bar, display:none by default), tickerScroll @keyframes translateX 32s, .banner-pin-card + .live-banner-badge for admin view, #admin-updates-compose-wrap + .banner-toggle-row for compose. (2) HTML: #live-ticker-wrap added INSIDE .sticky-header after .tabs close (stays sticky); #admin-updates-compose-wrap with "＋ Post Update" button + inner compose form (textarea, audience row with All/Paid/CUG, banner checkbox, Post→ button) inserted in Updates tab before #updates-container. (3) JS: _updComposeAud state var; selectUpdAud(val) — updates 3 audience buttons; toggleUpdCompose() — shows/hides compose form; sendNewUpdate() — POSTs post_type='banner' or 'general' to Supabase (NOTE: if Supabase CHECK constraint blocks 'banner', run: ALTER TABLE posts ADD CONSTRAINT posts_post_type_check CHECK (post_type IN ('trade_alert','follow_up','market_update','general','banner'))); renderLiveTicker(bannerPosts,memberTier,isAdmin) — builds duplicate track for seamless -50% loop, shows/hides wrap by audience. (4) renderUpdates(): admin compose wrap shown/hidden by isAdmin; bannerPosts extracted (post_type==='banner'); renderLiveTicker called; bannerHtml prepended for admin (pinned cards with LIVE BANNER badge + Deactivate button); container.innerHTML=bannerHtml+html. Zero touch to FSM, SL math, CMP loops, Service Worker, or trade card rendering. Rollback: remove T2S-UAT-20260815-002 CSS block; remove #live-ticker-wrap HTML; remove #admin-updates-compose-wrap HTML; remove _updComposeAud var; remove selectUpdAud/toggleUpdCompose/sendNewUpdate/renderLiveTicker functions; revert renderUpdates to remove _updWrap/bannerPosts/renderLiveTicker/bannerHtml lines; revert container.innerHTML back to bare html. -->
 <!-- T2S-UAT-20260815-001 | uat.html: localStorage T-2 months + Option B SL floor on closePrice — (1) _sblAutoClosedPostIds persistence changed from sessionStorage (date-keyed, expires midnight) to localStorage key 't2s_sbl_closed_v2' (per-post-id: {postId:"YYYY-MM-DD"}); restore IIFE on page load drops entries older than first of T-2 months (e.g. in Aug: entries before Jun 1 cleaned); on SL-breach detection: post.id + ISO date saved to localStorage — persists across page refreshes, app restarts, and days. (2) getWeightedExitPrice closePrice fallback: Option B — if VM [CLOSEPRICE:X] is worse than revised premium SL (BUY: closePrice<sl; SELL: closePrice>sl; guard: sl<5000 excludes spot SLs) → use opts.sl as exit (VM missed posting SL hit); otherwise use closePrice as-is. (3) getExitLegs closePrice fallback: same Option B guard — floors leg price at SL when VM close price crossed revised SL. Rollback: revert restore IIFE back to sessionStorage block; revert isTradeFullyClosed save to sessionStorage; revert getWeightedExitPrice fallback to bare opts.closePrice; revert getExitLegs fallback to bare opts.closePrice. -->
@@ -782,6 +783,7 @@
     let _tradeRefreshTimer   = null;
     let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _updComposeAud = 'all'; // audience selection for admin Updates compose
+    let _lastTickerKey = ''; // last rendered banner content — skip re-render if unchanged
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null;         // latest session highs — re-applied after trade card rebuilds
@@ -990,7 +992,7 @@
             _updatesTabViewed = true;
             setTimeout(() => setTabBadge('updates', 0), 2500);
             if (_cachedPosts !== null) {
-                renderUpdates(_cachedPosts, _cachedTier, _cachedIsAdmin, _localReadCache);
+                // DOM is preserved between tab switches — just restore UI state, no re-render
                 _mqpScrollAfterRender();
                 (_cachedPosts||[]).filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
             } else {
@@ -4001,7 +4003,10 @@
             const _fudTa  = document.getElementById('reply-text-' + _fudPId);
             _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
         }
-        container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
+        // Only show loading spinner on truly first load (no in-memory cache and no localStorage cache)
+        if (!_cachedPosts && !_uc) {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
+        }
 
         try {
             const memberId = localStorage.getItem('t2s_member_id');
@@ -4403,8 +4408,11 @@
             if (p.audience === 'paid_only') return isAdmin || memberTier === 'paid';
             return true;
         });
-        if (!visible.length) { wrap.style.display = 'none'; return; }
+        if (!visible.length) { wrap.style.display = 'none'; _lastTickerKey = ''; return; }
         const msgs = visible.map(function(p) { return sanitizeHtml((p.content || '').trim()); });
+        const _newKey = msgs.join('\x00');
+        if (_newKey === _lastTickerKey && wrap.style.display === 'block') return; // content unchanged — don't restart animation
+        _lastTickerKey = _newKey;
         const animEl = document.getElementById('live-ticker-anim');
         const track  = document.getElementById('live-ticker-track');
         // Single copy — dynamic keyframes ensure text starts off-screen right, exits off-screen left
