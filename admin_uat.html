@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260816-001 | admin_uat: Live Banner support — Push modal banner toggle (gen only), banner post_type routing, Deactivate button in Posts tab, banner visible in General feed filter. -->
 <!-- T2S-UAT-20260815-002 | admin_uat: postId + post_type added to confirmPushToMembers push call for UAT testing of permanent dedup. -->
 <!-- DEPLOY: T2S-PROD-20260717-001 | Admin PWA Trade tab + Posts tab: "Send Follow-up →" button hidden in both locations. No JS logic touched — functions sendFollowUp() and sendPostsReply() remain. Rollback: restore the two <button> lines (Trade tab line ~688, Posts tab line ~5199 in original). -->
 <!DOCTYPE html>
@@ -1417,9 +1418,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Message Preview</div>
     <div id="push-preview" style="background:#f9f7ff;border:1px solid #ede8f5;border-radius:10px;padding:12px;font-size:12px;line-height:1.7;color:#1a2030;max-height:140px;overflow-y:auto;white-space:pre-wrap;margin-bottom:14px;"></div>
     <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Audience</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
       <button id="aud-all-btn" onclick="setPushAud('all')" style="padding:10px;border-radius:10px;border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All Members</button>
       <button id="aud-paid-btn" onclick="setPushAud('paid_only')" style="padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
+    </div>
+    <div id="push-banner-row" style="display:none;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;background:#fff3cd;border:1px solid #fcd34d;border-radius:8px;padding:10px;cursor:pointer;">
+        <input type="checkbox" id="push-banner-chk" onchange="pushAsBanner=this.checked">
+        <span style="font-size:13px;font-weight:600;color:#92400e;">🔴 Post as Live Banner (scrolling ticker)</span>
+      </label>
     </div>
     <button id="push-confirm-btn" onclick="confirmPushToMembers()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#4a2a78;color:#fff;font-size:15px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send to Members →</button>
     <div style="font-size:10px;color:#c4b8d8;text-align:center;margin-top:8px;">Members will see this immediately in the Updates tab</div>
@@ -5098,6 +5105,7 @@ async function restoreFromBackup() {
 
 let pushAudience = 'all';
 let pushMsgType  = 'trade';
+let pushAsBanner = false;
 
 async function openPushModal(type){
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
@@ -5115,8 +5123,13 @@ function _doOpenPushModal(type) {
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
   pushMsgType = type;
   pushAudience = 'all';
+  pushAsBanner = false;
   document.getElementById('push-preview').textContent = msg;
   setPushAud('all');
+  const bannerRow = document.getElementById('push-banner-row');
+  const bannerChk = document.getElementById('push-banner-chk');
+  if (bannerRow) bannerRow.style.display = type === 'gen' ? 'block' : 'none';
+  if (bannerChk) bannerChk.checked = false;
   document.getElementById('push-modal').style.display = 'flex';
 }
 
@@ -5156,9 +5169,10 @@ async function confirmPushToMembers(){
       const why = whyEl ? whyEl.value.trim() : '';
       if (why) content = msg + '\n[WHY]' + why + '[/WHY]';
     }
+    const _postType = pushMsgType === 'trade' ? 'trade_alert' : (pushAsBanner ? 'banner' : 'general');
     const _savedArr = await sbPost('posts', {
       content:       content,
-      post_type:     pushMsgType === 'trade' ? 'trade_alert' : 'general',
+      post_type:     _postType,
       audience:      pushAudience,
       allow_sharing: true,
       is_deleted:    false,
@@ -5166,19 +5180,19 @@ async function confirmPushToMembers(){
     });
     const _savedPost = Array.isArray(_savedArr) ? _savedArr[0] : _savedArr;
     if (_savedPost) writeBackup(_savedPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
-    if (_savedPost && pushMsgType !== 'trade') scheduleDummyLikes(_savedPost.id);
+    if (_savedPost && pushMsgType !== 'trade' && !pushAsBanner) scheduleDummyLikes(_savedPost.id);
     // Clear Why field after posting
     const whyEl = document.getElementById('trade-why');
     if (whyEl) whyEl.value = '';
     closePushModal();
-    showToast('✓ Pushed to members! Visible in Updates tab now.');
+    showToast(pushAsBanner ? '✓ Banner live! Scrolling ticker visible to all members.' : '✓ Pushed to members! Visible in Updates tab now.');
     // Fire push notification to all subscribed devices (non-blocking)
     const _pushTitle = pushMsgType === 'trade' ? '🚨 Trade Alert — Trade2Spend' : '📢 Trade2Spend Update';
     const _pushBody  = msg.replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi, '').split('\n').find(l => l.trim() && !/^only for|^educational/i.test(l.trim()))?.trim().slice(0, 100) || 'New update';
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', postId: _savedPost?.id, post_type: pushMsgType === 'trade' ? 'trade_alert' : 'general' })
+      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', postId: _savedPost?.id, post_type: _postType })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
       fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
@@ -5210,7 +5224,7 @@ function renderPostsFeed() {
   const list = document.getElementById('posts-feed-list');
   if (!list) return;
   const alertTypes   = ['trade_alert'];
-  const generalTypes = ['general','market_update'];
+  const generalTypes = ['general','market_update','banner'];
   const parents = _postsFeedCache.filter(p => !p.parent_id && (
     _postsFeedFilter === 'alert'   ? alertTypes.includes(p.post_type)   :
     _postsFeedFilter === 'general' ? generalTypes.includes(p.post_type) : true
@@ -5242,15 +5256,16 @@ function renderPostsFeed() {
       </div>`;
     }).join('') : '';
 
-    return `<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;text-align:left;">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">${audBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
+    const bannerBadge = p.post_type==='banner' ? `<span style="font-size:10px;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:2px 6px;border-radius:10px;font-weight:700;">🔴 LIVE</span>` : '';
+    return `<div style="background:var(--bg3);border:${p.post_type==='banner'?'1.5px solid #fca5a5':'0.5px solid var(--border2)'};border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;text-align:left;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">${audBadge}${bannerBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
       <div style="font-size:12px;color:var(--text);line-height:1.55;margin-bottom:6px;white-space:pre-wrap;">${mainContent}</div>
       ${rCount>0?`
       <button onclick="togglePostsReplies('${p.id}')" id="prf-btn-${p.id}" style="background:none;border:none;padding:0;font-size:11px;color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''} ▶</button>
       <div id="prf-list-${p.id}" style="display:none;margin-bottom:6px;">${repliesHtml}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button onclick="openPostsReplyBox('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add follow-up</button>
-        ${p.audience==='paid_only'&&p.post_type!=='trade_alert'?`<button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>`:''}
+        ${p.post_type==='banner'?`<button onclick="deactivateBanner('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:1.5px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔴 Deactivate Banner</button>`:`<button onclick="openPostsReplyBox('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add follow-up</button>`}
+        ${p.audience==='paid_only'&&p.post_type!=='trade_alert'&&p.post_type!=='banner'?`<button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>`:''}
         <button onclick="deleteAdminPost('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid #fca5a5;background:transparent;color:#dc2626;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Delete post">🗑</button>
       </div>
       <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
@@ -5364,6 +5379,18 @@ async function deleteAdminPost(postId) {
     showToast('✓ Post deleted.');
     loadPostsFeed();
   } catch(e) { showToast('Failed to delete: ' + (e.message||'Check connection')); }
+}
+
+async function deactivateBanner(postId, btn) {
+  btn.disabled = true; btn.textContent = 'Deactivating...';
+  try {
+    await sbPatch(`posts?id=eq.${postId}`, { is_deleted: true });
+    showToast('✓ Banner deactivated. Ticker hidden from members.');
+    loadPostsFeed();
+  } catch(e) {
+    showToast('Failed: ' + (e.message||'Check connection'));
+    btn.disabled = false; btn.textContent = '🔴 Deactivate Banner';
+  }
 }
 
 // ── ADD TO HOME SCREEN ────────────────────────────────────────────────────────
