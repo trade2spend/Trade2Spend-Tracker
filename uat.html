@@ -407,13 +407,13 @@
         .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
         /* === Live Banner Ticker === */
         #live-ticker-wrap { display:none; overflow:hidden; background:#4a2a78; border-top:2px solid #3a1f60; cursor:pointer; user-select:none; -webkit-user-select:none; }
-        #live-ticker-inner { padding:7px 0; overflow:hidden; }
-        #live-ticker-track { overflow:hidden; }
-        #live-ticker-anim { display:inline-flex; align-items:center; white-space:nowrap; animation:tickerScroll 18s linear infinite; will-change:transform; }
+        #live-ticker-inner { padding:2px 0; overflow:hidden; }
+        #live-ticker-track { overflow:hidden; text-align:left; }
+        #live-ticker-anim { display:inline-block; white-space:nowrap; vertical-align:middle; animation:tickerScroll 18s linear infinite; will-change:transform; }
         #live-ticker-anim:hover { animation-play-state:paused; }
         @keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
-        .ticker-msg-text { font-size:0.8rem; color:#ffffff; font-weight:500; padding:0 18px; line-height:1; }
-        .ticker-msg-sep { color:rgba(255,255,255,0.35); font-size:0.8rem; line-height:1; }
+        .ticker-msg-text { font-size:0.8rem; color:#ffffff; font-weight:500; padding:0 18px; line-height:2.2; }
+        .ticker-msg-sep { color:rgba(255,255,255,0.45); font-size:0.8rem; }
         /* === Admin Updates Compose === */
         #admin-updates-compose-wrap { display:none; margin:0 0 12px; }
         #admin-updates-compose { display:none; background:var(--primary-light); border:1px solid #c4b5fd; border-radius:10px; padding:12px; margin-top:8px; }
@@ -4396,10 +4396,9 @@
         const msgs = visible.map(function(p) { return sanitizeHtml((p.content || '').trim()); });
         // Two identical chunks for seamless translateX(-50%) loop
         function makeChunk() {
-            return '<span style="display:inline-flex;align-items:center;">' +
-                msgs.map(function(m) {
-                    return '<span class="ticker-msg-text">' + m + '</span><span class="ticker-msg-sep">•</span>';
-                }).join('') + '</span>';
+            return msgs.map(function(m) {
+                return '<span class="ticker-msg-text">' + m + '</span><span class="ticker-msg-sep">•</span>';
+            }).join('');
         }
         const animEl = document.getElementById('live-ticker-anim');
         animEl.innerHTML = makeChunk() + makeChunk();
