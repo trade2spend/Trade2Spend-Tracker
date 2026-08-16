@@ -407,12 +407,12 @@
         .alert-banner-btn  { border:none; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; font-family:inherit; padding:6px 12px; border-radius:7px; cursor:pointer; flex-shrink:0; }
         /* === Live Banner Ticker === */
         #live-ticker-wrap { display:none; overflow:hidden; background:#4a2a78; border-top:2px solid #3a1f60; cursor:pointer; user-select:none; -webkit-user-select:none; }
-        #live-ticker-inner { padding:2px 0; overflow:hidden; }
-        #live-ticker-track { overflow:hidden; text-align:left; }
-        #live-ticker-anim { display:inline-block; white-space:nowrap; vertical-align:middle; animation:tickerScroll 18s linear infinite; will-change:transform; }
+        #live-ticker-inner { height:28px; overflow:hidden; }
+        #live-ticker-track { overflow:hidden; height:100%; text-align:left; }
+        #live-ticker-anim { display:inline-block; white-space:nowrap; line-height:28px; animation:tickerScroll 10s linear infinite; will-change:transform; }
         #live-ticker-anim:hover { animation-play-state:paused; }
-        @keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
-        .ticker-msg-text { font-size:0.8rem; color:#ffffff; font-weight:500; padding:0 18px; line-height:2.2; }
+        @keyframes tickerScroll { 0%{ transform:translateX(0) } 100%{ transform:translateX(-100%) } }
+        .ticker-msg-text { font-size:0.8rem; color:#ffffff; font-weight:500; padding:0 20px; }
         .ticker-msg-sep { color:rgba(255,255,255,0.45); font-size:0.8rem; }
         /* === Admin Updates Compose === */
         #admin-updates-compose-wrap { display:none; margin:0 0 12px; }
@@ -4381,7 +4381,7 @@
         }
     }
 
-    // renderLiveTicker — builds the sticky scrolling news ticker from banner posts
+    // renderLiveTicker — RTL news ticker: text enters from right, exits left
     function renderLiveTicker(bannerPosts, memberTier, isAdmin) {
         const wrap = document.getElementById('live-ticker-wrap');
         if (!wrap) return;
@@ -4394,20 +4394,31 @@
         });
         if (!visible.length) { wrap.style.display = 'none'; return; }
         const msgs = visible.map(function(p) { return sanitizeHtml((p.content || '').trim()); });
-        // Two identical chunks for seamless translateX(-50%) loop
-        function makeChunk() {
-            return msgs.map(function(m) {
-                return '<span class="ticker-msg-text">' + m + '</span><span class="ticker-msg-sep">•</span>';
-            }).join('');
-        }
         const animEl = document.getElementById('live-ticker-anim');
-        animEl.innerHTML = makeChunk() + makeChunk();
-        // Set duration based on actual content width so speed is consistent (~70px/s)
+        const track  = document.getElementById('live-ticker-track');
+        // Single copy — dynamic keyframes ensure text starts off-screen right, exits off-screen left
+        animEl.innerHTML = msgs.map(function(m) {
+            return '<span class="ticker-msg-text">' + m + '</span><span class="ticker-msg-sep">  •  </span>';
+        }).join('');
+        wrap.style.display = 'block';
         requestAnimationFrame(function() {
-            var chunkWidth = animEl.scrollWidth / 2;
-            var duration = Math.max(4, chunkWidth / 120);
+            var trackW = track.offsetWidth;
+            var textW  = animEl.offsetWidth;
+            if (!trackW || !textW) return;
+            // Inject keyframes with exact pixel values for this message
+            var styleId = 't2s-ticker-kf';
+            var old = document.getElementById(styleId);
+            if (old) old.remove();
+            var s = document.createElement('style');
+            s.id = styleId;
+            s.textContent = '@keyframes tickerScroll { 0%{ transform:translateX(' + trackW + 'px) } 100%{ transform:translateX(-' + textW + 'px) } }';
+            document.head.appendChild(s);
+            // 120px/s, minimum 4s
+            var duration = Math.max(4, (trackW + textW) / 120);
+            // Force animation restart so new keyframes apply immediately
+            animEl.style.animationName = 'none';
             animEl.style.animationDuration = duration.toFixed(1) + 's';
-            wrap.style.display = 'block';
+            requestAnimationFrame(function() { animEl.style.animationName = ''; });
         });
     }
 
@@ -4643,6 +4654,14 @@
                 _renderMemberChip(members[0]);
             } catch(e){ console.warn('Auth check failed',e); }
         }
+        // Load banner posts at init — independent of which tab is active
+        sbFetch('posts?is_deleted=eq.false&post_type=eq.banner&order=sent_at.desc&limit=20', { method: 'GET' })
+            .then(function(bp) {
+                if (bp && bp.length) {
+                    var _cm = window._cachedMember || {};
+                    renderLiveTicker(bp, _cm.tier || localStorage.getItem('t2s_mode') || 'free', _cm.is_admin === true);
+                }
+            }).catch(function() {});
         // Active-member tracking: update last_active in Supabase on open + every 5 min (fire-and-forget, never blocks UI)
         if(mode !== 'free' && memberId){
             const _did = localStorage.getItem('t2s_device_id');
