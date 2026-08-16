@@ -1,14 +1,8 @@
-<!-- T2S-PROD-20260815-003 | Admin PWA push callers: postId + post_type added to all 3 /send-push calls (sendFollowUp, confirmPushToMembers, sendPostsReply). Enables permanent postId-based dedup on VM — same post never pushed twice even after VM restart. Rollback: remove postId and post_type from the 3 JSON.stringify bodies. -->
-<!-- T2S-PROD-20260805-002 | Admin PWA: checkKotakStatus() dot logic — _kotakConnected now set to true when either loggedIn OR kotakLtpRunning is true (was loggedIn only). Fixes header dot showing red while CMP is live. One condition changed on one line. No push to members, no Supabase, no member PWA, no calculations touched. Rollback: revert _kotakConnected = !!(d.loggedIn || d.kotakLtpRunning) back to _kotakConnected = !!d.loggedIn. -->
-<!-- T2S-PROD-20260717-004 | Admin PWA Posts tab: (1) Restored "↳ Add follow-up" button (was disabled in T2S-PROD-20260717-001). (2) Restored "Send Follow-up →" button in reply box. (3) Unlock button now only shows for paid_only non-trade_alert posts — hidden for all-audience posts and trade alerts (trade alerts use their own unlock mechanism). Rollback: remove Add follow-up button, remove Send Follow-up button, revert Unlock condition to unconditional. -->
-<!-- T2S-PROD-20260717-001: Admin PWA — "Send Follow-up →" button hidden in Trade tab and Posts tab. JS functions sendFollowUp() and sendPostsReply() untouched. Rollback: restore the two <button> lines (Trade tab ~line 692, Posts tab ~line 5201). -->
-<!-- T2S-PROD-20260716-002: Admin PWA — Bug Reporter "Broken in" field changed from free-text input to locked dropdown (Admin PWA tabs + Member PWA sections + Backend). openBugReport() auto-selects matching option from active tab. No free typing possible. Rollback: replace <select> with <input type="text"> and revert openBugReport() to use .value = tabName. -->
-<!-- T2S-PROD-20260716-001: Admin PWA — Bug Reporter added. Floating "📋 Report Issue" button (bottom-left, z-index:150, below all modals). Tap opens bottom-sheet: tab name (auto-filled), description, optional screenshot (compressed to 800px via canvas). On submit: POST /report-issue on VM → Telegram alert + screenshot + Claude analysis with ✅ Apply Fix / ❌ Skip inline buttons. Rollback: remove .bug-* CSS block, JS block (openBugReport/closeBugReport/bugFileSelected/submitBugReport), and HTML block (BUG REPORT FAB comment to closing </div></div>). -->
-<!-- T2S-PROD-20260715-004: Admin PWA — CUG Test audience option added to Push to Members modal. Sets audience=cug_test on post; /send-push receives audience param and routes to CUG devices only. Rollback: remove aud-cug-btn HTML, cug_test branch in setPushAud(), and audience param from /send-push fetch body. -->
-<!-- T2S-PROD-20260714-007: Admin PWA follow-up notifications: (1) sendFollowUp() fires /send-push after successful Supabase save. (2) sendPostsReply() fires /send-push after showToast. Both calls are non-blocking (.catch(()=>{})). No change to save logic, backup, or toast. Rollback: remove the two fetch('/send-push'...) blocks from each function. -->
-<!-- T2S-PROD-20260714-006: Admin PWA — scheduleDummyLikes now skipped for trade_alert posts (pushMsgType !== 'trade' guard); dummy likes only drip on general/market_update posts which are the only post types shown in Updates tab. Prevents unnecessary posts-table PATCHes on trade alerts. -->
-<!-- T2S-PROD-20260714-003: Admin PWA — scheduleDummyLikes() fires POST /schedule-dummy-likes on VM after every Push to Members (parent posts only); client-side setTimeout chain removed; server handles 5-8 staggered PATCHes to dummy_likes column over 3-45 min. Rollback: remove scheduleDummyLikes() and the call after writeBackup(). -->
-<!-- T2S-PROD-20260709-002: TOTP+PIN two-layer auth, Setup tab grid layout, tab reorder/rename/hide, tab button styling -->
+<!-- T2S-PROD-20260816-002 | PROD: Admin PWA — 2 UAT changes promoted to production: (1) Live Banner toggle in Push to Members modal (General tab only — checkbox posts as post_type=banner); (2) Active Banners panel at top of Posts tab (loadActiveBanners fetches on tab open, deactivateBannerPanel soft-deletes, count badge, audience + preview per row). Source: T2S-UAT-20260816-001 and T2S-UAT-20260816-002. Rollback: revert Trading_Bot/index.html to T2S-PROD-20260815-003 state. -->
+<!-- T2S-UAT-20260816-002 | admin_uat: Active Banners panel at top of Posts tab — loadActiveBanners() fetches post_type=banner at Posts tab open; deactivateBannerPanel() soft-deletes; panel shows count badge + audience + preview + Deactivate per row; synced with uat.html admin compose. -->
+<!-- T2S-UAT-20260816-001 | admin_uat: Live Banner support — Push modal banner toggle (gen only), banner post_type routing, Deactivate button in Posts tab, banner visible in General feed filter. -->
+<!-- T2S-UAT-20260815-002 | admin_uat: postId + post_type added to confirmPushToMembers push call for UAT testing of permanent dedup. -->
+<!-- DEPLOY: T2S-PROD-20260717-001 | Admin PWA Trade tab + Posts tab: "Send Follow-up →" button hidden in both locations. No JS logic touched — functions sendFollowUp() and sendPostsReply() remain. Rollback: restore the two <button> lines (Trade tab line ~688, Posts tab line ~5199 in original). -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -291,7 +285,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 .slider-label{font-size:11px;color:var(--muted);white-space:nowrap;}
 .slider-val{font-size:11px;font-weight:600;color:var(--text);min-width:28px;text-align:right;}
 
-/* ── BUG REPORT — T2S-PROD-20260716-001 ─────────────────────────────────── */
+/* ── BUG REPORT ──────────────────────────────────────────────────────────── */
 .bug-fab{position:fixed;bottom:22px;left:16px;z-index:150;background:#1a2030;border-radius:20px;padding:8px 13px;display:flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.28);font-size:12px;font-weight:600;color:#fff;font-family:'Space Grotesk',sans-serif;border:none;}
 .bug-fab:active{opacity:0.7;}
 .bug-overlay{display:none;position:fixed;inset:0;z-index:11002;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);align-items:flex-end;justify-content:center;}
@@ -450,10 +444,11 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 </div>
 
 <div class="app">
-<!-- CHART ANALYSIS TAB — T2S-PROD-20260708-005 -->
+<!-- CHART ANALYSIS TAB -->
 <div id="tab-chart" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
+  <!-- Mode switcher -->
   <div class="card" style="padding:10px;">
     <div style="display:flex;gap:6px;">
       <button id="chart-mode-upload-btn" onclick="switchChartMode('upload')" style="flex:1;padding:9px;border-radius:var(--radius-sm);border:1.5px solid var(--gold);background:var(--goldbg);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📸 Upload Screenshot</button>
@@ -462,6 +457,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div style="font-size:10px;color:var(--muted);margin-top:7px;text-align:center;">Upload → AI analyses via API (small cost) &nbsp;·&nbsp; Paste → free, uses your Claude App</div>
   </div>
 
+  <!-- MODE 1: Upload screenshot -->
   <div id="chart-mode-upload">
     <div class="card">
       <div class="card-title"><span class="card-title-dot"></span>Chart Screenshot</div>
@@ -486,6 +482,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
 
+  <!-- MODE 2: Paste from Claude App -->
   <div id="chart-mode-paste" style="display:none;">
     <div class="card">
       <div class="card-title"><span class="card-title-dot"></span>Paste Claude App Response</div>
@@ -493,7 +490,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
         1. Open claude.ai on your phone or browser<br>
         2. Upload the chart screenshot there<br>
         3. Ask: <em style="color:var(--text);">"Analyse this chart using the Trade2Spend strategy"</em><br>
-        4. Copy the full response and paste below
+        4. Copy the full Section 8 response and paste below
       </div>
       <textarea id="chart-paste-input" placeholder="Paste the full Claude response here…" style="width:100%;min-height:160px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:'Space Grotesk',sans-serif;padding:10px;resize:vertical;outline:none;line-height:1.6;" oninput="onPasteInput()"></textarea>
     </div>
@@ -973,6 +970,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <div id="tab-posts" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
+  <!-- Active Banners Panel -->
+  <div class="card" id="active-banners-card" style="margin-bottom:10px;border:1.5px solid #fca5a5;background:#fff8f8;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div class="card-title" style="margin:0;color:#dc2626;">📌 Active Banners</div>
+      <span id="active-banners-count" style="display:none;font-size:11px;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:2px 8px;border-radius:10px;font-weight:700;"></span>
+    </div>
+    <div id="active-banners-list" style="font-size:12px;color:var(--muted);text-align:center;padding:8px 0;">Loading...</div>
+  </div>
+
   <div class="card" style="margin-bottom:10px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <div class="card-title" style="margin-bottom:0;"><span class="card-title-dot"></span>Posts Feed</div>
@@ -1107,10 +1113,10 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <button id="restore-backup-btn" onclick="restoreFromBackup()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(5,150,105,0.4);background:rgba(5,150,105,0.08);color:#059669;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔄 Restore from Backup</button>
   </div>
 
-  <!-- T2S-PROD-20260716-004: Push UAT to Prod -->
+  <!-- T2S-CUG-20260716-003: Push to Prod -->
   <div class="setup-card" style="border-color:rgba(220,38,38,0.4);background:rgba(220,38,38,0.04);">
     <div class="setup-label" style="color:#dc2626;">🚀 Push UAT to Production</div>
-    <div class="info-text" style="margin-bottom:12px;">Deploys the current CUG/UAT version to all members. UAT badge and test buttons are automatically stripped. Takes ~60s to go live.</div>
+    <div class="info-text" style="margin-bottom:12px;">Deploys the current CUG/UAT version to all members at app.trade2spend.com. UAT badge and Test CMP button are automatically stripped. Takes ~60s to go live.</div>
     <div id="push-to-prod-status" style="font-size:11px;color:var(--muted);margin-bottom:8px;display:none;"></div>
     <button id="push-to-prod-btn" onclick="pushUatToProd()" style="width:100%;padding:11px;border-radius:8px;border:1.5px solid rgba(220,38,38,0.4);background:rgba(220,38,38,0.08);color:#dc2626;font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🚀 Push to Production</button>
   </div>
@@ -1296,7 +1302,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <div id="tab-membership" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
-  <!-- ── ACTIVE MEMBERS STATS ── T2S-PROD-20260717-002 active-member-stats-card -->
+  <!-- ── ACTIVE MEMBERS STATS ── T2S-UAT-20260717-001 -->
   <div id="mem-stats-card" style="background:var(--bg2);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;border:0.5px solid var(--border2);">
     <div style="font-size:11px;font-weight:700;color:var(--muted2);letter-spacing:0.05em;margin-bottom:10px;">ACTIVE MEMBERS</div>
     <div id="mem-stats-body" style="display:grid;grid-template-columns:110px 1fr 1fr;gap:4px;align-items:center;">
@@ -1423,12 +1429,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Message Preview</div>
     <div id="push-preview" style="background:#f9f7ff;border:1px solid #ede8f5;border-radius:10px;padding:12px;font-size:12px;line-height:1.7;color:#1a2030;max-height:140px;overflow-y:auto;white-space:pre-wrap;margin-bottom:14px;"></div>
     <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Audience</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
       <button id="aud-all-btn" onclick="setPushAud('all')" style="padding:10px;border-radius:10px;border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All Members</button>
       <button id="aud-paid-btn" onclick="setPushAud('paid_only')" style="padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
     </div>
-    <div style="margin-bottom:16px;">
-      <button id="aud-cug-btn" onclick="setPushAud('cug_test')" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🧪 CUG Test</button>
+    <div id="push-banner-row" style="display:none;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;background:#fff3cd;border:1px solid #fcd34d;border-radius:8px;padding:10px;cursor:pointer;">
+        <input type="checkbox" id="push-banner-chk" onchange="pushAsBanner=this.checked">
+        <span style="font-size:13px;font-weight:600;color:#92400e;">🔴 Post as Live Banner (scrolling ticker)</span>
+      </label>
     </div>
     <button id="push-confirm-btn" onclick="confirmPushToMembers()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#4a2a78;color:#fff;font-size:15px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send to Members →</button>
     <div style="font-size:10px;color:#c4b8d8;text-align:center;margin-top:8px;">Members will see this immediately in the Updates tab</div>
@@ -1537,7 +1546,7 @@ function showTab(t){
   document.querySelectorAll('.tab').forEach((b,i)=>{
     b.classList.toggle('on',['chart','trade','general','posts','algo','setup','manage','membership','campaign','results','history'][i]===t);
   });
-  if(t==='posts') loadPostsFeed();
+  if(t==='posts') { loadActiveBanners(); loadPostsFeed(); }
   if(t==='history') renderHistory();
   if(t==='trade') loadFollowUpData();
   if(t==='algo') refreshAlgoTab();
@@ -1560,7 +1569,6 @@ async function fetchMemberStats(){
     const todayIST  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()) - IST_OFFSET);
     const monthIST  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET);
     const nowMinus15 = new Date(Date.now() - 15 * 60 * 1000);
-
     async function querySessions(since){
       const res = await fetch(`${SB_URL}/rest/v1/sessions?is_active=eq.true&last_active=gte.${since.toISOString()}&select=member_id,members(tier,status)`, {
         headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
@@ -1578,14 +1586,12 @@ async function fetchMemberStats(){
       }
       return { paid, free };
     }
-
     const [nowRows, todayRows, monthRows] = await Promise.all([
       querySessions(nowMinus15), querySessions(todayIST), querySessions(monthIST)
     ]);
     const nowC = countByTier(nowRows);
     const todC = countByTier(todayRows);
     const monC = countByTier(monthRows);
-
     el.innerHTML =
       `<div style="font-size:10px;font-weight:600;color:var(--muted2);padding-bottom:5px;border-bottom:0.5px solid var(--border2);">WINDOW</div>` +
       `<div style="font-size:10px;font-weight:600;color:var(--muted2);padding-bottom:5px;border-bottom:0.5px solid var(--border2);text-align:center;">PAID</div>` +
@@ -1911,11 +1917,13 @@ async function loadFollowUpData() {
 }
 
 async function sendFollowUp() {
+    if (_fuSending) return;
+    _fuSending = true;
     const text     = document.getElementById('fu-text').value.trim();
     const parentId = document.getElementById('fu-post-select').value;
     const statusEl = document.getElementById('fu-status');
 
-    if (text.length < 3) { showToast('Type a message first.'); return; }
+    if (text.length < 3) { _fuSending = false; showToast('Type a message first.'); return; }
 
     statusEl.style.display = 'block';
     statusEl.style.color = 'var(--muted)';
@@ -1944,11 +1952,6 @@ async function sendFollowUp() {
 
         statusEl.style.color = 'var(--green)';
         statusEl.textContent = '✓ Follow-up sent';
-        fetch('https://api.trade2spend.com/send-push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-          body: JSON.stringify({ title: '📣 New Follow-up — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _fuPost?.id, post_type: 'follow_up' })
-        }).catch(() => {});
         document.getElementById('fu-text').value = '';
         document.getElementById('fu-intent-preview').style.display = 'none';
         setTimeout(() => { statusEl.style.display='none'; }, 3000);
@@ -1956,6 +1959,8 @@ async function sendFollowUp() {
     } catch(e) {
         statusEl.style.color = 'var(--red)';
         statusEl.textContent = 'Failed: ' + e.message.slice(0,80);
+    } finally {
+        _fuSending = false;
     }
 }
 
@@ -2246,14 +2251,20 @@ async function pinInit() {
 
 // ── ADMIN AUTH (TOTP + PIN TWO-LAYER) ─────────────────────────────────────
 async function adminAuthInit() {
+  // Always hide PIN overlay first — it's visible by default in HTML.
+  // pinInit() will re-show it only when TOTP session is already valid.
   const pinOv = document.getElementById('pin-overlay');
   if (pinOv) pinOv.classList.add('hidden');
+
   if (sessionStorage.getItem('t2s_admin_authed')) return;
+
   const exp = localStorage.getItem('t2s_admin_session_exp');
   if (exp && Date.now() < parseInt(exp)) {
-    await pinInit();
+    await pinInit(); // TOTP valid — pinInit shows PIN overlay
     return;
   }
+
+  // No TOTP session — show TOTP overlay
   const ov = document.getElementById('totp-overlay');
   if (ov) ov.style.display = 'flex';
   setTimeout(() => document.getElementById('admin-totp-inp')?.focus(), 150);
@@ -3031,7 +3042,7 @@ RAW MESSAGE:
 REWRITING RULES:
 - Fix grammar, spelling, and repetition errors
 - Use simple English — every sentence must be understandable by a 12-year-old
-- Do NOT add new financial jargon. If the user wrote trading terms like "put", "call", "support", "resistance", "CE", "PE", "SL", "CMP" — keep those exact words, they are intentional. Never replace them with other words.
+- No financial jargon — avoid words like bullish, bearish, resistance, support, breakout, consolidation, momentum, trend. If any appear, replace with plain everyday words
 - The message must be INFORMATIVE only — it shares what happened or what was personally observed
 - The message must NEVER be instructive — never tell the reader what to do, consider, watch, or act on
 - Never use words like: should, consider, must try, look to, watch out, you may, if you, target (unless they are in the original message)
@@ -3127,7 +3138,7 @@ function recallHistory(i){
   }
 }
 
-// T2S-PROD-20260716-004: Push UAT → Prod
+// T2S-CUG-20260716-003: Push UAT → Prod
 async function pushUatToProd() {
   const btn = document.getElementById('push-to-prod-btn');
   const status = document.getElementById('push-to-prod-status');
@@ -3187,6 +3198,8 @@ function copyMsg(type){
   if(!msg){showToast('Generate a message first.');return;}
   navigator.clipboard.writeText(msg).then(()=>showToast('Copied to clipboard!')).catch(()=>showToast('Copy failed.'));
 }
+
+let _fuSending = false; // T2S-UAT-20260715-B: guard against double-click on Send Follow-up
 
 // ── KOTAK CONNECTION ──
 let _kotakConnected = false;
@@ -3285,7 +3298,7 @@ async function checkKotakStatus() {
   try {
     const r = await fetch('https://api.trade2spend.com/?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
-    _kotakConnected = !!(d.loggedIn || d.kotakLtpRunning);
+    _kotakConnected = !!d.loggedIn;
     if (typeof d.marketHoliday === 'boolean' && d.marketHoliday !== _marketHolidayActive) {
       _marketHolidayActive = d.marketHoliday;
       saveHolidayToStorage(_marketHolidayActive);
@@ -5103,6 +5116,7 @@ async function restoreFromBackup() {
 
 let pushAudience = 'all';
 let pushMsgType  = 'trade';
+let pushAsBanner = false;
 
 async function openPushModal(type){
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
@@ -5120,8 +5134,13 @@ function _doOpenPushModal(type) {
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
   pushMsgType = type;
   pushAudience = 'all';
+  pushAsBanner = false;
   document.getElementById('push-preview').textContent = msg;
   setPushAud('all');
+  const bannerRow = document.getElementById('push-banner-row');
+  const bannerChk = document.getElementById('push-banner-chk');
+  if (bannerRow) bannerRow.style.display = type === 'gen' ? 'block' : 'none';
+  if (bannerChk) bannerChk.checked = false;
   document.getElementById('push-modal').style.display = 'flex';
 }
 
@@ -5133,16 +5152,14 @@ function setPushAud(val){
   pushAudience = val;
   const allBtn  = document.getElementById('aud-all-btn');
   const paidBtn = document.getElementById('aud-paid-btn');
-  const cugBtn  = document.getElementById('aud-cug-btn');
   const active  = 'padding:10px;border-radius:10px;border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:13px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
   const inactive= 'padding:10px;border-radius:10px;border:1.5px solid #e5e5e5;background:#fff;color:#9ca3af;font-size:13px;font-weight:600;font-family:\'Space Grotesk\',sans-serif;cursor:pointer;';
   allBtn.style.cssText  = val === 'all'       ? active : inactive;
   paidBtn.style.cssText = val === 'paid_only' ? active : inactive;
-  if (cugBtn) cugBtn.style.cssText = val === 'cug_test' ? active : inactive;
 }
 
 function scheduleDummyLikes(postId) {
-  fetch(`https://api.trade2spend.com/schedule-dummy-likes?key=T2SMonitor2026`, {
+  fetch('https://api.trade2spend.com/schedule-dummy-likes?key=T2SMonitor2026', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ postId })
@@ -5163,9 +5180,10 @@ async function confirmPushToMembers(){
       const why = whyEl ? whyEl.value.trim() : '';
       if (why) content = msg + '\n[WHY]' + why + '[/WHY]';
     }
+    const _postType = pushMsgType === 'trade' ? 'trade_alert' : (pushAsBanner ? 'banner' : 'general');
     const _savedArr = await sbPost('posts', {
       content:       content,
-      post_type:     pushMsgType === 'trade' ? 'trade_alert' : 'general',
+      post_type:     _postType,
       audience:      pushAudience,
       allow_sharing: true,
       is_deleted:    false,
@@ -5173,19 +5191,19 @@ async function confirmPushToMembers(){
     });
     const _savedPost = Array.isArray(_savedArr) ? _savedArr[0] : _savedArr;
     if (_savedPost) writeBackup(_savedPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
-    if (_savedPost && pushMsgType !== 'trade') scheduleDummyLikes(_savedPost.id);
+    if (_savedPost && pushMsgType !== 'trade' && !pushAsBanner) scheduleDummyLikes(_savedPost.id);
     // Clear Why field after posting
     const whyEl = document.getElementById('trade-why');
     if (whyEl) whyEl.value = '';
     closePushModal();
-    showToast('✓ Pushed to members! Visible in Updates tab now.');
+    showToast(pushAsBanner ? '✓ Banner live! Scrolling ticker visible to all members.' : '✓ Pushed to members! Visible in Updates tab now.');
     // Fire push notification to all subscribed devices (non-blocking)
     const _pushTitle = pushMsgType === 'trade' ? '🚨 Trade Alert — Trade2Spend' : '📢 Trade2Spend Update';
     const _pushBody  = msg.replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi, '').split('\n').find(l => l.trim() && !/^only for|^educational/i.test(l.trim()))?.trim().slice(0, 100) || 'New update';
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', audience: pushAudience, postId: _savedPost?.id, post_type: pushMsgType === 'trade' ? 'trade_alert' : 'general' })
+      body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', postId: _savedPost?.id, post_type: _postType })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
       fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
@@ -5217,7 +5235,7 @@ function renderPostsFeed() {
   const list = document.getElementById('posts-feed-list');
   if (!list) return;
   const alertTypes   = ['trade_alert'];
-  const generalTypes = ['general','market_update'];
+  const generalTypes = ['general','market_update','banner'];
   const parents = _postsFeedCache.filter(p => !p.parent_id && (
     _postsFeedFilter === 'alert'   ? alertTypes.includes(p.post_type)   :
     _postsFeedFilter === 'general' ? generalTypes.includes(p.post_type) : true
@@ -5249,15 +5267,16 @@ function renderPostsFeed() {
       </div>`;
     }).join('') : '';
 
-    return `<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;text-align:left;">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">${audBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
+    const bannerBadge = p.post_type==='banner' ? `<span style="font-size:10px;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:2px 6px;border-radius:10px;font-weight:700;">🔴 LIVE</span>` : '';
+    return `<div style="background:var(--bg3);border:${p.post_type==='banner'?'1.5px solid #fca5a5':'0.5px solid var(--border2)'};border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;text-align:left;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">${audBadge}${bannerBadge}<span style="font-size:10px;color:var(--muted);margin-left:auto;">${d}</span></div>
       <div style="font-size:12px;color:var(--text);line-height:1.55;margin-bottom:6px;white-space:pre-wrap;">${mainContent}</div>
       ${rCount>0?`
       <button onclick="togglePostsReplies('${p.id}')" id="prf-btn-${p.id}" style="background:none;border:none;padding:0;font-size:11px;color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;">↳ ${rCount} follow-up${rCount>1?'s':''} ▶</button>
       <div id="prf-list-${p.id}" style="display:none;margin-bottom:6px;">${repliesHtml}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button onclick="openPostsReplyBox('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add follow-up</button>
-        ${p.audience==='paid_only'&&p.post_type!=='trade_alert'?`<button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>`:''}
+        ${p.post_type==='banner'?`<button onclick="deactivateBanner('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:1.5px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔴 Deactivate Banner</button>`:`<button onclick="openPostsReplyBox('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↳ Add follow-up</button>`}
+        ${p.audience==='paid_only'&&p.post_type!=='trade_alert'&&p.post_type!=='banner'?`<button onclick="unlockPostForAll('${p.id}',this)" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Unlock for free members">🔓 Unlock</button>`:''}
         <button onclick="deleteAdminPost('${p.id}')" style="padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid #fca5a5;background:transparent;color:#dc2626;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;" title="Delete post">🗑</button>
       </div>
       <div id="posts-reply-box-${p.id}" style="display:none;margin-top:8px;border-top:0.5px solid var(--border2);padding-top:8px;">
@@ -5341,11 +5360,6 @@ async function sendPostsReply(parentId, btn) {
     const _fuPost = Array.isArray(_fuArr) ? _fuArr[0] : _fuArr;
     if (_fuPost) writeBackup(_fuPost).catch(e => showToast('⚠️ Backup failed: ' + e.message));
     showToast('✓ Follow-up sent!');
-    fetch('https://api.trade2spend.com/send-push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
-      body: JSON.stringify({ title: '📣 New Follow-up — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _fuPost?.id, post_type: 'follow_up' })
-    }).catch(() => {});
     loadPostsFeed();
   } catch(e) {
     showToast('Failed: ' + (e.message||'Check connection'));
@@ -5376,6 +5390,64 @@ async function deleteAdminPost(postId) {
     showToast('✓ Post deleted.');
     loadPostsFeed();
   } catch(e) { showToast('Failed to delete: ' + (e.message||'Check connection')); }
+}
+
+async function deactivateBanner(postId, btn) {
+  btn.disabled = true; btn.textContent = 'Deactivating...';
+  try {
+    await sbPatch(`posts?id=eq.${postId}`, { is_deleted: true });
+    showToast('✓ Banner deactivated. Ticker hidden from members.');
+    loadPostsFeed();
+  } catch(e) {
+    showToast('Failed: ' + (e.message||'Check connection'));
+    btn.disabled = false; btn.textContent = '🔴 Deactivate Banner';
+  }
+}
+
+async function loadActiveBanners() {
+  const list = document.getElementById('active-banners-list');
+  const countEl = document.getElementById('active-banners-count');
+  if (!list) return;
+  try {
+    const banners = await sbGet('posts?is_deleted=eq.false&post_type=eq.banner&order=sent_at.desc&limit=20&select=id,content,audience,sent_at');
+    if (!banners.length) {
+      list.innerHTML = '<span style="color:var(--muted);font-size:12px;">No active banners</span>';
+      if (countEl) countEl.style.display = 'none';
+      return;
+    }
+    if (countEl) { countEl.textContent = banners.length + ' live'; countEl.style.display = 'inline'; }
+    list.innerHTML = banners.map(b => {
+      const d = new Date(b.sent_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
+      const audBadge = b.audience==='paid_only'
+        ? `<span style="font-size:9px;background:#fef9c3;color:#854d0e;padding:1px 5px;border-radius:8px;font-weight:700;border:1px solid #fde68a;">⭐ Paid</span>`
+        : b.audience==='cug_test'
+        ? `<span style="font-size:9px;background:#ede9fe;color:#6d28d9;padding:1px 5px;border-radius:8px;font-weight:700;border:1px solid #c4b5fd;">🧪 CUG</span>`
+        : `<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:8px;font-weight:700;border:1px solid #bfdbfe;">👥 All</span>`;
+      const preview = (b.content||'').slice(0,60) + ((b.content||'').length>60?'…':'');
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:0.5px solid #fecaca;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">${audBadge}<span style="font-size:10px;color:var(--muted);">${d}</span></div>
+          <div style="font-size:12px;color:var(--text);line-height:1.4;">${preview}</div>
+        </div>
+        <button onclick="deactivateBannerPanel('${b.id}',this)" style="padding:5px 10px;border-radius:6px;border:1.5px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;white-space:nowrap;flex-shrink:0;">🔴 Deactivate</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<span style="color:var(--muted);font-size:12px;">Failed to load</span>';
+  }
+}
+
+async function deactivateBannerPanel(postId, btn) {
+  btn.disabled = true; btn.textContent = 'Deactivating...';
+  try {
+    await sbPatch(`posts?id=eq.${postId}`, { is_deleted: true });
+    showToast('✓ Banner deactivated. Ticker hidden from members.');
+    loadActiveBanners();
+    loadPostsFeed();
+  } catch(e) {
+    showToast('Failed: ' + (e.message||'Check connection'));
+    btn.disabled = false; btn.textContent = '🔴 Deactivate';
+  }
 }
 
 // ── ADD TO HOME SCREEN ────────────────────────────────────────────────────────
@@ -5410,18 +5482,34 @@ function switchChartMode(mode) {
   document.getElementById('chart-results').style.display = 'none';
   document.getElementById('chart-results').innerHTML = '';
   if (mode === 'upload') {
-    uploadBtn.style.cssText += ';background:var(--goldbg);border-color:var(--gold);color:var(--gold);font-weight:700;';
-    pasteBtn.style.cssText += ';background:transparent;border-color:var(--border2);color:var(--muted2);font-weight:600;';
+    uploadBtn.style.background = 'var(--goldbg)'; uploadBtn.style.borderColor = 'var(--gold)'; uploadBtn.style.color = 'var(--gold)'; uploadBtn.style.fontWeight = '700';
+    pasteBtn.style.background = 'transparent'; pasteBtn.style.borderColor = 'var(--border2)'; pasteBtn.style.color = 'var(--muted2)'; pasteBtn.style.fontWeight = '600';
   } else {
-    pasteBtn.style.cssText += ';background:var(--bluebg);border-color:var(--blueborder);color:var(--blue);font-weight:700;';
-    uploadBtn.style.cssText += ';background:transparent;border-color:var(--border2);color:var(--muted2);font-weight:600;';
+    pasteBtn.style.background = 'var(--bluebg)'; pasteBtn.style.borderColor = 'var(--blueborder)'; pasteBtn.style.color = 'var(--blue)'; pasteBtn.style.fontWeight = '700';
+    uploadBtn.style.background = 'transparent'; uploadBtn.style.borderColor = 'var(--border2)'; uploadBtn.style.color = 'var(--muted2)'; uploadBtn.style.fontWeight = '600';
   }
+}
+
+function onPasteInput() {
+  const val = document.getElementById('chart-paste-input').value.trim();
+  const btn = document.getElementById('chart-render-btn');
+  btn.disabled = !val; btn.style.opacity = val ? '1' : '0.4';
+}
+
+function renderPastedAnalysis() {
+  const text = document.getElementById('chart-paste-input').value.trim();
+  if (!text) return;
+  renderChartAnalysis(text);
 }
 
 function handleChartUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) { showToast('Image too large (max 5MB). Use a lower-res screenshot.'); event.target.value = ''; return; }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('Image too large (max 5MB). Use a lower-res screenshot.');
+    event.target.value = '';
+    return;
+  }
   _chartMediaType = file.type || 'image/jpeg';
   const reader = new FileReader();
   reader.onload = function(e) {
@@ -5474,70 +5562,74 @@ async function analyseChart() {
   }
 }
 
-function onPasteInput() {
-  const val = document.getElementById('chart-paste-input').value.trim();
-  const btn = document.getElementById('chart-render-btn');
-  btn.disabled = !val; btn.style.opacity = val ? '1' : '0.4';
-}
-
-function renderPastedAnalysis() {
-  const text = document.getElementById('chart-paste-input').value.trim();
-  if (!text) return;
-  renderChartAnalysis(text);
-}
-
 function renderChartAnalysis(text) {
   const out = document.getElementById('chart-results');
   const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
   if (!lines.length) { out.innerHTML = '<div class="card"><div style="font-size:13px;color:var(--muted);">No response received.</div></div>'; out.style.display='block'; return; }
+
   let html = '';
+
+  // Line 1 — verdict
   const verdict = lines[0];
   let vc='var(--gold)', vbg='var(--goldbg)', vbr='var(--goldborder)', vi='🟡';
-  if (/^GO\b/i.test(verdict))            { vc='var(--green)'; vbg='var(--greenbg)'; vbr='var(--greenborder)'; vi='🟢'; }
-  else if (/^NO TRADE\b/i.test(verdict)) { vc='var(--red)';   vbg='var(--redbg)';  vbr='var(--redborder)';   vi='🔴'; }
-  html += `<div class="card" style="border:2px solid ${vbr};background:${vbg};margin-bottom:10px;padding:14px;">
+  if (/^GO\b/i.test(verdict))       { vc='var(--green)';  vbg='var(--greenbg)';  vbr='var(--greenborder)'; vi='🟢'; }
+  else if (/^NO TRADE\b/i.test(verdict)) { vc='var(--red)'; vbg='var(--redbg)'; vbr='var(--redborder)'; vi='🔴'; }
+  html += `<div class="card" style="border:2px solid ${vbr};background:${vbg};margin-bottom:10px;padding:14px 14px;">
     <div style="font-size:17px;font-weight:800;color:${vc};line-height:1.4;">${vi} ${esc(verdict)}</div>
   </div>`;
+
+  // Bullet points — lines starting with •
   const bullets = lines.filter(l => l.startsWith('•'));
   if (bullets.length) {
     html += `<div class="card" style="margin-bottom:10px;">
       <div style="font-size:13px;line-height:2;color:var(--text);">${bullets.map(b=>`<div>${esc(b)}</div>`).join('')}</div>
     </div>`;
   }
+
+  // Trade setup — lines starting with Buy: Hedge: Enter: SL:
   const setupLines = lines.filter(l => /^(Buy|Hedge|Enter|SL)\s*:/i.test(l));
   if (setupLines.length) {
     const rows = setupLines.map(l => {
       const colon = l.indexOf(':');
       const label = l.slice(0, colon).trim();
       const val = l.slice(colon+1).trim();
-      const isStrike = /^(Buy|Hedge)/i.test(label);
+      const highlight = /^(Buy|Hedge)/i.test(label) ? `color:var(--gold);` : '';
       return `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:46px;padding-top:1px;">${esc(label)}</div>
-        <div style="font-size:13px;font-weight:600;color:${isStrike?'var(--gold)':'var(--text)'};">${esc(val)}</div>
+        <div style="font-size:13px;font-weight:600;${highlight}color:${/^(Buy|Hedge)/i.test(label)?'var(--gold)':'var(--text)'};">${esc(val)}</div>
       </div>`;
     }).join('');
     html += `<div class="card" style="border:1.5px solid var(--goldborder);margin-bottom:10px;padding:10px 14px;">
       <div class="card-title" style="margin-bottom:4px;"><span class="card-title-dot"></span>TRADE SETUP</div>${rows}
     </div>`;
   }
+
+  // Levels line
   const lvl = lines.find(l => /^Levels\s*:/i.test(l));
   if (lvl) {
     const parts = lvl.replace(/^Levels\s*:/i,'').trim().split('·').map(s=>s.trim());
     html += `<div class="card" style="margin-bottom:10px;">
-      <div style="display:flex;gap:16px;flex-wrap:wrap;">${parts.map(p=>`<div style="font-size:13px;color:var(--text);">📍 ${esc(p)}</div>`).join('')}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        ${parts.map(p=>`<div style="font-size:13px;color:var(--text);">📍 ${esc(p)}</div>`).join('')}
+      </div>
     </div>`;
   }
+
+  // Pattern line
   const pat = lines.find(l => /^Pattern\s*:/i.test(l));
   if (pat) {
     const patVal = pat.replace(/^Pattern\s*:/i,'').trim();
     const pc = /bullish/i.test(patVal)?'var(--green)':/bearish/i.test(patVal)?'var(--red)':'var(--muted2)';
     html += `<div class="card" style="margin-bottom:10px;"><div style="font-size:13px;color:${pc};">🕯️ ${esc(patVal)}</div></div>`;
   }
+
   out.innerHTML = html;
   out.style.display = 'block';
 }
 
-// ── BUG REPORT — T2S-PROD-20260716-001 ──────────────────────────────────────
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── BUG REPORT ───────────────────────────────────────────────────────────────
 let _bugB64 = null, _bugMime = 'image/jpeg';
 function openBugReport() {
   const activeTab = document.querySelector('.tab.on');
@@ -5620,8 +5712,9 @@ async function submitBugReport() {
 </script>
 
 
-<!-- BUG REPORT FAB — T2S-PROD-20260716-001 -->
+<!-- BUG REPORT FAB -->
 <button class="bug-fab" onclick="openBugReport()">📋 Report Issue</button>
+<!-- BUG REPORT MODAL -->
 <div class="bug-overlay" id="bug-overlay" onclick="if(event.target===this)closeBugReport()">
   <div class="bug-sheet">
     <div class="bug-title">📋 Report an Issue</div>
@@ -5629,28 +5722,22 @@ async function submitBugReport() {
     <div class="bug-lbl">Broken in</div>
     <select class="bug-inp" id="bug-tab">
       <option value="Admin PWA — Trade">Admin PWA — Trade</option>
-      <option value="Admin PWA — General">Admin PWA — General</option>
       <option value="Admin PWA — Posts">Admin PWA — Posts</option>
-      <option value="Admin PWA — Analysis">Admin PWA — Analysis</option>
+      <option value="Admin PWA — Chart">Admin PWA — Chart</option>
       <option value="Admin PWA — Algo">Admin PWA — Algo</option>
       <option value="Admin PWA — Manage">Admin PWA — Manage</option>
       <option value="Admin PWA — Setup">Admin PWA — Setup</option>
       <option value="Admin PWA — Cards">Admin PWA — Cards</option>
-      <option value="Admin PWA — Campaign">Admin PWA — Campaign</option>
-      <option value="Admin PWA — Results">Admin PWA — Results</option>
-      <option value="Admin PWA — History">Admin PWA — History</option>
       <option value="Member PWA — Markets">Member PWA — Markets</option>
       <option value="Member PWA — Trade Alert">Member PWA — Trade Alert</option>
       <option value="Member PWA — Updates">Member PWA — Updates</option>
       <option value="Member PWA — Performance">Member PWA — Performance</option>
-      <option value="Member PWA — Learning">Member PWA — Learning</option>
-      <option value="Member PWA — About">Member PWA — About</option>
       <option value="Member PWA — Login">Member PWA — Login</option>
       <option value="Backend — VM / API">Backend — VM / API</option>
     </select>
     <div class="bug-lbl">What's broken?</div>
-    <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="2000" placeholder="Describe what happened and what you expected..."></textarea>
-    <input type="file" id="bug-file" accept="image/*" style="display:none" onchange="bugFileSelected(this)">
+    <textarea class="bug-inp bug-ta" id="bug-desc" maxlength="300" placeholder="Describe what happened and what you expected..."></textarea>
+    <input type="file" id="bug-file" accept="image/*" capture="environment" style="display:none" onchange="bugFileSelected(this)">
     <button class="bug-attach" onclick="document.getElementById('bug-file').click()">
       <span id="bug-attach-lbl">📷 Attach Screenshot (optional)</span>
     </button>
