@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260816-002 | admin_uat: Active Banners panel at top of Posts tab — loadActiveBanners() fetches post_type=banner at Posts tab open; deactivateBannerPanel() soft-deletes; panel shows count badge + audience + preview + Deactivate per row; synced with uat.html admin compose. -->
 <!-- T2S-UAT-20260816-001 | admin_uat: Live Banner support — Push modal banner toggle (gen only), banner post_type routing, Deactivate button in Posts tab, banner visible in General feed filter. -->
 <!-- T2S-UAT-20260815-002 | admin_uat: postId + post_type added to confirmPushToMembers push call for UAT testing of permanent dedup. -->
 <!-- DEPLOY: T2S-PROD-20260717-001 | Admin PWA Trade tab + Posts tab: "Send Follow-up →" button hidden in both locations. No JS logic touched — functions sendFollowUp() and sendPostsReply() remain. Rollback: restore the two <button> lines (Trade tab line ~688, Posts tab line ~5199 in original). -->
@@ -968,6 +969,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <div id="tab-posts" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
+  <!-- Active Banners Panel -->
+  <div class="card" id="active-banners-card" style="margin-bottom:10px;border:1.5px solid #fca5a5;background:#fff8f8;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div class="card-title" style="margin:0;color:#dc2626;">📌 Active Banners</div>
+      <span id="active-banners-count" style="display:none;font-size:11px;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:2px 8px;border-radius:10px;font-weight:700;"></span>
+    </div>
+    <div id="active-banners-list" style="font-size:12px;color:var(--muted);text-align:center;padding:8px 0;">Loading...</div>
+  </div>
+
   <div class="card" style="margin-bottom:10px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <div class="card-title" style="margin-bottom:0;"><span class="card-title-dot"></span>Posts Feed</div>
@@ -1535,7 +1545,7 @@ function showTab(t){
   document.querySelectorAll('.tab').forEach((b,i)=>{
     b.classList.toggle('on',['chart','trade','general','posts','algo','setup','manage','membership','campaign','results','history'][i]===t);
   });
-  if(t==='posts') loadPostsFeed();
+  if(t==='posts') { loadActiveBanners(); loadPostsFeed(); }
   if(t==='history') renderHistory();
   if(t==='trade') loadFollowUpData();
   if(t==='algo') refreshAlgoTab();
@@ -5390,6 +5400,52 @@ async function deactivateBanner(postId, btn) {
   } catch(e) {
     showToast('Failed: ' + (e.message||'Check connection'));
     btn.disabled = false; btn.textContent = '🔴 Deactivate Banner';
+  }
+}
+
+async function loadActiveBanners() {
+  const list = document.getElementById('active-banners-list');
+  const countEl = document.getElementById('active-banners-count');
+  if (!list) return;
+  try {
+    const banners = await sbGet('posts?is_deleted=eq.false&post_type=eq.banner&order=sent_at.desc&limit=20&select=id,content,audience,sent_at');
+    if (!banners.length) {
+      list.innerHTML = '<span style="color:var(--muted);font-size:12px;">No active banners</span>';
+      if (countEl) countEl.style.display = 'none';
+      return;
+    }
+    if (countEl) { countEl.textContent = banners.length + ' live'; countEl.style.display = 'inline'; }
+    list.innerHTML = banners.map(b => {
+      const d = new Date(b.sent_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
+      const audBadge = b.audience==='paid_only'
+        ? `<span style="font-size:9px;background:#fef9c3;color:#854d0e;padding:1px 5px;border-radius:8px;font-weight:700;border:1px solid #fde68a;">⭐ Paid</span>`
+        : b.audience==='cug_test'
+        ? `<span style="font-size:9px;background:#ede9fe;color:#6d28d9;padding:1px 5px;border-radius:8px;font-weight:700;border:1px solid #c4b5fd;">🧪 CUG</span>`
+        : `<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:8px;font-weight:700;border:1px solid #bfdbfe;">👥 All</span>`;
+      const preview = (b.content||'').slice(0,60) + ((b.content||'').length>60?'…':'');
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:0.5px solid #fecaca;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">${audBadge}<span style="font-size:10px;color:var(--muted);">${d}</span></div>
+          <div style="font-size:12px;color:var(--text);line-height:1.4;">${preview}</div>
+        </div>
+        <button onclick="deactivateBannerPanel('${b.id}',this)" style="padding:5px 10px;border-radius:6px;border:1.5px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;white-space:nowrap;flex-shrink:0;">🔴 Deactivate</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<span style="color:var(--muted);font-size:12px;">Failed to load</span>';
+  }
+}
+
+async function deactivateBannerPanel(postId, btn) {
+  btn.disabled = true; btn.textContent = 'Deactivating...';
+  try {
+    await sbPatch(`posts?id=eq.${postId}`, { is_deleted: true });
+    showToast('✓ Banner deactivated. Ticker hidden from members.');
+    loadActiveBanners();
+    loadPostsFeed();
+  } catch(e) {
+    showToast('Failed: ' + (e.message||'Check connection'));
+    btn.disabled = false; btn.textContent = '🔴 Deactivate';
   }
 }
 
