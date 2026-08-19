@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260819-001 | uat.html: Same 3 Realtime auto-refresh changes as index.html — fetchMarketPreview() in Realtime handler; initRealtimeSubscription() at page load; scroll-to-top after renderUpdates(). -->
 <!-- T2S-UAT-20260816-005 | uat.html: Remove UAT dummy data overrides — deleted post._mockState guard from getTradeState() and post._mockClosed guard from isTradeFullyClosed(); both were dead code since T2S-UAT-20260812-003 removed all dummy post objects. Rollback: restore the two single-line if(post._mock*) early-return guards. -->
 <!-- T2S-UAT-20260816-004 | uat.html: Updates tab silent background refresh — (1) switchTab() cache path: removed renderUpdates() call entirely; DOM is preserved between tab switches so re-render is unnecessary; (2) fetchUpdates() loading wipe removed: 'Loading updates...' only shown on true first load (no _cachedPosts and no localStorage cache); subsequent fetches keep existing posts visible; (3) renderLiveTicker() content guard: _lastTickerKey tracks last rendered banner IDs; if content unchanged and wrap already showing, returns early without restarting animation. Rollback: restore renderUpdates() call in switchTab cache path; restore unconditional container.innerHTML=Loading line; remove _lastTickerKey var and the 3-line guard block in renderLiveTicker. -->
 <!-- T2S-UAT-20260816-003 | uat.html: Updates tab no-refetch on tab switch — switchTab() now checks _cachedPosts; if populated, calls renderUpdates() directly (no Supabase calls, no loading flash); fetchUpdates() only fires on first load (cache null); 60s polling timer removed; all mutation events (sendReply, sendNewUpdate, deletePost, Realtime) still call fetchUpdates() to keep cache current. Rollback: restore original one-liner: if (tabId==='updates'){...fetchUpdates();_updatesRefreshTimer=setInterval(fetchUpdates,60000);} -->
@@ -2199,6 +2200,7 @@
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
                 if (_rtTabId === 'trades') fetchTradeAlerts();
+                if (_rtTabId === 'markets') fetchMarketPreview(); // refresh Markets quick-preview Updates sub-tab on new post
             } catch(_) {}
         };
 
@@ -4066,6 +4068,8 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            if (document.getElementById('updates')?.classList.contains('active'))
+                document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
             _mqpScrollAfterRender();
             if (_fudCompose) {
                 const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
@@ -4733,6 +4737,7 @@
             fetchTradeAlerts();
             fetchMarketPreview();
         }
+        initRealtimeSubscription(); // start live connection at page load regardless of which tab opens first
         // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
