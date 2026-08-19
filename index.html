@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260819-001 | PROD: Member PWA — Supabase Realtime auto-refresh: (1) Realtime handler now calls fetchMarketPreview() when user is on Markets tab so quick-preview Updates sub-tab refreshes on new post; (2) initRealtimeSubscription() called at page load unconditionally (previously only called on first Updates tab visit — Markets-tab users never received live updates); (3) fetchUpdates() scrolls .app-container to top after renderUpdates() when Updates tab is active so new post is immediately visible without tab switch. Zero touch to FSM, SL math, CMP loops, trade card rendering, calculations, or any other feature. Rollback: remove the three added lines at Realtime handler line ~2203, startup init line ~4740, and fetchUpdates post-render line ~4072. -->
 <!-- T2S-PROD-20260816-001 | PROD: Member PWA — 7 UAT changes promoted to production: (1) session high/low (t2s_peaks) survives page refresh; (2) Max Profit/Risk 1-Lot label in Performance tab; (3) Live Scrolling Banner module (ticker, admin compose, renderLiveTicker, init banner fetch); (4) Updates tab no-refetch on tab switch (_cachedPosts guard); (5) Updates silent background refresh (no loading wipe); (6) renderLiveTicker content guard (_lastTickerKey — no animation restart if unchanged); (7) Remove _mockState/_mockClosed dead code. Source: T2S-UAT-20260816-005 through T2S-UAT-20260813-001. Rollback: revert index.html to T2S-PROD-20260812-002 state. -->
 <!-- T2S-UAT-20260816-005 | uat.html: Remove UAT dummy data overrides — deleted post._mockState guard from getTradeState() and post._mockClosed guard from isTradeFullyClosed(); both were dead code since T2S-UAT-20260812-003 removed all dummy post objects. Rollback: restore the two single-line if(post._mock*) early-return guards. -->
 <!-- T2S-UAT-20260816-004 | uat.html: Updates tab silent background refresh — (1) switchTab() cache path: removed renderUpdates() call entirely; DOM is preserved between tab switches so re-render is unnecessary; (2) fetchUpdates() loading wipe removed: 'Loading updates...' only shown on true first load (no _cachedPosts and no localStorage cache); subsequent fetches keep existing posts visible; (3) renderLiveTicker() content guard: _lastTickerKey tracks last rendered banner IDs; if content unchanged and wrap already showing, returns early without restarting animation. Rollback: restore renderUpdates() call in switchTab cache path; restore unconditional container.innerHTML=Loading line; remove _lastTickerKey var and the 3-line guard block in renderLiveTicker. -->
@@ -2200,6 +2201,7 @@
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
                 if (_rtTabId === 'trades') fetchTradeAlerts();
+                if (_rtTabId === 'markets') fetchMarketPreview(); // refresh Markets quick-preview Updates sub-tab on new post
             } catch(_) {}
         };
 
@@ -4067,6 +4069,8 @@
             const updSection = document.getElementById('updates');
             if (!_updatesTabViewed && (!updSection || !updSection.classList.contains('active'))) updateUnreadBadge(unreadCount);
             renderUpdates(posts, memberTier, isAdmin, readMap);
+            if (document.getElementById('updates')?.classList.contains('active'))
+                document.querySelector('.app-container')?.scrollTo({ top: 0, behavior: 'smooth' });
             _mqpScrollAfterRender();
             if (_fudCompose) {
                 const _fudBox = document.getElementById('compose-' + _fudCompose.postId);
@@ -4734,6 +4738,7 @@
             fetchTradeAlerts();
             fetchMarketPreview();
         }
+        initRealtimeSubscription(); // start live connection at page load regardless of which tab opens first
         // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
