@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260821-002 | PROD: SL breach fast-detect — added _checkSLOnTick IIFE at end of updateTradeCMPs(). On every 5s CMP tick, checks all active trades (using cached window._mqpLastTradePosts + _mqpLastReplyMap) for SL breach via existing isTradeFullyClosed(). If _sblAutoClosedPostIds grows (new breach detected), immediately calls renderTradeAlerts() with cached data — zero Supabase fetch. Reduces "SL hit → card closes" delay from ~30s to ~5s. 15s debounce (_slBreachRebuildPending) prevents duplicate rebuilds on back-to-back ticks. Zero touch to isTradeFullyClosed, renderTradeAlerts, fetchTradeAlerts, SL math, P&L, FSM, session high/low, Performance tab, Updates tab. Rollback: remove the _checkSLOnTick IIFE block (14 lines) at end of updateTradeCMPs(). -->
 <!-- T2S-PROD-20260821-001 | PROD: Markets→Trades sub-tab — added not_triggered filter to _renderMqpTrades(). Trades with getTradeState()==='not_triggered' (e.g. follow-up "Not triggered avoid now.") are now excluded from the Markets quick-preview list, matching the Trade Alert tab behaviour (T2S-PROD-20260716-001). One line added inside tradePosts.forEach before the isTradeFullyClosed split. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: remove the single `if (getTradeState(post, replies) === 'not_triggered') return;` line from _renderMqpTrades(). -->
 <!-- T2S-PROD-20260819-001 | PROD: Member PWA — Supabase Realtime auto-refresh: (1) Realtime handler now calls fetchMarketPreview() when user is on Markets tab so quick-preview Updates sub-tab refreshes on new post; (2) initRealtimeSubscription() called at page load unconditionally (previously only called on first Updates tab visit — Markets-tab users never received live updates); (3) fetchUpdates() scrolls .app-container to top after renderUpdates() when Updates tab is active so new post is immediately visible without tab switch. Zero touch to FSM, SL math, CMP loops, trade card rendering, calculations, or any other feature. Rollback: remove the three added lines at Realtime handler line ~2203, startup init line ~4740, and fetchUpdates post-render line ~4072. -->
 <!-- T2S-PROD-20260816-001 | PROD: Member PWA — 7 UAT changes promoted to production: (1) session high/low (t2s_peaks) survives page refresh; (2) Max Profit/Risk 1-Lot label in Performance tab; (3) Live Scrolling Banner module (ticker, admin compose, renderLiveTicker, init banner fetch); (4) Updates tab no-refetch on tab switch (_cachedPosts guard); (5) Updates silent background refresh (no loading wipe); (6) renderLiveTicker content guard (_lastTickerKey — no animation restart if unchanged); (7) Remove _mockState/_mockClosed dead code. Source: T2S-UAT-20260816-005 through T2S-UAT-20260813-001. Rollback: revert index.html to T2S-PROD-20260812-002 state. -->
@@ -1365,6 +1366,24 @@
                 window._cmpLiveDotTimer = setTimeout(() => { chip.style.display = 'none'; }, 90000);
             }
         }
+        // SL breach fast-detect: on every 5s CMP tick, check active trades for SL breach.
+        // If a new breach is detected, re-render cards immediately using cached post data —
+        // no Supabase fetch needed. Reduces "SL hit → closed card" delay from ~30s to ~5s.
+        (function _checkSLOnTick() {
+            const _posts = window._mqpLastTradePosts;
+            const _rmap  = window._mqpLastReplyMap   || {};
+            const _mi    = window._mqpLastMemberInfo  || {};
+            if (!_posts || !_posts.length || !_lastOptionLTPs) return;
+            const _prevSz = _sblAutoClosedPostIds.size;
+            for (const _p of _posts) {
+                if (!_sblAutoClosedPostIds.has(_p.id)) isTradeFullyClosed(_p, _rmap[_p.id] || []);
+            }
+            if (_sblAutoClosedPostIds.size > _prevSz && !window._slBreachRebuildPending) {
+                window._slBreachRebuildPending = true;
+                setTimeout(() => { window._slBreachRebuildPending = false; }, 15000);
+                renderTradeAlerts(_posts, _rmap, _mi.memberTier || 'free', _mi.isAdmin || false);
+            }
+        })();
     }
 
     // ── MARKET QUICK PREVIEW (dual-tab: Trades / Updates) ───────────────────────
