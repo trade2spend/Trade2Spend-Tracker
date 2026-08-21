@@ -1,4 +1,6 @@
+<!-- T2S-UAT-20260821-002 | uat.html: SL breach fast-detect — added _checkSLOnTick IIFE at end of updateTradeCMPs(). On every 5s CMP tick, checks all active trades (using cached window._mqpLastTradePosts + _mqpLastReplyMap) for SL breach via existing isTradeFullyClosed(). If _sblAutoClosedPostIds grows (new breach detected), immediately calls renderTradeAlerts() with cached data — zero Supabase fetch. Reduces "SL hit → card closes" delay from ~30s to ~5s. 15s debounce (_slBreachRebuildPending) prevents duplicate rebuilds. Zero touch to all existing logic. Rollback: remove the _checkSLOnTick IIFE block at end of updateTradeCMPs(). -->
 <!-- T2S-PROD-20260819-001 | uat.html: Same 3 Realtime auto-refresh changes as index.html — fetchMarketPreview() in Realtime handler; initRealtimeSubscription() at page load; scroll-to-top after renderUpdates(). -->
+<!-- T2S-UAT-20260821-001 | index.html + uat.html: Real root cause of Markets→Trades ghost card: _renderMqpTrades() was never given the "not_triggered" filter that Trade Alert tab has had since T2S-PROD-20260716-001. One-line fix in _renderMqpTrades() tradePosts.forEach: `if (getTradeState(post, replies) === 'not_triggered') return;` — mirrors the closedPosts/closedTrades guards in renderTradeAlerts(). Rollback: remove the single getTradeState not_triggered guard line from _renderMqpTrades(). -->
 <!-- T2S-UAT-20260816-005 | uat.html: Remove UAT dummy data overrides — deleted post._mockState guard from getTradeState() and post._mockClosed guard from isTradeFullyClosed(); both were dead code since T2S-UAT-20260812-003 removed all dummy post objects. Rollback: restore the two single-line if(post._mock*) early-return guards. -->
 <!-- T2S-UAT-20260816-004 | uat.html: Updates tab silent background refresh — (1) switchTab() cache path: removed renderUpdates() call entirely; DOM is preserved between tab switches so re-render is unnecessary; (2) fetchUpdates() loading wipe removed: 'Loading updates...' only shown on true first load (no _cachedPosts and no localStorage cache); subsequent fetches keep existing posts visible; (3) renderLiveTicker() content guard: _lastTickerKey tracks last rendered banner IDs; if content unchanged and wrap already showing, returns early without restarting animation. Rollback: restore renderUpdates() call in switchTab cache path; restore unconditional container.innerHTML=Loading line; remove _lastTickerKey var and the 3-line guard block in renderLiveTicker. -->
 <!-- T2S-UAT-20260816-003 | uat.html: Updates tab no-refetch on tab switch — switchTab() now checks _cachedPosts; if populated, calls renderUpdates() directly (no Supabase calls, no loading flash); fetchUpdates() only fires on first load (cache null); 60s polling timer removed; all mutation events (sendReply, sendNewUpdate, deletePost, Realtime) still call fetchUpdates() to keep cache current. Rollback: restore original one-liner: if (tabId==='updates'){...fetchUpdates();_updatesRefreshTimer=setInterval(fetchUpdates,60000);} -->
@@ -1363,6 +1365,24 @@
                 window._cmpLiveDotTimer = setTimeout(() => { chip.style.display = 'none'; }, 90000);
             }
         }
+        // SL breach fast-detect: on every 5s CMP tick, check active trades for SL breach.
+        // If a new breach is detected, re-render cards immediately using cached post data —
+        // no Supabase fetch needed. Reduces "SL hit → closed card" delay from ~30s to ~5s.
+        (function _checkSLOnTick() {
+            const _posts = window._mqpLastTradePosts;
+            const _rmap  = window._mqpLastReplyMap   || {};
+            const _mi    = window._mqpLastMemberInfo  || {};
+            if (!_posts || !_posts.length || !_lastOptionLTPs) return;
+            const _prevSz = _sblAutoClosedPostIds.size;
+            for (const _p of _posts) {
+                if (!_sblAutoClosedPostIds.has(_p.id)) isTradeFullyClosed(_p, _rmap[_p.id] || []);
+            }
+            if (_sblAutoClosedPostIds.size > _prevSz && !window._slBreachRebuildPending) {
+                window._slBreachRebuildPending = true;
+                setTimeout(() => { window._slBreachRebuildPending = false; }, 15000);
+                renderTradeAlerts(_posts, _rmap, _mi.memberTier || 'free', _mi.isAdmin || false);
+            }
+        })();
     }
 
     // ── MARKET QUICK PREVIEW (dual-tab: Trades / Updates) ───────────────────────
@@ -1484,6 +1504,7 @@
         const activeTrades = [], closedTrades = [];
         tradePosts.forEach(post => {
             const replies = replyMap[post.id] || [];
+            if (getTradeState(post, replies) === 'not_triggered') return; // mirror Trade Alert tab filter (T2S-UAT-20260821-001)
             (isTradeFullyClosed(post, replies) ? closedTrades : activeTrades).push(post);
         });
         const byDate = (a, b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
