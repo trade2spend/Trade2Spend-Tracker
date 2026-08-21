@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260821-001 | PROD: Markets→Trades sub-tab — added not_triggered filter to _renderMqpTrades(). Trades with getTradeState()==='not_triggered' (e.g. follow-up "Not triggered avoid now.") are now excluded from the Markets quick-preview list, matching the Trade Alert tab behaviour (T2S-PROD-20260716-001). One line added inside tradePosts.forEach before the isTradeFullyClosed split. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: remove the single `if (getTradeState(post, replies) === 'not_triggered') return;` line from _renderMqpTrades(). -->
 <!-- T2S-PROD-20260819-001 | PROD: Member PWA — Supabase Realtime auto-refresh: (1) Realtime handler now calls fetchMarketPreview() when user is on Markets tab so quick-preview Updates sub-tab refreshes on new post; (2) initRealtimeSubscription() called at page load unconditionally (previously only called on first Updates tab visit — Markets-tab users never received live updates); (3) fetchUpdates() scrolls .app-container to top after renderUpdates() when Updates tab is active so new post is immediately visible without tab switch. Zero touch to FSM, SL math, CMP loops, trade card rendering, calculations, or any other feature. Rollback: remove the three added lines at Realtime handler line ~2203, startup init line ~4740, and fetchUpdates post-render line ~4072. -->
 <!-- T2S-PROD-20260816-001 | PROD: Member PWA — 7 UAT changes promoted to production: (1) session high/low (t2s_peaks) survives page refresh; (2) Max Profit/Risk 1-Lot label in Performance tab; (3) Live Scrolling Banner module (ticker, admin compose, renderLiveTicker, init banner fetch); (4) Updates tab no-refetch on tab switch (_cachedPosts guard); (5) Updates silent background refresh (no loading wipe); (6) renderLiveTicker content guard (_lastTickerKey — no animation restart if unchanged); (7) Remove _mockState/_mockClosed dead code. Source: T2S-UAT-20260816-005 through T2S-UAT-20260813-001. Rollback: revert index.html to T2S-PROD-20260812-002 state. -->
 <!-- T2S-UAT-20260816-005 | uat.html: Remove UAT dummy data overrides — deleted post._mockState guard from getTradeState() and post._mockClosed guard from isTradeFullyClosed(); both were dead code since T2S-UAT-20260812-003 removed all dummy post objects. Rollback: restore the two single-line if(post._mock*) early-return guards. -->
@@ -1476,6 +1477,7 @@
         if (!tradesBody) return;
         const tradePosts = window._mqpLastTradePosts; // undefined until renderTradeAlerts fires
         if (tradePosts === undefined) return;         // keep skeleton HTML — data not ready yet
+
         const replyMap      = window._mqpLastReplyMap   || {};
         const _mi           = window._mqpLastMemberInfo  || {};
         const isAdminMqp    = _mi.isAdmin    || false;
@@ -1485,6 +1487,7 @@
         const activeTrades = [], closedTrades = [];
         tradePosts.forEach(post => {
             const replies = replyMap[post.id] || [];
+            if (getTradeState(post, replies) === 'not_triggered') return;
             (isTradeFullyClosed(post, replies) ? closedTrades : activeTrades).push(post);
         });
         const byDate = (a, b) => new Date(b.sent_at||b.created_at) - new Date(a.sent_at||a.created_at);
