@@ -2057,9 +2057,9 @@ async function runMarketScraper(force = false) {
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      // NSE primary → Kotak equity LTPs (populated by 2-min interval) → keep existing
-      gainers: movers?.gainers || _kotakMoversCache?.gainers || existing.gainers || [],
-      losers:  movers?.losers  || _kotakMoversCache?.losers  || existing.losers  || []
+      // Prefer whichever source has more stocks — Kotak beats NSE fallback (which caps at ~20)
+      gainers: (_kotakMoversCache?.gainers?.length > (movers?.gainers?.length || 0) ? _kotakMoversCache.gainers : movers?.gainers) || _kotakMoversCache?.gainers || existing.gainers || [],
+      losers:  (_kotakMoversCache?.losers?.length  > (movers?.losers?.length  || 0) ? _kotakMoversCache.losers  : movers?.losers)  || _kotakMoversCache?.losers  || existing.losers  || []
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
@@ -4322,7 +4322,7 @@ setTimeout(async () => {
   } else if (!isMarketHours()) {
     // Market closed at startup — fetch Yahoo closing movers to update stale gainers/losers
     fetchYahooNifty50Movers().then(movers => {
-      if (movers?.gainers?.length > 0 && _latestMarketData) {
+      if (movers?.gainers?.length > 0 && _latestMarketData && (_latestMarketData.gainers?.length || 0) <= movers.gainers.length) {
         _latestMarketData.gainers = movers.gainers;
         _latestMarketData.losers  = movers.losers;
         console.log('[startup] Yahoo closing movers applied:', movers.gainers.length, 'gainers');
