@@ -1796,8 +1796,9 @@ async function fetchYahooNifty50Movers() {
     return null;
   }
   const result = {
-    gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
-    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change)
+    gainers: stocks.filter(s => s.change >= 0).sort((a,b) => b.change - a.change),
+    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change),
+    breadth: { advancing: stocks.filter(s => s.change >= 0).length, declining: stocks.filter(s => s.change < 0).length, unchanged: stocks.filter(s => s.change === 0).length }
   };
   _yahooMoversCache = result; _yahooMoversCacheTs = Date.now();
   _yahooMoversStatus = `ok — ${stocks.length} stocks, top gainer: ${result.gainers[0]?.symbol} ${result.gainers[0]?.change}%`;
@@ -1842,7 +1843,7 @@ async function fetchKotakNifty50LTPs() {
   const advancing = stocks.filter(s => s.change >= 0).length;
   const declining = stocks.filter(s => s.change < 0).length;
   _kotakMoversCache = {
-    gainers: stocks.filter(s => s.change > 0).sort((a,b) => b.change - a.change),
+    gainers: stocks.filter(s => s.change >= 0).sort((a,b) => b.change - a.change),
     losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change),
     breadth: { advancing, declining, unchanged: stocks.filter(s => s.change === 0).length },
     count: stocks.length
@@ -4325,6 +4326,7 @@ setTimeout(async () => {
       if (movers?.gainers?.length > 0 && _latestMarketData && (_latestMarketData.gainers?.length || 0) <= movers.gainers.length) {
         _latestMarketData.gainers = movers.gainers;
         _latestMarketData.losers  = movers.losers;
+        if (movers.breadth) _latestMarketData.breadth = { nifty50: movers.breadth };
         console.log('[startup] Yahoo closing movers applied:', movers.gainers.length, 'gainers');
         const snapshot = { ..._latestMarketData };
         delete snapshot.optionLTPs; delete snapshot.expiry;
