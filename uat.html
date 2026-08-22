@@ -588,7 +588,6 @@
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
             <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;background:#f0faf4;border:1.5px solid var(--green);border-radius:20px;padding:3px 10px;white-space:nowrap;display:inline-flex;align-items:center;" onclick="toggleAdvDec('advancing')"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;background:#fff4f4;border:1.5px solid var(--red);border-radius:20px;padding:3px 10px;white-space:nowrap;display:inline-flex;align-items:center;" onclick="toggleAdvDec('declining')"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
-            <span style="flex-basis:100%;margin-left:0;margin-top:2px;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;text-align:right;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
         <div id="adv-dec-detail" style="display:none;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:0 10px 8px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:0.72rem;"></div>
 
@@ -1151,7 +1150,7 @@
         return d === 0 || d === 6 || mins < 9 * 60 + 15 || mins >= 15 * 60 + 35;
     }
 
-    function renderExpiryStrip(expiry) {
+    function renderExpiryStrip(expiry, srcLabel) {
       const el = document.getElementById('expiry-strip');
       if (!el || !expiry) { if (el) el.style.display = 'none'; return; }
       const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
@@ -1173,7 +1172,8 @@
       if (expiry.BANKNIFTY && expiry.BANKNIFTY.monthly) add('NIFTY/Stocks', expiry.BANKNIFTY.monthly, 'Monthly');
       const sorted = [...dateMap.values()].sort((a, b) => a.d - b.d).slice(0, 2);
       if (!sorted.length) { el.style.display = 'none'; return; }
-      el.innerHTML = `<div style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Upcoming F&amp;O Expiry</div>`
+      const srcHtml = srcLabel ? `<span style="font-size:0.62rem;color:#c4b8d8;font-weight:400;text-transform:none;letter-spacing:0;">${srcLabel}</span>` : '';
+      el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Upcoming F&amp;O Expiry</span>${srcHtml}</div>`
         + `<div style="display:flex;gap:8px;">`
         + sorted.map(e => {
             const isToday = e.d.toDateString() === todayStr;
@@ -1232,18 +1232,14 @@
         }
         if(!anyIndex) {
             container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
-        } else if (!document.getElementById('mcard-src')) {
-            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">${data.dataSource==='broker' ? 'Market Feed' : 'NSE Data'}</div>`;
         }
 
         if(data.breadth && data.breadth.nifty50) {
             const b = data.breadth.nifty50;
             const advEl = document.getElementById('adv-count');
             const decEl = document.getElementById('dec-count');
-            const noteEl = document.getElementById('adv-note');
             if(advEl) advEl.innerHTML = `▲ ${b.advancing} Advancing <span id="adv-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
             if(decEl) decEl.innerHTML = `▼ ${b.declining} Declining <span id="dec-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
-            if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
             if(data.gainers) _advDecStocks = { gainers: data.gainers, losers: data.losers || [] };
             const _ac = document.getElementById('adv-chev');
             const _dc = document.getElementById('dec-chev');
@@ -1251,7 +1247,8 @@
             if(_advDecOpen === 'declining'  && _dc) _dc.style.transform = 'rotate(180deg)';
         }
 
-        renderExpiryStrip(data.expiry);
+        const _srcLabel = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
+        renderExpiryStrip(data.expiry, _srcLabel);
 
         const moversEl = document.getElementById('movers-section');
         if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
