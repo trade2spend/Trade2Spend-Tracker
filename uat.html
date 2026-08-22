@@ -1240,7 +1240,7 @@
             const advEl = document.getElementById('adv-count');
             const decEl = document.getElementById('dec-count');
             const noteEl = document.getElementById('adv-note');
-            if(advEl) advEl.innerHTML = `▲ ${b.advancing + (b.unchanged || 0)} Advancing <span id="adv-chev" style="font-size:1rem;display:inline-block;transition:transform .2s;margin-left:2px;">▾</span>`;
+            if(advEl) advEl.innerHTML = `▲ ${b.advancing} Advancing <span id="adv-chev" style="font-size:1rem;display:inline-block;transition:transform .2s;margin-left:2px;">▾</span>`;
             if(decEl) decEl.innerHTML = `▼ ${b.declining} Declining <span id="dec-chev" style="font-size:1rem;display:inline-block;transition:transform .2s;margin-left:2px;">▾</span>`;
             if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
             if(data.gainers) _advDecStocks = { gainers: data.gainers, losers: data.losers || [] };
