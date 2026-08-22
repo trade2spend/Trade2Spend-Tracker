@@ -586,11 +586,12 @@
         <!-- Advance / Decline bar — Kotak Neo data, derived from Nifty 50 close prices -->
         <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="toggleAdvDec('advancing')"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
             <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="toggleAdvDec('declining')"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
+        <div id="adv-dec-detail" style="display:none;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 12px 4px;max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:0.72rem;"></div>
         <!-- Market Quick Preview — Trades / Updates dual-tab (replaces alert banner in UAT) -->
         <div id="market-quick-preview">
             <div class="mqp-tab-strip">
@@ -798,6 +799,8 @@
     (function(){ try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); const _p=JSON.parse(sessionStorage.getItem('t2s_peaks')||'null'); if(_p&&_p.date===_d){_sessionOptionHighs=_p.highs||{};_sessionOptionLows=_p.lows||{};} } catch(_e){} })();
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
+    let _advDecOpen   = null;      // null | 'advancing' | 'declining' — adv/dec expand state
+    let _advDecStocks = { gainers: [], losers: [] }; // cached from last renderMarketUI
     let _likeCounts = {};          // postId → total like count
     const _myLikes = new Set();    // postIds liked by current member
     const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
@@ -1034,6 +1037,47 @@
     function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
+    function toggleAdvDec(which) {
+        const detail  = document.getElementById('adv-dec-detail');
+        const advChev = document.getElementById('adv-chev');
+        const decChev = document.getElementById('dec-chev');
+        if (!detail) return;
+        if (_advDecOpen === which) {
+            _advDecOpen = null;
+            detail.style.display = 'none';
+            if (advChev) advChev.style.transform = '';
+            if (decChev) decChev.style.transform = '';
+            return;
+        }
+        _advDecOpen = which;
+        const isAdv  = which === 'advancing';
+        const stocks = isAdv
+            ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
+            : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
+        detail.innerHTML = stocks.length > 0
+            ? stocks.map(s =>
+                `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct ${isAdv ? 'up' : 'dn'}">${isAdv ? '+' : ''}${s.change.toFixed(2)}%</span></div>`
+              ).join('')
+            : `<div style="color:var(--text-muted);padding:6px 0;">No data yet — check back when market opens.</div>`;
+        detail.style.display = 'block';
+        if (advChev) advChev.style.transform = isAdv  ? 'rotate(180deg)' : '';
+        if (decChev) decChev.style.transform = !isAdv ? 'rotate(180deg)' : '';
+    }
+
+    document.addEventListener('click', function(e) {
+        if (_advDecOpen === null) return;
+        const bar    = document.getElementById('adv-dec-bar');
+        const detail = document.getElementById('adv-dec-detail');
+        if (bar && detail && !bar.contains(e.target) && !detail.contains(e.target)) {
+            _advDecOpen = null;
+            detail.style.display = 'none';
+            const ac = document.getElementById('adv-chev');
+            const dc = document.getElementById('dec-chev');
+            if (ac) ac.style.transform = '';
+            if (dc) dc.style.transform = '';
+        }
+    }, true);
+
     // --- SCROLL ANIMATION (listens on inner container, not window) ---
     document.querySelector('.app-container').addEventListener('scroll', () => {
         const header = document.getElementById('header-wrapper');
@@ -1153,9 +1197,14 @@
             const advEl = document.getElementById('adv-count');
             const decEl = document.getElementById('dec-count');
             const noteEl = document.getElementById('adv-note');
-            if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
-            if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
+            if(advEl) advEl.innerHTML = `▲ ${b.advancing} Advancing <span id="adv-chev" style="font-size:0.85em;display:inline-block;transition:transform .2s;">˅</span>`;
+            if(decEl) decEl.innerHTML = `▼ ${b.declining} Declining <span id="dec-chev" style="font-size:0.85em;display:inline-block;transition:transform .2s;">˅</span>`;
             if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
+            if(data.gainers) _advDecStocks = { gainers: data.gainers, losers: data.losers || [] };
+            const _ac = document.getElementById('adv-chev');
+            const _dc = document.getElementById('dec-chev');
+            if(_advDecOpen === 'advancing' && _ac) _ac.style.transform = 'rotate(180deg)';
+            if(_advDecOpen === 'declining'  && _dc) _dc.style.transform = 'rotate(180deg)';
         }
 
         renderExpiryStrip(data.expiry);
