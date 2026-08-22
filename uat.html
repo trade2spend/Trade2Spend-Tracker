@@ -591,7 +591,7 @@
             <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="toggleAdvDec('declining')"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
-        <div id="adv-dec-detail" style="display:none;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 12px 4px;max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:0.72rem;"></div>
+        <div id="adv-dec-detail" style="display:none;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:0 10px 8px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:0.72rem;"></div>
         <!-- Market Quick Preview — Trades / Updates dual-tab (replaces alert banner in UAT) -->
         <div id="market-quick-preview">
             <div class="mqp-tab-strip">
@@ -1037,28 +1037,76 @@
     function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
 
+    function _advDecCollapse() {
+        _advDecOpen = null;
+        const detail  = document.getElementById('adv-dec-detail');
+        const bar     = document.getElementById('adv-dec-bar');
+        const advChev = document.getElementById('adv-chev');
+        const decChev = document.getElementById('dec-chev');
+        const advEl   = document.getElementById('adv-count');
+        const decEl   = document.getElementById('dec-count');
+        if (detail) detail.style.display = 'none';
+        if (advChev) advChev.style.transform = '';
+        if (decChev) decChev.style.transform = '';
+        if (advEl)  { advEl.style.borderBottom  = ''; advEl.style.paddingBottom  = ''; }
+        if (decEl)  { decEl.style.borderBottom  = ''; decEl.style.paddingBottom  = ''; }
+        if (bar)    { bar.style.borderBottomLeftRadius = ''; bar.style.borderBottomRightRadius = ''; }
+    }
+
     function toggleAdvDec(which) {
         const detail  = document.getElementById('adv-dec-detail');
+        const bar     = document.getElementById('adv-dec-bar');
+        const advEl   = document.getElementById('adv-count');
+        const decEl   = document.getElementById('dec-count');
         const advChev = document.getElementById('adv-chev');
         const decChev = document.getElementById('dec-chev');
         if (!detail) return;
-        if (_advDecOpen === which) {
-            _advDecOpen = null;
-            detail.style.display = 'none';
-            if (advChev) advChev.style.transform = '';
-            if (decChev) decChev.style.transform = '';
-            return;
-        }
+        if (_advDecOpen === which) { _advDecCollapse(); return; }
+
         _advDecOpen = which;
-        const isAdv  = which === 'advancing';
+        const isAdv = which === 'advancing';
+        const color = isAdv ? 'var(--green)' : 'var(--red)';
+
+        // Active underline on the open section
+        if (advEl) { advEl.style.borderBottom = ''; advEl.style.paddingBottom = ''; }
+        if (decEl) { decEl.style.borderBottom = ''; decEl.style.paddingBottom = ''; }
+        const activeEl = isAdv ? advEl : decEl;
+        if (activeEl) { activeEl.style.borderBottom = `2px solid ${color}`; activeEl.style.paddingBottom = '3px'; }
+
+        // Merge bar + detail into one unified card
+        if (bar)   { bar.style.borderBottomLeftRadius = '0'; bar.style.borderBottomRightRadius = '0'; }
+        detail.style.borderTop            = 'none';
+        detail.style.borderTopLeftRadius  = '0';
+        detail.style.borderTopRightRadius = '0';
+        detail.style.marginTop            = '0';
+
         const stocks = isAdv
             ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
             : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
-        detail.innerHTML = stocks.length > 0
-            ? stocks.map(s =>
-                `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span style="color:var(--text-main);font-weight:600;font-size:0.72rem;">₹${(s.price||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="mover-pct ${isAdv ? 'up' : 'dn'}">${isAdv ? '+' : ''}${s.change.toFixed(2)}%</span></div>`
-              ).join('')
-            : `<div style="color:var(--text-muted);padding:6px 0;">No data yet — check back when market opens.</div>`;
+
+        if (stocks.length > 0) {
+            const title = `<div style="font-size:0.7rem;font-weight:800;color:${color};letter-spacing:0.5px;padding:8px 0 4px;text-transform:uppercase;">Top ${isAdv ? 'Advancing' : 'Declining'}</div>`;
+            const hdr   = `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;padding:3px 0 4px;border-bottom:1px solid var(--border);font-size:0.62rem;color:var(--text-muted);font-weight:600;letter-spacing:0.3px;"><span>Stock Name</span><span>CMP</span><span style="text-align:right;">Change</span><span style="text-align:right;">% Change</span></div>`;
+            const rows  = stocks.map((s, i) => {
+                const denom  = 100 + s.change;
+                const abs    = denom !== 0 ? (s.price * s.change) / denom : 0;
+                const cmp    = (s.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+                const absStr = (abs >= 0 ? '+' : '') + abs.toFixed(2);
+                const pctStr = (s.change >= 0 ? '+' : '') + s.change.toFixed(2) + '%';
+                const clr    = isAdv ? 'var(--green)' : 'var(--red)';
+                const border = i === stocks.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
+                return `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;align-items:center;padding:5px 0;${border}font-size:0.72rem;">` +
+                    `<span class="mover-name">${s.symbol}</span>` +
+                    `<span style="color:var(--text-main);font-weight:500;">${cmp}</span>` +
+                    `<span style="color:${clr};font-weight:600;text-align:right;">${absStr}</span>` +
+                    `<span style="color:${clr};font-weight:700;text-align:right;">${pctStr}</span>` +
+                    `</div>`;
+            }).join('');
+            detail.innerHTML = title + hdr + rows;
+        } else {
+            detail.innerHTML = `<div style="color:var(--text-muted);padding:8px 0;font-size:0.72rem;">No data yet — check back when market opens.</div>`;
+        }
+
         detail.style.display = 'block';
         if (advChev) advChev.style.transform = isAdv  ? 'rotate(180deg)' : '';
         if (decChev) decChev.style.transform = !isAdv ? 'rotate(180deg)' : '';
@@ -1069,12 +1117,7 @@
         const bar    = document.getElementById('adv-dec-bar');
         const detail = document.getElementById('adv-dec-detail');
         if (bar && detail && !bar.contains(e.target) && !detail.contains(e.target)) {
-            _advDecOpen = null;
-            detail.style.display = 'none';
-            const ac = document.getElementById('adv-chev');
-            const dc = document.getElementById('dec-chev');
-            if (ac) ac.style.transform = '';
-            if (dc) dc.style.transform = '';
+            _advDecCollapse();
         }
     }, true);
 
