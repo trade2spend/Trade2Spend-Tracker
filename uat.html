@@ -557,7 +557,7 @@
         <!-- Expiry Strip -->
         <div id="expiry-strip" style="display:none;padding:6px 0 8px;"></div>
         <!-- Gainers / Losers -->
-        <div class="movers-section" id="movers-section" style="display:block;">
+        <div class="movers-section" id="movers-section" style="display:none;">
             <div class="movers-grid">
                 <div class="movers-card">
                     <div class="movers-card-title g">▲ Top Gainers</div>
@@ -1056,7 +1056,7 @@
             : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
         detail.innerHTML = stocks.length > 0
             ? stocks.map(s =>
-                `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span class="mover-pct ${isAdv ? 'up' : 'dn'}">${isAdv ? '+' : ''}${s.change.toFixed(2)}%</span></div>`
+                `<div class="mover-row"><span class="mover-name">${s.symbol}</span><span style="color:var(--text-main);font-weight:600;font-size:0.72rem;">₹${(s.price||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="mover-pct ${isAdv ? 'up' : 'dn'}">${isAdv ? '+' : ''}${s.change.toFixed(2)}%</span></div>`
               ).join('')
             : `<div style="color:var(--text-muted);padding:6px 0;">No data yet — check back when market opens.</div>`;
         detail.style.display = 'block';
@@ -1211,7 +1211,7 @@
 
         const moversEl = document.getElementById('movers-section');
         if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
-            moversEl.style.display = 'block';
+            moversEl.style.display = 'none'; // section hidden — data still renders for adv-dec-detail
 
             const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
