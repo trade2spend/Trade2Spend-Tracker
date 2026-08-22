@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260822-001 | PROD: Session HIGH/LOW "Yet to Trigger" seed fix — (1) updateTradeCMPs() session HIGH guard (BUY): pre-seed from data-entry only when ltp >= entryVal (option has actually reached entry price); was seeding unconditionally → showed entry ₹117 as session high when CMP was ₹114 and trade not triggered. (2) Same guard for session LOW (SELL): only seed from data-entry when ltp <= entryVal. (3) _initialHigh2/_initialLow2 (Section 2 rendering): return null instead of fields.entry when no partial exits → initial display shows '—' not '₹entry'. (4) _initialHigh3/_initialLow3 (Section 3 rendering): same. (5) Section 2 + Section 3 templates: removed ||fields.entry fallback from data-entry attr and display text. Partial exit seeding (when _exitMaxPriceBuy2/3 !== null) fully preserved — no change. Rollback: revert ltp>=entryVal guard back to entryVal>0 (2 lines in updateTradeCMPs); revert _initialHigh2/Low2/3 ternary else-clause from null back to fields.entry (4 lines); revert Section 2+3 template data-entry and display to use ||fields.entry fallback (2 lines). -->
 <!-- T2S-PROD-20260821-002 | PROD: SL breach fast-detect — added _checkSLOnTick IIFE at end of updateTradeCMPs(). On every 5s CMP tick, checks all active trades (using cached window._mqpLastTradePosts + _mqpLastReplyMap) for SL breach via existing isTradeFullyClosed(). If _sblAutoClosedPostIds grows (new breach detected), immediately calls renderTradeAlerts() with cached data — zero Supabase fetch. Reduces "SL hit → card closes" delay from ~30s to ~5s. 15s debounce (_slBreachRebuildPending) prevents duplicate rebuilds on back-to-back ticks. Zero touch to isTradeFullyClosed, renderTradeAlerts, fetchTradeAlerts, SL math, P&L, FSM, session high/low, Performance tab, Updates tab. Rollback: remove the _checkSLOnTick IIFE block (14 lines) at end of updateTradeCMPs(). -->
 <!-- T2S-PROD-20260821-001 | PROD: Markets→Trades sub-tab — added not_triggered filter to _renderMqpTrades(). Trades with getTradeState()==='not_triggered' (e.g. follow-up "Not triggered avoid now.") are now excluded from the Markets quick-preview list, matching the Trade Alert tab behaviour (T2S-PROD-20260716-001). One line added inside tradePosts.forEach before the isTradeFullyClosed split. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: remove the single `if (getTradeState(post, replies) === 'not_triggered') return;` line from _renderMqpTrades(). -->
 <!-- T2S-PROD-20260819-001 | PROD: Member PWA — Supabase Realtime auto-refresh: (1) Realtime handler now calls fetchMarketPreview() when user is on Markets tab so quick-preview Updates sub-tab refreshes on new post; (2) initRealtimeSubscription() called at page load unconditionally (previously only called on first Updates tab visit — Markets-tab users never received live updates); (3) fetchUpdates() scrolls .app-container to top after renderUpdates() when Updates tab is active so new post is immediately visible without tab switch. Zero touch to FSM, SL math, CMP loops, trade card rendering, calculations, or any other feature. Rollback: remove the three added lines at Realtime handler line ~2203, startup init line ~4740, and fetchUpdates post-render line ~4072. -->
@@ -1307,7 +1308,7 @@
             if (ltp != null && !isNaN(ltp) && ltp > 0.10) {
                 if (_sessionOptionLows[postId] == null) {
                     const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0) _sessionOptionLows[postId] = entryVal;
+                    if (entryVal > 0 && ltp <= entryVal) _sessionOptionLows[postId] = entryVal;
                 }
                 if (_sessionOptionLows[postId] == null || ltp < _sessionOptionLows[postId])
                     _sessionOptionLows[postId] = ltp;
@@ -1322,7 +1323,7 @@
             if (ltp != null && !isNaN(ltp) && ltp > 0.10 && postId) {
                 if (_sessionOptionHighs[postId] == null) {
                     const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0) _sessionOptionHighs[postId] = entryVal;
+                    if (entryVal > 0 && ltp >= entryVal) _sessionOptionHighs[postId] = entryVal;
                 }
                 if (_sessionOptionHighs[postId] == null || ltp > _sessionOptionHighs[postId])
                     _sessionOptionHighs[postId] = ltp;
@@ -3423,7 +3424,7 @@
                 : null;
             const _initialLow2 = (_exitMinPriceSell2 !== null && fields.entry)
                 ? Math.min(fields.entry, _exitMinPriceSell2)
-                : fields.entry;
+                : null;
             // Session high seed: for BUY trades with partial exits, option price already reached exit price
             // so session high cannot be below that level. Initialize at max(entry, exit_price).
             const _exitMaxPriceBuy2 = fields.action !== 'SELL' && _activeLegs2.length > 0
@@ -3431,7 +3432,7 @@
                 : null;
             const _initialHigh2 = (_exitMaxPriceBuy2 !== null && fields.entry)
                 ? Math.max(fields.entry, _exitMaxPriceBuy2)
-                : fields.entry;
+                : null;
             const holdingText2 = cumExit >= 100 ? 'Exited Fully'
                 : cumExit > 0 && _activeLegs2.length > 0
                     ? `Holding ${100-cumExit}% exited ${_activeLegs2.map(l=>`${l.pct}% @${l.price}`).join('/')}`
@@ -3492,7 +3493,7 @@
                     <div class="metric-col"><span class="metric-label">${slLabel2}</span><span class="metric-value" style="font-size:0.78rem;">${slDisplay2}</span></div>
                     <div class="metric-col" style="text-align:right;"><span class="metric-label">CMP</span><span class="metric-value" style="font-size:0.82rem;"${showCmp&&liveCmpKey?` data-live-cmp="${liveCmpKey}"`:``}>${showCmp?(latestCmp?`₹${latestCmp}`:'🔓'):lockBtn}</span></div>
                 </div>
-                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow2||fields.entry||''):(_initialHigh2||fields.entry||'')}">${fields.action==='SELL'?(_initialLow2?`₹${_initialLow2}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh2?`₹${_initialHigh2}`:(fields.entry?`₹${fields.entry}`:'—'))}</span></div>`:''}
+                ${showCmp&&liveCmpKey?`<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span><span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow2||''):(_initialHigh2||'')}">${fields.action==='SELL'?(_initialLow2?`₹${_initialLow2}`:'—'):(_initialHigh2?`₹${_initialHigh2}`:'—')}</span></div>`:''}
                 ${why ? `<div class="why-locked" onclick="showPopup()"><span>📝</span><span class="why-locked-text">Why I took this trade — Premium only 🔒</span></div>` : ''}
                 ${freeRepliesHtml2}${stateBanner2}
             </div>`;
@@ -3946,7 +3947,7 @@
             : null;
         const _initialLow3 = (_exitMinPriceSell3 !== null && fields.entry)
             ? Math.min(fields.entry, _exitMinPriceSell3)
-            : fields.entry;
+            : null;
         // Session high seed: for BUY trades with a partial exit, the option price already reached the exit price,
         // so session high cannot be below that level. Initialize at max(entry, exit_price).
         const _exitMaxPriceBuy3 = fields.action !== 'SELL' && _activeLegs3.length > 0
@@ -3954,7 +3955,7 @@
             : null;
         const _initialHigh3 = (_exitMaxPriceBuy3 !== null && fields.entry)
             ? Math.max(fields.entry, _exitMaxPriceBuy3)
-            : fields.entry;
+            : null;
         const holdingText3 = cumExit3 >= 100 ? 'Exited Fully'
             : cumExit3 > 0 && _activeLegs3.length > 0
                 ? `Holding ${100-cumExit3}% exited ${_activeLegs3.map(l=>`${l.pct}% @${l.price}`).join('/')}`
@@ -4001,7 +4002,7 @@
             ${_cmtHtmlUAT}
             <div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;">
                 <span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${fields.action==='SELL'?'Session Low':'Session High'}</span>
-                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow3||fields.entry||''):(_initialHigh3||fields.entry||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:(fields.entry?`₹${fields.entry}`:'—')):(_initialHigh3?`₹${_initialHigh3}`:(fields.entry?`₹${fields.entry}`:'—'))}</span>
+                <span style="font-size:0.8rem;font-weight:700;color:#16a34a;" ${fields.action==='SELL'?`data-live-low="${post.id}" data-live-low-key="${liveCmpKey}"`:`data-live-high="${liveCmpKey}" data-post-id="${post.id}"`} data-entry="${fields.action==='SELL'?(_initialLow3||''):(_initialHigh3||'')}">${fields.action==='SELL'?(_initialLow3?`₹${_initialLow3}`:'—'):(_initialHigh3?`₹${_initialHigh3}`:'—')}</span>
             </div>
             ${whyRow3}
             ${repliesHtml}
