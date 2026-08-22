@@ -586,60 +586,12 @@
         <!-- Advance / Decline bar — Kotak Neo data, derived from Nifty 50 close prices -->
         <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="toggleAdvDec('advancing')"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
-            <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="toggleAdvDec('declining')"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;background:#f0faf4;border:1.5px solid var(--green);border-radius:20px;padding:3px 10px;white-space:nowrap;" onclick="toggleAdvDec('advancing')"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;background:#fff4f4;border:1.5px solid var(--red);border-radius:20px;padding:3px 10px;white-space:nowrap;" onclick="toggleAdvDec('declining')"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
             <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
         </div>
         <div id="adv-dec-detail" style="display:none;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:0 10px 8px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:0.72rem;"></div>
 
-        <!-- ═══ UAT DEMO ONLY — TAP STYLE OPTIONS — REMOVE BEFORE PROD ═══ -->
-        <div style="margin-top:14px;padding:10px 12px;background:#fdf6e3;border:1.5px dashed #d97706;border-radius:10px;font-size:0.7rem;">
-          <div style="font-weight:800;color:#d97706;letter-spacing:0.5px;margin-bottom:10px;text-transform:uppercase;">↕ Tap Style — UAT Preview Only</div>
-
-          <!-- OPTION A: Gray pill around arrow -->
-          <div style="margin-bottom:8px;color:#888;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">Option A — Gray pill on arrow</div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;margin-bottom:12px;">
-            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span style="color:var(--green);font-weight:700;">▲ 26 Advancing <span style="background:#eaeaea;border-radius:4px;padding:1px 5px;font-size:1rem;font-weight:700;color:#2d2a32;display:inline-block;">↓</span></span>
-            <span style="color:var(--border);">|</span>
-            <span style="color:var(--red);font-weight:700;">▼ 24 Declining <span style="background:#eaeaea;border-radius:4px;padding:1px 5px;font-size:1rem;font-weight:700;color:#2d2a32;display:inline-block;">↓</span></span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;">Market Feed</span>
-          </div>
-
-          <!-- OPTION B: Whole label as chip -->
-          <div style="margin-bottom:8px;color:#888;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">Option B — Full chip</div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;margin-bottom:12px;flex-wrap:wrap;">
-            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span style="background:#f0faf4;border:1.5px solid var(--green);border-radius:20px;padding:3px 10px;color:var(--green);font-weight:700;white-space:nowrap;">▲ 26 Advancing ↓</span>
-            <span style="background:#fff4f4;border:1.5px solid var(--red);border-radius:20px;padding:3px 10px;color:var(--red);font-weight:700;white-space:nowrap;">▼ 24 Declining ↓</span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;">Market Feed</span>
-          </div>
-
-          <!-- OPTION C: Underline on word + black arrow -->
-          <div style="margin-bottom:8px;color:#888;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">Option C — Underline + black arrow</div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;margin-bottom:12px;">
-            <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span style="color:var(--green);font-weight:700;">▲ 26 <span style="text-decoration:underline;text-underline-offset:2px;">Advancing</span> <span style="color:#2d2a32;font-size:1.1rem;font-weight:700;display:inline-block;">↓</span></span>
-            <span style="color:var(--border);">|</span>
-            <span style="color:var(--red);font-weight:700;">▼ 24 <span style="text-decoration:underline;text-underline-offset:2px;">Declining</span> <span style="color:#2d2a32;font-size:1.1rem;font-weight:700;display:inline-block;">↓</span></span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;">Market Feed</span>
-          </div>
-
-          <!-- OPTION D: Small "tap to expand" hint -->
-          <div style="margin-bottom:8px;color:#888;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">Option D — Hint text below</div>
-          <div style="padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-              <span style="color:var(--green);font-weight:700;">▲ 26 Advancing <span style="color:#2d2a32;font-size:1.1rem;font-weight:700;">↓</span></span>
-              <span style="color:var(--border);">|</span>
-              <span style="color:var(--red);font-weight:700;">▼ 24 Declining <span style="color:#2d2a32;font-size:1.1rem;font-weight:700;">↓</span></span>
-              <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;">Market Feed</span>
-            </div>
-            <div style="font-size:0.6rem;color:#b0a8b8;text-align:center;margin-top:5px;letter-spacing:0.2px;">↕ Tap Advancing or Declining to see stocks</div>
-          </div>
-        </div>
-        <!-- ═══ END UAT DEMO ═══ -->
 
         <!-- Market Quick Preview — Trades / Updates dual-tab (replaces alert banner in UAT) -->
         <div id="market-quick-preview">
@@ -1097,8 +1049,8 @@
         if (detail) detail.style.display = 'none';
         if (advChev) advChev.style.transform = '';
         if (decChev) decChev.style.transform = '';
-        if (advEl)  { advEl.style.borderBottom  = ''; advEl.style.paddingBottom  = ''; }
-        if (decEl)  { decEl.style.borderBottom  = ''; decEl.style.paddingBottom  = ''; }
+        if (advEl)  { advEl.style.background = ''; advEl.style.color = ''; }
+        if (decEl)  { decEl.style.background = ''; decEl.style.color = ''; }
         if (bar)    { bar.style.borderBottomLeftRadius = ''; bar.style.borderBottomRightRadius = ''; }
     }
 
@@ -1116,11 +1068,11 @@
         const isAdv = which === 'advancing';
         const color = isAdv ? 'var(--green)' : 'var(--red)';
 
-        // Active underline on the open section
-        if (advEl) { advEl.style.borderBottom = ''; advEl.style.paddingBottom = ''; }
-        if (decEl) { decEl.style.borderBottom = ''; decEl.style.paddingBottom = ''; }
+        // Active chip: fill with color, white text; inactive chip: reset to HTML default
+        if (advEl) { advEl.style.background = ''; advEl.style.color = ''; }
+        if (decEl) { decEl.style.background = ''; decEl.style.color = ''; }
         const activeEl = isAdv ? advEl : decEl;
-        if (activeEl) { activeEl.style.borderBottom = `2px solid ${color}`; activeEl.style.paddingBottom = '3px'; }
+        if (activeEl) { activeEl.style.background = color; activeEl.style.color = '#fff'; }
 
         // Merge bar + detail into one unified card
         if (bar)   { bar.style.borderBottomLeftRadius = '0'; bar.style.borderBottomRightRadius = '0'; }
