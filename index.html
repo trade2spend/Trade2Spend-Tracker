@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260823-002 | PROD: Advance/Decline panel auto-refresh with scroll preservation and directional flash — (1) _advDecRender(which): extracted HTML-building logic from toggleAdvDec into standalone function; rows now stamped with data-symbol attribute for post-rebuild targeting. (2) _advDecRefresh(oldPrices): on every 5s /market poll, if panel is open — saves scrollTop, rebuilds via _advDecRender, restores scrollTop (no scroll jump); compares old vs new prices and flashes changed rows green (#dcfce7) if price went up or red (#fee2e2) if price went down for 2.5s. (3) toggleAdvDec: replaced 25-line inline HTML block with single _advDecRender(which) call — behaviour identical. (4) renderMarketUI breadth block: snapshots current prices before _advDecStocks update, then passes snapshot to _advDecRefresh so comparison is old-vs-new not new-vs-new. Zero touch to _advDecCollapse, outside-click listener, chip counts, chevron logic, all other tabs, server.js, Supabase. Rollback: revert toggleAdvDec to inline HTML block; remove _advDecRender/_advDecRefresh functions; revert renderMarketUI line to plain _advDecStocks assignment. -->
 <!-- T2S-PROD-20260823-001 | PROD: Markets tab — NIFTY 50 Advance/Decline collapsible component: (1) movers-section hidden (display:none — data still renders to gainers/losers lists for the expand panel); (2) adv-dec-bar chips: old scroll-to-movers onclick replaced with toggleAdvDec() + green/red chip styling + flex-wrap for mobile overflow fix; (3) adv-note removed entirely from bar; (4) adv-dec-detail expand panel added — shows CMP, Change, % Change for all stocks sorted by magnitude; (5) _advDecCollapse(), toggleAdvDec() functions + outside-click listener added; (6) renderExpiryStrip() updated to show "Market Feed/NSE Data" source label right-aligned in the Upcoming F&O Expiry header row (same row, less vertical space); (7) mcard-src grid injection removed (was below price cards, now in expiry strip). server.js changes (gainers/losers >= 0, breadth, source preference) already live on VM from Aug 22. Rollback: revert adv-dec-bar HTML to old scroll-onclick spans + pipe separator + adv-note; remove adv-dec-detail div; remove _advDecCollapse/toggleAdvDec/outside-click; revert renderExpiryStrip to single-param; restore mcard-src injection; revert movers-section to display:block. -->
 <!-- T2S-PROD-20260822-001 | PROD: Session HIGH/LOW "Yet to Trigger" seed fix — (1) updateTradeCMPs() session HIGH guard (BUY): pre-seed from data-entry only when ltp >= entryVal (option has actually reached entry price); was seeding unconditionally → showed entry ₹117 as session high when CMP was ₹114 and trade not triggered. (2) Same guard for session LOW (SELL): only seed from data-entry when ltp <= entryVal. (3) _initialHigh2/_initialLow2 (Section 2 rendering): return null instead of fields.entry when no partial exits → initial display shows '—' not '₹entry'. (4) _initialHigh3/_initialLow3 (Section 3 rendering): same. (5) Section 2 + Section 3 templates: removed ||fields.entry fallback from data-entry attr and display text. Partial exit seeding (when _exitMaxPriceBuy2/3 !== null) fully preserved — no change. Rollback: revert ltp>=entryVal guard back to entryVal>0 (2 lines in updateTradeCMPs); revert _initialHigh2/Low2/3 ternary else-clause from null back to fields.entry (4 lines); revert Section 2+3 template data-entry and display to use ||fields.entry fallback (2 lines). -->
 <!-- T2S-PROD-20260821-002 | PROD: SL breach fast-detect — added _checkSLOnTick IIFE at end of updateTradeCMPs(). On every 5s CMP tick, checks all active trades (using cached window._mqpLastTradePosts + _mqpLastReplyMap) for SL breach via existing isTradeFullyClosed(). If _sblAutoClosedPostIds grows (new breach detected), immediately calls renderTradeAlerts() with cached data — zero Supabase fetch. Reduces "SL hit → card closes" delay from ~30s to ~5s. 15s debounce (_slBreachRebuildPending) prevents duplicate rebuilds on back-to-back ticks. Zero touch to isTradeFullyClosed, renderTradeAlerts, fetchTradeAlerts, SL math, P&L, FSM, session high/low, Performance tab, Updates tab. Rollback: remove the _checkSLOnTick IIFE block (14 lines) at end of updateTradeCMPs(). -->
@@ -1082,6 +1083,61 @@
         if (bar)    { bar.style.borderBottomLeftRadius = ''; bar.style.borderBottomRightRadius = ''; }
     }
 
+    function _advDecRender(which) {
+        const detail = document.getElementById('adv-dec-detail');
+        if (!detail) return;
+        const isAdv  = which === 'advancing';
+        const color  = isAdv ? 'var(--green)' : 'var(--red)';
+        const stocks = isAdv
+            ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
+            : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
+        if (stocks.length > 0) {
+            const title = `<div style="font-size:0.7rem;font-weight:800;color:${color};letter-spacing:0.5px;padding:8px 0 4px;text-transform:uppercase;">Top ${isAdv ? 'Advancing' : 'Declining'}</div>`;
+            const hdr   = `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;padding:3px 0 4px;border-bottom:1px solid var(--border);font-size:0.62rem;color:var(--text-muted);font-weight:600;letter-spacing:0.3px;"><span>Stock Name</span><span>CMP</span><span style="text-align:right;">Change</span><span style="text-align:right;">% Change</span></div>`;
+            const rows  = stocks.map((s, i) => {
+                const denom  = 100 + s.change;
+                const abs    = denom !== 0 ? (s.price * s.change) / denom : 0;
+                const cmp    = (s.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+                const absStr = (abs >= 0 ? '+' : '') + abs.toFixed(2);
+                const pctStr = (s.change >= 0 ? '+' : '') + s.change.toFixed(2) + '%';
+                const clr    = isAdv ? 'var(--green)' : 'var(--red)';
+                const border = i === stocks.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
+                return `<div data-symbol="${s.symbol}" style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;align-items:center;padding:5px 0;${border}font-size:0.72rem;">` +
+                    `<span class="mover-name">${s.symbol}</span>` +
+                    `<span style="color:var(--text-main);font-weight:500;">${cmp}</span>` +
+                    `<span style="color:${clr};font-weight:600;text-align:right;">${absStr}</span>` +
+                    `<span style="color:${clr};font-weight:700;text-align:right;">${pctStr}</span>` +
+                    `</div>`;
+            }).join('');
+            detail.innerHTML = title + hdr + rows;
+        } else {
+            detail.innerHTML = `<div style="color:var(--text-muted);padding:8px 0;font-size:0.72rem;">No data yet — check back when market opens.</div>`;
+        }
+    }
+
+    function _advDecRefresh(oldPrices) {
+        if (_advDecOpen === null) return;
+        const detail = document.getElementById('adv-dec-detail');
+        if (!detail || detail.style.display === 'none') return;
+        const scrollTop = detail.scrollTop;
+        _advDecRender(_advDecOpen);
+        detail.scrollTop = scrollTop;
+        if (oldPrices) {
+            const isAdv = _advDecOpen === 'advancing';
+            (_advDecStocks[isAdv ? 'gainers' : 'losers'] || []).forEach(s => {
+                if (oldPrices[s.symbol] !== undefined && oldPrices[s.symbol] !== s.price) {
+                    const row = detail.querySelector(`[data-symbol="${s.symbol}"]`);
+                    if (row) {
+                        const flashColor = s.price > oldPrices[s.symbol] ? '#dcfce7' : '#fee2e2';
+                        row.style.transition = 'background 0.2s';
+                        row.style.background = flashColor;
+                        setTimeout(() => { row.style.background = ''; }, 2500);
+                    }
+                }
+            });
+        }
+    }
+
     function toggleAdvDec(which) {
         const detail  = document.getElementById('adv-dec-detail');
         const bar     = document.getElementById('adv-dec-bar');
@@ -1103,31 +1159,7 @@
         detail.style.borderTopLeftRadius = '0';
         detail.style.borderTopRightRadius = '0';
         detail.style.marginTop = '0';
-        const stocks = isAdv
-            ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
-            : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
-        if (stocks.length > 0) {
-            const title = `<div style="font-size:0.7rem;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:0.04em;padding:8px 0 4px;">Top ${isAdv ? 'Advancing' : 'Declining'}</div>`;
-            const hdr = `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;gap:4px;padding:4px 0;border-bottom:1px solid var(--border);font-size:0.64rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;"><span>Stock Name</span><span>CMP</span><span style="text-align:right;">Change</span><span style="text-align:right;">% Change</span></div>`;
-            const rows = stocks.map((s, i) => {
-                const denom = 100 + s.change;
-                const abs = denom !== 0 ? (s.price * s.change) / denom : 0;
-                const cmp = (s.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
-                const absStr = (abs >= 0 ? '+' : '') + abs.toFixed(2);
-                const pctStr = (s.change >= 0 ? '+' : '') + s.change.toFixed(2) + '%';
-                const clr = isAdv ? 'var(--green)' : 'var(--red)';
-                const border = i === stocks.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
-                return `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;gap:4px;padding:5px 0;align-items:center;${border}">
-                    <span class="mover-name">${s.symbol}</span>
-                    <span style="color:var(--text-main);font-weight:500;">${cmp}</span>
-                    <span style="color:${clr};font-weight:600;text-align:right;">${absStr}</span>
-                    <span style="color:${clr};font-weight:700;text-align:right;">${pctStr}</span>
-                </div>`;
-            }).join('');
-            detail.innerHTML = title + hdr + rows;
-        } else {
-            detail.innerHTML = `<div style="color:var(--text-muted);padding:8px 0;font-size:0.72rem;">No data yet — check back when market opens.</div>`;
-        }
+        _advDecRender(which);
         detail.style.display = 'block';
         if (advChev) advChev.style.transform = isAdv ? 'rotate(180deg)' : '';
         if (decChev) decChev.style.transform = !isAdv ? 'rotate(180deg)' : '';
@@ -1232,7 +1264,7 @@
             const decEl = document.getElementById('dec-count');
             if(advEl) advEl.innerHTML = `▲ ${b.advancing} Advancing <span id="adv-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
             if(decEl) decEl.innerHTML = `▼ ${b.declining} Declining <span id="dec-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
-            if(data.gainers) _advDecStocks = { gainers: data.gainers, losers: data.losers || [] };
+            if(data.gainers) { const _snap={}; (_advDecStocks[_advDecOpen==='advancing'?'gainers':'losers']||[]).forEach(s=>{_snap[s.symbol]=s.price;}); _advDecStocks = { gainers: data.gainers, losers: data.losers || [] }; _advDecRefresh(_snap); }
             const _ac = document.getElementById('adv-chev');
             const _dc = document.getElementById('dec-chev');
             if(_advDecOpen === 'advancing' && _ac) _ac.style.transform = 'rotate(180deg)';
