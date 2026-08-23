@@ -1099,8 +1099,9 @@
                 if (oldPrices[s.symbol] !== undefined && oldPrices[s.symbol] !== s.price) {
                     const row = detail.querySelector(`[data-symbol="${s.symbol}"]`);
                     if (row) {
+                        const flashColor = s.price > oldPrices[s.symbol] ? '#dcfce7' : '#fee2e2';
                         row.style.transition = 'background 0.2s';
-                        row.style.background = '#ffd700';
+                        row.style.background = flashColor;
                         setTimeout(() => { row.style.background = ''; }, 2500);
                     }
                 }
