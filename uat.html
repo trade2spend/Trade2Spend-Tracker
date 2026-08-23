@@ -1053,6 +1053,47 @@
         if (bar)    { bar.style.borderBottomLeftRadius = ''; bar.style.borderBottomRightRadius = ''; }
     }
 
+    function _advDecRender(which) {
+        const detail = document.getElementById('adv-dec-detail');
+        if (!detail) return;
+        const isAdv  = which === 'advancing';
+        const color  = isAdv ? 'var(--green)' : 'var(--red)';
+        const stocks = isAdv
+            ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
+            : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
+        if (stocks.length > 0) {
+            const title = `<div style="font-size:0.7rem;font-weight:800;color:${color};letter-spacing:0.5px;padding:8px 0 4px;text-transform:uppercase;">Top ${isAdv ? 'Advancing' : 'Declining'}</div>`;
+            const hdr   = `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;padding:3px 0 4px;border-bottom:1px solid var(--border);font-size:0.62rem;color:var(--text-muted);font-weight:600;letter-spacing:0.3px;"><span>Stock Name</span><span>CMP</span><span style="text-align:right;">Change</span><span style="text-align:right;">% Change</span></div>`;
+            const rows  = stocks.map((s, i) => {
+                const denom  = 100 + s.change;
+                const abs    = denom !== 0 ? (s.price * s.change) / denom : 0;
+                const cmp    = (s.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+                const absStr = (abs >= 0 ? '+' : '') + abs.toFixed(2);
+                const pctStr = (s.change >= 0 ? '+' : '') + s.change.toFixed(2) + '%';
+                const clr    = isAdv ? 'var(--green)' : 'var(--red)';
+                const border = i === stocks.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
+                return `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;align-items:center;padding:5px 0;${border}font-size:0.72rem;">` +
+                    `<span class="mover-name">${s.symbol}</span>` +
+                    `<span style="color:var(--text-main);font-weight:500;">${cmp}</span>` +
+                    `<span style="color:${clr};font-weight:600;text-align:right;">${absStr}</span>` +
+                    `<span style="color:${clr};font-weight:700;text-align:right;">${pctStr}</span>` +
+                    `</div>`;
+            }).join('');
+            detail.innerHTML = title + hdr + rows;
+        } else {
+            detail.innerHTML = `<div style="color:var(--text-muted);padding:8px 0;font-size:0.72rem;">No data yet — check back when market opens.</div>`;
+        }
+    }
+
+    function _advDecRefresh() {
+        if (_advDecOpen === null) return;
+        const detail = document.getElementById('adv-dec-detail');
+        if (!detail || detail.style.display === 'none') return;
+        const scrollTop = detail.scrollTop;
+        _advDecRender(_advDecOpen);
+        detail.scrollTop = scrollTop;
+    }
+
     function toggleAdvDec(which) {
         const detail  = document.getElementById('adv-dec-detail');
         const bar     = document.getElementById('adv-dec-bar');
@@ -1080,32 +1121,7 @@
         detail.style.borderTopRightRadius = '0';
         detail.style.marginTop            = '0';
 
-        const stocks = isAdv
-            ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
-            : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
-
-        if (stocks.length > 0) {
-            const title = `<div style="font-size:0.7rem;font-weight:800;color:${color};letter-spacing:0.5px;padding:8px 0 4px;text-transform:uppercase;">Top ${isAdv ? 'Advancing' : 'Declining'}</div>`;
-            const hdr   = `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;padding:3px 0 4px;border-bottom:1px solid var(--border);font-size:0.62rem;color:var(--text-muted);font-weight:600;letter-spacing:0.3px;"><span>Stock Name</span><span>CMP</span><span style="text-align:right;">Change</span><span style="text-align:right;">% Change</span></div>`;
-            const rows  = stocks.map((s, i) => {
-                const denom  = 100 + s.change;
-                const abs    = denom !== 0 ? (s.price * s.change) / denom : 0;
-                const cmp    = (s.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
-                const absStr = (abs >= 0 ? '+' : '') + abs.toFixed(2);
-                const pctStr = (s.change >= 0 ? '+' : '') + s.change.toFixed(2) + '%';
-                const clr    = isAdv ? 'var(--green)' : 'var(--red)';
-                const border = i === stocks.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
-                return `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;align-items:center;padding:5px 0;${border}font-size:0.72rem;">` +
-                    `<span class="mover-name">${s.symbol}</span>` +
-                    `<span style="color:var(--text-main);font-weight:500;">${cmp}</span>` +
-                    `<span style="color:${clr};font-weight:600;text-align:right;">${absStr}</span>` +
-                    `<span style="color:${clr};font-weight:700;text-align:right;">${pctStr}</span>` +
-                    `</div>`;
-            }).join('');
-            detail.innerHTML = title + hdr + rows;
-        } else {
-            detail.innerHTML = `<div style="color:var(--text-muted);padding:8px 0;font-size:0.72rem;">No data yet — check back when market opens.</div>`;
-        }
+        _advDecRender(which);
 
         detail.style.display = 'block';
         if (advChev) advChev.style.transform = isAdv  ? 'rotate(180deg)' : '';
@@ -1240,7 +1256,7 @@
             const decEl = document.getElementById('dec-count');
             if(advEl) advEl.innerHTML = `▲ ${b.advancing} Advancing <span id="adv-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
             if(decEl) decEl.innerHTML = `▼ ${b.declining} Declining <span id="dec-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
-            if(data.gainers) _advDecStocks = { gainers: data.gainers, losers: data.losers || [] };
+            if(data.gainers) { _advDecStocks = { gainers: data.gainers, losers: data.losers || [] }; _advDecRefresh(); }
             const _ac = document.getElementById('adv-chev');
             const _dc = document.getElementById('dec-chev');
             if(_advDecOpen === 'advancing' && _ac) _ac.style.transform = 'rotate(180deg)';
