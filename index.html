@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260823-001 | PROD: Markets tab — NIFTY 50 Advance/Decline collapsible component: (1) movers-section hidden (display:none — data still renders to gainers/losers lists for the expand panel); (2) adv-dec-bar chips: old scroll-to-movers onclick replaced with toggleAdvDec() + green/red chip styling + flex-wrap for mobile overflow fix; (3) adv-note removed entirely from bar; (4) adv-dec-detail expand panel added — shows CMP, Change, % Change for all stocks sorted by magnitude; (5) _advDecCollapse(), toggleAdvDec() functions + outside-click listener added; (6) renderExpiryStrip() updated to show "Market Feed/NSE Data" source label right-aligned in the Upcoming F&O Expiry header row (same row, less vertical space); (7) mcard-src grid injection removed (was below price cards, now in expiry strip). server.js changes (gainers/losers >= 0, breadth, source preference) already live on VM from Aug 22. Rollback: revert adv-dec-bar HTML to old scroll-onclick spans + pipe separator + adv-note; remove adv-dec-detail div; remove _advDecCollapse/toggleAdvDec/outside-click; revert renderExpiryStrip to single-param; restore mcard-src injection; revert movers-section to display:block. -->
 <!-- T2S-PROD-20260822-001 | PROD: Session HIGH/LOW "Yet to Trigger" seed fix — (1) updateTradeCMPs() session HIGH guard (BUY): pre-seed from data-entry only when ltp >= entryVal (option has actually reached entry price); was seeding unconditionally → showed entry ₹117 as session high when CMP was ₹114 and trade not triggered. (2) Same guard for session LOW (SELL): only seed from data-entry when ltp <= entryVal. (3) _initialHigh2/_initialLow2 (Section 2 rendering): return null instead of fields.entry when no partial exits → initial display shows '—' not '₹entry'. (4) _initialHigh3/_initialLow3 (Section 3 rendering): same. (5) Section 2 + Section 3 templates: removed ||fields.entry fallback from data-entry attr and display text. Partial exit seeding (when _exitMaxPriceBuy2/3 !== null) fully preserved — no change. Rollback: revert ltp>=entryVal guard back to entryVal>0 (2 lines in updateTradeCMPs); revert _initialHigh2/Low2/3 ternary else-clause from null back to fields.entry (4 lines); revert Section 2+3 template data-entry and display to use ||fields.entry fallback (2 lines). -->
 <!-- T2S-PROD-20260821-002 | PROD: SL breach fast-detect — added _checkSLOnTick IIFE at end of updateTradeCMPs(). On every 5s CMP tick, checks all active trades (using cached window._mqpLastTradePosts + _mqpLastReplyMap) for SL breach via existing isTradeFullyClosed(). If _sblAutoClosedPostIds grows (new breach detected), immediately calls renderTradeAlerts() with cached data — zero Supabase fetch. Reduces "SL hit → card closes" delay from ~30s to ~5s. 15s debounce (_slBreachRebuildPending) prevents duplicate rebuilds on back-to-back ticks. Zero touch to isTradeFullyClosed, renderTradeAlerts, fetchTradeAlerts, SL math, P&L, FSM, session high/low, Performance tab, Updates tab. Rollback: remove the _checkSLOnTick IIFE block (14 lines) at end of updateTradeCMPs(). -->
 <!-- T2S-PROD-20260821-001 | PROD: Markets→Trades sub-tab — added not_triggered filter to _renderMqpTrades(). Trades with getTradeState()==='not_triggered' (e.g. follow-up "Not triggered avoid now.") are now excluded from the Markets quick-preview list, matching the Trade Alert tab behaviour (T2S-PROD-20260716-001). One line added inside tradePosts.forEach before the isTradeFullyClosed split. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: remove the single `if (getTradeState(post, replies) === 'not_triggered') return;` line from _renderMqpTrades(). -->
@@ -558,7 +559,7 @@
         <!-- Expiry Strip -->
         <div id="expiry-strip" style="display:none;padding:6px 0 8px;"></div>
         <!-- Gainers / Losers -->
-        <div class="movers-section" id="movers-section" style="display:block;">
+        <div class="movers-section" id="movers-section" style="display:none;">
             <div class="movers-grid">
                 <div class="movers-card">
                     <div class="movers-card-title g">▲ Top Gainers</div>
@@ -585,13 +586,12 @@
             </div>
         </div>
         <!-- Advance / Decline bar — Kotak Neo data, derived from Nifty 50 close prices -->
-        <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
+        <div id="adv-dec-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.72rem;">
             <span style="font-weight:700;color:var(--text-muted);white-space:nowrap;">NIFTY 50</span>
-            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
-            <span style="color:var(--border);">|</span>
-            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;" onclick="document.getElementById('movers-section').scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('movers-section').style.display='block';"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
-            <span style="margin-left:auto;color:#c4b8d8;font-size:0.62rem;white-space:nowrap;" id="adv-note"><span class="skel-pulse" style="width:60px;display:inline-block;"> </span></span>
+            <span id="adv-count" style="color:var(--green);font-weight:700;cursor:pointer;background:#f0faf4;border:1.5px solid var(--green);border-radius:20px;padding:3px 10px;white-space:nowrap;display:inline-flex;align-items:center;" onclick="toggleAdvDec('advancing')"><span class="skel-pulse" style="width:80px;display:inline-block;"> </span></span>
+            <span id="dec-count" style="color:var(--red);font-weight:700;cursor:pointer;background:#fff4f4;border:1.5px solid var(--red);border-radius:20px;padding:3px 10px;white-space:nowrap;display:inline-flex;align-items:center;" onclick="toggleAdvDec('declining')"><span class="skel-pulse" style="width:76px;display:inline-block;"> </span></span>
         </div>
+        <div id="adv-dec-detail" style="display:none;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:0 10px 8px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:0.72rem;"></div>
         <!-- Market Quick Preview — Trades / Updates dual-tab (replaces alert banner in UAT) -->
         <div id="market-quick-preview">
             <div class="mqp-tab-strip">
@@ -803,6 +803,8 @@
     const _myLikes = new Set();    // postIds liked by current member
     const _userInteracted = new Set(); // postIds touched this session — fetchLikes never overwrites these
     const _sblAutoClosedPostIds = new Set(); // FSM: SL-breach auto-closed post IDs — one-way, never reverts on LTP bounce
+    let _advDecOpen   = null;      // null | 'advancing' | 'declining' — adv/dec expand state
+    let _advDecStocks = { gainers: [], losers: [] }; // cached from last renderMarketUI
     const _tradeTargetHits = {};             // FSM: post.id → {t1,t2,t3} — target hit latches, never reset to false
     (function(){
         try {
@@ -1064,7 +1066,83 @@
         return d === 0 || d === 6 || mins < 9 * 60 + 15 || mins >= 15 * 60 + 35;
     }
 
-    function renderExpiryStrip(expiry) {
+    function _advDecCollapse() {
+        _advDecOpen = null;
+        const detail  = document.getElementById('adv-dec-detail');
+        const bar     = document.getElementById('adv-dec-bar');
+        const advChev = document.getElementById('adv-chev');
+        const decChev = document.getElementById('dec-chev');
+        const advEl   = document.getElementById('adv-count');
+        const decEl   = document.getElementById('dec-count');
+        if (detail) detail.style.display = 'none';
+        if (advChev) advChev.style.transform = '';
+        if (decChev) decChev.style.transform = '';
+        if (advEl)  { advEl.style.background = ''; advEl.style.color = ''; }
+        if (decEl)  { decEl.style.background = ''; decEl.style.color = ''; }
+        if (bar)    { bar.style.borderBottomLeftRadius = ''; bar.style.borderBottomRightRadius = ''; }
+    }
+
+    function toggleAdvDec(which) {
+        const detail  = document.getElementById('adv-dec-detail');
+        const bar     = document.getElementById('adv-dec-bar');
+        const advEl   = document.getElementById('adv-count');
+        const decEl   = document.getElementById('dec-count');
+        const advChev = document.getElementById('adv-chev');
+        const decChev = document.getElementById('dec-chev');
+        if (!detail) return;
+        if (_advDecOpen === which) { _advDecCollapse(); return; }
+        _advDecOpen = which;
+        const isAdv = which === 'advancing';
+        const color = isAdv ? 'var(--green)' : 'var(--red)';
+        if (advEl) { advEl.style.background = ''; advEl.style.color = ''; }
+        if (decEl) { decEl.style.background = ''; decEl.style.color = ''; }
+        const activeEl = isAdv ? advEl : decEl;
+        if (activeEl) { activeEl.style.background = color; activeEl.style.color = '#fff'; }
+        if (bar) { bar.style.borderBottomLeftRadius = '0'; bar.style.borderBottomRightRadius = '0'; }
+        detail.style.borderTop = 'none';
+        detail.style.borderTopLeftRadius = '0';
+        detail.style.borderTopRightRadius = '0';
+        detail.style.marginTop = '0';
+        const stocks = isAdv
+            ? [..._advDecStocks.gainers].sort((a, b) => b.change - a.change)
+            : [..._advDecStocks.losers ].sort((a, b) => a.change - b.change);
+        if (stocks.length > 0) {
+            const title = `<div style="font-size:0.7rem;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:0.04em;padding:8px 0 4px;">Top ${isAdv ? 'Advancing' : 'Declining'}</div>`;
+            const hdr = `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;gap:4px;padding:4px 0;border-bottom:1px solid var(--border);font-size:0.64rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;"><span>Stock Name</span><span>CMP</span><span style="text-align:right;">Change</span><span style="text-align:right;">% Change</span></div>`;
+            const rows = stocks.map((s, i) => {
+                const denom = 100 + s.change;
+                const abs = denom !== 0 ? (s.price * s.change) / denom : 0;
+                const cmp = (s.price || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+                const absStr = (abs >= 0 ? '+' : '') + abs.toFixed(2);
+                const pctStr = (s.change >= 0 ? '+' : '') + s.change.toFixed(2) + '%';
+                const clr = isAdv ? 'var(--green)' : 'var(--red)';
+                const border = i === stocks.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
+                return `<div style="display:grid;grid-template-columns:1.5fr 1.2fr 1fr 1fr;gap:4px;padding:5px 0;align-items:center;${border}">
+                    <span class="mover-name">${s.symbol}</span>
+                    <span style="color:var(--text-main);font-weight:500;">${cmp}</span>
+                    <span style="color:${clr};font-weight:600;text-align:right;">${absStr}</span>
+                    <span style="color:${clr};font-weight:700;text-align:right;">${pctStr}</span>
+                </div>`;
+            }).join('');
+            detail.innerHTML = title + hdr + rows;
+        } else {
+            detail.innerHTML = `<div style="color:var(--text-muted);padding:8px 0;font-size:0.72rem;">No data yet — check back when market opens.</div>`;
+        }
+        detail.style.display = 'block';
+        if (advChev) advChev.style.transform = isAdv ? 'rotate(180deg)' : '';
+        if (decChev) decChev.style.transform = !isAdv ? 'rotate(180deg)' : '';
+    }
+
+    document.addEventListener('click', function(e) {
+        if (_advDecOpen === null) return;
+        const bar    = document.getElementById('adv-dec-bar');
+        const detail = document.getElementById('adv-dec-detail');
+        if (bar && detail && !bar.contains(e.target) && !detail.contains(e.target)) {
+            _advDecCollapse();
+        }
+    }, true);
+
+    function renderExpiryStrip(expiry, srcLabel) {
       const el = document.getElementById('expiry-strip');
       if (!el || !expiry) { if (el) el.style.display = 'none'; return; }
       const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
@@ -1086,7 +1164,8 @@
       if (expiry.BANKNIFTY && expiry.BANKNIFTY.monthly) add('NIFTY/Stocks', expiry.BANKNIFTY.monthly, 'Monthly');
       const sorted = [...dateMap.values()].sort((a, b) => a.d - b.d).slice(0, 2);
       if (!sorted.length) { el.style.display = 'none'; return; }
-      el.innerHTML = `<div style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Upcoming F&amp;O Expiry</div>`
+      const srcHtml = srcLabel ? `<span style="font-size:0.62rem;color:#c4b8d8;font-weight:400;text-transform:none;letter-spacing:0;">${srcLabel}</span>` : '';
+      el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:0.62rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Upcoming F&amp;O Expiry</span>${srcHtml}</div>`
         + `<div style="display:flex;gap:8px;">`
         + sorted.map(e => {
             const isToday = e.d.toDateString() === todayStr;
@@ -1145,25 +1224,27 @@
         }
         if(!anyIndex) {
             container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#888;font-size:0.85rem;">Market data not available.<br>Will update at market open.</div>';
-        } else if (!document.getElementById('mcard-src')) {
-            container.innerHTML += `<div id="mcard-src" style="grid-column:1/-1;text-align:right;font-size:0.62rem;color:#c4b8d8;padding-top:2px;">${data.dataSource==='broker' ? 'Market Feed' : 'NSE Data'}</div>`;
         }
 
         if(data.breadth && data.breadth.nifty50) {
             const b = data.breadth.nifty50;
             const advEl = document.getElementById('adv-count');
             const decEl = document.getElementById('dec-count');
-            const noteEl = document.getElementById('adv-note');
-            if(advEl) advEl.textContent = `▲ ${b.advancing} Advancing`;
-            if(decEl) decEl.textContent = `▼ ${b.declining} Declining`;
-            if(noteEl) noteEl.textContent = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
+            if(advEl) advEl.innerHTML = `▲ ${b.advancing} Advancing <span id="adv-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
+            if(decEl) decEl.innerHTML = `▼ ${b.declining} Declining <span id="dec-chev" style="font-size:1.15rem;font-weight:700;color:#2d2a32;display:inline-block;transition:transform .25s;margin-left:3px;line-height:1;">↓</span>`;
+            if(data.gainers) _advDecStocks = { gainers: data.gainers, losers: data.losers || [] };
+            const _ac = document.getElementById('adv-chev');
+            const _dc = document.getElementById('dec-chev');
+            if(_advDecOpen === 'advancing' && _ac) _ac.style.transform = 'rotate(180deg)';
+            if(_advDecOpen === 'declining'  && _dc) _dc.style.transform = 'rotate(180deg)';
         }
 
-        renderExpiryStrip(data.expiry);
+        const _srcLabel = isOpen ? (data.dataSource==='broker' ? 'Market Feed' : 'NSE Data') : (data.dataSource==='broker' ? 'Market Feed · Closed' : 'NSE Data · Closed');
+        renderExpiryStrip(data.expiry, _srcLabel);
 
         const moversEl = document.getElementById('movers-section');
         if(moversEl && data.gainers && data.gainers.length > 0 && data.losers && data.losers.length > 0) {
-            moversEl.style.display = 'block';
+            moversEl.style.display = 'none'; // section hidden — data still renders for adv-dec-detail
 
             const gainers = [...data.gainers].sort((a,b) => b.change - a.change);
             const losers  = [...data.losers].sort((a,b) => a.change - b.change);
