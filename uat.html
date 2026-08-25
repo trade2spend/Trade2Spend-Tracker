@@ -780,8 +780,50 @@
         <p class="popup-text">Get real-time trade entries, exact stop loss levels, targets, and detailed analysis — exclusively for premium members.</p>
         <a href="https://t.me/tusharview" class="btn-primary">Join Premium → Message @tusharview</a>
         <a href="https://t.me/trade2spend" class="btn-secondary">Join Free Channel</a>
-        <p style="font-size: 0.7rem; color: #a8a29e; margin-top: 15px;">Educational purposes only. Not investment advice.</p>
+        <div id="popup-free-access-cta" style="margin-top:14px;width:100%;"></div>
+        <p style="font-size: 0.7rem; color: #a8a29e; margin-top: 10px;">Educational purposes only. Not investment advice.</p>
     </div>
+</div>
+
+<!-- Golden Opportunity Screen -->
+<div class="overlay" id="goldenOpportunityOverlay" style="display:none;z-index:10001;" onclick="if(event.target.id==='goldenOpportunityOverlay')closeGoldenScreen()">
+  <div class="popup" style="max-width:360px;background:linear-gradient(160deg,#1a0a2e 0%,#2d1461 60%,#7c4a00 100%);color:#fff;border:2px solid #d97706;">
+    <div class="close-btn" onclick="closeGoldenScreen()" style="color:#f5d67b;">✕</div>
+    <div style="font-size:2.2rem;margin-bottom:8px;">🎁</div>
+    <h3 style="font-size:1.15rem;font-weight:800;color:#f5d67b;margin:0 0 6px;">Limited Free Access</h3>
+    <p style="font-size:0.82rem;opacity:0.85;margin:0 0 14px;line-height:1.5;">You're being offered <b>complimentary access</b> to Trade2Spend's premium trade analysis. This is a time-sensitive opportunity — stay active to keep your access.</p>
+    <div style="background:rgba(255,255,255,0.08);border-radius:12px;padding:12px;text-align:left;margin-bottom:18px;font-size:0.8rem;line-height:1.8;">
+      <div>✅ Free access to paid trade alerts</div>
+      <div>✅ Full analysis &amp; follow-ups</div>
+      <div>✅ Active as long as you're engaged</div>
+      <div>⚠️ Removed after 72 hours of inactivity</div>
+    </div>
+    <button onclick="showAccessRequestModal()" style="background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border:none;border-radius:12px;padding:13px 20px;font-size:0.92rem;font-weight:800;cursor:pointer;width:100%;font-family:inherit;letter-spacing:0.02em;">Continue to Apply →</button>
+    <p style="font-size:0.68rem;opacity:0.55;margin-top:10px;">Not SEBI registered · Educational purposes only</p>
+  </div>
+</div>
+
+<!-- Free Access Request Form -->
+<div class="overlay" id="accessRequestOverlay" style="display:none;z-index:10002;" onclick="if(event.target.id==='accessRequestOverlay')closeRequestModal()">
+  <div class="popup" style="max-width:360px;">
+    <div class="close-btn" onclick="closeRequestModal()">✕</div>
+    <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0 0 16px;">Apply for Free Access</h3>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Your Name <span style="color:#dc2626;">*</span></label>
+      <input id="fa-name-input" type="text" placeholder="Enter your full name" maxlength="60"
+        style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:0.88rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
+    </div>
+    <div style="background:#fef9ec;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:14px;">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+        <input type="checkbox" id="fa-consent-check" onchange="document.getElementById('fa-submit-btn').disabled=!this.checked||!document.getElementById('fa-name-input').value.trim();" style="margin-top:3px;flex-shrink:0;width:16px;height:16px;accent-color:var(--primary);" />
+        <span style="font-size:0.74rem;color:#78350f;line-height:1.5;">I understand that Trade2Spend is <b>not SEBI registered</b>. All trade alerts and posts are for <b>educational purposes only</b> and do not constitute investment advice. I accept full responsibility for my own trading decisions.</span>
+      </label>
+    </div>
+    <button id="fa-submit-btn" onclick="_submitAccessRequest()" disabled
+      style="background:var(--primary);color:white;border:none;border-radius:12px;padding:12px 20px;font-size:0.9rem;font-weight:700;cursor:pointer;width:100%;font-family:inherit;opacity:0.5;transition:opacity 0.2s;">Submit Request →</button>
+    <div id="fa-submit-msg" style="display:none;margin-top:10px;font-size:0.8rem;text-align:center;"></div>
+    <p style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is logged for compliance. Not investment advice.</p>
+  </div>
 </div>
 
 <script>
@@ -988,6 +1030,7 @@
     }
 
     function switchTab(tabId, el) {
+        _trackTabView(tabId); // analytics: record duration on previous tab, start timer for new tab
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
         el.classList.add('active');
@@ -1033,9 +1076,148 @@
         if (tabEl) switchTab('trades', tabEl);
     }
 
-    function showPopup() { document.getElementById('premiumPopup').style.display = 'flex'; }
+    function showPopup() {
+        document.getElementById('premiumPopup').style.display = 'flex';
+        _populateFreeAccessCTA().catch(() => {});
+    }
     function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
     function closePopupBg(e) { if(e.target.id === 'premiumPopup') closePopup(); }
+
+    // ── FREE ACCESS REQUEST SYSTEM ────────────────────────────────────────────
+    const _VM = 'https://api.trade2spend.com';
+
+    async function _populateFreeAccessCTA() {
+        const cta = document.getElementById('popup-free-access-cta');
+        if (!cta) return;
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (!memberId) { cta.innerHTML = ''; return; }
+        try {
+            const [flags, member] = await Promise.all([
+                sbFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' }),
+                sbFetch(`members?id=eq.${memberId}&select=free_access,free_access_blocked`, { method: 'GET' })
+            ]);
+            if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
+            const m = member && member[0] ? member[0] : {};
+            if (m.free_access === true) { cta.innerHTML = `<p style="font-size:0.78rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">✅ You already have free access!</p>`; return; }
+            if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="https://t.me/tusharview" style="color:var(--primary);">@tusharview</a>.</p>`; return; }
+            const reqs = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,last_rejected_at,block_reason`, { method: 'GET' });
+            const lr = reqs && reqs[0];
+            if (lr && lr.status === 'pending') {
+                cta.innerHTML = `<p style="font-size:0.8rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">⏳ Request pending — you'll be notified when reviewed.</p>`;
+            } else if (lr && lr.block_reason === 'inactivity') {
+                cta.innerHTML = `<div style="background:#fef3c7;border-radius:10px;padding:10px;font-size:0.78rem;color:#92400e;margin:0;"><b>⚠️ Free access removed</b> — 72h inactivity.<br><button onclick="closePopup();showGoldenOpportunityScreen()" style="background:var(--accent);color:white;border:none;border-radius:8px;padding:7px 14px;font-size:0.78rem;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit;">Re-apply for Free Access →</button></div>`;
+            } else if (lr && lr.status === 'rejected' && lr.last_rejected_at) {
+                const retryAt = new Date(new Date(lr.last_rejected_at).getTime() + 24 * 3_600_000);
+                if (retryAt.getTime() > Date.now()) {
+                    const h = Math.ceil((retryAt.getTime() - Date.now()) / 3_600_000);
+                    cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Request rejected. Re-apply in ~${h}h.</p>`;
+                } else {
+                    cta.innerHTML = `<button onclick="closePopup();showGoldenOpportunityScreen()" style="background:linear-gradient(135deg,#d97706,#b45309);color:white;border:none;border-radius:12px;padding:10px 18px;font-size:0.85rem;font-weight:700;cursor:pointer;width:100%;margin-top:4px;font-family:inherit;">🎁 Request Free Access →</button>`;
+                }
+            } else {
+                cta.innerHTML = `<button onclick="closePopup();showGoldenOpportunityScreen()" style="background:linear-gradient(135deg,#d97706,#b45309);color:white;border:none;border-radius:12px;padding:10px 18px;font-size:0.85rem;font-weight:700;cursor:pointer;width:100%;margin-top:4px;font-family:inherit;">🎁 Request Free Access →</button>`;
+            }
+        } catch(e) { cta.innerHTML = ''; }
+    }
+
+    function showGoldenOpportunityScreen() {
+        document.getElementById('goldenOpportunityOverlay').style.display = 'flex';
+        _trackEvent('button_click', { button: 'request_access_golden' });
+    }
+    function closeGoldenScreen() { document.getElementById('goldenOpportunityOverlay').style.display = 'none'; }
+
+    function showAccessRequestModal() {
+        closeGoldenScreen();
+        const nameInput = document.getElementById('fa-name-input');
+        const cached = window._cachedMember;
+        if (nameInput && cached && cached.name) nameInput.value = cached.name;
+        const cb = document.getElementById('fa-consent-check');
+        const btn = document.getElementById('fa-submit-btn');
+        if (cb) cb.checked = false;
+        if (btn) btn.disabled = true;
+        const msg = document.getElementById('fa-submit-msg');
+        if (msg) { msg.style.display = 'none'; msg.innerHTML = ''; }
+        // Enable submit when both name filled and consent ticked
+        if (nameInput) nameInput.oninput = () => {
+            const hasCb = document.getElementById('fa-consent-check')?.checked;
+            const hasName = nameInput.value.trim().length > 0;
+            if (btn) { btn.disabled = !(hasCb && hasName); btn.style.opacity = (hasCb && hasName) ? '1' : '0.5'; }
+        };
+        document.getElementById('accessRequestOverlay').style.display = 'flex';
+    }
+    function closeRequestModal() { document.getElementById('accessRequestOverlay').style.display = 'none'; }
+
+    async function _submitAccessRequest() {
+        const memberId = localStorage.getItem('t2s_member_id');
+        const name = document.getElementById('fa-name-input')?.value.trim() || '';
+        const consent = document.getElementById('fa-consent-check')?.checked;
+        const btn = document.getElementById('fa-submit-btn');
+        const msg = document.getElementById('fa-submit-msg');
+        if (!memberId || !name || !consent) return;
+        const consentText = "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
+        if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
+        try {
+            const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+            const r = await fetch(`${_VM}/submit-access-request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ memberId, name, deviceId, deviceType: /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop', consentText })
+            });
+            const d = await r.json();
+            if (d.ok) {
+                if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request sent! Tushar will review it and you\'ll get a notification.'; }
+                if (btn) btn.style.display = 'none';
+                _trackEvent('button_click', { button: 'request_submitted' });
+                setTimeout(closeRequestModal, 3500);
+            } else {
+                if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = d.error || 'Submission failed. Please try again.'; }
+                if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
+            }
+        } catch(e) {
+            if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = 'Network error. Please try again.'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
+        }
+    }
+
+    // ── ANALYTICS BEACON ─────────────────────────────────────────────────────
+    const _analyticsQueue = [];
+    let _tabStartTime = Date.now();
+    let _currentTab = 'trades';
+
+    function _trackEvent(type, data = {}) {
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (!memberId) return;
+        _analyticsQueue.push({ type, data: { ...data, ts: Date.now() } });
+        // Don't save stored queue — flush only in-memory queue
+    }
+
+    function _trackTabView(tabId) {
+        if (_currentTab && _tabStartTime) {
+            _trackEvent('tab_view', { tab: _currentTab, duration_sec: Math.round((Date.now() - _tabStartTime) / 1000) });
+        }
+        _currentTab = tabId;
+        _tabStartTime = Date.now();
+    }
+
+    async function _flushAnalytics() {
+        const memberId = localStorage.getItem('t2s_member_id');
+        if (!memberId || _analyticsQueue.length === 0) return;
+        const events = _analyticsQueue.splice(0, _analyticsQueue.length);
+        try {
+            await fetch(`${_VM}/track-event`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ memberId, events })
+            });
+        } catch(e) { _analyticsQueue.unshift(...events); } // put back on failure
+    }
+
+    setInterval(_flushAnalytics, 10 * 60 * 1000); // flush every 10 minutes
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            if (_currentTab) _trackEvent('session_end', { last_tab: _currentTab, duration_sec: Math.round((Date.now() - _tabStartTime) / 1000) });
+            _flushAnalytics().catch(() => {});
+        }
+    });
 
     function _advDecCollapse() {
         _advDecOpen = null;
@@ -1749,7 +1931,7 @@
         const memberId = localStorage.getItem('t2s_member_id');
         if (window._cachedMember) {
             isAdmin    = window._cachedMember.is_admin === true;
-            memberTier = window._cachedMember.tier || 'free';
+            memberTier = (window._cachedMember.free_access === true) ? 'paid' : (window._cachedMember.tier || 'free');
         } else if (memberId) {
             try {
                 const _mv = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin`, { method:'GET' });
@@ -1917,10 +2099,12 @@
             let memberTier = 'free';
             if(memberId) {
                 const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status`, { method: 'GET' });
-                if(members && members.length > 0) {
+                if(members && Array.isArray(members) && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     isAdmin = members[0].is_admin === true;
                     memberTier = members[0].tier || 'free';
+                    // Use free_access from _cachedMember (populated separately in init, safe if column absent)
+                    if (window._cachedMember && window._cachedMember.free_access === true) memberTier = 'paid';
                 }
             }
 
@@ -4159,10 +4343,12 @@
 
             if(memberId) {
                 const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status,is_admin`, { method: 'GET' });
-                if(members && members.length > 0) {
+                if(members && Array.isArray(members) && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     memberTier = members[0].tier || localStorage.getItem('t2s_mode') || 'free';
                     isAdmin    = members[0].is_admin === true;
+                    // Use free_access from _cachedMember (populated separately in init, safe if column absent)
+                    if (window._cachedMember && window._cachedMember.free_access === true) memberTier = 'paid';
                 } else {
                     // Supabase returned no rows — fall back to login-time stored mode
                     memberTier = localStorage.getItem('t2s_mode') || 'free';
@@ -4810,15 +4996,27 @@
         const _mktLoad = fetchMarketData();
         if(mode !== 'free' && memberId){
             try {
+                // Critical auth check — uses only original columns so it works before new SQL is run
                 const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin`,{method:'GET'});
-                if(!members||!members.length||members[0].status==='disabled'){
+                if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'){
                     window.location.href='login.html'; return;
                 }
                 window._cachedMember = members[0];
                 // Render tier chip immediately — before any tab fetch completes
                 _renderMemberChip(members[0]);
+                // Optional: fetch free_access status in a separate call (fails silently if column not yet created)
+                sbFetch(`members?id=eq.${memberId}&select=free_access,free_access_blocked`,{method:'GET'}).then(fa=>{
+                    if(fa&&Array.isArray(fa)&&fa[0]){
+                        window._cachedMember.free_access = fa[0].free_access;
+                        window._cachedMember.free_access_blocked = fa[0].free_access_blocked;
+                        // Silent last_seen ping — feeds free-access inactivity monitor (only after column exists)
+                        sbFetch(`members?id=eq.${memberId}`,{method:'PATCH',body:JSON.stringify({last_seen:new Date().toISOString()})}).catch(()=>{});
+                    }
+                }).catch(()=>{});
             } catch(e){ console.warn('Auth check failed',e); }
         }
+        // Analytics: session start
+        _trackEvent('session_start', { mode, tab: new URL(location.href).hash.replace('#','') || 'trades' });
         // Load banner posts at init — independent of which tab is active
         sbFetch('posts?is_deleted=eq.false&post_type=eq.banner&order=sent_at.desc&limit=20', { method: 'GET' })
             .then(function(bp) {
