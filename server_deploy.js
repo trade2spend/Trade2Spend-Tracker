@@ -3672,6 +3672,43 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Get access requests (admin) — GET /access-requests?status=pending
+  if (req.method === 'GET' && urlPath === '/access-requests') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const params = new URL('https://x' + req.url).searchParams;
+      const statusFilter = params.get('status');
+      let query = 'access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200';
+      if (statusFilter) query += `&status=eq.${statusFilter}`;
+      const rows = await sbFetch(query, { method: 'GET' });
+      res.writeHead(200); res.end(JSON.stringify({ ok: true, requests: rows || [] }));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // Storage status — GET /storage-status
+  if (req.method === 'GET' && urlPath === '/storage-status') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const countRow = (table) => fetch(`${SB_URL}/rest/v1/${table}?select=count`, {
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: 'count=exact' }
+      }).then(r => parseInt(r.headers.get('content-range')?.split('/')[1] || '0')).catch(() => 0);
+      const [analyticsRows, consentRows, postsRows, membersRows] = await Promise.all([
+        countRow('analytics_events'), countRow('consent_audit_log'), countRow('posts'), countRow('members')
+      ]);
+      const estimatedMb = parseFloat(((analyticsRows * 250 + consentRows * 600 + postsRows * 1200 + membersRows * 400) / (1024 * 1024)).toFixed(2));
+      const pct = Math.min(100, Math.round(estimatedMb / 500 * 100));
+      res.writeHead(200); res.end(JSON.stringify({ ok: true, analytics_rows: analyticsRows, consent_rows: consentRows, posts_rows: postsRows, members_rows: membersRows, estimated_mb: estimatedMb, percent: pct }));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
   // Health check — GET /
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -4320,23 +4357,6 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     return;
   }
 
-  // Get access requests (admin) — GET /access-requests?status=pending
-  if (req.method === 'GET' && urlPath === '/access-requests') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json');
-    try {
-      const params = new URL('https://x' + req.url).searchParams;
-      const statusFilter = params.get('status');
-      let query = 'access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200';
-      if (statusFilter) query += `&status=eq.${statusFilter}`;
-      const rows = await sbFetch(query, { method: 'GET' });
-      res.writeHead(200); res.end(JSON.stringify({ ok: true, requests: rows || [] }));
-    } catch (e) {
-      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
-    return;
-  }
-
   // Update access request (admin) — PATCH /access-requests/:id
   if (req.method === 'PATCH' && urlPath.startsWith('/access-requests/')) {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -4401,26 +4421,6 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
       }
     });
-    return;
-  }
-
-  // Storage status — GET /storage-status
-  if (req.method === 'GET' && urlPath === '/storage-status') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json');
-    try {
-      const countRow = (table) => fetch(`${SB_URL}/rest/v1/${table}?select=count`, {
-        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: 'count=exact' }
-      }).then(r => parseInt(r.headers.get('content-range')?.split('/')[1] || '0')).catch(() => 0);
-      const [analyticsRows, consentRows, postsRows, membersRows] = await Promise.all([
-        countRow('analytics_events'), countRow('consent_audit_log'), countRow('posts'), countRow('members')
-      ]);
-      const estimatedMb = parseFloat(((analyticsRows * 250 + consentRows * 600 + postsRows * 1200 + membersRows * 400) / (1024 * 1024)).toFixed(2));
-      const pct = Math.min(100, Math.round(estimatedMb / 500 * 100)); // 500MB free tier
-      res.writeHead(200); res.end(JSON.stringify({ ok: true, analytics_rows: analyticsRows, consent_rows: consentRows, posts_rows: postsRows, members_rows: membersRows, estimated_mb: estimatedMb, percent: pct }));
-    } catch (e) {
-      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
     return;
   }
 
