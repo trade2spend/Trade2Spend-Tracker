@@ -461,6 +461,23 @@ async function sendWebPush(subJson, payload) {
   });
 }
 console.log('Web push ready (native) ✓');
+
+async function sendPushToMember(memberId, { title, body, url = 'https://app.trade2spend.com/#updates' }) {
+  try {
+    const subs = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&select=id,subscription_json&order=last_used.desc`);
+    if (!subs || !subs.length) return 0;
+    let sent = 0;
+    for (const sub of subs) {
+      try {
+        const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body, tag: `t2s-fa-${memberId.slice(0,8)}`, url }));
+        if (sc === 410 || sc === 404) sbFetch(`push_subscriptions?id=eq.${sub.id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
+        else sent++;
+      } catch {}
+    }
+    return sent;
+  } catch (e) { console.error('[sendPushToMember]', e.message); return 0; }
+}
+
 const VALID_EXPIRIES     = ['weekly','next weekly','monthly'];
 const SPOT_TOKENS = {
   NIFTY:     { exchange_segment: 'nse_cm', instrument_token: '26000' },
@@ -4226,6 +4243,187 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     return;
   }
 
+  // ── FREE ACCESS REQUEST SYSTEM ───────────────────────────────────────────────
+
+  // Submit a free-access request — POST /submit-access-request
+  if (req.method === 'POST' && urlPath === '/submit-access-request') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      try {
+        const { memberId, name, deviceId, deviceType, consentText } = JSON.parse(rawBody || '{}');
+        if (!memberId || !consentText) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'memberId and consentText required' })); return; }
+
+        // Validate member exists and is enabled
+        const members = await sbFetch(`members?id=eq.${memberId}&select=id,mobile,name,status,free_access,free_access_blocked,tier`, { method: 'GET' });
+        if (!members || !members.length) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Member not found' })); return; }
+        const member = members[0];
+        if (member.status === 'disabled') { res.writeHead(403); res.end(JSON.stringify({ ok: false, error: 'Your account is disabled' })); return; }
+        if (member.free_access === true) { res.writeHead(409); res.end(JSON.stringify({ ok: false, error: 'You already have free access' })); return; }
+        if (member.free_access_blocked === true) { res.writeHead(403); res.end(JSON.stringify({ ok: false, error: 'You are blocked from requesting access. Contact @tusharview.' })); return; }
+
+        // Check feature flag
+        const flags = await sbFetch(`feature_flags?key=eq.free_access_requests_enabled&select=value`, { method: 'GET' });
+        if (flags && flags[0] && flags[0].value === false) { res.writeHead(403); res.end(JSON.stringify({ ok: false, error: 'Free access requests are currently disabled' })); return; }
+
+        // Check for existing pending request or 24h rejection cooldown
+        const existing = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at`, { method: 'GET' });
+        if (existing && existing.length) {
+          const last = existing[0];
+          if (last.status === 'pending') { res.writeHead(409); res.end(JSON.stringify({ ok: false, error: 'You already have a pending request' })); return; }
+          if (last.status === 'rejected' && last.last_rejected_at) {
+            const hoursSince = (Date.now() - new Date(last.last_rejected_at).getTime()) / 3_600_000;
+            if (hoursSince < 24) {
+              const retryAfter = new Date(new Date(last.last_rejected_at).getTime() + 24 * 3_600_000).toISOString();
+              res.writeHead(429); res.end(JSON.stringify({ ok: false, error: 'Please wait 24 hours before re-applying', retry_after: retryAfter })); return;
+            }
+          }
+        }
+
+        // Update member name if provided and different
+        const cleanName = (name || '').trim();
+        if (cleanName && cleanName !== member.name) {
+          await sbFetch(`members?id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ name: cleanName }) });
+        }
+
+        // Create the access request
+        const newReq = await sbFetch('access_requests', { method: 'POST', body: JSON.stringify({ member_id: memberId, status: 'pending' }) });
+        const requestId = newReq && newReq[0] ? newReq[0].id : 'unknown';
+
+        // Log consent (permanent record)
+        await sbFetch('consent_audit_log', { method: 'POST', body: JSON.stringify({
+          member_id: memberId, request_id: requestId, member_name: cleanName || member.name || 'Unknown',
+          consent_text: consentText, device_id: deviceId || '', device_type: deviceType || 'web'
+        }) });
+
+        // Notify Tushar via Telegram with inline action buttons
+        const memberDisplay = member.mobile || memberId.slice(0, 8);
+        const memberName = cleanName || member.name || 'Unknown';
+        const istNow = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+        await tgSend(
+          `📥 <b>Free Access Request</b>\n\nMember: <code>${memberDisplay}</code>\nName: <b>${memberName}</b>\nRequested: ${istNow}\n\nTap to action 👇`,
+          { inline_keyboard: [[
+            { text: '✅ Approve', callback_data: `approve_req_${requestId}` },
+            { text: '❌ Reject',  callback_data: `reject_req_${requestId}` },
+            { text: '🚫 Block',   callback_data: `block_req_${requestId}` }
+          ]] }
+        );
+
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, requestId, status: 'pending' }));
+      } catch (e) {
+        console.error('/submit-access-request error:', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Get access requests (admin) — GET /access-requests?status=pending
+  if (req.method === 'GET' && urlPath === '/access-requests') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const params = new URL('https://x' + req.url).searchParams;
+      const statusFilter = params.get('status');
+      let query = 'access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200';
+      if (statusFilter) query += `&status=eq.${statusFilter}`;
+      const rows = await sbFetch(query, { method: 'GET' });
+      res.writeHead(200); res.end(JSON.stringify({ ok: true, requests: rows || [] }));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // Update access request (admin) — PATCH /access-requests/:id
+  if (req.method === 'PATCH' && urlPath.startsWith('/access-requests/')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    const secret = req.headers['x-t2s-secret'];
+    if (secret !== 'T2SMonitor2026' && secret !== process.env.EXECUTE_SECRET) {
+      res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
+    }
+    const requestId = urlPath.slice('/access-requests/'.length);
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      try {
+        const { action } = JSON.parse(rawBody || '{}');
+        if (!['approve', 'reject', 'block'].includes(action)) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'action must be approve|reject|block' })); return; }
+
+        const reqs = await sbFetch(`access_requests?id=eq.${requestId}&select=id,member_id,status`, { method: 'GET' });
+        if (!reqs || !reqs.length) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Request not found' })); return; }
+        const memberId = reqs[0].member_id;
+
+        const members = await sbFetch(`members?id=eq.${memberId}&select=id,name,mobile`, { method: 'GET' });
+        const memberName = members && members[0] ? (members[0].name || members[0].mobile || 'Member') : 'Member';
+
+        const now = new Date().toISOString();
+        if (action === 'approve') {
+          await sbFetch(`access_requests?id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify({ status: 'approved', reviewed_at: now }) });
+          await sbFetch(`members?id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ free_access: true, free_access_granted_at: now }) });
+          sendPushToMember(memberId, { title: '🎉 Free Access Approved!', body: 'Your request has been approved. You now have premium access.', url: 'https://app.trade2spend.com/#updates' }).catch(() => {});
+        } else if (action === 'reject') {
+          const countRes = await sbFetch(`access_requests?member_id=eq.${memberId}&select=rejection_count&order=created_at.desc&limit=1`, { method: 'GET' });
+          const prevCount = countRes && countRes[0] ? (countRes[0].rejection_count || 0) : 0;
+          await sbFetch(`access_requests?id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify({ status: 'rejected', reviewed_at: now, last_rejected_at: now, rejection_count: prevCount + 1 }) });
+        } else if (action === 'block') {
+          await sbFetch(`access_requests?id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify({ status: 'blocked', block_reason: 'admin', reviewed_at: now }) });
+          await sbFetch(`members?id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ free_access: false, free_access_blocked: true }) });
+        }
+
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, action, member_name: memberName }));
+      } catch (e) {
+        console.error('/access-requests PATCH error:', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Track analytics events — POST /track-event
+  if (req.method === 'POST' && urlPath === '/track-event') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      try {
+        const { memberId, events } = JSON.parse(rawBody || '{}');
+        if (!memberId || !Array.isArray(events) || !events.length) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'memberId and events[] required' })); return; }
+        const rows = events.slice(0, 50).map(e => ({ member_id: memberId, event_type: e.type || 'unknown', event_data: e.data || {} }));
+        await sbFetch('analytics_events', { method: 'POST', body: JSON.stringify(rows) });
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, recorded: rows.length }));
+      } catch (e) {
+        console.error('/track-event error:', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Storage status — GET /storage-status
+  if (req.method === 'GET' && urlPath === '/storage-status') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const countRow = (table) => fetch(`${SB_URL}/rest/v1/${table}?select=count`, {
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: 'count=exact' }
+      }).then(r => parseInt(r.headers.get('content-range')?.split('/')[1] || '0')).catch(() => 0);
+      const [analyticsRows, consentRows, postsRows, membersRows] = await Promise.all([
+        countRow('analytics_events'), countRow('consent_audit_log'), countRow('posts'), countRow('members')
+      ]);
+      const estimatedMb = parseFloat(((analyticsRows * 250 + consentRows * 600 + postsRows * 1200 + membersRows * 400) / (1024 * 1024)).toFixed(2));
+      const pct = Math.min(100, Math.round(estimatedMb / 500 * 100)); // 500MB free tier
+      res.writeHead(200); res.end(JSON.stringify({ ok: true, analytics_rows: analyticsRows, consent_rows: consentRows, posts_rows: postsRows, members_rows: membersRows, estimated_mb: estimatedMb, percent: pct }));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
   // Telegram webhook — POST /
   // Disconnect Kotak session — POST /logout-kotak
   if (req.method === 'POST' && urlPath === '/logout-kotak') {
@@ -4696,5 +4894,58 @@ function scheduleExpiryDayRefresh() {
   }, msUntil);
 }
 scheduleExpiryDayRefresh();
+
+// ── FREE ACCESS INACTIVITY MONITOR ───────────────────────────────────────────
+const _warnedInactivity24h = new Set();
+const _warnedInactivity4h  = new Set();
+
+async function checkFreeAccessInactivity() {
+  try {
+    const members = await sbFetch('members?free_access=eq.true&free_access_blocked=eq.false&select=id,mobile,last_seen', { method: 'GET' });
+    if (!members || !members.length) return;
+    const now = Date.now();
+    for (const m of members) {
+      if (!m.last_seen) continue;
+      const hoursInactive = (now - new Date(m.last_seen).getTime()) / 3_600_000;
+      if (hoursInactive >= 72) {
+        await sbFetch(`members?id=eq.${m.id}`, { method: 'PATCH', body: JSON.stringify({ free_access: false }) });
+        await sbFetch(`access_requests?member_id=eq.${m.id}&status=eq.approved`, { method: 'PATCH', body: JSON.stringify({ status: 'blocked', block_reason: 'inactivity', reviewed_at: new Date().toISOString() }) });
+        _warnedInactivity24h.delete(m.id);
+        _warnedInactivity4h.delete(m.id);
+        console.log(`[free-access] Inactivity auto-revoke: ${m.mobile} (${Math.round(hoursInactive)}h inactive)`);
+      } else if (hoursInactive >= 68 && !_warnedInactivity4h.has(m.id)) {
+        _warnedInactivity4h.add(m.id);
+        sendPushToMember(m.id, { title: '⏰ Free Access Expiring Soon', body: 'You have ~4 hours left. Open Trade2Spend now to stay active and keep your access.', url: 'https://app.trade2spend.com/#updates' }).catch(() => {});
+      } else if (hoursInactive >= 48 && !_warnedInactivity24h.has(m.id)) {
+        _warnedInactivity24h.add(m.id);
+        sendPushToMember(m.id, { title: '⚠️ Free Access Warning', body: "You haven't opened Trade2Spend in 2 days. Open now to keep your free access.", url: 'https://app.trade2spend.com/#updates' }).catch(() => {});
+      }
+    }
+  } catch (e) { console.error('[free-access] Inactivity check error:', e.message); }
+}
+setInterval(checkFreeAccessInactivity, 30 * 60 * 1000);
+
+// ── ANALYTICS ARCHIVAL (daily 4 AM IST) ──────────────────────────────────────
+async function archiveOldAnalytics() {
+  try {
+    const countRes = await fetch(`${SB_URL}/rest/v1/analytics_events?select=count`, {
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: 'count=exact' }
+    });
+    const totalRows = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
+    if (totalRows > 100000) {
+      const cutoff = new Date(Date.now() - 7 * 24 * 3_600_000).toISOString();
+      await sbFetch(`analytics_events?created_at=lt.${cutoff}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+      console.log(`[analytics] Archived events older than 7 days (was ${totalRows} rows)`);
+    }
+  } catch (e) { console.error('[analytics] Archive error:', e.message); }
+}
+function scheduleAnalyticsArchival() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const target = new Date(now);
+  if (now.getHours() >= 4) target.setDate(target.getDate() + 1);
+  target.setHours(4, 0, 0, 0);
+  setTimeout(() => { archiveOldAnalytics().catch(() => {}); setInterval(archiveOldAnalytics, 24 * 60 * 60 * 1000); }, target.getTime() - now.getTime());
+}
+scheduleAnalyticsArchival();
 
 tgAlert(`🟢 <b>Trade2Spend Bot v5.0 started</b>\nServer: api.trade2spend.com\nLoaded: ${Object.keys(state.trades).length} trades`).catch(() => {});
