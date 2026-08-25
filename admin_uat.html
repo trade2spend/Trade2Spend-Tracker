@@ -1447,6 +1447,46 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 <div id="tab-manage" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
+  <!-- Free Access Requests -->
+  <div class="card" style="margin-bottom:10px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><span class="card-title-dot"></span>📋 Free Access Requests <span id="fa-badge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 7px;margin-left:6px;">0</span></span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;">
+        <input type="checkbox" id="fa-feature-toggle" onchange="toggleFreeAccessFeature(this.checked)" style="width:16px;height:16px;accent-color:#059669;">
+        Enable Requests
+      </label>
+    </div>
+
+    <!-- Sub-tabs -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--border2);padding-bottom:10px;">
+      <button id="fa-sub-requests" onclick="showFaSubTab('requests')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Pending</button>
+      <button id="fa-sub-active" onclick="showFaSubTab('active')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Active Members</button>
+      <button id="fa-sub-analytics" onclick="showFaSubTab('analytics')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Analytics</button>
+    </div>
+
+    <!-- Requests panel -->
+    <div id="fa-panel-requests">
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+        <button onclick="loadAccessRequests('all')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">All</button>
+        <button onclick="loadAccessRequests('pending')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #d97706;background:#fef3c7;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Pending</button>
+        <button onclick="loadAccessRequests('approved')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #059669;background:#f0fdf4;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Approved</button>
+        <button onclick="loadAccessRequests('rejected')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Rejected</button>
+        <button onclick="loadAccessRequests('blocked')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #dc2626;background:#fef2f2;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Blocked</button>
+      </div>
+      <div id="fa-requests-list" style="font-size:13px;">Loading...</div>
+    </div>
+
+    <!-- Active free-access members panel -->
+    <div id="fa-panel-active" style="display:none;">
+      <div id="fa-active-list" style="font-size:13px;">Loading...</div>
+    </div>
+
+    <!-- Analytics panel -->
+    <div id="fa-panel-analytics" style="display:none;">
+      <div id="fa-analytics-data" style="font-size:13px;">Loading...</div>
+    </div>
+  </div>
+
   <!-- Add Member -->
   <div class="card" style="margin-bottom:10px;">
     <div class="card-title"><span class="card-title-dot"></span>Add New Member</div>
@@ -1552,7 +1592,7 @@ function showTab(t){
   if(t==='setup') { checkKotakStatus(); checkServerStatus(); }
   if(t==='campaign'){if(typeof updateCanvas==='function')updateCanvas();if(typeof updateCaption==='function')updateCaption();}
   if(t==='campaign') updateCampaignPreview();
-  if(t==='manage') loadMembers();
+  if(t==='manage') { loadMembers(); loadFreeAccessTab(); }
   if(t==='membership') fetchMemberStats();
 }
 
@@ -1612,6 +1652,189 @@ async function fetchMemberStats(){
 
 // ── MEMBER MANAGEMENT ────────────────────────────────────────────────────────
 let allMembers = [];
+
+// ── FREE ACCESS MANAGEMENT ────────────────────────────────────────────────────
+const _VM_ADMIN = 'https://api.trade2spend.com';
+const _FA_SECRET = 'T2SMonitor2026';
+
+async function loadFreeAccessTab() {
+    // Load feature flag state
+    try {
+        const flags = await sbGet('feature_flags?key=eq.free_access_requests_enabled&select=value');
+        const enabled = !flags || !flags[0] || flags[0].value !== false;
+        const toggle = document.getElementById('fa-feature-toggle');
+        if (toggle) toggle.checked = enabled;
+    } catch(e) {}
+    // Load pending count for badge
+    try {
+        const pending = await sbGet('access_requests?status=eq.pending&select=id');
+        const badge = document.getElementById('fa-badge');
+        if (badge) { badge.textContent = pending.length; badge.style.display = pending.length > 0 ? 'inline' : 'none'; }
+    } catch(e) {}
+    loadAccessRequests('pending');
+}
+
+async function toggleFreeAccessFeature(enabled) {
+    try {
+        await fetch(`${SB_URL}/rest/v1/feature_flags?key=eq.free_access_requests_enabled`, {
+            method: 'PATCH',
+            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ value: enabled, updated_at: new Date().toISOString() })
+        });
+        showToast(enabled ? '✅ Free access requests enabled' : '🔴 Free access requests disabled');
+    } catch(e) { showToast('❌ Error: ' + e.message); }
+}
+
+function showFaSubTab(tab) {
+    ['requests','active','analytics'].forEach(t => {
+        document.getElementById(`fa-panel-${t}`).style.display = t === tab ? 'block' : 'none';
+        const btn = document.getElementById(`fa-sub-${t}`);
+        if (btn) { btn.style.background = t === tab ? 'var(--gold)' : 'var(--bg3)'; btn.style.color = t === tab ? '#fff' : 'var(--text)'; }
+    });
+    if (tab === 'active') loadFreeAccessMembers();
+    if (tab === 'analytics') loadFaAnalytics();
+}
+
+async function loadAccessRequests(statusFilter = 'pending') {
+    const list = document.getElementById('fa-requests-list');
+    if (!list) return;
+    list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
+    try {
+        const url = statusFilter === 'all'
+            ? `${_VM_ADMIN}/access-requests`
+            : `${_VM_ADMIN}/access-requests?status=${statusFilter}`;
+        const r = await fetch(url, { headers: { 'x-t2s-secret': _FA_SECRET } });
+        const d = await r.json();
+        const reqs = d.requests || [];
+        if (!reqs.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No requests found.</div>'; return; }
+        list.innerHTML = reqs.map(req => {
+            const m = req.member_id || {};
+            const mobile = m.mobile || req.member_id || '—';
+            const name = m.name || '—';
+            const date = req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN') : '—';
+            const statusColor = { pending: '#d97706', approved: '#059669', rejected: '#6b7280', blocked: '#dc2626' }[req.status] || '#6b7280';
+            const isPending = req.status === 'pending';
+            return `<div style="border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                    <div>
+                        <div style="font-size:13px;font-weight:700;">${name}</div>
+                        <div style="font-size:11px;color:var(--muted2);">${mobile} · ${date}</div>
+                    </div>
+                    <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;">${req.status.toUpperCase()}</span>
+                </div>
+                ${isPending ? `<div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button onclick="actionRequest('${req.id}','approve')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">✅ Approve</button>
+                    <button onclick="actionRequest('${req.id}','reject')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">❌ Reject</button>
+                    <button onclick="actionRequest('${req.id}','block')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block</button>
+                </div>` : ''}
+            </div>`;
+        }).join('');
+    } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+}
+
+async function actionRequest(requestId, action) {
+    try {
+        const r = await fetch(`${_VM_ADMIN}/access-requests/${requestId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'x-t2s-secret': _FA_SECRET },
+            body: JSON.stringify({ action })
+        });
+        const d = await r.json();
+        if (d.ok) {
+            showToast(`✅ ${action.charAt(0).toUpperCase() + action.slice(1)}d — ${d.member_name}`);
+            loadAccessRequests('pending');
+            // Refresh badge
+            const pending = await sbGet('access_requests?status=eq.pending&select=id').catch(() => []);
+            const badge = document.getElementById('fa-badge');
+            if (badge) { badge.textContent = pending.length; badge.style.display = pending.length > 0 ? 'inline' : 'none'; }
+        } else { showToast('❌ ' + (d.error || 'Error')); }
+    } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function loadFreeAccessMembers() {
+    const list = document.getElementById('fa-active-list');
+    if (!list) return;
+    list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
+    try {
+        const members = await sbGet('members?free_access=eq.true&select=id,mobile,name,last_seen,free_access_granted_at&order=free_access_granted_at.desc');
+        if (!members.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No active free-access members.</div>'; return; }
+        list.innerHTML = members.map(m => {
+            const lastSeen = m.last_seen ? new Date(m.last_seen) : null;
+            const hoursAgo = lastSeen ? Math.round((Date.now() - lastSeen.getTime()) / 3_600_000) : null;
+            const hoursLeft = hoursAgo !== null ? Math.max(0, 72 - hoursAgo) : '?';
+            const urgency = hoursAgo !== null && hoursAgo > 48 ? '#dc2626' : '#059669';
+            return `<div style="border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                    <div>
+                        <div style="font-size:13px;font-weight:700;">${m.name || '—'}</div>
+                        <div style="font-size:11px;color:var(--muted2);">${m.mobile || '—'}</div>
+                    </div>
+                    <span style="font-size:11px;font-weight:700;color:${urgency};">${hoursLeft}h left</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button onclick="faActionMember('${m.id}','deactivate')" style="flex:1;min-width:70px;font-size:11px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Deactivate</button>
+                    <button onclick="faActionMember('${m.id}','block')" style="flex:1;min-width:70px;font-size:11px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block</button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+}
+
+async function faActionMember(memberId, action) {
+    try {
+        const patch = action === 'deactivate'
+            ? { free_access: false }
+            : { free_access: false, free_access_blocked: true };
+        await fetch(`${SB_URL}/rest/v1/members?id=eq.${memberId}`, {
+            method: 'PATCH',
+            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify(patch)
+        });
+        showToast(action === 'deactivate' ? '✅ Access removed (can re-apply)' : '🚫 Member blocked');
+        loadFreeAccessMembers();
+    } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function faUnblockMember(memberId) {
+    try {
+        await fetch(`${SB_URL}/rest/v1/members?id=eq.${memberId}`, {
+            method: 'PATCH',
+            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ free_access_blocked: false })
+        });
+        showToast('✅ Member unblocked — they can now request access again');
+        loadFreeAccessMembers();
+    } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function loadFaAnalytics() {
+    const el = document.getElementById('fa-analytics-data');
+    if (!el) return;
+    el.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
+    try {
+        const [storageR, accessReqs] = await Promise.all([
+            fetch(`${_VM_ADMIN}/storage-status`).then(r => r.json()).catch(() => ({})),
+            sbGet('access_requests?select=status').catch(() => [])
+        ]);
+        const counts = { pending: 0, approved: 0, rejected: 0, blocked: 0 };
+        (accessReqs || []).forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+        el.innerHTML = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:800;color:var(--gold);">${counts.pending}</div><div style="font-size:10px;color:var(--muted2);">Pending</div></div>
+                <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:800;color:var(--green);">${counts.approved}</div><div style="font-size:10px;color:var(--muted2);">Approved</div></div>
+                <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:800;color:var(--muted2);">${counts.rejected}</div><div style="font-size:10px;color:var(--muted2);">Rejected</div></div>
+                <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:800;color:var(--red);">${counts.blocked}</div><div style="font-size:10px;color:var(--muted2);">Blocked</div></div>
+            </div>
+            ${storageR.ok ? `<div style="background:var(--bg3);border-radius:8px;padding:10px;font-size:12px;">
+                <div style="font-weight:700;margin-bottom:6px;">💾 Storage (Supabase Free Tier)</div>
+                <div style="background:var(--border2);border-radius:4px;height:8px;margin-bottom:4px;"><div style="background:${storageR.percent > 70 ? '#dc2626' : '#059669'};height:8px;border-radius:4px;width:${storageR.percent}%;"></div></div>
+                <div style="color:var(--muted2);">~${storageR.estimated_mb}MB estimated · ${storageR.percent}% of 500MB · ${storageR.analytics_rows} analytics rows</div>
+                ${storageR.percent > 50 ? '<div style="color:#d97706;margin-top:4px;font-weight:600;">⚠️ Auto-archival will run at next 4 AM IST</div>' : ''}
+            </div>` : ''}`;
+    } catch(e) { el.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+}
+
+// ── END FREE ACCESS MANAGEMENT ────────────────────────────────────────────────
 
 async function sbGet(path){
   const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
