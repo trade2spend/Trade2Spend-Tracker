@@ -808,21 +808,26 @@
   <div class="popup" style="max-width:360px;">
     <div class="close-btn" onclick="closeRequestModal()">✕</div>
     <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0 0 16px;">Apply for Free Access</h3>
+    <div style="background:#f0f4ff;border-radius:8px;padding:8px 12px;margin-bottom:12px;text-align:left;">
+      <span style="font-size:0.72rem;color:var(--muted);">Registered mobile: </span>
+      <span id="fa-mobile-display" style="font-size:0.78rem;font-weight:700;color:var(--primary);">—</span>
+    </div>
     <div style="margin-bottom:14px;">
       <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Your Name <span style="color:#dc2626;">*</span></label>
       <input id="fa-name-input" type="text" placeholder="Enter your full name" maxlength="60"
         style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:0.88rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
     </div>
-    <div style="background:#fef9ec;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:14px;">
+    <div style="background:#fff5f5;border:2px solid #dc2626;border-radius:10px;padding:12px;margin-bottom:14px;">
+      <p style="font-size:0.72rem;font-weight:800;color:#dc2626;margin:0 0 8px;text-align:left;">⚠️ MANDATORY DISCLAIMER — READ CAREFULLY</p>
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
-        <input type="checkbox" id="fa-consent-check" onchange="document.getElementById('fa-submit-btn').disabled=!this.checked||!document.getElementById('fa-name-input').value.trim();" style="margin-top:3px;flex-shrink:0;width:16px;height:16px;accent-color:var(--primary);" />
-        <span style="font-size:0.74rem;color:#78350f;line-height:1.5;">I understand that Trade2Spend is <b>not SEBI registered</b>. All trade alerts and posts are for <b>educational purposes only</b> and do not constitute investment advice. I accept full responsibility for my own trading decisions.</span>
+        <input type="checkbox" id="fa-consent-check" onchange="_faCheckEnable()" style="margin-top:3px;flex-shrink:0;width:18px;height:18px;accent-color:#dc2626;" />
+        <span style="font-size:0.78rem;color:#7f1d1d;line-height:1.6;text-align:left;">Trade2Spend is <b>NOT registered with SEBI</b> as a Research Analyst or Investment Advisor. All trade alerts and posts are strictly for <b>educational purposes only</b> and do <b>not</b> constitute investment advice. Trading in options and derivatives involves <b>significant risk of loss</b>. I accept full responsibility for my own trading decisions.</span>
       </label>
     </div>
     <button id="fa-submit-btn" onclick="_submitAccessRequest()" disabled
       style="background:var(--primary);color:white;border:none;border-radius:12px;padding:12px 20px;font-size:0.9rem;font-weight:700;cursor:pointer;width:100%;font-family:inherit;opacity:0.5;transition:opacity 0.2s;">Submit Request →</button>
     <div id="fa-submit-msg" style="display:none;margin-top:10px;font-size:0.8rem;text-align:center;"></div>
-    <p style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is logged for compliance. Not investment advice.</p>
+    <p style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is permanently logged for compliance. Not investment advice.</p>
   </div>
 </div>
 
@@ -1126,6 +1131,12 @@
     }
     function closeGoldenScreen() { document.getElementById('goldenOpportunityOverlay').style.display = 'none'; }
 
+    function _faCheckEnable() {
+        const btn = document.getElementById('fa-submit-btn');
+        const ok = !!document.getElementById('fa-consent-check')?.checked && !!document.getElementById('fa-name-input')?.value.trim();
+        if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
+    }
+
     function showAccessRequestModal() {
         closeGoldenScreen();
         const nameInput = document.getElementById('fa-name-input');
@@ -1134,18 +1145,32 @@
         const cb = document.getElementById('fa-consent-check');
         const btn = document.getElementById('fa-submit-btn');
         if (cb) cb.checked = false;
-        if (btn) btn.disabled = true;
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Submit Request →'; btn.style.display = ''; }
         const msg = document.getElementById('fa-submit-msg');
         if (msg) { msg.style.display = 'none'; msg.innerHTML = ''; }
-        // Enable submit when both name filled and consent ticked
-        if (nameInput) nameInput.oninput = () => {
-            const hasCb = document.getElementById('fa-consent-check')?.checked;
-            const hasName = nameInput.value.trim().length > 0;
-            if (btn) { btn.disabled = !(hasCb && hasName); btn.style.opacity = (hasCb && hasName) ? '1' : '0.5'; }
-        };
+        if (nameInput) nameInput.oninput = _faCheckEnable;
+        // Populate mobile number
+        const mobileDisplay = document.getElementById('fa-mobile-display');
+        if (mobileDisplay) {
+            const storedMobile = localStorage.getItem('t2s_mobile');
+            if (storedMobile) {
+                mobileDisplay.textContent = storedMobile;
+            } else {
+                const memberId = localStorage.getItem('t2s_member_id');
+                if (memberId) {
+                    sbFetch(`members?id=eq.${memberId}&select=mobile`, { method: 'GET' })
+                        .then(d => { if (d && d[0] && d[0].mobile) mobileDisplay.textContent = d[0].mobile; })
+                        .catch(() => {});
+                }
+            }
+        }
         document.getElementById('accessRequestOverlay').style.display = 'flex';
     }
-    function closeRequestModal() { document.getElementById('accessRequestOverlay').style.display = 'none'; }
+    function closeRequestModal() {
+        document.getElementById('accessRequestOverlay').style.display = 'none';
+        document.body.style.overflow = '';
+        setTimeout(() => { try { document.activeElement.blur(); } catch(e) {} }, 50);
+    }
 
     async function _submitAccessRequest() {
         const memberId = localStorage.getItem('t2s_member_id');
@@ -1165,7 +1190,7 @@
             });
             const d = await r.json();
             if (d.ok) {
-                if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request sent! Tushar will review it and you\'ll get a notification.'; }
+                if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request submitted! You\'ll be notified once it is reviewed.'; }
                 if (btn) btn.style.display = 'none';
                 _trackEvent('button_click', { button: 'request_submitted' });
                 setTimeout(closeRequestModal, 3500);
