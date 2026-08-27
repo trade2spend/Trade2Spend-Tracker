@@ -1096,7 +1096,14 @@
         const cta = document.getElementById('popup-free-access-cta');
         if (!cta) return;
         const memberId = localStorage.getItem('t2s_member_id');
-        if (!memberId) { cta.innerHTML = ''; return; }
+        if (!memberId) {
+            try {
+                const flags = await sbFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' });
+                if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
+                cta.innerHTML = `<button onclick="closePopup();showGoldenOpportunityScreen()" style="background:linear-gradient(135deg,#d97706,#b45309);color:white;border:none;border-radius:12px;padding:10px 18px;font-size:0.85rem;font-weight:700;cursor:pointer;width:100%;margin-top:4px;font-family:inherit;">🎁 Request Free Access →</button>`;
+            } catch(e) { cta.innerHTML = ''; }
+            return;
+        }
         try {
             const [flags, member] = await Promise.all([
                 sbFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' }),
@@ -1179,7 +1186,11 @@
         const consent = document.getElementById('fa-consent-check')?.checked;
         const btn = document.getElementById('fa-submit-btn');
         const msg = document.getElementById('fa-submit-msg');
-        if (!memberId || !name || !consent) return;
+        if (!name || !consent) return;
+        if (!memberId) {
+            if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.innerHTML = 'Please log in with your mobile number first to submit a request.'; }
+            return;
+        }
         const consentText = "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
         if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
         try {
