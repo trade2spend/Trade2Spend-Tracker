@@ -809,9 +809,11 @@
   <div class="popup" style="max-width:360px;">
     <div class="close-btn" onclick="closeRequestModal()">✕</div>
     <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0 0 16px;">Apply for Free Access</h3>
-    <div style="background:#f0f4ff;border-radius:8px;padding:8px 12px;margin-bottom:12px;text-align:left;">
-      <span style="font-size:0.72rem;color:var(--muted);">Registered mobile: </span>
-      <span id="fa-mobile-display" style="font-size:0.78rem;font-weight:700;color:var(--primary);">—</span>
+    <div id="fa-mobile-section" style="margin-bottom:12px;">
+      <div style="background:#f0f4ff;border-radius:8px;padding:8px 12px;text-align:left;">
+        <span style="font-size:0.72rem;color:var(--muted);">Registered mobile: </span>
+        <span id="fa-mobile-display" style="font-size:0.78rem;font-weight:700;color:var(--primary);">—</span>
+      </div>
     </div>
     <div style="margin-bottom:14px;">
       <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Your Name <span style="color:#dc2626;">*</span></label>
@@ -1141,7 +1143,11 @@
 
     function _faCheckEnable() {
         const btn = document.getElementById('fa-submit-btn');
-        const ok = !!document.getElementById('fa-consent-check')?.checked && !!document.getElementById('fa-name-input')?.value.trim();
+        const hasName = !!document.getElementById('fa-name-input')?.value.trim();
+        const hasConsent = !!document.getElementById('fa-consent-check')?.checked;
+        const mobileInput = document.getElementById('fa-mobile-input');
+        const hasMobile = !mobileInput || mobileInput.value.length === 10;
+        const ok = hasName && hasConsent && hasMobile;
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
     }
 
@@ -1157,15 +1163,25 @@
         const msg = document.getElementById('fa-submit-msg');
         if (msg) { msg.style.display = 'none'; msg.innerHTML = ''; }
         if (nameInput) nameInput.oninput = _faCheckEnable;
-        // Populate mobile number
-        const mobileDisplay = document.getElementById('fa-mobile-display');
-        if (mobileDisplay) {
-            const storedMobile = localStorage.getItem('t2s_mobile');
-            if (storedMobile) {
-                mobileDisplay.textContent = storedMobile;
-            } else {
-                const memberId = localStorage.getItem('t2s_member_id');
-                if (memberId) {
+        // Populate mobile — input for anonymous users, static display for logged-in
+        const memberId = localStorage.getItem('t2s_member_id');
+        const mobileSection = document.getElementById('fa-mobile-section');
+        if (!memberId && mobileSection) {
+            mobileSection.innerHTML = `
+                <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Mobile Number <span style="color:#dc2626;">*</span></label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
+                    <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
+                        oninput="this.value=this.value.replace(/\\D/g,'');_faCheckEnable()"
+                        style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
+                </div>`;
+        } else {
+            const mobileDisplay = document.getElementById('fa-mobile-display');
+            if (mobileDisplay) {
+                const storedMobile = localStorage.getItem('t2s_mobile');
+                if (storedMobile) {
+                    mobileDisplay.textContent = storedMobile;
+                } else if (memberId) {
                     sbFetch(`members?id=eq.${memberId}&select=mobile`, { method: 'GET' })
                         .then(d => { if (d && d[0] && d[0].mobile) mobileDisplay.textContent = d[0].mobile; })
                         .catch(() => {});
@@ -1181,15 +1197,34 @@
     }
 
     async function _submitAccessRequest() {
-        const memberId = localStorage.getItem('t2s_member_id');
+        let resolvedMemberId = localStorage.getItem('t2s_member_id');
         const name = document.getElementById('fa-name-input')?.value.trim() || '';
         const consent = document.getElementById('fa-consent-check')?.checked;
         const btn = document.getElementById('fa-submit-btn');
         const msg = document.getElementById('fa-submit-msg');
         if (!name || !consent) return;
-        if (!memberId) {
-            if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.innerHTML = 'Please log in with your mobile number first to submit a request.'; }
-            return;
+        if (!resolvedMemberId) {
+            // Anonymous user — look up member by entered mobile number only (name not used for dedup)
+            const mobileInput = document.getElementById('fa-mobile-input');
+            const mob = mobileInput?.value.trim() || '';
+            if (mob.length !== 10) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please enter a valid 10-digit mobile number.'; }
+                return;
+            }
+            if (btn) { btn.disabled=true; btn.textContent='Verifying...'; btn.style.opacity='0.7'; }
+            try {
+                const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status`, { method: 'GET' });
+                if (!members || !members[0]) {
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This mobile is not registered. Contact @tusharview to join.'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    return;
+                }
+                resolvedMemberId = members[0].id;
+            } catch(e) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not verify mobile. Please try again.'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
+            }
         }
         const consentText = "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
         if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
@@ -1198,7 +1233,7 @@
             const r = await fetch(`${_VM}/submit-access-request`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ memberId, name, deviceId, deviceType: /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop', consentText })
+                body: JSON.stringify({ memberId: resolvedMemberId, name, deviceId, deviceType: /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop', consentText })
             });
             const d = await r.json();
             if (d.ok) {
