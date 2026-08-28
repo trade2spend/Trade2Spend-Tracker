@@ -1156,8 +1156,36 @@
         const hasConsent = !!document.getElementById('fa-consent-check')?.checked;
         const mobileInput = document.getElementById('fa-mobile-input');
         const hasMobile = !mobileInput || mobileInput.value.length === 10;
-        const ok = hasName && hasConsent && hasMobile;
+        const isBlocked = !!(mobileInput && mobileInput._blocked);
+        const ok = hasName && hasConsent && hasMobile && !isBlocked;
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
+    }
+
+    async function _faMobileBlur() {
+        const input = document.getElementById('fa-mobile-input');
+        const hint = document.getElementById('fa-mobile-hint');
+        const mob = input?.value.trim() || '';
+        if (mob.length !== 10) { if (hint) hint.textContent = ''; return; }
+        if (hint) { hint.style.color = '#9ca3af'; hint.textContent = 'Checking…'; }
+        try {
+            const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status`, { method: 'GET' });
+            if (members && members[0]) {
+                const mid = members[0].id;
+                const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
+                if (reqs && reqs[0]) {
+                    hint.style.color = '#d97706';
+                    hint.textContent = '⏳ A request is already pending for this number.';
+                } else {
+                    hint.style.color = '#dc2626';
+                    hint.textContent = 'This number is already registered. Please log in instead.';
+                }
+                input._blocked = true;
+            } else {
+                if (hint) hint.textContent = '';
+                input._blocked = false;
+            }
+        } catch(e) { if (hint) hint.textContent = ''; input._blocked = false; }
+        _faCheckEnable();
     }
 
     function showAccessRequestModal() {
@@ -1182,8 +1210,10 @@
                     <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
                     <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
                         oninput="this.value=this.value.replace(/\\D/g,'');_faCheckEnable()"
+                        onblur="_faMobileBlur()"
                         style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
-                </div>`;
+                </div>
+                <div id="fa-mobile-hint" style="font-size:0.76rem;margin-top:6px;min-height:16px;"></div>`;
         } else {
             const mobileDisplay = document.getElementById('fa-mobile-display');
             if (mobileDisplay) {
@@ -1212,6 +1242,9 @@
         const btn = document.getElementById('fa-submit-btn');
         const msg = document.getElementById('fa-submit-msg');
         if (!name || !consent) return;
+        // Guard: block submission if mobile field detected a registered/pending number
+        const _mobileInputEl = document.getElementById('fa-mobile-input');
+        if (_mobileInputEl && _mobileInputEl._blocked) return;
         if (!resolvedMemberId) {
             // Anonymous user — look up member by entered mobile number only (name not used for dedup)
             const mobileInput = document.getElementById('fa-mobile-input');
