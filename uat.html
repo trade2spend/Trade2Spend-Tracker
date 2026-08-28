@@ -1168,16 +1168,21 @@
         if (mob.length !== 10) { if (hint) hint.textContent = ''; return; }
         if (hint) { hint.style.color = '#9ca3af'; hint.textContent = 'Checking…'; }
         try {
-            const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status`, { method: 'GET' });
+            const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
-                const mid = members[0].id;
-                const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
-                if (reqs && reqs[0]) {
-                    hint.style.color = '#d97706';
-                    hint.textContent = '⏳ A request is already pending for this number.';
-                } else {
+                const { id: mid, tier } = members[0];
+                if (tier === 'paid') {
                     hint.style.color = '#dc2626';
-                    hint.textContent = 'This number is already registered. Please log in instead.';
+                    hint.textContent = 'You\'re already a paid member. Please log in instead.';
+                } else {
+                    const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
+                    if (reqs && reqs[0]) {
+                        hint.style.color = '#d97706';
+                        hint.textContent = '⏳ You already have a pending request for this number.';
+                    } else {
+                        hint.style.color = '#dc2626';
+                        hint.textContent = 'This number is registered. Please log in instead.';
+                    }
                 }
                 input._blocked = true;
             } else {
