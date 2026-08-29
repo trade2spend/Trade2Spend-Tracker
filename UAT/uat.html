@@ -1255,12 +1255,14 @@
         const input = document.getElementById('fa-mobile-input');
         const hint = document.getElementById('fa-mobile-hint');
         const mob = input?.value.trim() || '';
-        if (mob.length !== 10) { if (hint) hint.textContent = ''; return; }
+        if (mob.length !== 10 || !/^[6-9]\d{9}$/.test(mob)) { if (hint) { hint.style.color='#dc2626'; hint.textContent = mob.length === 10 ? 'Please enter a valid Indian mobile number.' : ''; } return; }
         if (hint) { hint.style.color = '#9ca3af'; hint.textContent = 'Checking…'; }
         try {
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
-                const { id: mid, tier } = members[0];
+                const { id: mid, tier, status } = members[0];
+                // Disabled account — block immediately
+                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @tusharview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
                 // Fetch full member record including pin_hash for inline PIN verification
                 const fullMember = await sbFetch(`members?id=eq.${mid}&select=id,tier,status,pin_hash`, { method:'GET' });
                 const member = (fullMember && fullMember[0]) ? fullMember[0] : members[0];
@@ -1269,6 +1271,15 @@
                     document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
                     document.getElementById('fa-submit-btn') && (document.getElementById('fa-submit-btn').style.display='none');
                 };
+                // No PIN set yet — send to login page to complete setup (clear free mode first so login doesn't bounce)
+                if (!member.pin_hash) {
+                    hint.style.color = '#4a2a78';
+                    hint.textContent = 'First login — redirecting to set up your PIN…';
+                    _hideForm();
+                    localStorage.removeItem('t2s_uat_mode');
+                    setTimeout(() => { closeRequestModal(); window.location.href = 'login.html'; }, 1500);
+                    input._blocked = true; _faCheckEnable(); return;
+                }
                 if (tier === 'paid') {
                     hint.style.color = '#4a2a78';
                     hint.textContent = 'Paid member — enter your PIN below.';
@@ -1367,8 +1378,9 @@
             // Anonymous user — look up member by entered mobile number only (name not used for dedup)
             const mobileInput = document.getElementById('fa-mobile-input');
             const mob = mobileInput?.value.trim() || '';
-            if (mob.length !== 10) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please enter a valid 10-digit mobile number.'; }
+            if (mob.length !== 10 || !/^[6-9]\d{9}$/.test(mob)) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please enter a valid 10-digit Indian mobile number (must start with 6, 7, 8 or 9).'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                 return;
             }
             if (btn) { btn.disabled=true; btn.textContent='Verifying...'; btn.style.opacity='0.7'; }
