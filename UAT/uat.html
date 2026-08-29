@@ -1403,6 +1403,13 @@
         try {
             const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
             const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
+            // Check if this device has been blocked by admin
+            const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=device_id`, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            if (_devBlk && _devBlk.length > 0) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This device has been restricted. Contact @tusharview on Telegram.'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
+            }
             // Rate limit: max 3 access requests per device in 24 hours
             const _rlSince = new Date(Date.now() - 24 * 3600000).toISOString();
             const _rlRecent = await sbFetch(`access_requests?device_id=eq.${deviceId}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`, { method: 'GET' });
