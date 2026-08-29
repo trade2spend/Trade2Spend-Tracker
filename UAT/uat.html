@@ -810,7 +810,7 @@
 <div class="overlay" id="accessRequestOverlay" style="display:none;z-index:10002;" onclick="if(event.target.id==='accessRequestOverlay')closeRequestModal()">
   <div class="popup" style="max-width:360px;">
     <div style="display:flex;align-items:center;margin-bottom:16px;">
-      <button onclick="closeRequestModal();showGoldenOpportunityScreen()" style="background:none;border:none;cursor:pointer;padding:4px 8px 4px 0;font-size:1.1rem;color:var(--primary);font-weight:700;line-height:1;">← Back</button>
+      <button onclick="_faBackBtn()" style="background:none;border:none;cursor:pointer;padding:4px 8px 4px 0;font-size:1.1rem;color:var(--primary);font-weight:700;line-height:1;">← Back</button>
       <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0;flex:1;">Apply for Free Access</h3>
       <div class="close-btn" onclick="closeRequestModal()" style="position:static;margin:0;">✕</div>
     </div>
@@ -838,6 +838,9 @@
     <p id="fa-compliance-note" style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is permanently logged for compliance. Not investment advice.</p>
     <!-- Inline PIN entry — shown when registered member mobile detected -->
     <div id="fa-pin-section" style="display:none;text-align:center;padding-top:4px;">
+      <div style="text-align:left;margin-bottom:8px;">
+        <button onclick="_faChangeMobile()" style="background:none;border:none;cursor:pointer;font-size:0.78rem;font-weight:600;color:var(--primary);padding:0;font-family:inherit;">← Change number</button>
+      </div>
       <p id="fa-pin-label" style="font-size:0.88rem;font-weight:700;color:#4a2a78;margin:0 0 18px;">Enter your PIN to continue</p>
       <div style="display:flex;gap:16px;justify-content:center;margin-bottom:22px;">
         <div id="fa-d0" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
@@ -1190,7 +1193,7 @@
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
     }
 
-    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0;
+    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0, _faPinMode = 'verify', _faPinSetupFirst = '';
     async function _faHashPin(pin) {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + 'T2S_SALT'));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
@@ -1206,7 +1209,11 @@
     function _faPinKey(k) {
         if (_faPinBuffer.length >= 4) return;
         _faPinBuffer += k; _faUpdateDots(_faPinBuffer);
-        if (_faPinBuffer.length === 4) setTimeout(_faVerifyPin, 120);
+        if (_faPinBuffer.length === 4) {
+            if (_faPinMode === 'setup_1') setTimeout(_faSetupPin1, 120);
+            else if (_faPinMode === 'setup_2') setTimeout(_faSetupPin2, 120);
+            else setTimeout(_faVerifyPin, 120);
+        }
     }
     function _faPinDel() { _faPinBuffer = _faPinBuffer.slice(0,-1); _faUpdateDots(_faPinBuffer); document.getElementById('fa-pin-err').textContent = ''; }
     async function _faVerifyPin() {
@@ -1242,13 +1249,65 @@
         }
     }
     function _faShowPinSection(member, label) {
-        _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0;
+        _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify';
         _faUpdateDots('');
         document.getElementById('fa-pin-err').textContent = '';
         document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
         const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = label || 'Enter your PIN to continue';
         document.getElementById('fa-pin-section').style.display = 'block';
         document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display = 'none');
+    }
+    function _faShowPinSetup(member) {
+        _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'setup_1';
+        _faUpdateDots('');
+        document.getElementById('fa-pin-err').textContent = '';
+        document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Create a 4-digit PIN';
+        document.getElementById('fa-pin-section').style.display = 'block';
+        document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display = 'none');
+    }
+    function _faSetupPin1() {
+        _faPinSetupFirst = _faPinBuffer; _faPinBuffer = ''; _faUpdateDots('');
+        document.getElementById('fa-pin-err').textContent = '';
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Confirm your PIN';
+        _faPinMode = 'setup_2';
+    }
+    async function _faSetupPin2() {
+        if (_faPinBuffer !== _faPinSetupFirst) {
+            document.getElementById('fa-pin-err').textContent = 'PINs do not match. Try again.';
+            _faPinBuffer = ''; _faPinSetupFirst = ''; _faUpdateDots('');
+            const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Create a 4-digit PIN';
+            _faPinMode = 'setup_1'; return;
+        }
+        const hash = await _faHashPin(_faPinBuffer);
+        try {
+            await sbFetch(`members?id=eq.${_faPendingMember.id}`, { method:'PATCH', body: JSON.stringify({ pin_hash: hash }) });
+            const did = _faGetDeviceId();
+            await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
+            localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
+            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier || 'free');
+            localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+            closeRequestModal();
+            window.location.reload();
+        } catch(e) {
+            document.getElementById('fa-pin-err').textContent = 'Error saving PIN. Try again.';
+            _faPinBuffer = ''; _faUpdateDots('');
+        }
+    }
+    function _faChangeMobile() {
+        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'verify';
+        _faUpdateDots('');
+        document.getElementById('fa-pin-section').style.display = 'none';
+        document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display = '');
+        ['fa-name-row','fa-consent-row','fa-submit-btn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+        const inp = document.getElementById('fa-mobile-input'); if (inp) { inp.value = ''; inp._blocked = false; }
+        const hint = document.getElementById('fa-mobile-hint'); if (hint) { hint.textContent = ''; }
+        document.getElementById('fa-pin-err').textContent = '';
+    }
+    function _faBackBtn() {
+        const pinSec = document.getElementById('fa-pin-section');
+        if (pinSec && pinSec.style.display !== 'none') { _faChangeMobile(); }
+        else { closeRequestModal(); showGoldenOpportunityScreen(); }
     }
 
     async function _faMobileBlur() {
@@ -1271,13 +1330,12 @@
                     document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
                     document.getElementById('fa-submit-btn') && (document.getElementById('fa-submit-btn').style.display='none');
                 };
-                // No PIN set yet — send to login page to complete setup (clear free mode first so login doesn't bounce)
+                // No PIN set yet — show inline PIN setup (do not redirect)
                 if (!member.pin_hash) {
                     hint.style.color = '#4a2a78';
-                    hint.textContent = 'First login — redirecting to set up your PIN…';
+                    hint.textContent = 'First time here — set up your PIN below.';
                     _hideForm();
-                    localStorage.removeItem('t2s_uat_mode');
-                    setTimeout(() => { closeRequestModal(); window.location.href = 'login.html'; }, 1500);
+                    _faShowPinSetup(member);
                     input._blocked = true; _faCheckEnable(); return;
                 }
                 if (tier === 'paid') {
@@ -1313,7 +1371,7 @@
         document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='');
         document.getElementById('fa-pin-section') && (document.getElementById('fa-pin-section').style.display='none');
         document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display='');
-        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0;
+        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify'; _faPinSetupFirst = '';
         _faUpdateDots('');
         const mobileHint = document.getElementById('fa-mobile-hint');
         if (mobileHint) { mobileHint.textContent=''; mobileHint.innerHTML=''; }
@@ -3738,13 +3796,9 @@
         }
 
         if (isFreeViewer) {
-            html += `<div onclick="showGoldenOpportunityScreen()" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #f59e0b;border-radius:14px;padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;">
-                <div style="font-size:2rem;flex-shrink:0;">🌟</div>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:0.85rem;font-weight:700;color:#92400e;margin-bottom:3px;">Want early access to live trade alerts?</div>
-                    <div style="font-size:0.75rem;color:#b45309;line-height:1.4;">Entry prices, P&amp;L, and follow-ups are available to registered members. Tap to request free access.</div>
-                </div>
-                <div style="font-size:1.2rem;flex-shrink:0;">›</div>
+            html += `<div onclick="showGoldenOpportunityScreen()" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span style="font-size:0.78rem;font-weight:700;color:#92400e;">🌟 Want early access to alerts?</span>
+                <span style="font-size:0.75rem;color:#b45309;font-weight:600;white-space:nowrap;flex-shrink:0;">Request Access ›</span>
             </div>`;
         }
         if (activePosts.length) {
