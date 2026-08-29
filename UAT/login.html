@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Trade2Spend">
+<title>Trade2Spend — Login (UAT)</title>
+<link rel="manifest" href="../manifest.json">
+<link rel="apple-touch-icon" href="../logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden;background:#FDFBF7;}
+
+.uat-badge{position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:5px;letter-spacing:0.05em;}
+
+.screen{position:fixed;top:28px;left:0;right:0;bottom:0;overflow-y:auto;-webkit-overflow-scrolling:touch;transition:opacity .3s;z-index:1;}
+.screen.hidden{opacity:0;pointer-events:none;}
+
+.page-wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;padding:40px 20px 28px;}
+
+.hero{display:flex;flex-direction:column;align-items:center;margin-bottom:20px;}
+.logo-img{width:72px;height:72px;border-radius:18px;overflow:hidden;margin-bottom:12px;box-shadow:0 6px 24px rgba(74,42,120,0.18);}
+.logo-img img{width:100%;height:100%;object-fit:cover;}
+.brand-name{font-size:26px;font-weight:800;color:#4a2a78;letter-spacing:-0.02em;}
+.brand-sub{font-size:13px;color:#9ca3af;margin-top:3px;}
+
+.features{display:flex;justify-content:center;width:100%;max-width:360px;margin-bottom:20px;}
+.feat{display:flex;flex-direction:column;align-items:center;flex:1;padding:0 6px;text-align:center;}
+.feat-icon{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,0.85);border:1px solid rgba(74,42,120,0.10);display:flex;align-items:center;justify-content:center;margin-bottom:8px;}
+.feat-title{font-size:13px;font-weight:700;color:#1a2030;margin-bottom:2px;}
+.feat-title .fi{font-size:15px;font-weight:800;color:#dc2626;}
+.feat-desc{font-size:10.5px;color:#9ca3af;line-height:1.4;}
+
+.form-card{width:100%;max-width:360px;background:#fff;border-radius:22px;padding:22px 20px 18px;box-shadow:0 4px 32px rgba(74,42,120,0.09);}
+.form-title{font-size:18px;font-weight:800;color:#1a2030;margin-bottom:3px;}
+.form-sub{font-size:12px;color:#9ca3af;margin-bottom:16px;}
+
+.type-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;}
+.type-option{display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 8px;border-radius:12px;border:1.5px solid #e5e0f0;background:#f9f8fc;cursor:pointer;transition:border-color .15s,background .15s;-webkit-tap-highlight-color:transparent;}
+.type-option input[type=radio]{display:none;}
+.type-option.active{border-color:#4a2a78;background:#f3f0f8;}
+.type-icon{font-size:1.15rem;flex-shrink:0;}
+.type-title{font-size:13px;font-weight:700;color:#1a2030;}
+
+.input-label{font-size:10.5px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:#9ca3af;margin-bottom:7px;display:block;}
+.phone-row{display:flex;gap:8px;align-items:center;margin-bottom:14px;}
+.prefix-pill{background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:10px;padding:12px 13px;font-size:14px;font-weight:600;color:#4a2a78;white-space:nowrap;}
+.phone-input{flex:1;background:#f9f8fc;border:1.5px solid #e5e0f0;border-radius:10px;padding:12px 13px;font-size:15px;font-family:'Plus Jakarta Sans',sans-serif;color:#1a2030;outline:none;transition:border-color .2s;width:100%;}
+.phone-input:focus{border-color:#4a2a78;background:#fff;}
+.phone-input::placeholder{color:#c4b8d8;}
+
+.submit-btn{width:100%;padding:14px;background:#4a2a78;border:none;border-radius:13px;color:#fff;font-size:15px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;letter-spacing:0.02em;transition:opacity .15s,transform .1s;}
+.submit-btn:active{opacity:0.85;transform:scale(0.99);}
+.submit-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.free-btn{width:100%;padding:14px;background:#4a2a78;border:none;border-radius:13px;color:#fff;font-size:15px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;display:none;transition:opacity .15s;}
+.free-btn:active{opacity:0.85;}
+
+.err-msg{font-size:12px;color:#dc2626;margin-top:10px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;display:none;}
+.err-msg.show{display:block;}
+
+.disc-wrap{margin-top:16px;text-align:center;}
+.disc-row{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:4px;}
+.disc-text{font-size:11px;color:#9ca3af;}
+.sebi-text{font-size:11px;font-weight:800;color:#4a2a78;letter-spacing:0.07em;}
+
+#screen-pin{background:#FDFBF7;}
+.pin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:24px;}
+.pin-card{width:100%;max-width:360px;background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 2px 24px rgba(74,42,120,0.08);text-align:center;}
+.pin-logo{width:52px;height:52px;border-radius:14px;overflow:hidden;margin:0 auto 12px;}
+.pin-logo img{width:100%;height:100%;object-fit:cover;}
+.pin-greeting{font-size:20px;font-weight:800;color:#1a2030;margin-bottom:4px;}
+.pin-name{font-size:13px;color:#9ca3af;margin-bottom:22px;}
+.pin-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:14px;}
+.pin-dots{display:flex;gap:16px;justify-content:center;margin-bottom:24px;}
+.pin-dot{width:16px;height:16px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;}
+.pin-dot.filled{background:#4a2a78;border-color:#4a2a78;transform:scale(1.1);}
+.pin-dot.error{background:#dc2626;border-color:#dc2626;}
+.pin-dot.shake{animation:shake .4s ease;}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:280px;margin:0 auto;}
+.pin-key{height:60px;border-radius:14px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:22px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .12s;display:flex;align-items:center;justify-content:center;touch-action:manipulation;user-select:none;-webkit-user-select:none;}
+.pin-key:active{background:#ede8f5;border-color:#4a2a78;transform:scale(0.95);}
+.pin-key.del{font-size:18px;color:#9ca3af;}
+.pin-key.invisible{visibility:hidden;}
+.pin-err-text{font-size:12px;color:#dc2626;margin-top:10px;height:16px;}
+.pin-forgot{font-size:12px;color:#c4b8d8;margin-top:10px;cursor:pointer;text-decoration:underline;display:block;}
+.pin-switch{font-size:12px;color:#9ca3af;margin-top:6px;cursor:pointer;display:block;}
+.pin-switch:hover{color:#4a2a78;}
+.pin-lock-msg{font-size:13px;color:#dc2626;margin-top:8px;display:none;}
+
+#screen-setup{background:#FDFBF7;}
+.setup-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:24px;}
+.setup-card{width:100%;max-width:360px;background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 2px 24px rgba(74,42,120,0.08);text-align:center;}
+.setup-title{font-size:20px;font-weight:800;color:#1a2030;margin-bottom:4px;}
+.setup-sub{font-size:13px;color:#9ca3af;margin-bottom:24px;}
+.setup-step{font-size:12px;font-weight:600;color:#9ca3af;margin-bottom:14px;background:#f9f8fc;border-radius:20px;padding:6px 14px;display:inline-block;}
+.pin-disc{font-size:10px;color:#9ca3af;text-align:center;margin-top:14px;max-width:300px;line-height:1.6;}
+
+.loading-overlay{position:fixed;inset:0;background:rgba(253,251,247,0.92);display:none;align-items:center;justify-content:center;z-index:999;}
+.loading-overlay.show{display:flex;}
+.spinner{width:36px;height:36px;border:3px solid #ede8f5;border-top-color:#4a2a78;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+#toast{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:#1a2030;color:#fff;font-size:13px;padding:10px 20px;border-radius:20px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
+#toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="uat-badge">UAT · Not Production</div>
+<div class="loading-overlay" id="loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<!-- ── SCREEN 1: LANDING ── -->
+<div class="screen" id="screen-mobile">
+  <div class="page-wrap">
+
+    <div class="hero">
+      <div class="logo-img">
+        <img src="../logo.png" alt="Trade2Spend" onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
+      </div>
+      <div class="brand-name">Trade2Spend</div>
+      <div class="brand-sub">Live Market Tracker</div>
+    </div>
+
+    <div class="features">
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <polyline points="9 12 11 14 15 10"/>
+          </svg>
+        </div>
+        <div class="feat-title"><span class="fi">D</span>iscipline</div>
+        <div class="feat-desc">Stay consistent with your plan</div>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <circle cx="12" cy="12" r="6"/>
+            <circle cx="12" cy="12" r="2"/>
+            <path d="m16.5 7.5 2-2"/>
+            <path d="M20 5h-2V3"/>
+          </svg>
+        </div>
+        <div class="feat-title"><span class="fi">C</span>onfidence</div>
+        <div class="feat-desc">Make decisions with clarity</div>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 22h14"/>
+            <path d="M5 2h14"/>
+            <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+            <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+          </svg>
+        </div>
+        <div class="feat-title"><span class="fi">P</span>atience</div>
+        <div class="feat-desc">Let the right opportunities come</div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <div class="form-title">Welcome 👋</div>
+      <div class="form-sub">Select your Membership Type</div>
+
+      <div class="type-toggle">
+        <label class="type-option active" id="type-paid-label" onclick="onTypeChange('paid')">
+          <input type="radio" name="member_type" value="paid" checked>
+          <span class="type-icon">👑</span>
+          <span class="type-title">Paid Member</span>
+        </label>
+        <label class="type-option" id="type-free-label" onclick="onTypeChange('free')">
+          <input type="radio" name="member_type" value="free">
+          <span class="type-icon">👋</span>
+          <span class="type-title">Limited Access</span>
+        </label>
+      </div>
+
+      <div id="paid-section">
+        <label class="input-label">Mobile Number</label>
+        <div class="phone-row">
+          <div class="prefix-pill">🇮🇳 +91</div>
+          <input type="tel" class="phone-input" id="mobile-input"
+            placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric"
+            onkeyup="onMobileKey(event)" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <button class="submit-btn" id="mobile-btn" onclick="checkMobile()">Continue →</button>
+      </div>
+
+      <div id="free-section" style="display:none;">
+        <button class="free-btn" id="free-btn" onclick="browseFree()">Browse with Limited Access →</button>
+      </div>
+
+      <div class="err-msg" id="mobile-err"></div>
+    </div>
+
+    <div class="disc-wrap">
+      <div class="disc-row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span class="disc-text">Educational Purposes Only · Not An Investment Advice</span>
+      </div>
+      <div class="sebi-text">WE ARE NOT SEBI REGISTERED</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── SCREEN 2: PIN ENTRY ── -->
+<div class="screen hidden" id="screen-pin">
+  <div class="pin-wrap">
+    <div class="pin-card">
+      <div class="pin-logo">
+        <img src="../logo.png" alt="T2S" onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
+      </div>
+      <div class="pin-greeting">Welcome back 👋</div>
+      <div class="pin-name" id="pin-member-name">Enter your PIN</div>
+      <div class="pin-label">ENTER YOUR PIN</div>
+      <div class="pin-dots">
+        <div class="pin-dot" id="d0"></div>
+        <div class="pin-dot" id="d1"></div>
+        <div class="pin-dot" id="d2"></div>
+        <div class="pin-dot" id="d3"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="pinKey('1')">1</button>
+        <button class="pin-key" onclick="pinKey('2')">2</button>
+        <button class="pin-key" onclick="pinKey('3')">3</button>
+        <button class="pin-key" onclick="pinKey('4')">4</button>
+        <button class="pin-key" onclick="pinKey('5')">5</button>
+        <button class="pin-key" onclick="pinKey('6')">6</button>
+        <button class="pin-key" onclick="pinKey('7')">7</button>
+        <button class="pin-key" onclick="pinKey('8')">8</button>
+        <button class="pin-key" onclick="pinKey('9')">9</button>
+        <button class="pin-key invisible"></button>
+        <button class="pin-key" onclick="pinKey('0')">0</button>
+        <button class="pin-key del" onclick="pinDel()">⌫</button>
+      </div>
+      <div class="pin-err-text" id="pin-err"></div>
+      <div class="pin-lock-msg" id="pin-lock"></div>
+      <button id="request-unlock-btn" onclick="requestUnlock()" style="display:none;margin-top:8px;padding:8px 18px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">🔓 Request Unlock</button>
+      <div id="unlock-sent-msg" style="display:none;font-size:11px;color:#059669;margin-top:6px;">✓ Unlock request sent to admin.</div>
+      <span class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @tusharview</span>
+      <span class="pin-switch" onclick="switchAccount()">← Back to login options</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREEN 3: PIN SETUP ── -->
+<div class="screen hidden" id="screen-setup">
+  <div class="setup-wrap">
+    <div class="setup-card">
+      <div class="pin-logo" style="margin:0 auto 12px;">
+        <img src="../logo.png" alt="T2S" onerror="this.parentElement.style.background='#4a2a78';this.style.display='none';">
+      </div>
+      <div class="setup-title">Set Your PIN</div>
+      <div class="setup-sub">Create a 4-digit PIN to secure your account.<br>You'll only need this once every 24 hours.</div>
+      <div class="setup-step" id="setup-step-label">Step 1 of 2 — Create PIN</div>
+      <div class="pin-label" id="setup-pin-label">CHOOSE YOUR PIN</div>
+      <div class="pin-dots">
+        <div class="pin-dot" id="sd0"></div>
+        <div class="pin-dot" id="sd1"></div>
+        <div class="pin-dot" id="sd2"></div>
+        <div class="pin-dot" id="sd3"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="setupKey('1')">1</button>
+        <button class="pin-key" onclick="setupKey('2')">2</button>
+        <button class="pin-key" onclick="setupKey('3')">3</button>
+        <button class="pin-key" onclick="setupKey('4')">4</button>
+        <button class="pin-key" onclick="setupKey('5')">5</button>
+        <button class="pin-key" onclick="setupKey('6')">6</button>
+        <button class="pin-key" onclick="setupKey('7')">7</button>
+        <button class="pin-key" onclick="setupKey('8')">8</button>
+        <button class="pin-key" onclick="setupKey('9')">9</button>
+        <button class="pin-key invisible"></button>
+        <button class="pin-key" onclick="setupKey('0')">0</button>
+        <button class="pin-key del" onclick="setupDel()">⌫</button>
+      </div>
+      <div class="pin-err-text" id="setup-err"></div>
+    </div>
+    <div class="pin-disc">By continuing you agree all content is for<br>educational purposes only. Not investment advice.</div>
+  </div>
+</div>
+
+<script>
+// PHASE 1 ISOLATION: points to UAT Supabase project (separate from production).
+// Replace UAT_REPLACE_ME with the UAT project ref after creating the project.
+const SUPABASE_URL='https://ivjyadnspyobzgbdoajj.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
+// MAIN_APP_URL: relative path from /UAT/ directory → resolves to /UAT/uat.html
+const MAIN_APP_URL='uat.html';
+const SESSION_24H=24*60*60*1000;
+let currentMobile='',currentMember=null,pinBuffer='',setupBuffer='',setupFirstPin='',setupStep=1,failedAttempts=0;
+const MAX_ATTEMPTS=3,LOCK_MINUTES=30;
+const WEAK_PINS=['2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212'];
+
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');}
+function showLoading(v){document.getElementById('loading').classList.toggle('show',v);}
+function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+function getDeviceId(){let id=localStorage.getItem('t2s_uat_device_id');if(!id){const b=crypto.getRandomValues(new Uint8Array(12));id='dev_'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem('t2s_uat_device_id',id);}return id;}
+async function hashPin(pin){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pin+'T2S_SALT'));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
+async function sbFetch(path,opts={}){
+  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),10000);
+  const{headers:xh,...rest}=opts;
+  try{
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...rest,signal:ctrl.signal,headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...(xh||{})}});
+    if(!res.ok){const e=await res.text();throw new Error(e);}
+    const t=await res.text();return t?JSON.parse(t):[];
+  }finally{clearTimeout(timer);}
+}
+
+function onTypeChange(type){
+  const p=document.getElementById('paid-section'),f=document.getElementById('free-section'),fb=document.getElementById('free-btn');
+  document.getElementById('mobile-err').classList.remove('show');
+  if(type==='free'){p.style.display='none';f.style.display='block';fb.style.display='block';document.getElementById('type-paid-label').classList.remove('active');document.getElementById('type-free-label').classList.add('active');}
+  else{p.style.display='block';f.style.display='none';fb.style.display='none';document.getElementById('type-paid-label').classList.add('active');document.getElementById('type-free-label').classList.remove('active');}
+}
+function browseFree(){localStorage.setItem('t2s_uat_mode','free');['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login'].forEach(k=>localStorage.removeItem(k));window.location.href=MAIN_APP_URL;}
+function switchAccount(){['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
+
+async function checkLock(){
+  const loc=localStorage.getItem('t2s_uat_lock_until');
+  if(loc&&new Date()<new Date(loc)){const m=Math.ceil((new Date(loc)-new Date())/60000);document.getElementById('pin-lock').style.display='block';document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;return true;}
+  try{const mid=localStorage.getItem('t2s_uat_member_id');if(mid){const s=await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}});if(s&&s.length>0&&s[0].locked_until){const sl=new Date(s[0].locked_until);if(new Date()<sl){const m=Math.ceil((sl-new Date())/60000);localStorage.setItem('t2s_uat_lock_until',sl.toISOString());document.getElementById('pin-lock').style.display='block';document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;document.getElementById('request-unlock-btn').style.display='inline-block';return true;}}}}catch(e){}
+  localStorage.removeItem('t2s_uat_lock_until');return false;
+}
+function installPinKeyboardBlock(){document.addEventListener('keydown',function(e){const pv=!document.getElementById('screen-pin').classList.contains('hidden');const sv=!document.getElementById('screen-setup').classList.contains('hidden');if(pv||sv){if(!['Tab','Escape'].includes(e.key))e.preventDefault();}});}
+function onMobileKey(e){if(e.key==='Enter')checkMobile();}
+
+async function checkMobile(){
+  const inp=document.getElementById('mobile-input').value.trim();
+  const errEl=document.getElementById('mobile-err');errEl.classList.remove('show');
+  if(inp.length!==10||!/^\d{10}$/.test(inp)){errEl.textContent='Please enter a valid 10-digit mobile number.';errEl.classList.add('show');return;}
+  showLoading(true);document.getElementById('mobile-btn').disabled=true;
+  try{
+    const mobile='+91'+inp;
+    const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
+    if(!members||members.length===0){errEl.textContent='This number is not registered. Contact @tusharview on Telegram to join.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    const member=members[0];
+    if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @tusharview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    currentMobile=mobile;currentMember=member;
+    localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
+    showLoading(false);
+    if(member.pin_hash){
+      if(await checkLock()){showScreen('screen-pin');return;}
+      showScreen('screen-pin');
+    }else{
+      showScreen('screen-setup');
+    }
+  }catch(e){errEl.textContent='Unable to verify. Check your connection and try again.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;}
+}
+
+function updateDots(buf,pfx='d'){for(let i=0;i<4;i++){const d=document.getElementById(`${pfx}${i}`);if(!d)return;d.classList.toggle('filled',i<buf.length);d.classList.remove('error','shake');}}
+function pinKey(k){if(pinBuffer.length>=4)return;const lk=localStorage.getItem('t2s_uat_lock_until');if(lk&&new Date()<new Date(lk))return;pinBuffer+=k;updateDots(pinBuffer);if(pinBuffer.length===4)setTimeout(verifyPin,120);}
+function pinDel(){pinBuffer=pinBuffer.slice(0,-1);updateDots(pinBuffer);document.getElementById('pin-err').textContent='';}
+
+async function verifyPin(){
+  if(!currentMember)return;showLoading(true);
+  try{
+    const hash=await hashPin(pinBuffer);const did=getDeviceId();
+    // Fresh member fetch to get latest pin_hash and confirm account still active
+    const members=await sbFetch(`members?id=eq.${currentMember.id}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
+    if(!members||members.length===0){showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @tusharview.';setTimeout(()=>{localStorage.clear();location.reload();},2500);return;}
+    currentMember=members[0];
+    if(currentMember.pin_hash===hash){
+      failedAttempts=0;localStorage.removeItem('t2s_uat_lock_until');
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode','paid');
+      // Create session if new device, otherwise update last_active
+      const sessions=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(sessions&&sessions.length>0){
+        await sbFetch(`sessions?id=eq.${sessions[0].id}`,{method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),headers:{'Accept':'application/json'}});
+      }else{
+        await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
+      }
+      showLoading(false);window.location.href=MAIN_APP_URL;
+    }else{
+      showLoading(false);failedAttempts++;pinBuffer='';
+      for(let i=0;i<4;i++){const d=document.getElementById(`d${i}`);d.classList.add('error','shake');}
+      setTimeout(()=>updateDots(''),500);
+      const rem=MAX_ATTEMPTS-failedAttempts;
+      if(rem<=0){const lu=new Date(Date.now()+LOCK_MINUTES*60000).toISOString();localStorage.setItem('t2s_uat_lock_until',lu);document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='block';document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;document.getElementById('request-unlock-btn').style.display='inline-block';try{await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}`,{method:'PATCH',body:JSON.stringify({locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});}catch(e){}}
+      else{document.getElementById('pin-err').textContent=`Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;try{await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});}catch(e){}}
+    }
+  }catch(e){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Verification failed. Check connection.';}
+}
+function forgotPin(){window.open('https://t.me/tusharview','_blank');}
+
+function setupKey(k){if(setupBuffer.length>=4)return;setupBuffer+=k;updateDots(setupBuffer,'sd');if(setupBuffer.length===4)setTimeout(processSetupPin,120);}
+function setupDel(){setupBuffer=setupBuffer.slice(0,-1);updateDots(setupBuffer,'sd');document.getElementById('setup-err').textContent='';}
+async function processSetupPin(){
+  if(setupStep===1){
+    if(WEAK_PINS.includes(setupBuffer)){document.getElementById('setup-err').textContent='Too simple — choose a stronger PIN.';for(let i=0;i<4;i++)document.getElementById(`sd${i}`).classList.add('error','shake');setTimeout(()=>{setupBuffer='';updateDots('','sd');},500);return;}
+    setupFirstPin=setupBuffer;setupBuffer='';setupStep=2;document.getElementById('setup-step-label').textContent='Step 2 of 2 — Confirm PIN';document.getElementById('setup-pin-label').textContent='CONFIRM YOUR PIN';updateDots('','sd');document.getElementById('setup-err').textContent='';
+  }else{
+    if(setupBuffer!==setupFirstPin){document.getElementById('setup-err').textContent='PINs do not match. Start over.';for(let i=0;i<4;i++)document.getElementById(`sd${i}`).classList.add('error','shake');setTimeout(()=>{setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');document.getElementById('setup-step-label').textContent='Step 1 of 2 — Create PIN';document.getElementById('setup-pin-label').textContent='CHOOSE YOUR PIN';},600);return;}
+    showLoading(true);
+    try{
+      const hash=await hashPin(setupBuffer);const did=getDeviceId();
+      // Save PIN to members table (universal — works across all devices)
+      await sbFetch(`members?id=eq.${currentMember.id}`,{method:'PATCH',body:JSON.stringify({pin_hash:hash}),headers:{'Accept':'application/json'}});
+      // Register this device in sessions (no pin_hash stored here)
+      await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode','paid');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
+    }catch(e){showLoading(false);document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');}
+  }
+}
+
+(async function init(){
+  showLoading(true);installPinKeyboardBlock();
+  if(localStorage.getItem('t2s_uat_mode')==='free'){window.location.href=MAIN_APP_URL;return;}
+  const mid=localStorage.getItem('t2s_uat_member_id'),mob=localStorage.getItem('t2s_uat_mobile'),ll=parseInt(localStorage.getItem('t2s_uat_last_login')||'0');
+  if(mid&&mob){
+    if(Date.now()-ll<SESSION_24H){window.location.href=MAIN_APP_URL;return;}
+    try{const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});if(members&&members.length>0){currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='Session expired — enter PIN to continue';if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');return;}}catch(e){}
+  }
+  showLoading(false);showScreen('screen-mobile');
+})();
+
+if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js').catch(()=>{});}
+document.querySelectorAll('.pin-key').forEach(btn=>{
+  let _t=false;
+  btn.addEventListener('touchstart',function(e){e.preventDefault();if(_t)return;_t=true;btn.click();setTimeout(()=>{_t=false;},150);},{passive:false});
+});
+document.addEventListener('keydown',function(e){
+  const pv=!document.getElementById('screen-pin').classList.contains('hidden');
+  const sv=!document.getElementById('screen-setup').classList.contains('hidden');
+  if(pv){if(e.key>='0'&&e.key<='9'){e.preventDefault();pinKey(e.key);}else if(e.key==='Backspace'){e.preventDefault();pinDel();}}
+  else if(sv){if(e.key>='0'&&e.key<='9'){e.preventDefault();setupKey(e.key);}else if(e.key==='Backspace'){e.preventDefault();setupDel();}}
+});
+async function requestUnlock(){
+  const btn=document.getElementById('request-unlock-btn');btn.disabled=true;btn.textContent='Sending…';
+  try{const mid=localStorage.getItem('t2s_uat_member_id')||'';const mob=localStorage.getItem('t2s_uat_mobile')||'';await fetch('https://api.trade2spend.com/request-unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({memberId:mid,mobile:mob,deviceInfo:{platform:navigator.platform,userAgent:navigator.userAgent.slice(0,100)}})});btn.style.display='none';document.getElementById('unlock-sent-msg').style.display='block';}
+  catch(e){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
+}
+function checkDisclaimer(){const today=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());if(localStorage.getItem('t2s_uat_disclaimer_date')!==today)document.getElementById('sebi-modal').style.display='flex';}
+function dismissDisclaimer(){const today=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());localStorage.setItem('t2s_uat_disclaimer_date',today);document.getElementById('sebi-modal').style.display='none';}
+document.addEventListener('DOMContentLoaded',function(){checkDisclaimer();});
+</script>
+
+<!-- SEBI Disclaimer Modal -->
+<div id="sebi-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:18px;padding:28px 22px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="font-size:2rem;margin-bottom:10px;">⚠️</div>
+    <h2 style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:12px;">Important Notice</h2>
+    <p style="font-size:0.85rem;color:#555;line-height:1.75;margin-bottom:20px;">Trade2Spend is <strong>not SEBI registered</strong>. All trade alerts, market updates, and posts are for <strong>educational and informational purposes only</strong>. They do not constitute investment advice or a recommendation to buy or sell any security. Please conduct your own research and trade only at your own risk.</p>
+    <button onclick="dismissDisclaimer()" style="width:100%;padding:13px;background:#4a2a78;color:#fff;border:none;border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;">I Understand</button>
+  </div>
+</div>
+
+</body>
+</html>
