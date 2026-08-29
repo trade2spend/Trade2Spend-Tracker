@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260830-002 | uat.html: fetchUpdates() stale cache fix — changed localStorage key v2→v3 (invalidates old 4-post cache); removed stale-cache renderUpdates() call so loading spinner always shows on first visit, guaranteed fresh fetch with all 49 posts. -->
 <!-- T2S-UAT-20260830-001 | uat.html: fetchUpdates() query fix — replaced single limit=100 all-types query with two parallel targeted queries: (1) general/market_update/banner parent posts (limit 200); (2) all replies (limit 500). Root cause: 172 follow_up replies in last 200 posts were occupying 86% of the 100-slot limit, leaving only ~8 general posts visible out of 49 total. Rollback: revert to single `const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', ...)`. -->
 <!-- T2S-UAT-20260828-001 | uat.html: 3 fixes — (1) Trigger latch: _triggeredPostIds Set + sessionStorage (today-only, key t2s_triggered); getTradeState() checks Set before CMP auto-detect; on first CMP-based trigger, latches postId so state never reverts to Yet to Trigger on LTP dip. (2) Session high/low seed: removed ltp>=entryVal / ltp<=entryVal condition from updateTradeCMPs seed block — now seeds unconditionally when entryVal>0 (safe: data-entry="" for untriggered/no-exit trades so entryVal=0 for those); fixes session high dropping below exit price on page refresh after partial exit. (3) First-LTP re-render: in fetchMarketData(), after updateTradeCMPs(), one-time re-render of trade cards when _mqpFirstLtpRender is false and cached trade data exists — eliminates ~5s window where fetchTradeAlerts races fetchMarketData and renders Yet to Trigger before CMP arrives. Rollback: remove _triggeredPostIds Set+IIFE; remove Set check + latch block from getTradeState(); revert seed conditions back to ltp>=entryVal / ltp<=entryVal; remove _mqpFirstLtpRender block from fetchMarketData(). -->
 <!-- T2S-UAT-20260826-001 | uat.html: SL parser — added new pattern to parseFollowUpContent slPats for "SL [modifier] to [number]" word order (e.g. "SL modified to 24285"). Complement to Pattern 1 which handles "[modifier] SL to N". Zero touch to all other code. Rollback: remove the one added slPats line. -->
@@ -2843,7 +2844,7 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
-                localStorage.removeItem('t2s_uat_upd_posts_v2'); // bust cache so next fetchUpdates() goes to Supabase
+                localStorage.removeItem('t2s_uat_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
                 const _rtActiveEl = document.querySelector('.tab.active');
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
@@ -4651,13 +4652,8 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        const _uc = _cLoad('t2s_uat_upd_posts_v2', 30 * 60 * 1000);
-        if (_uc && _uc.posts && _cachedTier) {
-            renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
-            _mqpScrollAfterRender();
-            (_uc.posts||[]).filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
-            // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
-        }
+        // T2S-UAT-20260830-002: changed key v2→v3 to invalidate old 4-post stale cache. Removed stale-cache display entirely — always show loading then fresh fetch to guarantee all 49 posts appear.
+        const _uc = _cLoad('t2s_uat_upd_posts_v3', 30 * 60 * 1000);
         // Preserve any open compose box across the loading wipe
         let _fudCompose = null;
         const _fudOpenBox = container.querySelector('.admin-compose-box.open');
@@ -4666,8 +4662,8 @@
             const _fudTa  = document.getElementById('reply-text-' + _fudPId);
             _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
         }
-        // Only show loading spinner on truly first load (no in-memory cache and no localStorage cache)
-        if (!_cachedPosts && !_uc) {
+        // Always show loading on first in-session visit; preserve DOM on subsequent visits (no stale data shown)
+        if (!_cachedPosts) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
         }
 
@@ -4721,7 +4717,7 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            if (posts.length > 0) _cSave('t2s_uat_upd_posts_v2', {posts});
+            if (posts.length > 0) _cSave('t2s_uat_upd_posts_v3', {posts});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
