@@ -817,12 +817,12 @@
         <span id="fa-mobile-display" style="font-size:0.78rem;font-weight:700;color:var(--primary);">—</span>
       </div>
     </div>
-    <div style="margin-bottom:14px;">
+    <div id="fa-name-row" style="margin-bottom:14px;">
       <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Your Name <span style="color:#dc2626;">*</span></label>
       <input id="fa-name-input" type="text" placeholder="Enter your full name" maxlength="60"
         style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:0.88rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
     </div>
-    <div style="background:#fff5f5;border:2px solid #dc2626;border-radius:10px;padding:12px;margin-bottom:14px;">
+    <div id="fa-consent-row" style="background:#fff5f5;border:2px solid #dc2626;border-radius:10px;padding:12px;margin-bottom:14px;">
       <p style="font-size:0.72rem;font-weight:800;color:#dc2626;margin:0 0 8px;text-align:left;">⚠️ MANDATORY DISCLAIMER — READ CAREFULLY</p>
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
         <input type="checkbox" id="fa-consent-check" onchange="_faCheckEnable()" style="margin-top:3px;flex-shrink:0;width:18px;height:18px;accent-color:#dc2626;" />
@@ -1172,17 +1172,24 @@
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
                 const { id: mid, tier } = members[0];
+                const loginBtn = `<a href="UAT/login.html" style="display:inline-block;margin-top:8px;background:#4a2a78;color:#fff;border-radius:10px;padding:9px 18px;font-size:0.82rem;font-weight:700;text-decoration:none;">Log in with PIN →</a>`;
                 if (tier === 'paid') {
                     hint.style.color = '#dc2626';
-                    hint.textContent = 'You\'re already a paid member. Please log in instead.';
+                    hint.innerHTML = 'You\'re already a paid member.' + loginBtn;
+                    document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='none');
+                    document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
+                    document.getElementById('fa-submit-btn') && (document.getElementById('fa-submit-btn').style.display='none');
                 } else {
                     const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
                     if (reqs && reqs[0]) {
                         hint.style.color = '#d97706';
                         hint.textContent = '⏳ You already have a pending request for this number.';
                     } else {
-                        hint.style.color = '#dc2626';
-                        hint.textContent = 'This number is registered. Please log in instead.';
+                        hint.style.color = '#059669';
+                        hint.innerHTML = 'Number found. You can log in with your PIN.' + loginBtn;
+                        document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='none');
+                        document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
+                        document.getElementById('fa-submit-btn') && (document.getElementById('fa-submit-btn').style.display='none');
                     }
                 }
                 input._blocked = true;
@@ -1196,6 +1203,13 @@
 
     function showAccessRequestModal() {
         closeGoldenScreen();
+        // Reset all form rows to visible on each open
+        document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='');
+        document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='');
+        const mobileHint = document.getElementById('fa-mobile-hint');
+        if (mobileHint) { mobileHint.textContent=''; mobileHint.innerHTML=''; }
+        const mobileInput = document.getElementById('fa-mobile-input');
+        if (mobileInput) { mobileInput.value=''; mobileInput._blocked=false; }
         const nameInput = document.getElementById('fa-name-input');
         const cached = window._cachedMember;
         if (nameInput && cached && cached.name) nameInput.value = cached.name;
