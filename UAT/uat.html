@@ -1277,21 +1277,39 @@
         if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
         try {
             const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
-            const r = await fetch(`${_VM}/submit-access-request`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ memberId: resolvedMemberId, name, deviceId, deviceType: /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop', consentText })
-            });
-            const d = await r.json();
-            if (d.ok) {
-                if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request submitted! You\'ll be notified once it is reviewed.'; }
-                if (btn) btn.style.display = 'none';
-                _trackEvent('button_click', { button: 'request_submitted' });
-                setTimeout(closeRequestModal, 3500);
-            } else {
-                if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = d.error || 'Submission failed. Please try again.'; }
-                if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
+            const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
+            // UAT: check for existing pending/rejected/blocked request before submitting
+            const existing = await sbFetch(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at`, { method: 'GET' });
+            if (existing && existing.length > 0) {
+                const lr = existing[0];
+                if (lr.status === 'pending') {
+                    if (msg) { msg.style.display='block'; msg.style.color='#d97706'; msg.textContent='Your request is already pending. You will be notified once reviewed.'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    return;
+                }
+                if (lr.status === 'rejected' && lr.last_rejected_at) {
+                    const retryAt = new Date(new Date(lr.last_rejected_at).getTime() + 24 * 3600000);
+                    if (new Date() < retryAt) {
+                        if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please wait 24 hours after rejection before submitting again.'; }
+                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                        return;
+                    }
+                }
+                if (lr.status === 'blocked') {
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Your account is blocked. Contact @tusharview on Telegram.'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    return;
+                }
             }
+            // UAT: write access request directly to UAT Supabase (bypasses production VM)
+            await sbFetch('access_requests', { method: 'POST', body: JSON.stringify({ member_id: resolvedMemberId, name, consent_text: consentText, device_id: deviceId, device_type: deviceType, consented_at: new Date().toISOString(), status: 'pending' }) });
+            // Write SEBI consent permanently to audit_log (compliance record)
+            const mobile = localStorage.getItem('t2s_uat_mobile') ? '+91' + localStorage.getItem('t2s_uat_mobile') : '';
+            await sbFetch('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: resolvedMemberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
+            if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request submitted! You\'ll be notified once it is reviewed.'; }
+            if (btn) btn.style.display = 'none';
+            _trackEvent('button_click', { button: 'request_submitted' });
+            setTimeout(closeRequestModal, 3500);
         } catch(e) {
             if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = 'Network error. Please try again.'; }
             if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
