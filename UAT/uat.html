@@ -835,7 +835,32 @@
     <button id="fa-submit-btn" onclick="_submitAccessRequest()" disabled
       style="background:var(--primary);color:white;border:none;border-radius:12px;padding:12px 20px;font-size:0.9rem;font-weight:700;cursor:pointer;width:100%;font-family:inherit;opacity:0.5;transition:opacity 0.2s;">Submit Request →</button>
     <div id="fa-submit-msg" style="display:none;margin-top:10px;font-size:0.8rem;text-align:center;"></div>
-    <p style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is permanently logged for compliance. Not investment advice.</p>
+    <p id="fa-compliance-note" style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is permanently logged for compliance. Not investment advice.</p>
+    <!-- Inline PIN entry — shown when registered member mobile detected -->
+    <div id="fa-pin-section" style="display:none;text-align:center;padding-top:4px;">
+      <p id="fa-pin-label" style="font-size:0.88rem;font-weight:700;color:#4a2a78;margin:0 0 18px;">Enter your PIN to continue</p>
+      <div style="display:flex;gap:16px;justify-content:center;margin-bottom:22px;">
+        <div id="fa-d0" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+        <div id="fa-d1" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+        <div id="fa-d2" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+        <div id="fa-d3" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;max-width:240px;margin:0 auto 12px;">
+        <button onclick="_faPinKey('1')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">1</button>
+        <button onclick="_faPinKey('2')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">2</button>
+        <button onclick="_faPinKey('3')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">3</button>
+        <button onclick="_faPinKey('4')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">4</button>
+        <button onclick="_faPinKey('5')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">5</button>
+        <button onclick="_faPinKey('6')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">6</button>
+        <button onclick="_faPinKey('7')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">7</button>
+        <button onclick="_faPinKey('8')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">8</button>
+        <button onclick="_faPinKey('9')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">9</button>
+        <button style="visibility:hidden;height:52px;"></button>
+        <button onclick="_faPinKey('0')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">0</button>
+        <button onclick="_faPinDel()" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#9ca3af;font-size:16px;cursor:pointer;font-family:inherit;">⌫</button>
+      </div>
+      <p id="fa-pin-err" style="font-size:0.75rem;color:#dc2626;min-height:16px;margin:0 0 8px;"></p>
+    </div>
   </div>
 </div>
 
@@ -1165,6 +1190,67 @@
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
     }
 
+    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0;
+    async function _faHashPin(pin) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + 'T2S_SALT'));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+    function _faGetDeviceId() {
+        let id = localStorage.getItem('t2s_uat_device_id');
+        if (!id) { const b = crypto.getRandomValues(new Uint8Array(12)); id = 'dev_' + Array.from(b, x => x.toString(16).padStart(2,'0')).join(''); localStorage.setItem('t2s_uat_device_id', id); }
+        return id;
+    }
+    function _faUpdateDots(buf) {
+        for (let i = 0; i < 4; i++) { const d = document.getElementById('fa-d' + i); if (!d) return; d.style.background = i < buf.length ? '#4a2a78' : '#f3f0f8'; d.style.borderColor = i < buf.length ? '#4a2a78' : '#d8ceed'; }
+    }
+    function _faPinKey(k) {
+        if (_faPinBuffer.length >= 4) return;
+        _faPinBuffer += k; _faUpdateDots(_faPinBuffer);
+        if (_faPinBuffer.length === 4) setTimeout(_faVerifyPin, 120);
+    }
+    function _faPinDel() { _faPinBuffer = _faPinBuffer.slice(0,-1); _faUpdateDots(_faPinBuffer); document.getElementById('fa-pin-err').textContent = ''; }
+    async function _faVerifyPin() {
+        if (!_faPendingMember) return;
+        const hash = await _faHashPin(_faPinBuffer);
+        if (_faPendingMember.pin_hash === hash) {
+            const did = _faGetDeviceId();
+            try {
+                const ex = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`, { method:'GET' });
+                if (ex && ex.length > 0) {
+                    await sbFetch(`sessions?id=eq.${ex[0].id}`, { method:'PATCH', body: JSON.stringify({ last_active: new Date().toISOString(), failed_attempts_today: 0, locked_until: null }) });
+                } else {
+                    const all = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true&select=id`, { method:'GET' });
+                    if (all && all.length >= 2) { document.getElementById('fa-pin-err').textContent = 'Maximum concurrent login limit reached. Log out from another device first.'; _faPinBuffer = ''; _faUpdateDots(''); return; }
+                    await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
+                }
+            } catch(e) {}
+            localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
+            localStorage.setItem('t2s_uat_mode', 'paid');
+            localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+            closeRequestModal();
+            window.location.reload();
+        } else {
+            _faPinAttempts++;
+            _faPinBuffer = ''; _faUpdateDots('');
+            const rem = 3 - _faPinAttempts;
+            if (rem <= 0) {
+                document.getElementById('fa-pin-err').textContent = 'Too many attempts. Contact @tusharview to unlock.';
+                document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
+            } else {
+                document.getElementById('fa-pin-err').textContent = `Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;
+            }
+        }
+    }
+    function _faShowPinSection(member, label) {
+        _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0;
+        _faUpdateDots('');
+        document.getElementById('fa-pin-err').textContent = '';
+        document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = label || 'Enter your PIN to continue';
+        document.getElementById('fa-pin-section').style.display = 'block';
+        document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display = 'none');
+    }
+
     async function _faMobileBlur() {
         const input = document.getElementById('fa-mobile-input');
         const hint = document.getElementById('fa-mobile-hint');
@@ -1175,6 +1261,9 @@
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
                 const { id: mid, tier } = members[0];
+                // Fetch full member record including pin_hash for inline PIN verification
+                const fullMember = await sbFetch(`members?id=eq.${mid}&select=id,tier,status,pin_hash`, { method:'GET' });
+                const member = (fullMember && fullMember[0]) ? fullMember[0] : members[0];
                 const _hideForm = () => {
                     document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='none');
                     document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
@@ -1182,9 +1271,9 @@
                 };
                 if (tier === 'paid') {
                     hint.style.color = '#4a2a78';
-                    hint.textContent = 'Paid member found. Taking you to PIN login…';
+                    hint.textContent = 'Paid member — enter your PIN below.';
                     _hideForm();
-                    setTimeout(() => { closeRequestModal(); window.location.href = 'login.html'; }, 1500);
+                    _faShowPinSection(member, 'Enter your PIN to access your account');
                 } else {
                     const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
                     if (reqs && reqs[0]) {
@@ -1192,9 +1281,9 @@
                         hint.textContent = '⏳ You already have a pending request for this number.';
                     } else {
                         hint.style.color = '#4a2a78';
-                        hint.textContent = 'Number found. Taking you to PIN login…';
+                        hint.textContent = 'Number found — enter your PIN below.';
                         _hideForm();
-                        setTimeout(() => { closeRequestModal(); window.location.href = 'login.html'; }, 1500);
+                        _faShowPinSection(member, 'Enter your PIN to continue');
                     }
                 }
                 input._blocked = true;
@@ -1208,9 +1297,13 @@
 
     function showAccessRequestModal() {
         closeGoldenScreen();
-        // Reset all form rows to visible on each open
+        // Reset all form rows and PIN section on each open
         document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='');
         document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='');
+        document.getElementById('fa-pin-section') && (document.getElementById('fa-pin-section').style.display='none');
+        document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display='');
+        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0;
+        _faUpdateDots('');
         const mobileHint = document.getElementById('fa-mobile-hint');
         if (mobileHint) { mobileHint.textContent=''; mobileHint.innerHTML=''; }
         const mobileInput = document.getElementById('fa-mobile-input');
