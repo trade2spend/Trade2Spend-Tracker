@@ -3737,6 +3737,16 @@
             </div>`;
         }
 
+        if (isFreeViewer) {
+            html += `<div onclick="showGoldenOpportunityScreen()" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #f59e0b;border-radius:14px;padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;">
+                <div style="font-size:2rem;flex-shrink:0;">🌟</div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.85rem;font-weight:700;color:#92400e;margin-bottom:3px;">Want early access to live trade alerts?</div>
+                    <div style="font-size:0.75rem;color:#b45309;line-height:1.4;">Entry prices, P&amp;L, and follow-ups are available to registered members. Tap to request free access.</div>
+                </div>
+                <div style="font-size:1.2rem;flex-shrink:0;">›</div>
+            </div>`;
+        }
         if (activePosts.length) {
             const premiumPill = isFreeViewer
                 ? `<button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>`
