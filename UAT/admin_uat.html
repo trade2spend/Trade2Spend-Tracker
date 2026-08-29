@@ -1700,54 +1700,107 @@ async function loadAccessRequests(statusFilter = 'pending') {
     if (!list) return;
     list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
     try {
-        const url = statusFilter === 'all'
-            ? `${_VM_ADMIN}/access-requests`
-            : `${_VM_ADMIN}/access-requests?status=${statusFilter}`;
-        const r = await fetch(url, { headers: { 'x-t2s-secret': _FA_SECRET } });
-        const d = await r.json();
-        const reqs = d.requests || [];
+        // 1. Fetch filtered requests from UAT Supabase
+        const qFilter = statusFilter === 'all' ? '' : `&status=eq.${statusFilter}`;
+        const reqs = await sbGet(`access_requests?select=id,member_id,name,device_id,device_type,created_at,status${qFilter}&order=created_at.desc&limit=50`);
         if (!reqs.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No requests found.</div>'; return; }
+
+        // 2. Collect unique device_ids and member_ids for batch fetch
+        const deviceIds = [...new Set(reqs.map(r => r.device_id).filter(Boolean))];
+        const memberIds = [...new Set(reqs.map(r => r.member_id).filter(Boolean))];
+
+        // 3. Fetch all requests from those devices + member data in parallel
+        const [allDeviceReqs, members] = await Promise.all([
+            deviceIds.length ? sbGet(`access_requests?device_id=in.(${deviceIds.join(',')})&select=id,member_id,device_id,status`) : Promise.resolve([]),
+            memberIds.length ? sbGet(`members?id=in.(${memberIds.join(',')})&select=id,mobile,name`) : Promise.resolve([])
+        ]);
+
+        // 4. Fetch mobiles for any additional member_ids seen in device history
+        const extraIds = [...new Set(allDeviceReqs.map(r => r.member_id).filter(mid => mid && !memberIds.includes(mid)))];
+        const extraMembers = extraIds.length ? await sbGet(`members?id=in.(${extraIds.join(',')})&select=id,mobile`) : [];
+        const memberMap = {};
+        [...members, ...extraMembers].forEach(m => { memberMap[m.id] = m; });
+
+        // 5. Build device history: device_id → { count, mobiles Set }
+        const devMap = {};
+        allDeviceReqs.forEach(r => {
+            if (!r.device_id) return;
+            if (!devMap[r.device_id]) devMap[r.device_id] = { count: 0, mobiles: new Set() };
+            devMap[r.device_id].count++;
+            const m = memberMap[r.member_id];
+            if (m && m.mobile) devMap[r.device_id].mobiles.add(m.mobile.replace('+91', ''));
+        });
+
+        // 6. Render each request card
         list.innerHTML = reqs.map(req => {
-            const m = req.member_id || {};
-            const mobile = m.mobile || req.member_id || '—';
-            const name = m.name || '—';
-            const date = req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN') : '—';
-            const statusColor = { pending: '#d97706', approved: '#059669', rejected: '#6b7280', blocked: '#dc2626' }[req.status] || '#6b7280';
+            const member = memberMap[req.member_id] || {};
+            const mobile = (member.mobile || '').replace('+91', '') || '—';
+            const name = member.name || req.name || '—';
+            const date = req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+            const statusColor = { pending:'#d97706', approved:'#059669', rejected:'#6b7280', blocked:'#dc2626' }[req.status] || '#6b7280';
             const isPending = req.status === 'pending';
-            return `<div style="border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+            const devIcon = req.device_type === 'mobile' ? '📱' : req.device_type === 'desktop' ? '🖥️' : '';
+            const dh = devMap[req.device_id];
+            const hasMultiple = dh && dh.count > 1;
+            const deviceBadge = hasMultiple
+                ? `<div style="margin:6px 0;padding:6px 8px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:11px;color:#92400e;">⚠️ ${dh.count} requests from this device &nbsp;·&nbsp; Numbers tried: ${[...dh.mobiles].join(', ') || '—'}</div>` : '';
+            return `<div style="border:1px solid ${hasMultiple ? '#fcd34d' : 'var(--border2)'};border-radius:8px;padding:10px;margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
                     <div>
-                        <div style="font-size:13px;font-weight:700;">${name}</div>
+                        <div style="font-size:13px;font-weight:700;">${name} ${devIcon}</div>
                         <div style="font-size:11px;color:var(--muted2);">${mobile} · ${date}</div>
                     </div>
-                    <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;">${req.status.toUpperCase()}</span>
+                    <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;white-space:nowrap;">${req.status.toUpperCase()}</span>
                 </div>
-                ${isPending ? `<div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button onclick="actionRequest('${req.id}','approve')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">✅ Approve</button>
-                    <button onclick="actionRequest('${req.id}','reject')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">❌ Reject</button>
-                    <button onclick="actionRequest('${req.id}','block')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block</button>
+                ${deviceBadge}
+                ${isPending ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+                    <button onclick="actionRequestDirect('${req.id}','${req.member_id}','approve')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">✅ Approve</button>
+                    <button onclick="actionRequestDirect('${req.id}','${req.member_id}','reject')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">❌ Reject</button>
+                    <button onclick="actionRequestDirect('${req.id}','${req.member_id}','block_number')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block #</button>
+                    ${req.device_id ? `<button onclick="blockDeviceDirect('${req.device_id}')" style="flex:1;min-width:80px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#7c3aed;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📵 Block Device</button>` : ''}
                 </div>` : ''}
             </div>`;
         }).join('');
     } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
 }
 
-async function actionRequest(requestId, action) {
+async function actionRequestDirect(requestId, memberId, action) {
     try {
-        const r = await fetch(`${_VM_ADMIN}/access-requests/${requestId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', 'x-t2s-secret': _FA_SECRET },
-            body: JSON.stringify({ action })
-        });
-        const d = await r.json();
-        if (d.ok) {
-            showToast(`✅ ${action.charAt(0).toUpperCase() + action.slice(1)}d — ${d.member_name}`);
-            loadAccessRequests('pending');
-            // Refresh badge
-            const pending = await sbGet('access_requests?status=eq.pending&select=id').catch(() => []);
-            const badge = document.getElementById('fa-badge');
-            if (badge) { badge.textContent = pending.length; badge.style.display = pending.length > 0 ? 'inline' : 'none'; }
-        } else { showToast('❌ ' + (d.error || 'Error')); }
+        if (action === 'approve') {
+            await Promise.all([
+                sbPatch(`access_requests?id=eq.${requestId}`, { status: 'approved' }),
+                sbPatch(`members?id=eq.${memberId}`, { free_access: true })
+            ]);
+            showToast('✅ Approved — free access granted');
+        } else if (action === 'reject') {
+            await sbPatch(`access_requests?id=eq.${requestId}`, { status: 'rejected' });
+            showToast('❌ Request rejected');
+        } else if (action === 'block_number') {
+            await Promise.all([
+                sbPatch(`access_requests?id=eq.${requestId}`, { status: 'blocked' }),
+                sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: true })
+            ]);
+            showToast('🚫 Number blocked — member cannot request again');
+        }
+        loadAccessRequests('pending');
+        const pending = await sbGet('access_requests?status=eq.pending&select=id').catch(() => []);
+        const badge = document.getElementById('fa-badge');
+        if (badge) { badge.textContent = pending.length; badge.style.display = pending.length > 0 ? 'inline' : 'none'; }
+    } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function blockDeviceDirect(deviceId) {
+    if (!confirm('Block this device? All pending requests from it will be blocked and future submissions rejected.')) return;
+    try {
+        await Promise.all([
+            sbPost('device_blocks', { device_id: deviceId, reason: 'Blocked by admin' }),
+            sbPatch(`access_requests?device_id=eq.${deviceId}&status=eq.pending`, { status: 'blocked' })
+        ]);
+        showToast('📵 Device blocked — all pending requests from it are blocked');
+        loadAccessRequests('pending');
+        const pending = await sbGet('access_requests?status=eq.pending&select=id').catch(() => []);
+        const badge = document.getElementById('fa-badge');
+        if (badge) { badge.textContent = pending.length; badge.style.display = pending.length > 0 ? 'inline' : 'none'; }
     } catch(e) { showToast('❌ ' + e.message); }
 }
 
@@ -5286,8 +5339,8 @@ function cap2dec(input){
 }
 
 // ── SUPABASE (Push to Members) ──
-const SB_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
+const SB_URL = 'https://ivjyadnspyobzgbdoajj.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
 
 async function sbPost(path, body){
   const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
