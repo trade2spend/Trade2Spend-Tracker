@@ -1403,6 +1403,14 @@
         try {
             const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
             const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
+            // Rate limit: max 3 access requests per device in 24 hours
+            const _rlSince = new Date(Date.now() - 24 * 3600000).toISOString();
+            const _rlRecent = await sbFetch(`access_requests?device_id=eq.${deviceId}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`, { method: 'GET' });
+            if (_rlRecent && _rlRecent.length >= 3) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Too many requests from this device. Please try again after 24 hours.'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
+            }
             // UAT: check for existing pending/rejected/blocked request before submitting
             const existing = await sbFetch(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at`, { method: 'GET' });
             if (existing && existing.length > 0) {
