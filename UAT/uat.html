@@ -1301,9 +1301,23 @@
         document.getElementById('fa-pin-section').style.display = 'none';
         document.getElementById('fa-compliance-note') && (document.getElementById('fa-compliance-note').style.display = '');
         ['fa-name-row','fa-consent-row','fa-submit-btn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
-        const inp = document.getElementById('fa-mobile-input'); if (inp) { inp.value = ''; inp._blocked = false; }
-        const hint = document.getElementById('fa-mobile-hint'); if (hint) { hint.textContent = ''; }
         document.getElementById('fa-pin-err').textContent = '';
+        // Always rebuild mobile section with a fresh input field.
+        // Logged-in users had a static display (no <input>), so we must inject the input here.
+        const mobileSection = document.getElementById('fa-mobile-section');
+        if (mobileSection) {
+            mobileSection.style.marginBottom = '12px';
+            mobileSection.innerHTML = `
+                <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Mobile Number <span style="color:#dc2626;">*</span></label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
+                    <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
+                        oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};['fa-name-row','fa-consent-row','fa-submit-btn'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='';});_faCheckEnable()"
+                        onblur="_faMobileBlur()"
+                        style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
+                </div>
+                <div id="fa-mobile-hint" style="font-size:0.76rem;margin-top:6px;min-height:16px;"></div>`;
+        }
     }
     function _faBackBtn() {
         const pinSec = document.getElementById('fa-pin-section');
