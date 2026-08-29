@@ -377,6 +377,8 @@ async function verifyPin(){
       if(sessions&&sessions.length>0){
         await sbFetch(`sessions?id=eq.${sessions[0].id}`,{method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),headers:{'Accept':'application/json'}});
       }else{
+        const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+        if(allActive&&allActive.length>=2){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
         await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
       }
       showLoading(false);window.location.href=MAIN_APP_URL;
@@ -405,6 +407,9 @@ async function processSetupPin(){
       const hash=await hashPin(setupBuffer);const did=getDeviceId();
       // Save PIN to members table (universal — works across all devices)
       await sbFetch(`members?id=eq.${currentMember.id}`,{method:'PATCH',body:JSON.stringify({pin_hash:hash}),headers:{'Accept':'application/json'}});
+      // Check concurrent session limit (max 2) before registering new device
+      const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(allActive&&allActive.length>=2){showLoading(false);document.getElementById('setup-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');return;}
       // Register this device in sessions (no pin_hash stored here)
       await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
       localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode','paid');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
