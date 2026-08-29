@@ -809,8 +809,11 @@
 <!-- Free Access Request Form -->
 <div class="overlay" id="accessRequestOverlay" style="display:none;z-index:10002;" onclick="if(event.target.id==='accessRequestOverlay')closeRequestModal()">
   <div class="popup" style="max-width:360px;">
-    <div class="close-btn" onclick="closeRequestModal()">✕</div>
-    <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0 0 16px;">Apply for Free Access</h3>
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="closeRequestModal();showGoldenOpportunityScreen()" style="background:none;border:none;cursor:pointer;padding:4px 8px 4px 0;font-size:1.1rem;color:var(--primary);font-weight:700;line-height:1;">← Back</button>
+      <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0;flex:1;">Apply for Free Access</h3>
+      <div class="close-btn" onclick="closeRequestModal()" style="position:static;margin:0;">✕</div>
+    </div>
     <div id="fa-mobile-section" style="margin-bottom:12px;">
       <div style="background:#f0f4ff;border-radius:8px;padding:8px 12px;text-align:left;">
         <span style="font-size:0.72rem;color:var(--muted);">Registered mobile: </span>
@@ -1172,24 +1175,26 @@
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
                 const { id: mid, tier } = members[0];
-                const loginBtn = `<a href="UAT/login.html" style="display:inline-block;margin-top:8px;background:#4a2a78;color:#fff;border-radius:10px;padding:9px 18px;font-size:0.82rem;font-weight:700;text-decoration:none;">Log in with PIN →</a>`;
-                if (tier === 'paid') {
-                    hint.style.color = '#dc2626';
-                    hint.innerHTML = 'You\'re already a paid member.' + loginBtn;
+                const _hideForm = () => {
                     document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='none');
                     document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
                     document.getElementById('fa-submit-btn') && (document.getElementById('fa-submit-btn').style.display='none');
+                };
+                if (tier === 'paid') {
+                    hint.style.color = '#4a2a78';
+                    hint.textContent = 'Paid member found. Taking you to PIN login…';
+                    _hideForm();
+                    setTimeout(() => { closeRequestModal(); window.location.href = 'login.html'; }, 1500);
                 } else {
                     const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
                     if (reqs && reqs[0]) {
                         hint.style.color = '#d97706';
                         hint.textContent = '⏳ You already have a pending request for this number.';
                     } else {
-                        hint.style.color = '#059669';
-                        hint.innerHTML = 'Number found. You can log in with your PIN.' + loginBtn;
-                        document.getElementById('fa-name-row') && (document.getElementById('fa-name-row').style.display='none');
-                        document.getElementById('fa-consent-row') && (document.getElementById('fa-consent-row').style.display='none');
-                        document.getElementById('fa-submit-btn') && (document.getElementById('fa-submit-btn').style.display='none');
+                        hint.style.color = '#4a2a78';
+                        hint.textContent = 'Number found. Taking you to PIN login…';
+                        _hideForm();
+                        setTimeout(() => { closeRequestModal(); window.location.href = 'login.html'; }, 1500);
                     }
                 }
                 input._blocked = true;
@@ -1229,7 +1234,7 @@
                 <div style="display:flex;align-items:center;gap:6px;">
                     <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
                     <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
-                        oninput="this.value=this.value.replace(/\\D/g,'');_faCheckEnable()"
+                        oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};['fa-name-row','fa-consent-row','fa-submit-btn'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='';});_faCheckEnable()"
                         onblur="_faMobileBlur()"
                         style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
                 </div>
