@@ -1432,7 +1432,12 @@
             window._uatPrefillMob = '';
             const _pf = String(_pfSrc).replace(/\D/g,'').slice(-10);
             const _inp = document.getElementById('fa-mobile-input');
-            if (_inp && _pf.length === 10) { _inp.value = _pf; }
+            if (_inp && _pf.length === 10) {
+                _inp.value = _pf;
+                _inp._blocked = false;
+                _faRenderPhase('form');
+                _faCheckEnable();
+            }
         }
     }
     function closeRequestModal() {
