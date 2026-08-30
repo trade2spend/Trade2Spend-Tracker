@@ -289,7 +289,20 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
   </div>
 </div>
 
-<!-- ── SCREEN 4: INTRO / WHAT YOU GET ── -->
+<!-- ── SCREEN 4: PENDING APPROVAL ── -->
+<div class="screen hidden" id="screen-pending">
+  <div class="page-wrap">
+    <div class="form-card" style="margin-top:16px;text-align:center;">
+      <div style="font-size:2.5rem;margin-bottom:10px;">⏳</div>
+      <div class="form-title" style="margin-bottom:6px;">Request Under Review</div>
+      <div class="form-sub" style="margin-bottom:16px;">Your access request has been submitted. Tushar will review and notify you once approved.</div>
+      <div style="background:#f0f4ff;border-radius:10px;padding:12px;font-size:0.78rem;color:#4a2a78;margin-bottom:20px;line-height:1.5;">Save the app to your home screen to get notified instantly when your request is approved.</div>
+      <button onclick="continuePendingAsLimited()" class="submit-btn">Continue as Limited Access →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREEN 5: INTRO / WHAT YOU GET ── -->
 <div class="screen hidden" id="screen-intro">
   <div class="page-wrap">
     <div class="form-card" style="margin-top:16px;">
@@ -311,7 +324,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 <div class="screen hidden" id="screen-register">
   <div class="page-wrap">
     <div class="form-card" style="margin-top:16px;">
-      <button onclick="showScreen('screen-mobile')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
+      <button onclick="showScreen('screen-intro')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
       <div class="form-title" style="margin-bottom:4px;">Request Access</div>
       <div class="form-sub" style="margin-bottom:14px;">Limited access — Tushar will review your request</div>
       <div style="background:#f0f4ff;border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:0.83rem;color:#4a2a78;font-weight:600;">📱 +91 <span id="reg-mobile-display" style="font-weight:800;"></span></div>
@@ -393,7 +406,12 @@ async function checkMobile(){
     currentMobile=mobile;currentMember=member;
     localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
     showLoading(false);
-    if(member.pin_hash){
+    if(member.tier !== 'paid'){
+      localStorage.setItem('t2s_uat_mode','free');
+      localStorage.setItem('t2s_uat_member_id',member.id);
+      localStorage.setItem('t2s_uat_request_pending','1');
+      showScreen('screen-pending');
+    }else if(member.pin_hash){
       if(await checkLock()){showScreen('screen-pin');return;}
       showScreen('screen-pin');
     }else{
@@ -455,6 +473,7 @@ async function verifyPin(){
   }catch(e){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Verification failed. Check connection.';}
 }
 function forgotPin(){window.open('https://t.me/tusharview','_blank');}
+function continuePendingAsLimited(){localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;}
 function _checkRegEnable(){const n=(document.getElementById('reg-name-input')?.value||'').trim();const c=document.getElementById('reg-consent-check')?.checked;const btn=document.getElementById('reg-submit-btn');if(btn){btn.disabled=!(n&&c);btn.style.opacity=(n&&c)?'1':'0.5';}}
 async function submitRegistration(){
   const name=(document.getElementById('reg-name-input')?.value||'').trim();
@@ -476,11 +495,11 @@ async function submitRegistration(){
     if(existing&&existing[0]){memberId=existing[0].id;}
     else{const newM=await sbFetch('members',{method:'POST',body:JSON.stringify({mobile,name,tier:'free',status:'enabled'})});if(!newM||!newM[0])throw new Error('member_create_failed');memberId=newM[0].id;}
     const existReq=await sbFetch(`access_requests?member_id=eq.${memberId}&status=eq.pending&limit=1&select=id`,{method:'GET'});
-    if(existReq&&existReq[0]){msg.style.display='block';msg.style.color='#d97706';msg.textContent='Your request is already pending. You will be notified once reviewed.';btn.style.display='none';setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',memberId);window.location.href=MAIN_APP_URL;},2500);return;}
+    if(existReq&&existReq[0]){msg.style.display='block';msg.style.color='#d97706';msg.textContent='Your request is already pending. You will be notified once reviewed.';btn.style.display='none';setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',memberId);localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;},2500);return;}
     try{await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'sebi_consent',member_id:memberId,device_id:did,device_type:deviceType,event_data:{consent_text:consentText,name,mobile}})});}catch(e){}
     await sbFetch('access_requests',{method:'POST',body:JSON.stringify({member_id:memberId,name,consent_text:consentText,device_id:did,device_type:deviceType,consented_at:new Date().toISOString(),status:'pending'})});
     msg.style.display='block';msg.style.color='#059669';msg.innerHTML='✅ Request submitted! Logging you in as limited access...';btn.style.display='none';
-    setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',memberId);localStorage.setItem('t2s_uat_just_registered','1');window.location.href=MAIN_APP_URL;},2000);
+    setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',memberId);localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;},2000);
   }catch(e){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Something went wrong. Please try again.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';}
 }
 
