@@ -1212,7 +1212,7 @@
                 <div style="display:flex;align-items:center;gap:6px;">
                     <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
                     <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
-                        oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable()"
+                        oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable();if(this.value.length===10&&/^[6-9]\\d{9}$/.test(this.value)){_faMobileBlur();}"
                         onblur="_faMobileBlur()"
                         style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
                 </div>
@@ -1458,7 +1458,7 @@
                 const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status`, { method: 'GET' });
                 if (!members || !members[0]) {
                     const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
-                    const newM = await sbFetch('members', { method: 'POST', body: JSON.stringify({ mobile: '+91' + mob, name: nameVal, tier: 'free', status: 'disabled' }) });
+                    const newM = await sbFetch('members', { method: 'POST', body: JSON.stringify({ mobile: '+91' + mob, name: nameVal, tier: 'free', status: 'enabled' }) });
                     if (!newM || !newM[0]) {
                         if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not register your number. Please try again.'; }
                         if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
