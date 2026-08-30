@@ -1425,8 +1425,13 @@
         if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Submit Request →'; }
         const msg = document.getElementById('fa-submit-msg'); if (msg) { msg.style.display = 'none'; msg.innerHTML = ''; }
         const errEl = document.getElementById('fa-pin-err'); if (errEl) errEl.textContent = '';
-        _faRenderPhase('mobile'); // always start at mobile input — single source of truth
+        _faRenderPhase('mobile');
         document.getElementById('accessRequestOverlay').style.display = 'flex';
+        if (arguments[0]) {
+            const _pf = String(arguments[0]).replace(/\D/g,'').slice(-10);
+            const _inp = document.getElementById('fa-mobile-input');
+            if (_inp && _pf.length === 10) { _inp.value = _pf; setTimeout(_faMobileBlur, 350); }
+        }
     }
     function closeRequestModal() {
         document.getElementById('accessRequestOverlay').style.display = 'none';
@@ -5962,7 +5967,14 @@ async function triggerA2HS() {
     guide.style.display = 'flex';
   }
 }
-document.addEventListener('DOMContentLoaded', function() { checkDisclaimer(); initA2HS(); _startAlertPolling(); });
+document.addEventListener('DOMContentLoaded', function() {
+    checkDisclaimer(); initA2HS(); _startAlertPolling();
+    const _prefillMob = localStorage.getItem('t2s_uat_prefill_mobile');
+    if (_prefillMob) {
+        localStorage.removeItem('t2s_uat_prefill_mobile');
+        setTimeout(function() { showAccessRequestModal(_prefillMob); }, 900);
+    }
+});
 function _shareApp() {
   window.T2S_ShareGuard.trigger(
     'Trade2Spend — Live Trade Alerts & Market Updates',
