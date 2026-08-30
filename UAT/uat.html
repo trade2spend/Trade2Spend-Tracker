@@ -864,6 +864,13 @@
       </div>
       <p id="fa-pin-err" style="font-size:0.75rem;color:#dc2626;min-height:16px;margin:0 0 8px;"></p>
     </div>
+    <!-- Pending approval section -->
+    <div id="fa-pending-section" style="display:none;text-align:center;padding-top:4px;">
+      <div style="font-size:2rem;margin-bottom:10px;">⏳</div>
+      <p style="font-size:0.9rem;font-weight:700;color:#4a2a78;margin:0 0 8px;">Request Under Review</p>
+      <p style="font-size:0.8rem;color:#6b7280;margin:0 0 18px;line-height:1.5;">Your access request has been submitted. You'll be notified when Tushar approves it.</p>
+      <button onclick="_faContinueLimited()" style="background:#4a2a78;color:#fff;border:none;border-radius:12px;padding:11px 20px;font-size:0.88rem;font-weight:700;cursor:pointer;width:100%;font-family:inherit;">Continue as Limited Access →</button>
+    </div>
   </div>
 </div>
 
@@ -1203,6 +1210,7 @@
         s('fa-submit-btn',      phase === 'form');
         s('fa-compliance-note', phase === 'form');
         s('fa-pin-section',     phase === 'pin');
+        s('fa-pending-section', phase === 'pending');
         const ms = document.getElementById('fa-mobile-section');
         if (!ms) return;
         if (phase === 'mobile') {
@@ -1213,10 +1221,11 @@
                     <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
                     <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
                         oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable()"
+                        onblur="_faMobileBlur()"
                         style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
                 </div>
                 <div id="fa-mobile-hint" style="font-size:0.76rem;margin-top:6px;min-height:16px;"></div>`;
-        } else if (phase === 'pin') {
+        } else if (phase === 'pin' || phase === 'pending') {
             ms.style.display = 'none';
         } else if (phase === 'form') {
             ms.style.display = ''; // keep the input that's already there from mobile phase
@@ -1322,6 +1331,14 @@
             _faPinBuffer = ''; _faUpdateDots('');
         }
     }
+    function _faContinueLimited() {
+        const mid = (_faPendingMember && _faPendingMember.id) || localStorage.getItem('t2s_uat_member_id');
+        if (mid) localStorage.setItem('t2s_uat_member_id', mid);
+        localStorage.setItem('t2s_uat_mode', 'free');
+        localStorage.setItem('t2s_uat_request_pending', '1');
+        closeRequestModal();
+        window.location.reload();
+    }
     function _faChangeMobile() {
         _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'verify';
         document.getElementById('fa-pin-err').textContent = '';
@@ -1355,10 +1372,18 @@
                 _faShowBlocked(blockUntil);
                 return;
             }
-            // Back from PIN → restore full registration form
+            // Back from PIN → restore full registration form, blank fields
             _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0;
             document.getElementById('fa-pin-err').textContent = '';
-            _faRenderPhase('mobile'); _faRenderPhase('form');
+            const _nameEl = document.getElementById('fa-name-input');
+            const _cbEl = document.getElementById('fa-consent-check');
+            const _msgEl = document.getElementById('fa-submit-msg');
+            const _btnEl = document.getElementById('fa-submit-btn');
+            if (_nameEl) _nameEl.value = '';
+            if (_cbEl) _cbEl.checked = false;
+            if (_msgEl) { _msgEl.style.display = 'none'; _msgEl.innerHTML = ''; }
+            if (_btnEl) { _btnEl.disabled = true; _btnEl.style.opacity = '0.5'; _btnEl.style.display = ''; _btnEl.textContent = 'Submit Request →'; }
+            _faRenderPhase('mobile'); _faRenderPhase('form'); _faCheckEnable();
         } else {
             // Back from form or anywhere else → close modal entirely
             closeRequestModal();
@@ -1381,32 +1406,24 @@
                 // Fetch full member record including pin_hash for inline PIN verification
                 const fullMember = await sbFetch(`members?id=eq.${mid}&select=id,tier,status,pin_hash`, { method:'GET' });
                 const member = (fullMember && fullMember[0]) ? fullMember[0] : members[0];
-                // No PIN set yet — inline PIN setup
                 if (!member.pin_hash) {
-                    hint.style.color = '#4a2a78';
                     if (tier === 'paid') {
+                        hint.style.color = '#4a2a78';
                         hint.textContent = 'Paid member — create your access PIN to log in.';
                         _faShowPinSetup(member, 'Create your 4-digit access PIN');
                     } else {
-                        hint.textContent = 'First time here — set up your PIN below.';
-                        _faShowPinSetup(member);
+                        _faPendingMember = member;
+                        _faRenderPhase('pending');
                     }
                     input._blocked = true; _faCheckEnable(); return;
                 }
                 if (tier === 'paid') {
                     hint.style.color = '#4a2a78';
                     hint.textContent = 'Paid member — enter your PIN below.';
-                    _faShowPinSection(member, 'Enter your PIN to access your account'); // calls _faRenderPhase('pin')
+                    _faShowPinSection(member, 'Enter your PIN to access your account');
                 } else {
-                    const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
-                    if (reqs && reqs[0]) {
-                        hint.style.color = '#d97706';
-                        hint.textContent = '⏳ You already have a pending request for this number.';
-                    } else {
-                        hint.style.color = '#4a2a78';
-                        hint.textContent = 'Number found — enter your PIN below.';
-                        _faShowPinSection(member, 'Enter your PIN to continue'); // calls _faRenderPhase('pin')
-                    }
+                    _faPendingMember = member;
+                    _faRenderPhase('pending');
                 }
                 input._blocked = true;
             } else {
@@ -1545,8 +1562,11 @@
                     </div>`;
             }
             if (btn) btn.style.display = 'none';
+            localStorage.setItem('t2s_uat_member_id', resolvedMemberId);
+            localStorage.setItem('t2s_uat_mode', 'free');
             localStorage.setItem('t2s_uat_request_pending', '1');
             _trackEvent('button_click', { button: 'request_submitted' });
+            setTimeout(function() { closeRequestModal(); window.location.reload(); }, 2000);
         } catch(e) {
             if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = 'Network error. Please try again.'; }
             if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
@@ -3836,12 +3856,6 @@
             </div>`;
         }
 
-        if (!_isLoggedIn && localStorage.getItem('t2s_uat_request_pending') !== '1') {
-            html += `<div onclick="showGoldenOpportunityScreen()" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                <span style="font-size:0.78rem;font-weight:700;color:#92400e;">🌟 Want early access to alerts?</span>
-                <span style="font-size:0.75rem;color:#b45309;font-weight:600;white-space:nowrap;flex-shrink:0;">Request Access ›</span>
-            </div>`;
-        }
         if (activePosts.length) {
             const premiumPill = isFreeViewer
                 ? `<button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>`
@@ -5981,18 +5995,28 @@ async function triggerA2HS() {
 }
 document.addEventListener('DOMContentLoaded', function() {
     checkDisclaimer(); initA2HS(); _startAlertPolling();
-    if (localStorage.getItem('t2s_uat_request_pending') === '1') {
-        setTimeout(function() {
-            if (document.getElementById('req-pending-banner')) return;
-            const header = document.querySelector('.sticky-header');
-            if (!header) return;
-            const el = document.createElement('div');
-            el.id = 'req-pending-banner';
-            el.style.cssText = 'background:#059669;color:#fff;font-size:0.75rem;font-weight:700;text-align:center;padding:7px 16px;line-height:1.5;width:100%;';
-            el.innerHTML = '⏳ Request under review — you\'ll be notified when approved. <span onclick="triggerA2HS()" style="text-decoration:underline;cursor:pointer;">Save app 📲</span>';
-            header.appendChild(el);
-        }, 600);
-    }
+    setTimeout(function() {
+        const header = document.querySelector('.sticky-header');
+        if (!header) return;
+        if (localStorage.getItem('t2s_uat_request_pending') === '1') {
+            if (!document.getElementById('req-pending-banner')) {
+                const el = document.createElement('div');
+                el.id = 'req-pending-banner';
+                el.style.cssText = 'background:#059669;color:#fff;font-size:0.75rem;font-weight:700;text-align:center;padding:7px 16px;line-height:1.5;width:100%;';
+                el.innerHTML = '⏳ Request under review — you\'ll be notified when approved. <span onclick="triggerA2HS()" style="text-decoration:underline;cursor:pointer;">Save app 📲</span>';
+                header.appendChild(el);
+            }
+        } else if (!localStorage.getItem('t2s_uat_member_id')) {
+            if (!document.getElementById('req-access-strip')) {
+                const el = document.createElement('div');
+                el.id = 'req-access-strip';
+                el.onclick = function() { showGoldenOpportunityScreen(); };
+                el.style.cssText = 'background:#fffbeb;border-top:1px solid #f59e0b;color:#92400e;font-size:0.75rem;font-weight:700;text-align:center;padding:7px 16px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;';
+                el.innerHTML = '<span>🌟 Want early access to alerts?</span><span style="color:#b45309;font-weight:600;white-space:nowrap;">Request Access ›</span>';
+                header.appendChild(el);
+            }
+        }
+    }, 600);
 });
 function _shareApp() {
   window.T2S_ShareGuard.trigger(
