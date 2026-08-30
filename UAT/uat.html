@@ -1193,7 +1193,7 @@
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
     }
 
-    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0, _faPinMode = 'verify', _faPinSetupFirst = '', _faPhase = 'mobile';
+    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0, _faPinMode = 'verify', _faPinSetupFirst = '', _faPhase = 'mobile', _faRegBackCount = 0;
     // Single source of truth for modal visibility. Calling this is the ONLY way to change what's shown.
     function _faRenderPhase(phase) {
         _faPhase = phase;
@@ -1324,9 +1324,37 @@
     function _faChangeMobile() {
         _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'verify';
         document.getElementById('fa-pin-err').textContent = '';
-        _faRenderPhase('mobile'); // shows ONLY the mobile input; hides pin + form
+        _faRenderPhase('mobile');
+    }
+    function _faShowBlocked(until) {
+        closeGoldenScreen();
+        closeRequestModal();
+        const rem = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+        const timeStr = rem >= 60 ? `${Math.floor(rem/60)}h ${rem%60>0?rem%60+'m':''}`.trim() : `${rem} min`;
+        const existing = document.getElementById('fa-blocked-overlay');
+        if (existing) existing.remove();
+        const el = document.createElement('div');
+        el.id = 'fa-blocked-overlay';
+        el.style.cssText = 'position:fixed;inset:0;z-index:10003;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;padding:20px;';
+        el.innerHTML = `<div style="background:#fff;border-radius:20px;padding:28px 24px;max-width:320px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="font-size:2.5rem;margin-bottom:10px;">🚫</div>
+            <div style="font-size:1.05rem;font-weight:800;color:#dc2626;margin-bottom:8px;">Device Temporarily Blocked</div>
+            <div style="font-size:0.83rem;color:#6b7280;line-height:1.6;margin-bottom:20px;">Multiple attempts detected. Please try again after <strong>${timeStr}</strong>.</div>
+            <button onclick="document.getElementById('fa-blocked-overlay').remove()" style="background:#f3f0f8;border:none;border-radius:10px;padding:10px 24px;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;">Close</button>
+        </div>`;
+        document.body.appendChild(el);
     }
     function _faBackBtn() {
+        if (_faPhase === 'pin' && _faPendingMember) {
+            _faRegBackCount++;
+            if (_faRegBackCount >= 5) {
+                const blockUntil = Date.now() + 4 * 3600000;
+                localStorage.setItem('t2s_uat_back_block_until', blockUntil.toString());
+                _faRegBackCount = 0;
+                _faShowBlocked(blockUntil);
+                return;
+            }
+        }
         if (_faPhase === 'pin' || _faPhase === 'form') { _faRenderPhase('mobile'); _faPendingMember = null; _faPinBuffer = ''; }
         else { closeRequestModal(); showGoldenOpportunityScreen(); }
     }
@@ -1385,6 +1413,8 @@
     }
 
     function showAccessRequestModal() {
+        const _bbUntil = parseInt(localStorage.getItem('t2s_uat_back_block_until') || '0');
+        if (Date.now() < _bbUntil) { _faShowBlocked(_bbUntil); return; }
         closeGoldenScreen();
         _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify'; _faPinSetupFirst = '';
         _faUpdateDots('');
@@ -1486,10 +1516,20 @@
             // Write SEBI consent permanently to audit_log (compliance record)
             const mobile = localStorage.getItem('t2s_uat_mobile') ? '+91' + localStorage.getItem('t2s_uat_mobile') : '';
             await sbFetch('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: resolvedMemberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
-            if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request submitted! You\'ll be notified once it is reviewed.'; }
+            if (msg) {
+                msg.style.display = 'block';
+                msg.style.color = '#059669';
+                msg.innerHTML = `<div style="margin-bottom:10px;font-weight:700;">✅ Request submitted!</div>
+                    <div style="background:#f0f4ff;border-radius:12px;padding:14px;text-align:left;margin-top:6px;">
+                        <div style="font-size:0.78rem;font-weight:800;color:#1a2030;margin-bottom:6px;">📲 Save the app to get notified</div>
+                        <div style="font-size:0.73rem;color:#6b7280;line-height:1.5;margin-bottom:10px;">Install Trade2Spend on your home screen — you'll get a notification the moment your request is approved.</div>
+                        <div style="font-size:0.73rem;color:#374151;font-weight:600;margin-bottom:6px;">iPhone (Safari): Share button ⬆️ → Add to Home Screen → Add</div>
+                        <div style="font-size:0.73rem;color:#374151;font-weight:600;margin-bottom:10px;">Android (Chrome): 3-dot menu ⋮ → Add to Home screen → Install</div>
+                        <button onclick="triggerA2HS()" style="background:#4a2a78;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;width:100%;">📲 Save to Home Screen Now</button>
+                    </div>`;
+            }
             if (btn) btn.style.display = 'none';
             _trackEvent('button_click', { button: 'request_submitted' });
-            setTimeout(closeRequestModal, 3500);
         } catch(e) {
             if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = 'Network error. Please try again.'; }
             if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
@@ -3727,6 +3767,7 @@
     function renderTradeAlerts(tradePosts, replyMap, memberTier, isAdmin) {
         const container = document.getElementById('trade-alert-container');
         const isFreeViewer = !isAdmin && memberTier !== 'paid';
+        const _isLoggedIn = !!localStorage.getItem('t2s_uat_member_id');
 
         if (!tradePosts.length) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;font-size:0.85rem;">No trade alerts yet.</div>';
@@ -3778,7 +3819,7 @@
             </div>`;
         }
 
-        if (isFreeViewer) {
+        if (!_isLoggedIn) {
             html += `<div onclick="showGoldenOpportunityScreen()" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;">
                 <span style="font-size:0.78rem;font-weight:700;color:#92400e;">🌟 Want early access to alerts?</span>
                 <span style="font-size:0.75rem;color:#b45309;font-weight:600;white-space:nowrap;flex-shrink:0;">Request Access ›</span>
