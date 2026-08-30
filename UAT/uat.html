@@ -1427,18 +1427,6 @@
         const errEl = document.getElementById('fa-pin-err'); if (errEl) errEl.textContent = '';
         _faRenderPhase('mobile');
         document.getElementById('accessRequestOverlay').style.display = 'flex';
-        const _pfSrc = (arguments[0]) || window._uatPrefillMob || '';
-        if (_pfSrc) {
-            window._uatPrefillMob = '';
-            const _pf = String(_pfSrc).replace(/\D/g,'').slice(-10);
-            const _inp = document.getElementById('fa-mobile-input');
-            if (_inp && _pf.length === 10) {
-                _inp.value = _pf;
-                _inp._blocked = false;
-                _faRenderPhase('form');
-                _faCheckEnable();
-            }
-        }
     }
     function closeRequestModal() {
         document.getElementById('accessRequestOverlay').style.display = 'none';
@@ -1469,11 +1457,17 @@
             try {
                 const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status`, { method: 'GET' });
                 if (!members || !members[0]) {
-                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This mobile is not registered. Contact @tusharview to join.'; }
-                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                    return;
+                    const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
+                    const newM = await sbFetch('members', { method: 'POST', body: JSON.stringify({ mobile: '+91' + mob, name: nameVal, tier: 'free', status: 'disabled' }) });
+                    if (!newM || !newM[0]) {
+                        if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not register your number. Please try again.'; }
+                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                        return;
+                    }
+                    resolvedMemberId = newM[0].id;
+                } else {
+                    resolvedMemberId = members[0].id;
                 }
-                resolvedMemberId = members[0].id;
             } catch(e) {
                 if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not verify mobile. Please try again.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
@@ -5976,11 +5970,15 @@ async function triggerA2HS() {
 }
 document.addEventListener('DOMContentLoaded', function() {
     checkDisclaimer(); initA2HS(); _startAlertPolling();
-    const _prefillMob = localStorage.getItem('t2s_uat_prefill_mobile');
-    if (_prefillMob) {
-        localStorage.removeItem('t2s_uat_prefill_mobile');
-        window._uatPrefillMob = _prefillMob;
-        setTimeout(function() { showGoldenOpportunityScreen(); }, 900);
+    if (localStorage.getItem('t2s_uat_just_registered') === '1') {
+        localStorage.removeItem('t2s_uat_just_registered');
+        setTimeout(function() {
+            const el = document.createElement('div');
+            el.style.cssText = 'position:fixed;top:38px;left:0;right:0;z-index:9000;background:#059669;color:#fff;font-size:0.78rem;font-weight:700;text-align:center;padding:10px 16px;line-height:1.5;';
+            el.innerHTML = '✅ Request submitted! You\'ll be notified when approved. <span onclick="triggerA2HS()" style="text-decoration:underline;cursor:pointer;">Save app to get notified 📲</span>';
+            document.body.appendChild(el);
+            setTimeout(function() { el.remove(); }, 8000);
+        }, 600);
     }
 });
 function _shareApp() {
