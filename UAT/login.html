@@ -342,7 +342,7 @@ async function checkMobile(){
   try{
     const mobile='+91'+inp;
     const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!members||members.length===0){errEl.textContent='This number is not registered. Contact @tusharview on Telegram to join.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    if(!members||members.length===0){localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_prefill_mobile',inp);window.location.href=MAIN_APP_URL;return;}
     const member=members[0];
     if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @tusharview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     currentMobile=mobile;currentMember=member;
@@ -387,8 +387,25 @@ async function verifyPin(){
       for(let i=0;i<4;i++){const d=document.getElementById(`d${i}`);d.classList.add('error','shake');}
       setTimeout(()=>updateDots(''),500);
       const rem=MAX_ATTEMPTS-failedAttempts;
-      if(rem<=0){const lu=new Date(Date.now()+LOCK_MINUTES*60000).toISOString();localStorage.setItem('t2s_uat_lock_until',lu);document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='block';document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;document.getElementById('request-unlock-btn').style.display='inline-block';try{await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}`,{method:'PATCH',body:JSON.stringify({locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});}catch(e){}}
-      else{document.getElementById('pin-err').textContent=`Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;try{await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});}catch(e){}}
+      if(rem<=0){
+        const lu=new Date(Date.now()+LOCK_MINUTES*60000).toISOString();
+        localStorage.setItem('t2s_uat_lock_until',lu);
+        document.getElementById('pin-err').textContent='';
+        document.getElementById('pin-lock').style.display='block';
+        document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;
+        document.getElementById('request-unlock-btn').style.display='inline-block';
+        try{
+          const regSess=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+          if(regSess&&regSess.length>0){
+            // Registered device — lock ALL active sessions for this member (account-wide)
+            await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});
+          }else{
+            // Non-registered device — insert a locked session row so DB persists the block
+            await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:false,locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});
+          }
+        }catch(e){}
+      }
+      else{document.getElementById('pin-err').textContent=`Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;try{const regS=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});if(regS&&regS.length>0){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});}}catch(e){}}
     }
   }catch(e){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Verification failed. Check connection.';}
 }
