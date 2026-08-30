@@ -1213,7 +1213,6 @@
                     <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
                     <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
                         oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable()"
-                        onblur="_faMobileBlur()"
                         style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
                 </div>
                 <div id="fa-mobile-hint" style="font-size:0.76rem;margin-top:6px;min-height:16px;"></div>`;
@@ -1356,9 +1355,15 @@
                 _faShowBlocked(blockUntil);
                 return;
             }
+            // Back from PIN → restore full registration form
+            _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0;
+            document.getElementById('fa-pin-err').textContent = '';
+            _faRenderPhase('mobile'); _faRenderPhase('form');
+        } else {
+            // Back from form or anywhere else → close modal entirely
+            closeRequestModal();
+            showGoldenOpportunityScreen();
         }
-        if (_faPhase === 'pin' || _faPhase === 'form') { _faRenderPhase('mobile'); _faPendingMember = null; _faPinBuffer = ''; }
-        else { closeRequestModal(); showGoldenOpportunityScreen(); }
     }
 
     async function _faMobileBlur() {
@@ -3831,7 +3836,7 @@
             </div>`;
         }
 
-        if (!_isLoggedIn) {
+        if (!_isLoggedIn && localStorage.getItem('t2s_uat_request_pending') !== '1') {
             html += `<div onclick="showGoldenOpportunityScreen()" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;">
                 <span style="font-size:0.78rem;font-weight:700;color:#92400e;">🌟 Want early access to alerts?</span>
                 <span style="font-size:0.75rem;color:#b45309;font-weight:600;white-space:nowrap;flex-shrink:0;">Request Access ›</span>
@@ -5979,11 +5984,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (localStorage.getItem('t2s_uat_request_pending') === '1') {
         setTimeout(function() {
             if (document.getElementById('req-pending-banner')) return;
+            const header = document.querySelector('.sticky-header');
+            if (!header) return;
             const el = document.createElement('div');
             el.id = 'req-pending-banner';
-            el.style.cssText = 'position:fixed;top:38px;left:0;right:0;z-index:9000;background:#059669;color:#fff;font-size:0.75rem;font-weight:700;text-align:center;padding:9px 16px;line-height:1.5;';
-            el.innerHTML = '⏳ Access request under review — you\'ll be notified when approved. <span onclick="triggerA2HS()" style="text-decoration:underline;cursor:pointer;">Save app 📲</span>';
-            document.body.appendChild(el);
+            el.style.cssText = 'background:#059669;color:#fff;font-size:0.75rem;font-weight:700;text-align:center;padding:7px 16px;line-height:1.5;width:100%;';
+            el.innerHTML = '⏳ Request under review — you\'ll be notified when approved. <span onclick="triggerA2HS()" style="text-decoration:underline;cursor:pointer;">Save app 📲</span>';
+            header.appendChild(el);
         }, 600);
     }
 });
