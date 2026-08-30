@@ -345,6 +345,9 @@ async function checkMobile(){
     if(!members||members.length===0){localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_prefill_mobile',inp);window.location.href=MAIN_APP_URL;return;}
     const member=members[0];
     if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @tusharview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    const _nowIso=new Date().toISOString();
+    const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&is_active=eq.true&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
+    if(_acctLock&&_acctLock.length>0){const _lu=new Date(_acctLock[0].locked_until);const _mins=Math.max(1,Math.ceil((_lu-new Date())/60000));errEl.textContent=`Account temporarily locked due to multiple wrong attempts. Try again in ${_mins} minute${_mins>1?'s':''}.`;errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     currentMobile=mobile;currentMember=member;
     localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
     showLoading(false);
