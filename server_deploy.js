@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260830-001 | server.js: Stop [HIGH/LOW/CLOSEPRICE] posting for closed trades. (1) sbContractStillActive(post,replies): new helper — returns false when sbTradeFullyExited() is true (SL hit, explicit exit, "not holding overnight" + market closed), OR when no explicit overnight-hold signal is present and it is past 3:30 PM IST / last real activity was on a previous day (Option A intraday default). Mirrors isTradeFullyClosed() logic from member PWA. (2) refreshActiveContracts(): select now includes sent_at; batches a reply fetch for all post IDs after loading posts; calls sbContractStillActive() before pushing each contract — skips inactive trades; after building new contracts list, prunes stale entries from _optionHighs/_optionLows (previous-day closed trades only — today's entries preserved so saveOptionHighsToSupabase can post [HIGH:X] at 3:35 PM). Rollback: remove sbContractStillActive function; revert select to id,content; remove replyMap/postDateMap block; remove sbContractStillActive guard in posts.forEach; remove _optionHighs/_optionLows pruning block.
 // DEPLOY: T2S-PROD-20260815-002 | server.js: Push notification dedup + tier-aware content. (1) postId-based persistent dedup (_pushSentMap + .push_sent.json) — each postId pushed exactly once, survives VM restarts; body dedup kept as fallback when no postId. (2) Per-member dedup removed — all subscribed devices receive notification (previously only 1 device per member, causing missed notifications). (3) Tier-aware body — paid members see full message, free members see reference only (e.g. "📊 Trade Alert — Open app to view"). (4) Disabled members skipped. (5) Unique tag per post (t2s-post-{postId}) so multiple posts don't collapse each other. Rollback: remove _pushSentMap/PUSH_SENT_FILE/savePushSent block; revert /send-push endpoint to previous version (see T2S-PROD-20260715-009 rollback notes).
 // DEPLOY: T2S-PROD-20260805-001 | server.js: GET / response now includes kotakLtpRunning field — Admin PWA dot logic reads this to show green when LTP poll is active, even if session age check reports loggedIn:false. One new field added to GET / JSON response. No other endpoint, logic, or calculation touched. Rollback: remove kotakLtpRunning line from GET / res.end() block.
 // DEPLOY: T2S-PROD-20260731-001 | server.js: Phone emergency commands — /pwa and /reset-high. (1) /pwa: clean PWA health snapshot via Telegram — shows scraper status, Kotak session, all tracked contracts with live CMP, session high/low, and LTP age (⚠️ if stale >30s). Zero new data sources — reads _activeContracts, _optionChain, _optionHighs, _optionLows, _optionChainTs, _marketScraperInterval. (2) /reset-high NIFTY 24250 PE: resets _optionHighs[key] and _optionLows[key] for a specific contract from Telegram, preserves postId, calls saveState(). Returns usage hint on bad input. Both commands are purely additive — no existing command modified. Rollback: remove the /pwa block (lines 2809–2838) and /reset-high block (lines 2840–2857) from handleMessage().
@@ -1372,6 +1373,38 @@ function buildExpiryDates() {
   console.log('[expiry]', JSON.stringify(result));
 }
 
+// Decides whether a trade contract should still be tracked for LTP / [HIGH:X] posting.
+// Mirrors isTradeFullyClosed() from member PWA — same three-tier logic:
+//   1. sbTradeFullyExited(): SL hit, 100% exits, "not holding overnight" + market closed → inactive
+//   2. Explicit overnight/positional/swing hold in replies → active (keep tracking)
+//   3. No holding signal → intraday default (Option A): inactive after 3:30 PM IST or if last
+//      real activity was on a previous calendar day
+function sbContractStillActive(post, replies) {
+  if (sbTradeFullyExited(replies)) return false;
+  const _negHoldRe = /\b(?:not|won'?t|will\s+not|wont|don'?t|dont|never)\b.{0,25}\bhold(?:ing)?\b.{0,20}\b(?:overnight|next\s+day|tomorrow)\b/i;
+  const _holdRe    = /hold(?:ing)?\s+(?:for\s+)?(?:next\s+day|tomorrow|overnight|long(?:\s+term)?|positional|swing|marathon|long\s+hold)|(?:positional|swing)\s+trade|overnight\s+position/i;
+  let hasHolding = false;
+  const sorted = [...replies].sort((a, b) => new Date(a.sent_at || a.created_at) - new Date(b.sent_at || b.created_at));
+  for (const r of sorted) {
+    const t = r.content || '';
+    if (!_negHoldRe.test(t) && _holdRe.test(t)) hasHolding = true;
+    const pm = t.match(/exiting\s+(\d+)\s*%/i); if (pm) hasHolding = false;
+  }
+  if (hasHolding) return true; // positional/swing — keep tracking until explicitly exited
+  const tz = { timeZone: 'Asia/Kolkata' };
+  const ist = new Date(new Date().toLocaleString('en-US', tz));
+  if (ist.getHours() * 60 + ist.getMinutes() >= 15 * 60 + 30) return false; // after market close
+  const realReplies = sorted.filter(r => !/^\[(HIGH|LOW|CLOSEPRICE):[\d.]+\]$/.test((r.content || '').trim()));
+  if (realReplies.length > 0) {
+    const lastIST = new Date(new Date(realReplies[realReplies.length - 1].sent_at || realReplies[realReplies.length - 1].created_at).toLocaleString('en-US', tz));
+    if (lastIST.toDateString() !== ist.toDateString()) return false; // last real activity was prev day
+  } else {
+    const postIST = new Date(new Date(post.sent_at || post.created_at).toLocaleString('en-US', tz));
+    if (postIST.toDateString() !== ist.toDateString()) return false; // posted on a previous day
+  }
+  return true;
+}
+
 // Parse active option contracts from recent Supabase trade_alert posts
 async function refreshActiveContracts() {
   if (Date.now() - _activeContractsTs < 60 * 1000) return; // fast throttle — no lock needed
@@ -1382,11 +1415,24 @@ async function refreshActiveContracts() {
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const r = await ft(
-      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=id,content&order=sent_at.desc`,
+      `${SB_URL}/rest/v1/posts?post_type=eq.trade_alert&is_deleted=eq.false&sent_at=gte.${since}&select=id,content,sent_at&order=sent_at.desc`,
       { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 8000
     );
     if (!r.ok) return;
     const posts = await r.json();
+    // Batch-fetch replies so sbContractStillActive can decide if each trade is still live
+    const replyMap = {}, postDateMap = {};
+    posts.forEach(p => { if (p.id) postDateMap[p.id] = p.sent_at || p.created_at; });
+    if (posts.length > 0) {
+      try {
+        const pIds = posts.map(p => p.id).filter(Boolean).join(',');
+        const rr = await ft(
+          `${SB_URL}/rest/v1/posts?parent_id=in.(${pIds})&select=id,content,parent_id,sent_at&order=sent_at.desc&limit=500`,
+          { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }, 10000
+        );
+        if (rr.ok) { const all = await rr.json(); all.forEach(r => { if (!replyMap[r.parent_id]) replyMap[r.parent_id] = []; replyMap[r.parent_id].push(r); }); }
+      } catch(e) { console.warn('[contracts] reply fetch failed, proceeding without:', e.message); }
+    }
     const contracts = [];
     posts.forEach(p => {
       const t = (p.content || '').toUpperCase();
@@ -1426,6 +1472,11 @@ async function refreshActiveContracts() {
           return; // skip this post
         }
       }
+      // Skip trades that are no longer active (SL hit, intraday closed, not holding overnight)
+      if (!sbContractStillActive(p, replyMap[p.id] || [])) {
+        console.log(`[contracts] SKIP ${instr}-${strike}-${type}: trade closed (intraday/SL/not-holding)`);
+        return;
+      }
       // Deduplicate by instrument-strike-type only (not expiry) — two posts with the same
       // strike but different expiry labels both resolve to the same _optionChain key, so
       // allowing both would cause the loop to overwrite the correct LTP with the wrong one.
@@ -1444,6 +1495,20 @@ async function refreshActiveContracts() {
         if (_optionLows[key]) _optionLows[key] = { low: undefined, postId: newC.postId, action: newC.action };
         saveState().catch(() => {});
       }
+    }
+    // Prune _optionHighs/_optionLows for contracts no longer active AND not from today.
+    // Today's entries are preserved so saveOptionHighsToSupabase can post [HIGH/CLOSEPRICE:X] at 3:35 PM.
+    const _activeKeys = new Set(contracts.map(c => `${c.instrument}-${c.strike}-${c.type}`));
+    const _pruneIST   = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+    for (const key of Object.keys(_optionHighs)) {
+      if (_activeKeys.has(key)) continue;
+      const _entry = _optionHighs[key];
+      if (_entry.postId && postDateMap[_entry.postId]) {
+        if (new Date(new Date(postDateMap[_entry.postId]).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString() === _pruneIST) continue;
+      }
+      console.log(`[contracts] Pruned stale ${key} from _optionHighs (closed trade, previous day)`);
+      delete _optionHighs[key];
+      if (_optionLows[key]) delete _optionLows[key];
     }
     _activeContracts = contracts;
     console.log(`[contracts] Active: ${contracts.map(c=>`${c.instrument}${c.strike}${c.type}`).join(', ')}`);
@@ -4552,10 +4617,22 @@ function extractOptSL(text) {
 
 function sbTradeFullyExited(replies) {
   let cum = 0;
+  let notHoldingDate = null;
   for (const r of [...replies].reverse()) { // oldest first
     const t = (r.content || '').toLowerCase();
     if (/\bsl\b.{0,20}(?:hit|triggered|gone)|stop[\s-]?loss.{0,10}(?:hit|triggered)|fully\s+exit|full\s+exit|exiting\s+full|exit\s+all|\bfully\s+out\b/.test(t)) return true;
     const pm = t.match(/exiting\s+(\d+)\s*%/); if (pm) { cum += parseInt(pm[1]); if (cum >= 100) return true; }
+    // Detect explicit intraday-only intent: "Will not hold overnight" / "won't hold tomorrow" etc.
+    if (!notHoldingDate && /\b(?:not|won'?t|will\s+not|wont|don'?t|dont)\b.{0,25}\bhold(?:ing)?\b.{0,20}\b(?:overnight|next\s+day|tomorrow)\b/i.test(r.content||''))
+      notHoldingDate = r.sent_at || r.created_at;
+  }
+  // If admin explicitly said "not holding overnight" and market has since closed, treat as exited
+  if (notHoldingDate) {
+    const tz = { timeZone: 'Asia/Kolkata' };
+    const ist = new Date(new Date().toLocaleString('en-US', tz));
+    const msgIST = new Date(new Date(notHoldingDate).toLocaleString('en-US', tz));
+    if (ist.toDateString() !== msgIST.toDateString()) return true; // next day → fully exited
+    if (ist.getHours() * 60 + ist.getMinutes() >= 15 * 60 + 30) return true; // same day, post-market
   }
   return false;
 }
