@@ -1,3 +1,6 @@
+<!-- T2S-UAT-20260830-003 | uat.html: parseFollowUpContent negation guard — "Will not hold overnight" was incorrectly setting isHolding=true (regex matched "hold overnight" without detecting the "not" before it), causing isTradeFullyClosed() to skip all time-based auto-close conditions and keep the trade open indefinitely. Fix: added _negHoldRe check — only sets isHolding=true when holding regex matches AND no negation phrase ("not/won't/will not/don't/never + hold + overnight/next day/tomorrow") is found. Also updated sbTradeFullyExited() in server.js to detect "not holding overnight" intent so VM stops posting [HIGH:X] after market close. Rollback: remove _negHoldRe declaration and revert the isHolding line back to a bare if(_holdRe.test(text)) check. -->
+<!-- T2S-UAT-20260830-002 | uat.html: fetchUpdates() stale cache fix — changed localStorage key v2→v3 (invalidates old 4-post cache); removed stale-cache renderUpdates() call so loading spinner always shows on first visit, guaranteed fresh fetch with all 49 posts. -->
+<!-- T2S-UAT-20260830-001 | uat.html: fetchUpdates() query fix — replaced single limit=100 all-types query with two parallel targeted queries: (1) general/market_update/banner parent posts (limit 200); (2) all replies (limit 500). Root cause: 172 follow_up replies in last 200 posts were occupying 86% of the 100-slot limit, leaving only ~8 general posts visible out of 49 total. Rollback: revert to single `const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', ...)`. -->
 <!-- T2S-UAT-20260828-001 | uat.html: 3 fixes — (1) Trigger latch: _triggeredPostIds Set + sessionStorage (today-only, key t2s_triggered); getTradeState() checks Set before CMP auto-detect; on first CMP-based trigger, latches postId so state never reverts to Yet to Trigger on LTP dip. (2) Session high/low seed: removed ltp>=entryVal / ltp<=entryVal condition from updateTradeCMPs seed block — now seeds unconditionally when entryVal>0 (safe: data-entry="" for untriggered/no-exit trades so entryVal=0 for those); fixes session high dropping below exit price on page refresh after partial exit. (3) First-LTP re-render: in fetchMarketData(), after updateTradeCMPs(), one-time re-render of trade cards when _mqpFirstLtpRender is false and cached trade data exists — eliminates ~5s window where fetchTradeAlerts races fetchMarketData and renders Yet to Trigger before CMP arrives. Rollback: remove _triggeredPostIds Set+IIFE; remove Set check + latch block from getTradeState(); revert seed conditions back to ltp>=entryVal / ltp<=entryVal; remove _mqpFirstLtpRender block from fetchMarketData(). -->
 <!-- T2S-UAT-20260826-001 | uat.html: SL parser — added new pattern to parseFollowUpContent slPats for "SL [modifier] to [number]" word order (e.g. "SL modified to 24285"). Complement to Pattern 1 which handles "[modifier] SL to N". Zero touch to all other code. Rollback: remove the one added slPats line. -->
 <!-- T2S-UAT-20260821-003 | uat.html: Session HIGH/LOW "Yet to Trigger" seed fix — (1) updateTradeCMPs() session HIGH guard (BUY): pre-seed from data-entry only when ltp >= entryVal (option has actually reached entry price); was seeding unconditionally → showed entry ₹117 as session high when CMP was ₹114 and trade not triggered. (2) Same guard for session LOW (SELL): only seed from data-entry when ltp <= entryVal. (3) _initialHigh2/_initialLow2 (Section 2 rendering): return null instead of fields.entry when no partial exits → initial display shows '—' not '₹entry'. (4) _initialHigh3/_initialLow3 (Section 3 rendering): same. (5) Section 2 + Section 3 templates: removed ||fields.entry fallback from data-entry attr and display text — entry price fallback was the source of the wrong initial render. Partial exit seeding (_exitMaxPriceBuy2/3 !== null path) fully preserved. Rollback: revert ltp>=entryVal guard back to entryVal>0 (2 lines in updateTradeCMPs); revert _initialHigh2/Low2/3 ternary else-clause from null back to fields.entry (4 lines); revert Section 2+3 template data-entry and display to use ||fields.entry fallback. -->
@@ -8,9 +11,9 @@
 <!-- T2S-UAT-20260816-004 | uat.html: Updates tab silent background refresh — (1) switchTab() cache path: removed renderUpdates() call entirely; DOM is preserved between tab switches so re-render is unnecessary; (2) fetchUpdates() loading wipe removed: 'Loading updates...' only shown on true first load (no _cachedPosts and no localStorage cache); subsequent fetches keep existing posts visible; (3) renderLiveTicker() content guard: _lastTickerKey tracks last rendered banner IDs; if content unchanged and wrap already showing, returns early without restarting animation. Rollback: restore renderUpdates() call in switchTab cache path; restore unconditional container.innerHTML=Loading line; remove _lastTickerKey var and the 3-line guard block in renderLiveTicker. -->
 <!-- T2S-UAT-20260816-003 | uat.html: Updates tab no-refetch on tab switch — switchTab() now checks _cachedPosts; if populated, calls renderUpdates() directly (no Supabase calls, no loading flash); fetchUpdates() only fires on first load (cache null); 60s polling timer removed; all mutation events (sendReply, sendNewUpdate, deletePost, Realtime) still call fetchUpdates() to keep cache current. Rollback: restore original one-liner: if (tabId==='updates'){...fetchUpdates();_updatesRefreshTimer=setInterval(fetchUpdates,60000);} -->
 <!-- T2S-UAT-20260815-002 | uat.html: Live Scrolling Banner Module — (1) CSS: #live-ticker-wrap (dark #1e293b sticky bar, display:none by default), tickerScroll @keyframes translateX 32s, .banner-pin-card + .live-banner-badge for admin view, #admin-updates-compose-wrap + .banner-toggle-row for compose. (2) HTML: #live-ticker-wrap added INSIDE .sticky-header after .tabs close (stays sticky); #admin-updates-compose-wrap with "＋ Post Update" button + inner compose form (textarea, audience row with All/Paid/CUG, banner checkbox, Post→ button) inserted in Updates tab before #updates-container. (3) JS: _updComposeAud state var; selectUpdAud(val) — updates 3 audience buttons; toggleUpdCompose() — shows/hides compose form; sendNewUpdate() — POSTs post_type='banner' or 'general' to Supabase (NOTE: if Supabase CHECK constraint blocks 'banner', run: ALTER TABLE posts ADD CONSTRAINT posts_post_type_check CHECK (post_type IN ('trade_alert','follow_up','market_update','general','banner'))); renderLiveTicker(bannerPosts,memberTier,isAdmin) — builds duplicate track for seamless -50% loop, shows/hides wrap by audience. (4) renderUpdates(): admin compose wrap shown/hidden by isAdmin; bannerPosts extracted (post_type==='banner'); renderLiveTicker called; bannerHtml prepended for admin (pinned cards with LIVE BANNER badge + Deactivate button); container.innerHTML=bannerHtml+html. Zero touch to FSM, SL math, CMP loops, Service Worker, or trade card rendering. Rollback: remove T2S-UAT-20260815-002 CSS block; remove #live-ticker-wrap HTML; remove #admin-updates-compose-wrap HTML; remove _updComposeAud var; remove selectUpdAud/toggleUpdCompose/sendNewUpdate/renderLiveTicker functions; revert renderUpdates to remove _updWrap/bannerPosts/renderLiveTicker/bannerHtml lines; revert container.innerHTML back to bare html. -->
-<!-- T2S-UAT-20260815-001 | uat.html: localStorage T-2 months + Option B SL floor on closePrice — (1) _sblAutoClosedPostIds persistence changed from sessionStorage (date-keyed, expires midnight) to localStorage key 't2s_sbl_closed_v2' (per-post-id: {postId:"YYYY-MM-DD"}); restore IIFE on page load drops entries older than first of T-2 months (e.g. in Aug: entries before Jun 1 cleaned); on SL-breach detection: post.id + ISO date saved to localStorage — persists across page refreshes, app restarts, and days. (2) getWeightedExitPrice closePrice fallback: Option B — if VM [CLOSEPRICE:X] is worse than revised premium SL (BUY: closePrice<sl; SELL: closePrice>sl; guard: sl<5000 excludes spot SLs) → use opts.sl as exit (VM missed posting SL hit); otherwise use closePrice as-is. (3) getExitLegs closePrice fallback: same Option B guard — floors leg price at SL when VM close price crossed revised SL. Rollback: revert restore IIFE back to sessionStorage block; revert isTradeFullyClosed save to sessionStorage; revert getWeightedExitPrice fallback to bare opts.closePrice; revert getExitLegs fallback to bare opts.closePrice. -->
+<!-- T2S-UAT-20260815-001 | uat.html: localStorage T-2 months + Option B SL floor on closePrice — (1) _sblAutoClosedPostIds persistence changed from sessionStorage (date-keyed, expires midnight) to localStorage key 't2s_uat_sbl_closed_v2' (per-post-id: {postId:"YYYY-MM-DD"}); restore IIFE on page load drops entries older than first of T-2 months (e.g. in Aug: entries before Jun 1 cleaned); on SL-breach detection: post.id + ISO date saved to localStorage — persists across page refreshes, app restarts, and days. (2) getWeightedExitPrice closePrice fallback: Option B — if VM [CLOSEPRICE:X] is worse than revised premium SL (BUY: closePrice<sl; SELL: closePrice>sl; guard: sl<5000 excludes spot SLs) → use opts.sl as exit (VM missed posting SL hit); otherwise use closePrice as-is. (3) getExitLegs closePrice fallback: same Option B guard — floors leg price at SL when VM close price crossed revised SL. Rollback: revert restore IIFE back to sessionStorage block; revert isTradeFullyClosed save to sessionStorage; revert getWeightedExitPrice fallback to bare opts.closePrice; revert getExitLegs fallback to bare opts.closePrice. -->
 <!-- T2S-UAT-20260814-005 | uat.html: Two-path exit price architecture — reverts closePrice SL floor (T2S-UAT-20260814-004 Fix 1); implements clean split: Path A (SL breach confirmed via _sblAutoClosedPostIds) → closePrice passed as null to getWeightedExitPrice/getExitLegs → SL used as exit, VM close price ignored; Path B (SL not breached) → closePrice passed as-is → VM close price is the exit. Changes: (1) getWeightedExitPrice closePrice fallback reverted to bare opts.closePrice (SL floor removed). (2) getExitLegs closePrice fallback reverted to bare opts.closePrice leg. (3) _isSlBreachClosed3/_isSlBreachClosed25/_isSlBreachPerf added at 3 call sites; closePrice arg changed to `_isSlBreach ? null : _closePrice`. Rollback: remove _isSlBreach* vars and revert closePrice args to bare _closePrice*; re-add SL floor block to getWeightedExitPrice + getExitLegs fallbacks. -->
-<!-- T2S-UAT-20260814-004 | uat.html: closePrice SL floor + Set persistence + Cost SL breach — (1) getWeightedExitPrice fallback block: opts.closePrice now applies same SL floor as main loop — corrupted/expired ≤0.10 values nulled; BUY: Math.max(closePrice,sl); SELL: Math.min(closePrice,sl); if rawCp is null, falls to opts.sl; guard: opts.sl<5000 (premium SLs only). (2) getExitLegs fallback block: same floor + guard applied to breakdown leg price. (3) _sblAutoClosedPostIds persistence: restore IIFE added after _tradeTargetHits (reads sessionStorage 't2s_sbl_closed' with IST date key on page load); Set.add block in isTradeFullyClosed now also writes to sessionStorage after each add — survives page refresh within same trading day. (4) isTradeFullyClosed SL-breach block: extractTradeAlertFields moved before _slNum declaration; _slNum now resolves Cost SL trades via getCurrentSL==='Cost (No Loss)' → uses _f.entry as the SL level (same pattern as _slResolved3 in card rendering) — cost SL trades now auto-close intra-day when CMP falls below entry. Impact: Today CE exit shows ₹188 (0pts); 24400 PE shows ₹142.50 (+19.5pts); 24600 CE shows ₹152 (-20pts). Rollback: revert getWeightedExitPrice fallback to bare opts.closePrice*; revert getExitLegs fallback to bare opts.closePrice leg; remove restore IIFE + revert Set.add to single line; revert isTradeFullyClosed block to original _slNum=getLastSLNumeric + original _f position. -->
+<!-- T2S-UAT-20260814-004 | uat.html: closePrice SL floor + Set persistence + Cost SL breach — (1) getWeightedExitPrice fallback block: opts.closePrice now applies same SL floor as main loop — corrupted/expired ≤0.10 values nulled; BUY: Math.max(closePrice,sl); SELL: Math.min(closePrice,sl); if rawCp is null, falls to opts.sl; guard: opts.sl<5000 (premium SLs only). (2) getExitLegs fallback block: same floor + guard applied to breakdown leg price. (3) _sblAutoClosedPostIds persistence: restore IIFE added after _tradeTargetHits (reads sessionStorage 't2s_uat_sbl_closed' with IST date key on page load); Set.add block in isTradeFullyClosed now also writes to sessionStorage after each add — survives page refresh within same trading day. (4) isTradeFullyClosed SL-breach block: extractTradeAlertFields moved before _slNum declaration; _slNum now resolves Cost SL trades via getCurrentSL==='Cost (No Loss)' → uses _f.entry as the SL level (same pattern as _slResolved3 in card rendering) — cost SL trades now auto-close intra-day when CMP falls below entry. Impact: Today CE exit shows ₹188 (0pts); 24400 PE shows ₹142.50 (+19.5pts); 24600 CE shows ₹152 (-20pts). Rollback: revert getWeightedExitPrice fallback to bare opts.closePrice*; revert getExitLegs fallback to bare opts.closePrice leg; remove restore IIFE + revert Set.add to single line; revert isTradeFullyClosed block to original _slNum=getLastSLNumeric + original _f position. -->
 <!-- T2S-UAT-20260814-003 | uat.html: FSM hardening — (1) Corrupt tick guard: updateTradeCMPs forEach guards changed from ltp>0 to !isNaN(ltp)&&ltp>0.10 across all 4 usage points (data-live-cmp, data-live-low, data-live-high, data-pl-badge) — sub-₹0.10 and NaN ticks discarded at entry before any display or peak tracking update. (2) FSM terminal guard: _sblAutoClosedPostIds Set added (global); isTradeFullyClosed checks Set first (returns true immediately on match); when SL-breach block fires and returns true, post.id is added to Set — prevents state resurrection if LTP bounces back above SL before next card rebuild. (3) Target once-latch: t1Hit/t2Hit/t3Hit fields added to parseFollowUpContent return object; regex patterns detect "T1 hit / T2 hit / T3 hit / target 1 hit" variants; _tradeTargetHits Map (global) accumulates hits per post.id — getTradeTargetHits(postId,replies) helper applies latches and returns current state; hits are never reset to false once set. Rollback: (1) revert 4 forEach guards back to ltp>0 / ltp<=0; (2) remove _sblAutoClosedPostIds Set + remove Set.has check at top of isTradeFullyClosed + remove Set.add line from SL-breach block; (3) remove t1Hit/t2Hit/t3Hit from r object init + remove 3 target-hit regex lines before return r + remove _tradeTargetHits var + remove getTradeTargetHits function. -->
 <!-- T2S-UAT-20260814-002 | uat.html: SL floor — remove keyword-check from slippage fix in getWeightedExitPrice + getExitLegs. Rule: remaining qty exits at revised SL (floor) or market close; any exit leg priced below revised premium SL (BUY) or above it (SELL) must be shown at SL price regardless of whether admin typed "SL hit/triggered/breached". Root cause: NIFTY 24400 PE 12 Aug — 50% T1 at ₹162 correct, remaining 50% actual exit was ₹81.65 (below Cost SL ₹123) but admin follow-up said "exited at cost" without "SL hit" keywords, so _slRe.test() returned false and 81.65 passed through → effective exit ₹121.83 / -1 pt shown instead of ₹142.50 / +20 pts. Same class of bug as NIFTY 24600 CE 5 Aug (exit ₹0.05 below SL ₹152). Fix: (1) remove _slRe declaration + _slRe.test() from both price-floor conditions; (2) extend fp.isFullExit check to (fp.isFullExit||fp.exitPct) so partial-exit legs below SL are also floored. Guard: opts.sl<5000 (premium SLs only, excludes spot/index SLs). Exits priced ABOVE SL are unaffected. Rollback: restore `const _slRe = /\bsl\b.{0,20}...etc/i;` and add `&& _slRe.test(r.content||'')` + revert `(fp.isFullExit||fp.exitPct)` back to `fp.isFullExit` in both getWeightedExitPrice and getExitLegs. -->
 <!-- T2S-UAT-20260814-001 | uat.html: Cost SL partial-exit floor fix — 2 bugs: (1) Section 3 _slForExit3: was getLastSLNumeric(postReplies) which returns null for Cost SL trades (getLastSLNumeric skips 'cost' entries). null _slForExit3 caused _effectiveExitPrice to take the latestCmp bypass instead of exitPrice (=142.50 from SL fallback), and maxPnlPts3 to use the adjusted-entry+latestCmp formula instead of _effectiveExitPrice. Fix: _slForExit3 = _slResolved3 — already resolved Cost SL to entry price (e.g. 123), so guard !(123 && 123<5000)=false correctly blocks the latestCmp bypass. (2) fetchPerformance adjusted-entry guard: the `if (_cumExitPerf>0 && <100 && latestCmpPerf)` block had no SL guard. Fired for all partial-exit closed trades incl. Cost SL — used latestCmpPerf (e.g. 81.65) in adjusted-entry formula instead of exitPricePerf (142.50). Fix: add !(_slResolvedPerf && _slResolvedPerf<5000) guard — matches Section 3 pattern. When _slResolvedPerf=123 (Cost), condition short-circuits to else-if branch: maxPrice=exitPricePerf=142.50 → pnlPts=+20. Section 2.5 unaffected (uses exitPrice25 directly, no _slForExit bypass). Rollback: revert _slForExit3 to getLastSLNumeric(postReplies); remove &&!(_slResolvedPerf&&_slResolvedPerf<5000) from fetchPerformance if-guard. -->
@@ -80,9 +83,9 @@
     (function(){
       // UAT: skip auth redirect when opening as a local file (file:// protocol)
       if (window.location.protocol === 'file:') return;
-      var mode=localStorage.getItem('t2s_mode');
-      var mid=localStorage.getItem('t2s_member_id');
-      var last=parseInt(localStorage.getItem('t2s_last_login')||'0');
+      var mode=localStorage.getItem('t2s_uat_mode');
+      var mid=localStorage.getItem('t2s_uat_member_id');
+      var last=parseInt(localStorage.getItem('t2s_uat_last_login')||'0');
       if(mode!=='free'&&(!mid||(Date.now()-last>=86400000))){
         window.location.replace('login.html');
       }
@@ -92,7 +95,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Trade2Spend">
-    <link rel="preconnect" href="https://keuzqxoxtlozlqjjjqvr.supabase.co">
+    <link rel="preconnect" href="https://ivjyadnspyobzgbdoajj.supabase.co">
     <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="logo.png">
@@ -484,7 +487,8 @@
 
 <div class="app-container">
     <!-- STICKY HEADER -->
-    <div id="header-wrapper" class="sticky-header">
+    <div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px;letter-spacing:0.05em;">UAT ENVIRONMENT — NOT PRODUCTION</div>
+    <div id="header-wrapper" class="sticky-header" style="margin-top:24px;">
         <div class="header-top">
             <div class="header-brand">
                 <img src="logo.png" alt="Trade2Spend Logo" class="logo-img">
@@ -501,7 +505,7 @@
                     </div>
                     <button id="admin-reauth-btn" onclick="showTotpModal()" title="Re-authenticate Kotak" style="display:none;background:none;border:none;font-size:0.72rem;font-weight:700;color:#d97706;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">🔑 Kotak</button>
                     <span id="member-tier-chip" style="display:none;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;"></span>
-                    <script>(function(){var mid=localStorage.getItem('t2s_member_id');var m=localStorage.getItem('t2s_mode');var c=document.getElementById('member-tier-chip');if(!c||!mid)return;if(m==='paid'){c.textContent='PAID';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';}else{c.textContent='FREE';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';}})()</script>
+                    <script>(function(){var mid=localStorage.getItem('t2s_uat_member_id');var m=localStorage.getItem('t2s_uat_mode');var c=document.getElementById('member-tier-chip');if(!c||!mid)return;if(m==='paid'){c.textContent='PAID';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';}else{c.textContent='FREE';c.style.cssText='display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(74,42,120,0.1);color:#4a2a78;border:1px solid rgba(74,42,120,0.25);';}})()</script>
                     <button id="notif-bell-btn" onclick="enableNotifications()" title="Enable notifications" style="display:inline-block;background:none;border:none;font-size:1.15rem;cursor:pointer;padding:0 2px;line-height:1;color:#4a2a78;position:relative;">🔔<span style="position:absolute;top:-1px;right:0px;width:7px;height:7px;background:#FF6F00;border-radius:50%;display:block;" id="notif-bell-dot"></span></button>
                     <button onclick="logout()" style="background:none;border:none;font-size:0.72rem;font-weight:700;color:#4a2a78;cursor:pointer;font-family:inherit;padding:0;letter-spacing:0.02em;">Logout</button>
                 </div>
@@ -808,20 +812,23 @@
 <!-- Free Access Request Form -->
 <div class="overlay" id="accessRequestOverlay" style="display:none;z-index:10002;" onclick="if(event.target.id==='accessRequestOverlay')closeRequestModal()">
   <div class="popup" style="max-width:360px;">
-    <div class="close-btn" onclick="closeRequestModal()">✕</div>
-    <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0 0 16px;">Apply for Free Access</h3>
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="_faBackBtn()" style="background:none;border:none;cursor:pointer;padding:4px 8px 4px 0;font-size:1.1rem;color:var(--primary);font-weight:700;line-height:1;">← Back</button>
+      <h3 style="font-size:1.05rem;font-weight:800;color:var(--primary);margin:0;flex:1;">Apply for Free Access</h3>
+      <div class="close-btn" onclick="closeRequestModal()" style="position:static;margin:0;">✕</div>
+    </div>
     <div id="fa-mobile-section" style="margin-bottom:12px;">
       <div style="background:#f0f4ff;border-radius:8px;padding:8px 12px;text-align:left;">
         <span style="font-size:0.72rem;color:var(--muted);">Registered mobile: </span>
         <span id="fa-mobile-display" style="font-size:0.78rem;font-weight:700;color:var(--primary);">—</span>
       </div>
     </div>
-    <div style="margin-bottom:14px;">
+    <div id="fa-name-row" style="margin-bottom:14px;">
       <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Your Name <span style="color:#dc2626;">*</span></label>
       <input id="fa-name-input" type="text" placeholder="Enter your full name" maxlength="60"
         style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:0.88rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
     </div>
-    <div style="background:#fff5f5;border:2px solid #dc2626;border-radius:10px;padding:12px;margin-bottom:14px;">
+    <div id="fa-consent-row" style="background:#fff5f5;border:2px solid #dc2626;border-radius:10px;padding:12px;margin-bottom:14px;">
       <p style="font-size:0.72rem;font-weight:800;color:#dc2626;margin:0 0 8px;text-align:left;">⚠️ MANDATORY DISCLAIMER — READ CAREFULLY</p>
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
         <input type="checkbox" id="fa-consent-check" onchange="_faCheckEnable()" style="margin-top:3px;flex-shrink:0;width:18px;height:18px;accent-color:#dc2626;" />
@@ -831,7 +838,32 @@
     <button id="fa-submit-btn" onclick="_submitAccessRequest()" disabled
       style="background:var(--primary);color:white;border:none;border-radius:12px;padding:12px 20px;font-size:0.9rem;font-weight:700;cursor:pointer;width:100%;font-family:inherit;opacity:0.5;transition:opacity 0.2s;">Submit Request →</button>
     <div id="fa-submit-msg" style="display:none;margin-top:10px;font-size:0.8rem;text-align:center;"></div>
-    <p style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is permanently logged for compliance. Not investment advice.</p>
+    <p id="fa-compliance-note" style="font-size:0.68rem;color:#a8a29e;margin-top:10px;text-align:center;">Your consent is permanently logged for compliance. Not investment advice.</p>
+    <!-- Inline PIN entry — shown when registered member mobile detected -->
+    <div id="fa-pin-section" style="display:none;text-align:center;padding-top:4px;">
+      <p id="fa-pin-label" style="font-size:0.88rem;font-weight:700;color:#4a2a78;margin:0 0 18px;">Enter your PIN to continue</p>
+      <div style="display:flex;gap:16px;justify-content:center;margin-bottom:22px;">
+        <div id="fa-d0" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+        <div id="fa-d1" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+        <div id="fa-d2" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+        <div id="fa-d3" style="width:15px;height:15px;border-radius:50%;background:#f3f0f8;border:2px solid #d8ceed;transition:all .2s;"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;max-width:240px;margin:0 auto 12px;">
+        <button onclick="_faPinKey('1')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">1</button>
+        <button onclick="_faPinKey('2')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">2</button>
+        <button onclick="_faPinKey('3')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">3</button>
+        <button onclick="_faPinKey('4')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">4</button>
+        <button onclick="_faPinKey('5')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">5</button>
+        <button onclick="_faPinKey('6')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">6</button>
+        <button onclick="_faPinKey('7')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">7</button>
+        <button onclick="_faPinKey('8')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">8</button>
+        <button onclick="_faPinKey('9')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">9</button>
+        <button style="visibility:hidden;height:52px;"></button>
+        <button onclick="_faPinKey('0')" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#1a2030;font-size:20px;font-weight:600;cursor:pointer;font-family:inherit;">0</button>
+        <button onclick="_faPinDel()" style="height:52px;border-radius:12px;background:#f9f8fc;border:1.5px solid #ede8f5;color:#9ca3af;font-size:16px;cursor:pointer;font-family:inherit;">⌫</button>
+      </div>
+      <p id="fa-pin-err" style="font-size:0.75rem;color:#dc2626;min-height:16px;margin:0 0 8px;"></p>
+    </div>
   </div>
 </div>
 
@@ -847,7 +879,7 @@
     let _lastOptionHighsPostIds = null;  // postId map from VM — gates session highs per trade post
     let _sessionOptionLows = {}; // session low per post.id — for SELL trade cards (data-live-low)
     let _sessionOptionHighs = {}; // session high per post.id — for BUY trade cards (data-live-high)
-    (function(){ try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); const _p=JSON.parse(sessionStorage.getItem('t2s_peaks')||'null'); if(_p&&_p.date===_d){_sessionOptionHighs=_p.highs||{};_sessionOptionLows=_p.lows||{};} } catch(_e){} })();
+    (function(){ try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); const _p=JSON.parse(sessionStorage.getItem('t2s_uat_peaks')||'null'); if(_p&&_p.date===_d){_sessionOptionHighs=_p.highs||{};_sessionOptionLows=_p.lows||{};} } catch(_e){} })();
     const _cmpPrevPrices = {}; // previous LTP per key — used to detect up/down tick
     const _cmpLastDir = {};    // last known direction per key — persists across DOM rebuilds
     let _advDecOpen   = null;      // null | 'advancing' | 'declining' — adv/dec expand state
@@ -861,19 +893,19 @@
         try {
             const _now = new Date();
             const _cutoff = new Date(_now.getFullYear(), _now.getMonth() - 2, 1); // first of T-2 months
-            const _stored = JSON.parse(localStorage.getItem('t2s_sbl_closed_v2')||'{}');
+            const _stored = JSON.parse(localStorage.getItem('t2s_uat_sbl_closed_v2')||'{}');
             const _cleaned = {};
             Object.entries(_stored).forEach(([id, dateStr]) => {
                 if (new Date(dateStr) >= _cutoff) { _cleaned[id] = dateStr; _sblAutoClosedPostIds.add(id); }
             });
-            localStorage.setItem('t2s_sbl_closed_v2', JSON.stringify(_cleaned));
+            localStorage.setItem('t2s_uat_sbl_closed_v2', JSON.stringify(_cleaned));
         } catch(_e) {}
     })();
     const _triggeredPostIds = new Set(); // FSM: CMP-auto-triggered post IDs — one-way latch, never reverts on LTP dip
     (function(){
         try {
             const _d = new Date().toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata'});
-            const _t = JSON.parse(sessionStorage.getItem('t2s_triggered')||'null');
+            const _t = JSON.parse(sessionStorage.getItem('t2s_uat_triggered')||'null');
             if (_t && _t.date === _d) (_t.ids||[]).forEach(function(id){ _triggeredPostIds.add(id); });
         } catch(_e) {}
     })();
@@ -908,7 +940,7 @@
     }
     async function fetchLikes(postIds, postsArr) {
         if (!postIds || !postIds.length) return;
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         try {
             const ids = postIds.join(',');
             const rows = await sbFetch(`post_shares?post_id=in.(${ids})&platform=eq._like&select=post_id,member_id`, { method: 'GET' });
@@ -950,7 +982,7 @@
         else          { _myLikes.add(postId);    _likeCounts[postId] = (_likeCounts[postId]||0) + 1; }
         if (btnEl) _applyLikeState(btnEl, postId);
         document.querySelectorAll(`[data-like-btn="${postId}"]`).forEach(b => { if (b !== btnEl) _applyLikeState(b, postId); });
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId) return;
         try {
             if (wasLiked) await sbFetch(`post_shares?post_id=eq.${postId}&member_id=eq.${memberId}&platform=eq._like`, { method: 'DELETE' });
@@ -1053,7 +1085,7 @@
         el.classList.add('active');
         document.getElementById(tabId).classList.add('active');
         document.querySelector('.app-container').scrollTo({ top: 0, behavior: 'smooth' });
-        localStorage.setItem('t2s_last_tab', tabId);
+        localStorage.setItem('t2s_uat_last_tab', tabId);
         if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
         if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; } // T2S-PROD-20260715-009
         if (tabId === 'updates') {
@@ -1106,7 +1138,7 @@
     async function _populateFreeAccessCTA() {
         const cta = document.getElementById('popup-free-access-cta');
         if (!cta) return;
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId) {
             try {
                 const flags = await sbFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' });
@@ -1161,33 +1193,187 @@
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
     }
 
+    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0, _faPinMode = 'verify', _faPinSetupFirst = '', _faPhase = 'mobile';
+    // Single source of truth for modal visibility. Calling this is the ONLY way to change what's shown.
+    function _faRenderPhase(phase) {
+        _faPhase = phase;
+        const s = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; };
+        s('fa-name-row',        phase === 'form');
+        s('fa-consent-row',     phase === 'form');
+        s('fa-submit-btn',      phase === 'form');
+        s('fa-compliance-note', phase === 'form');
+        s('fa-pin-section',     phase === 'pin');
+        const ms = document.getElementById('fa-mobile-section');
+        if (!ms) return;
+        if (phase === 'mobile') {
+            ms.style.display = ''; ms.style.marginBottom = '12px';
+            ms.innerHTML = `
+                <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Mobile Number <span style="color:#dc2626;">*</span></label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
+                    <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
+                        oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable()"
+                        onblur="_faMobileBlur()"
+                        style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
+                </div>
+                <div id="fa-mobile-hint" style="font-size:0.76rem;margin-top:6px;min-height:16px;"></div>`;
+        } else if (phase === 'pin') {
+            ms.style.display = 'none';
+        } else if (phase === 'form') {
+            ms.style.display = ''; // keep the input that's already there from mobile phase
+        }
+    }
+    async function _faHashPin(pin) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + 'T2S_SALT'));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+    function _faGetDeviceId() {
+        let id = localStorage.getItem('t2s_uat_device_id');
+        if (!id) { const b = crypto.getRandomValues(new Uint8Array(12)); id = 'dev_' + Array.from(b, x => x.toString(16).padStart(2,'0')).join(''); localStorage.setItem('t2s_uat_device_id', id); }
+        return id;
+    }
+    function _faUpdateDots(buf) {
+        for (let i = 0; i < 4; i++) { const d = document.getElementById('fa-d' + i); if (!d) return; d.style.background = i < buf.length ? '#4a2a78' : '#f3f0f8'; d.style.borderColor = i < buf.length ? '#4a2a78' : '#d8ceed'; }
+    }
+    function _faPinKey(k) {
+        if (_faPinBuffer.length >= 4) return;
+        _faPinBuffer += k; _faUpdateDots(_faPinBuffer);
+        if (_faPinBuffer.length === 4) {
+            if (_faPinMode === 'setup_1') setTimeout(_faSetupPin1, 120);
+            else if (_faPinMode === 'setup_2') setTimeout(_faSetupPin2, 120);
+            else setTimeout(_faVerifyPin, 120);
+        }
+    }
+    function _faPinDel() { _faPinBuffer = _faPinBuffer.slice(0,-1); _faUpdateDots(_faPinBuffer); document.getElementById('fa-pin-err').textContent = ''; }
+    async function _faVerifyPin() {
+        if (!_faPendingMember) return;
+        const hash = await _faHashPin(_faPinBuffer);
+        if (_faPendingMember.pin_hash === hash) {
+            const did = _faGetDeviceId();
+            try {
+                const ex = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`, { method:'GET' });
+                if (ex && ex.length > 0) {
+                    await sbFetch(`sessions?id=eq.${ex[0].id}`, { method:'PATCH', body: JSON.stringify({ last_active: new Date().toISOString(), failed_attempts_today: 0, locked_until: null }) });
+                } else {
+                    const all = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true&select=id`, { method:'GET' });
+                    if (all && all.length >= 2) { document.getElementById('fa-pin-err').textContent = 'Maximum concurrent login limit reached. Log out from another device first.'; _faPinBuffer = ''; _faUpdateDots(''); return; }
+                    await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
+                }
+            } catch(e) {}
+            localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
+            localStorage.setItem('t2s_uat_mode', 'paid');
+            localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+            closeRequestModal();
+            window.location.reload();
+        } else {
+            _faPinAttempts++;
+            _faPinBuffer = ''; _faUpdateDots('');
+            const rem = 3 - _faPinAttempts;
+            if (rem <= 0) {
+                document.getElementById('fa-pin-err').textContent = 'Too many attempts. Contact @tusharview to unlock.';
+                document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
+            } else {
+                document.getElementById('fa-pin-err').textContent = `Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;
+            }
+        }
+    }
+    function _faShowPinSection(member, label) {
+        _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify';
+        _faUpdateDots('');
+        document.getElementById('fa-pin-err').textContent = '';
+        document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = label || 'Enter your PIN to continue';
+        _faRenderPhase('pin');
+    }
+    function _faShowPinSetup(member) {
+        _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'setup_1';
+        _faUpdateDots('');
+        document.getElementById('fa-pin-err').textContent = '';
+        document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Create a 4-digit PIN';
+        _faRenderPhase('pin');
+    }
+    function _faSetupPin1() {
+        _faPinSetupFirst = _faPinBuffer; _faPinBuffer = ''; _faUpdateDots('');
+        document.getElementById('fa-pin-err').textContent = '';
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Confirm your PIN';
+        _faPinMode = 'setup_2';
+    }
+    async function _faSetupPin2() {
+        if (_faPinBuffer !== _faPinSetupFirst) {
+            document.getElementById('fa-pin-err').textContent = 'PINs do not match. Try again.';
+            _faPinBuffer = ''; _faPinSetupFirst = ''; _faUpdateDots('');
+            const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Create a 4-digit PIN';
+            _faPinMode = 'setup_1'; return;
+        }
+        const hash = await _faHashPin(_faPinBuffer);
+        try {
+            await sbFetch(`members?id=eq.${_faPendingMember.id}`, { method:'PATCH', body: JSON.stringify({ pin_hash: hash }) });
+            const did = _faGetDeviceId();
+            await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
+            localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
+            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier || 'free');
+            localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+            closeRequestModal();
+            window.location.reload();
+        } catch(e) {
+            document.getElementById('fa-pin-err').textContent = 'Error saving PIN. Try again.';
+            _faPinBuffer = ''; _faUpdateDots('');
+        }
+    }
+    function _faChangeMobile() {
+        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'verify';
+        document.getElementById('fa-pin-err').textContent = '';
+        _faRenderPhase('mobile'); // shows ONLY the mobile input; hides pin + form
+    }
+    function _faBackBtn() {
+        if (_faPhase === 'pin' || _faPhase === 'form') { _faRenderPhase('mobile'); _faPendingMember = null; _faPinBuffer = ''; }
+        else { closeRequestModal(); showGoldenOpportunityScreen(); }
+    }
+
     async function _faMobileBlur() {
         const input = document.getElementById('fa-mobile-input');
         const hint = document.getElementById('fa-mobile-hint');
         const mob = input?.value.trim() || '';
-        if (mob.length !== 10) { if (hint) hint.textContent = ''; return; }
+        if (mob.length !== 10 || !/^[6-9]\d{9}$/.test(mob)) { if (hint) { hint.style.color='#dc2626'; hint.textContent = mob.length === 10 ? 'Please enter a valid Indian mobile number.' : ''; } return; }
         if (hint) { hint.style.color = '#9ca3af'; hint.textContent = 'Checking…'; }
         try {
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
-                const { id: mid, tier } = members[0];
+                const { id: mid, tier, status } = members[0];
+                // Disabled account — block immediately
+                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @tusharview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
+                // Fetch full member record including pin_hash for inline PIN verification
+                const fullMember = await sbFetch(`members?id=eq.${mid}&select=id,tier,status,pin_hash`, { method:'GET' });
+                const member = (fullMember && fullMember[0]) ? fullMember[0] : members[0];
+                // No PIN set yet — inline PIN setup
+                if (!member.pin_hash) {
+                    hint.style.color = '#4a2a78';
+                    hint.textContent = 'First time here — set up your PIN below.';
+                    _faShowPinSetup(member); // calls _faRenderPhase('pin') internally
+                    input._blocked = true; _faCheckEnable(); return;
+                }
                 if (tier === 'paid') {
-                    hint.style.color = '#dc2626';
-                    hint.textContent = 'You\'re already a paid member. Please log in instead.';
+                    hint.style.color = '#4a2a78';
+                    hint.textContent = 'Paid member — enter your PIN below.';
+                    _faShowPinSection(member, 'Enter your PIN to access your account'); // calls _faRenderPhase('pin')
                 } else {
                     const reqs = await sbFetch(`access_requests?member_id=eq.${mid}&status=eq.pending&limit=1&select=id`, { method: 'GET' });
                     if (reqs && reqs[0]) {
                         hint.style.color = '#d97706';
                         hint.textContent = '⏳ You already have a pending request for this number.';
                     } else {
-                        hint.style.color = '#dc2626';
-                        hint.textContent = 'This number is registered. Please log in instead.';
+                        hint.style.color = '#4a2a78';
+                        hint.textContent = 'Number found — enter your PIN below.';
+                        _faShowPinSection(member, 'Enter your PIN to continue'); // calls _faRenderPhase('pin')
                     }
                 }
                 input._blocked = true;
             } else {
-                if (hint) hint.textContent = '';
+                // Not in DB — show registration form so they can submit a request
+                if (hint) { hint.style.color = '#9ca3af'; hint.textContent = ''; }
                 input._blocked = false;
+                _faRenderPhase('form');
             }
         } catch(e) { if (hint) hint.textContent = ''; input._blocked = false; }
         _faCheckEnable();
@@ -1195,43 +1381,16 @@
 
     function showAccessRequestModal() {
         closeGoldenScreen();
+        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify'; _faPinSetupFirst = '';
+        _faUpdateDots('');
         const nameInput = document.getElementById('fa-name-input');
-        const cached = window._cachedMember;
-        if (nameInput && cached && cached.name) nameInput.value = cached.name;
-        const cb = document.getElementById('fa-consent-check');
+        if (nameInput) { nameInput.value = ''; nameInput.oninput = _faCheckEnable; }
+        const cb = document.getElementById('fa-consent-check'); if (cb) cb.checked = false;
         const btn = document.getElementById('fa-submit-btn');
-        if (cb) cb.checked = false;
-        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Submit Request →'; btn.style.display = ''; }
-        const msg = document.getElementById('fa-submit-msg');
-        if (msg) { msg.style.display = 'none'; msg.innerHTML = ''; }
-        if (nameInput) nameInput.oninput = _faCheckEnable;
-        // Populate mobile — input for anonymous users, static display for logged-in
-        const memberId = localStorage.getItem('t2s_member_id');
-        const mobileSection = document.getElementById('fa-mobile-section');
-        if (!memberId && mobileSection) {
-            mobileSection.innerHTML = `
-                <label style="font-size:0.78rem;font-weight:700;color:var(--text);display:block;margin-bottom:5px;">Mobile Number <span style="color:#dc2626;">*</span></label>
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
-                    <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
-                        oninput="this.value=this.value.replace(/\\D/g,'');_faCheckEnable()"
-                        onblur="_faMobileBlur()"
-                        style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
-                </div>
-                <div id="fa-mobile-hint" style="font-size:0.76rem;margin-top:6px;min-height:16px;"></div>`;
-        } else {
-            const mobileDisplay = document.getElementById('fa-mobile-display');
-            if (mobileDisplay) {
-                const storedMobile = localStorage.getItem('t2s_mobile');
-                if (storedMobile) {
-                    mobileDisplay.textContent = storedMobile;
-                } else if (memberId) {
-                    sbFetch(`members?id=eq.${memberId}&select=mobile`, { method: 'GET' })
-                        .then(d => { if (d && d[0] && d[0].mobile) mobileDisplay.textContent = d[0].mobile; })
-                        .catch(() => {});
-                }
-            }
-        }
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Submit Request →'; }
+        const msg = document.getElementById('fa-submit-msg'); if (msg) { msg.style.display = 'none'; msg.innerHTML = ''; }
+        const errEl = document.getElementById('fa-pin-err'); if (errEl) errEl.textContent = '';
+        _faRenderPhase('mobile'); // always start at mobile input — single source of truth
         document.getElementById('accessRequestOverlay').style.display = 'flex';
     }
     function closeRequestModal() {
@@ -1241,7 +1400,7 @@
     }
 
     async function _submitAccessRequest() {
-        let resolvedMemberId = localStorage.getItem('t2s_member_id');
+        let resolvedMemberId = localStorage.getItem('t2s_uat_member_id');
         const name = document.getElementById('fa-name-input')?.value.trim() || '';
         const consent = document.getElementById('fa-consent-check')?.checked;
         const btn = document.getElementById('fa-submit-btn');
@@ -1254,8 +1413,9 @@
             // Anonymous user — look up member by entered mobile number only (name not used for dedup)
             const mobileInput = document.getElementById('fa-mobile-input');
             const mob = mobileInput?.value.trim() || '';
-            if (mob.length !== 10) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please enter a valid 10-digit mobile number.'; }
+            if (mob.length !== 10 || !/^[6-9]\d{9}$/.test(mob)) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please enter a valid 10-digit Indian mobile number (must start with 6, 7, 8 or 9).'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                 return;
             }
             if (btn) { btn.disabled=true; btn.textContent='Verifying...'; btn.style.opacity='0.7'; }
@@ -1276,22 +1436,55 @@
         const consentText = "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
         if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
         try {
-            const deviceId = localStorage.getItem('t2s_device_id') || 'web';
-            const r = await fetch(`${_VM}/submit-access-request`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ memberId: resolvedMemberId, name, deviceId, deviceType: /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop', consentText })
-            });
-            const d = await r.json();
-            if (d.ok) {
-                if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request submitted! You\'ll be notified once it is reviewed.'; }
-                if (btn) btn.style.display = 'none';
-                _trackEvent('button_click', { button: 'request_submitted' });
-                setTimeout(closeRequestModal, 3500);
-            } else {
-                if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = d.error || 'Submission failed. Please try again.'; }
-                if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
+            const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
+            const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
+            // Check if this device has been blocked by admin
+            const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=device_id`, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            if (_devBlk && _devBlk.length > 0) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This device has been restricted. Contact @tusharview on Telegram.'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
             }
+            // Rate limit: max 3 access requests per device in 24 hours
+            const _rlSince = new Date(Date.now() - 24 * 3600000).toISOString();
+            const _rlRecent = await sbFetch(`access_requests?device_id=eq.${deviceId}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`, { method: 'GET' });
+            if (_rlRecent && _rlRecent.length >= 3) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Too many requests from this device. Please try again after 24 hours.'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
+            }
+            // UAT: check for existing pending/rejected/blocked request before submitting
+            const existing = await sbFetch(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at`, { method: 'GET' });
+            if (existing && existing.length > 0) {
+                const lr = existing[0];
+                if (lr.status === 'pending') {
+                    if (msg) { msg.style.display='block'; msg.style.color='#d97706'; msg.textContent='Your request is already pending. You will be notified once reviewed.'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    return;
+                }
+                if (lr.status === 'rejected' && lr.last_rejected_at) {
+                    const retryAt = new Date(new Date(lr.last_rejected_at).getTime() + 24 * 3600000);
+                    if (new Date() < retryAt) {
+                        if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please wait 24 hours after rejection before submitting again.'; }
+                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                        return;
+                    }
+                }
+                if (lr.status === 'blocked') {
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Your account is blocked. Contact @tusharview on Telegram.'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    return;
+                }
+            }
+            // UAT: write access request directly to UAT Supabase (bypasses production VM)
+            await sbFetch('access_requests', { method: 'POST', body: JSON.stringify({ member_id: resolvedMemberId, name, consent_text: consentText, device_id: deviceId, device_type: deviceType, consented_at: new Date().toISOString(), status: 'pending' }) });
+            // Write SEBI consent permanently to audit_log (compliance record)
+            const mobile = localStorage.getItem('t2s_uat_mobile') ? '+91' + localStorage.getItem('t2s_uat_mobile') : '';
+            await sbFetch('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: resolvedMemberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
+            if (msg) { msg.style.display = 'block'; msg.style.color = '#059669'; msg.innerHTML = '✅ Request submitted! You\'ll be notified once it is reviewed.'; }
+            if (btn) btn.style.display = 'none';
+            _trackEvent('button_click', { button: 'request_submitted' });
+            setTimeout(closeRequestModal, 3500);
         } catch(e) {
             if (msg) { msg.style.display = 'block'; msg.style.color = '#dc2626'; msg.textContent = 'Network error. Please try again.'; }
             if (btn) { btn.disabled = false; btn.textContent = 'Submit Request →'; btn.style.opacity = '1'; }
@@ -1304,7 +1497,7 @@
     let _currentTab = 'trades';
 
     function _trackEvent(type, data = {}) {
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId) return;
         _analyticsQueue.push({ type, data: { ...data, ts: Date.now() } });
         // Don't save stored queue — flush only in-memory queue
@@ -1319,7 +1512,7 @@
     }
 
     async function _flushAnalytics() {
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId || _analyticsQueue.length === 0) return;
         const events = _analyticsQueue.splice(0, _analyticsQueue.length);
         try {
@@ -1760,7 +1953,7 @@
                 el.textContent = `₹${_sessionOptionHighs[postId].toFixed(2)}`;
             }
         });
-        try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_peaks',JSON.stringify({date:_d,highs:_sessionOptionHighs,lows:_sessionOptionLows})); } catch(_e){}
+        try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_uat_peaks',JSON.stringify({date:_d,highs:_sessionOptionHighs,lows:_sessionOptionLows})); } catch(_e){}
         // Live P&L badge on active triggered trade cards — updates every 5s with CMP
         // Badge threshold adjusts for locked profit from prior partial exits (computePlBadgeAttrs pre-computes breakeven)
         document.querySelectorAll('[data-pl-badge]').forEach(el => {
@@ -1849,7 +2042,7 @@
             document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
             tradesTab.classList.add('active');
             document.getElementById('trades').classList.add('active');
-            localStorage.setItem('t2s_last_tab', 'trades');
+            localStorage.setItem('t2s_uat_last_tab', 'trades');
             if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
             if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
             setTabBadge('trades', 0);
@@ -1881,7 +2074,7 @@
             document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
             updatesTab.classList.add('active');
             document.getElementById('updates').classList.add('active');
-            localStorage.setItem('t2s_last_tab', 'updates');
+            localStorage.setItem('t2s_uat_last_tab', 'updates');
             if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
             if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
             _updatesTabViewed = true;
@@ -1902,10 +2095,10 @@
 
     // ── MARKETS SUMMARY CACHE ────────────────────────────────────────────────────
     function _mqpCacheGet() {
-        try { return JSON.parse(localStorage.getItem('t2s_summary_cache_v2') || '{}'); } catch(e) { return {}; }
+        try { return JSON.parse(localStorage.getItem('t2s_uat_summary_cache_v2') || '{}'); } catch(e) { return {}; }
     }
     function _mqpCachePut(updates) {
-        try { localStorage.setItem('t2s_summary_cache_v2', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
+        try { localStorage.setItem('t2s_uat_summary_cache_v2', JSON.stringify({ ..._mqpCacheGet(), ...updates })); } catch(e) {}
     }
     // Format post timestamp for Markets summary cards — IST-aware, relative labels
     function _mqpFmtTime(iso) {
@@ -2056,7 +2249,7 @@
 
         // Resolve member access level (use cached value if available — avoids extra Supabase round-trip)
         let isAdmin = false, memberTier = 'free';
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         if (window._cachedMember) {
             isAdmin    = window._cachedMember.is_admin === true;
             memberTier = (window._cachedMember.free_access === true) ? 'paid' : (window._cachedMember.tier || 'free');
@@ -2142,7 +2335,7 @@
         // Step 1: Render from cache immediately — instant display, no loading state
         let cachedData = null;
         try {
-            const raw = localStorage.getItem('t2s_market_cache');
+            const raw = localStorage.getItem('t2s_uat_market_cache');
             if (raw) {
                 const { data, ts } = JSON.parse(raw);
                 // Always show any cached data immediately as placeholder (stale-while-revalidate)
@@ -2164,7 +2357,7 @@
                     if (data.expiry) _marketExpiry = data.expiry;
                     if (data.lotSizes) _kotakLotSizes = data.lotSizes;
                     renderMarketUI(data);
-                    localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
+                    localStorage.setItem('t2s_uat_market_cache', JSON.stringify({ data, ts: Date.now() }));
                     return data;
                 }
             } catch {}
@@ -2185,7 +2378,7 @@
             const data = await res.json();
             if (data.expiry) _marketExpiry = data.expiry;
             renderMarketUI(data);
-            localStorage.setItem('t2s_market_cache', JSON.stringify({ data, ts: Date.now() }));
+            localStorage.setItem('t2s_uat_market_cache', JSON.stringify({ data, ts: Date.now() }));
             return data;
         } catch(e) {
             console.error('Market fetch failed', e);
@@ -2222,7 +2415,7 @@
     // --- FETCH TRADES ---
     async function fetchTrades() {
         try {
-            const memberId = localStorage.getItem('t2s_member_id');
+            const memberId = localStorage.getItem('t2s_uat_member_id');
             let isAdmin = false;
             let memberTier = 'free';
             if(memberId) {
@@ -2382,7 +2575,7 @@
 
     async function fetchPerformance() {
         const container = document.getElementById('history-container');
-        const _pc = _cLoad('t2s_perf_state_v2', 5*60*1000);
+        const _pc = _cLoad('t2s_uat_perf_state_v2', 5*60*1000);
         if (_pc) {
             container.innerHTML = _pc.histHtml || '';
             document.getElementById('curr-month-name').innerText = (_pc.currName && !/invalid|undefined|nan/i.test(_pc.currName)) ? _pc.currName : 'CURRENT MONTH';
@@ -2475,8 +2668,8 @@
             });
             // Merge history.json for past months not already in Supabase
             try {
-                let _hj = _cLoad('t2s_hist_json', 24*60*60*1000);
-                if (!_hj) { const _hr=await fetch(DB_URLS.history+'?t='+Date.now()); if(_hr.ok){_hj=await _hr.json();_cSave('t2s_hist_json',_hj);} }
+                let _hj = _cLoad('t2s_uat_hist_json', 24*60*60*1000);
+                if (!_hj) { const _hr=await fetch(DB_URLS.history+'?t='+Date.now()); if(_hr.ok){_hj=await _hr.json();_cSave('t2s_uat_hist_json',_hj);} }
                 if (_hj) {
                     const _ABR = {JAN:'January',FEB:'February',MAR:'March',APR:'April',MAY:'May',JUN:'June',JUL:'July',AUG:'August',SEP:'September',OCT:'October',NOV:'November',DEC:'December'};
                     const _NUM = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
@@ -2546,16 +2739,18 @@
                     </div>`;
             });
             if (months.length === 0) container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">No closed trades yet. Completed trades will appear here.</div>';
-            _cSave('t2s_perf_state_v2', {histHtml:container.innerHTML, currName:document.getElementById('curr-month-name').innerText, currWinrate:document.getElementById('perf-winrate').innerText, currTotal:document.getElementById('perf-total').innerText, currMax:document.getElementById('perf-max').innerText, currDetailHtml:(document.getElementById('curr-month-detail')||{}).innerHTML||''});
+            _cSave('t2s_uat_perf_state_v2', {histHtml:container.innerHTML, currName:document.getElementById('curr-month-name').innerText, currWinrate:document.getElementById('perf-winrate').innerText, currTotal:document.getElementById('perf-total').innerText, currMax:document.getElementById('perf-max').innerText, currDetailHtml:(document.getElementById('curr-month-detail')||{}).innerHTML||''});
         } catch(e) {
             console.error('Performance fetch failed', e);
             container.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Unable to load. Check connection.</div>';
         }
     }
 
-    // --- SUPABASE CONFIG ---
-    const SUPABASE_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
+    // --- SUPABASE CONFIG (UAT) ---
+    // PHASE 1 ISOLATION: points to UAT Supabase project (separate from production).
+    // Replace UAT_REPLACE_ME with the UAT project ref after creating the project.
+    const SUPABASE_URL = 'https://ivjyadnspyobzgbdoajj.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
     const VAPID_PUBLIC_KEY = 'BMVcAP6cf_uh6aCRXruTXZsnFdraj6fI7mRjPWLjhVPGkdGYTGYqxpyipQC0kNfZqVRJ79UOybp4whv-QSlQkxA';
 
     function _urlB64ToUint8(b64) {
@@ -2571,8 +2766,8 @@
       _subscribing = true;
       try {
         if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-        const memberId = localStorage.getItem('t2s_member_id');
-        const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+        const memberId = localStorage.getItem('t2s_uat_member_id');
+        const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
         if (!memberId) return;
         const reg = await navigator.serviceWorker.ready;
         // If DB row was deleted by server (expired 410), force-fresh to get a valid endpoint
@@ -2650,7 +2845,7 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
-                localStorage.removeItem('t2s_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
+                localStorage.removeItem('t2s_uat_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
                 const _rtActiveEl = document.querySelector('.tab.active');
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
@@ -2742,7 +2937,7 @@
 
     let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
     let _localReadCache = {};
-    try { _localReadCache = JSON.parse(localStorage.getItem('t2s_read_cache') || '{}'); } catch(e) {}
+    try { _localReadCache = JSON.parse(localStorage.getItem('t2s_uat_read_cache') || '{}'); } catch(e) {}
     let _updatesTabViewed = false;
     function _cSave(k,v){try{localStorage.setItem(k,JSON.stringify({_t:Date.now(),_v:v}));}catch(e){}}
     function _cLoad(k,ms){try{const x=JSON.parse(localStorage.getItem(k)||'null');if(!x)return null;if(ms&&Date.now()-x._t>ms)return null;return x._v;}catch(e){return null;}}
@@ -2795,7 +2990,7 @@
     }
 
     async function markPostRead(postId) {
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         if(!memberId) return;
         try {
             const existing = await sbFetch(`read_receipts?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'GET' });
@@ -2806,7 +3001,7 @@
                     post_id: postId, member_id: memberId,
                     delivered_at: new Date().toISOString(),
                     opened_at: new Date().toISOString(),
-                    device_id: localStorage.getItem('t2s_device_id') || 'web'
+                    device_id: localStorage.getItem('t2s_uat_device_id') || 'web'
                 })
             });
         } catch(e) {}
@@ -2865,8 +3060,9 @@
                     t1Hit:false, t2Hit:false, t3Hit:false };
         if (!text) return r;
         if (text.includes('[T2S_UNLOCK]')) { r.isAdminUnlock = true; return r; }
-        // Overnight/swing holding
-        if (/hold(?:ing)?\s+(?:for\s+)?(?:next\s+day|tomorrow|overnight|long(?:\s+term)?|positional|swing|marathon|long\s+hold)|(?:positional|swing)\s+trade|overnight\s+position/i.test(text))
+        // Overnight/swing holding — guard against negated phrases like "will not hold overnight"
+        const _negHoldRe = /\b(?:not|won'?t|will\s+not|wont|don'?t|dont|never)\b.{0,25}\bhold(?:ing)?\b.{0,20}\b(?:overnight|next\s+day|tomorrow)\b/i;
+        if (!_negHoldRe.test(text) && /hold(?:ing)?\s+(?:for\s+)?(?:next\s+day|tomorrow|overnight|long(?:\s+term)?|positional|swing|marathon|long\s+hold)|(?:positional|swing)\s+trade|overnight\s+position/i.test(text))
             r.isHolding = true;
         // SL hit / full exit (exclude future tense: "till SL hit", "if SL hit")
         const loNoFuture = lo.replace(/(?:till|until|if|when)\s+(?:the\s+)?(?:sl|stop\s*loss)\s+(?:is\s+)?(?:hit|triggered)/gi,'');
@@ -3034,7 +3230,7 @@
                 if (liveCMP != null && _sellTrigger) {
                     if (post.id) {
                         _triggeredPostIds.add(post.id);
-                        try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_triggered',JSON.stringify({date:_d,ids:[..._triggeredPostIds]})); } catch(_e){}
+                        try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_uat_triggered',JSON.stringify({date:_d,ids:[..._triggeredPostIds]})); } catch(_e){}
                     }
                     return 'triggered';
                 }
@@ -3252,9 +3448,9 @@
                         if (post.id) {
                             _sblAutoClosedPostIds.add(post.id);
                             try {
-                                const _stored = JSON.parse(localStorage.getItem('t2s_sbl_closed_v2')||'{}');
+                                const _stored = JSON.parse(localStorage.getItem('t2s_uat_sbl_closed_v2')||'{}');
                                 _stored[post.id] = new Date().toISOString().slice(0, 10);
-                                localStorage.setItem('t2s_sbl_closed_v2', JSON.stringify(_stored));
+                                localStorage.setItem('t2s_uat_sbl_closed_v2', JSON.stringify(_stored));
                             } catch(_e) {}
                         }
                         return true;
@@ -3445,12 +3641,12 @@
         const container = document.getElementById('trade-alert-container');
         if (!container) return;
         if (!container.dataset.loaded) {
-            const _ac = _cLoad('t2s_alerts_html');
+            const _ac = _cLoad('t2s_uat_alerts_html');
             if (_ac) { container.innerHTML = _ac; container.dataset.loaded = 'cached'; }
             else container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:0.85rem;">Loading...</div>';
         }
 
-        const memberId = localStorage.getItem('t2s_member_id');
+        const memberId = localStorage.getItem('t2s_uat_member_id');
         let isAdmin = false, memberTier = 'free';
         if (memberId) {
             try {
@@ -3498,7 +3694,7 @@
                 } catch(e) {}
             }
             // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
-            const _isCugMember = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            const _isCugMember = isAdmin || localStorage.getItem('t2s_uat_mobile') === '8888888888';
             if (!_isCugMember) tradeParents.splice(0, tradeParents.length, ...tradeParents.filter(p => p.audience !== 'cug_test'));
             const replyMap = {};
             allFollowUps.forEach(r => {
@@ -3509,14 +3705,14 @@
             renderTradeAlerts(tradeParents, replyMap, memberTier, isAdmin);
             tradeParents.map(p => p.id).forEach(id => updateLikeUI(id)); // instantly restore all known like counts after re-render (prevents blink on 30s refresh)
             fetchLikes(tradeParents.map(p => p.id));
-            _cSave('t2s_alerts_html', container.innerHTML);
+            _cSave('t2s_uat_alerts_html', container.innerHTML);
             // Trade Alert tab badge: count today's new trade alerts
             const todayStart = new Date(); todayStart.setHours(0,0,0,0);
             const todayCount = tradeParents.filter(p => new Date(p.sent_at||p.created_at) >= todayStart).length;
             const tradesTabActive = document.querySelector('.tab.active[onclick*="\'trades\'"]');
             if (!tradesTabActive) setTabBadge('trades', todayCount);
         } catch(e) {
-            if (!_cLoad('t2s_alerts_html')) {
+            if (!_cLoad('t2s_uat_alerts_html')) {
                 container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load. Check connection.</div>';
             }
             // If cache exists, cached content is already in the container — leave it intact
@@ -3577,6 +3773,12 @@
             </div>`;
         }
 
+        if (isFreeViewer) {
+            html += `<div onclick="showGoldenOpportunityScreen()" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span style="font-size:0.78rem;font-weight:700;color:#92400e;">🌟 Want early access to alerts?</span>
+                <span style="font-size:0.75rem;color:#b45309;font-weight:600;white-space:nowrap;flex-shrink:0;">Request Access ›</span>
+            </div>`;
+        }
         if (activePosts.length) {
             const premiumPill = isFreeViewer
                 ? `<button onclick="showPopup()" style="background:none;border:1px solid #c4b5fd;border-radius:20px;padding:4px 12px;font-size:0.75rem;font-weight:700;color:var(--primary);cursor:pointer;font-family:inherit;">🔒 Premium Only</button>`
@@ -4452,8 +4654,8 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        // T2S-UAT-20260830-002: key v2→v3 invalidates old 4-post stale cache; stale display removed so loading spinner always shows on first visit.
-        const _uc = _cLoad('t2s_upd_posts_v3', 30 * 60 * 1000);
+        // T2S-UAT-20260830-002: changed key v2→v3 to invalidate old 4-post stale cache. Removed stale-cache display entirely — always show loading then fresh fetch to guarantee all 49 posts appear.
+        const _uc = _cLoad('t2s_uat_upd_posts_v3', 30 * 60 * 1000);
         // Preserve any open compose box across the loading wipe
         let _fudCompose = null;
         const _fudOpenBox = container.querySelector('.admin-compose-box.open');
@@ -4462,13 +4664,13 @@
             const _fudTa  = document.getElementById('reply-text-' + _fudPId);
             _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
         }
-        // Always show loading on first in-session visit; preserve DOM on subsequent visits
+        // Always show loading on first in-session visit; preserve DOM on subsequent visits (no stale data shown)
         if (!_cachedPosts) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
         }
 
         try {
-            const memberId = localStorage.getItem('t2s_member_id');
+            const memberId = localStorage.getItem('t2s_uat_member_id');
             let memberTier = 'free';
             let isAdmin    = false;
 
@@ -4476,17 +4678,17 @@
                 const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status,is_admin`, { method: 'GET' });
                 if(members && Array.isArray(members) && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
-                    memberTier = members[0].tier || localStorage.getItem('t2s_mode') || 'free';
+                    memberTier = members[0].tier || localStorage.getItem('t2s_uat_mode') || 'free';
                     isAdmin    = members[0].is_admin === true;
                     // Use free_access from _cachedMember (populated separately in init, safe if column absent)
                     if (window._cachedMember && window._cachedMember.free_access === true) memberTier = 'paid';
                 } else {
                     // Supabase returned no rows — fall back to login-time stored mode
-                    memberTier = localStorage.getItem('t2s_mode') || 'free';
+                    memberTier = localStorage.getItem('t2s_uat_mode') || 'free';
                 }
             }
 
-            // T2S-UAT-20260830-001: targeted queries — old limit=100 all-types caused 172 follow_ups to crowd out general posts. Now: parents + replies separately.
+            // T2S-UAT-20260829-001: fetch by type — old limit=100 all-types caused follow_up replies to crowd out general posts (172 follow_ups in last 200 posts → only ~8 general visible out of 49 total). Now: two parallel targeted queries.
             const [_updParents, _updReplies] = await Promise.all([
                 sbFetch('posts?is_deleted=eq.false&parent_id=is.null&post_type=in.(general,market_update,banner)&order=sent_at.desc&limit=200', { method: 'GET' }),
                 sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', { method: 'GET' })
@@ -4505,7 +4707,7 @@
                 } catch(e) {}
             }
             // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
-            const _isCugUpd = isAdmin || localStorage.getItem('t2s_mobile') === '8888888888';
+            const _isCugUpd = isAdmin || localStorage.getItem('t2s_uat_mobile') === '8888888888';
             if (!_isCugUpd) posts.splice(0, posts.length, ...posts.filter(p => p.audience !== 'cug_test'));
 
             let readMap = Object.assign({}, _localReadCache);
@@ -4513,11 +4715,11 @@
                 const receipts = await sbFetch(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
                 receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
                 _localReadCache = readMap;
-                try { localStorage.setItem('t2s_read_cache', JSON.stringify(readMap)); } catch(e) {}
+                try { localStorage.setItem('t2s_uat_read_cache', JSON.stringify(readMap)); } catch(e) {}
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            if (posts.length > 0) _cSave('t2s_upd_posts_v3', {posts});
+            if (posts.length > 0) _cSave('t2s_uat_upd_posts_v3', {posts});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
@@ -4758,7 +4960,7 @@
                     }
                 }
             });
-            try { localStorage.setItem('t2s_read_cache', JSON.stringify(_localReadCache)); } catch(e) {}
+            try { localStorage.setItem('t2s_uat_read_cache', JSON.stringify(_localReadCache)); } catch(e) {}
             updateUnreadBadge(0);
         }, 2000);
     }
@@ -4868,7 +5070,7 @@
     function renderLiveTicker(bannerPosts, memberTier, isAdmin) {
         const wrap = document.getElementById('live-ticker-wrap');
         if (!wrap) return;
-        const mobile = localStorage.getItem('t2s_mobile') || '';
+        const mobile = localStorage.getItem('t2s_uat_mobile') || '';
         const isCug = isAdmin || mobile === '8888888888';
         const visible = (bannerPosts || []).filter(function(p) {
             if (p.audience === 'cug_test') return isCug;
@@ -5082,7 +5284,7 @@
     }
 
     function logout(){
-        ['t2s_member_id','t2s_mobile','t2s_last_login','t2s_mode','t2s_lock_until','t2s_last_active'].forEach(k=>localStorage.removeItem(k));
+        ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active'].forEach(k=>localStorage.removeItem(k));
         window.location.href='login.html';
     }
 
@@ -5114,9 +5316,9 @@
 
     // Init — auth gate + session heartbeat
     (async function init() {
-        const mode      = localStorage.getItem('t2s_mode');
-        const memberId  = localStorage.getItem('t2s_member_id');
-        const lastLogin = parseInt(localStorage.getItem('t2s_last_login')||'0');
+        const mode      = localStorage.getItem('t2s_uat_mode');
+        const memberId  = localStorage.getItem('t2s_uat_member_id');
+        const lastLogin = parseInt(localStorage.getItem('t2s_uat_last_login')||'0');
         const SESSION_24H = 24 * 60 * 60 * 1000;
 
         if(mode !== 'free' && !memberId){
@@ -5157,12 +5359,12 @@
             .then(function(bp) {
                 if (bp && bp.length) {
                     var _cm = window._cachedMember || {};
-                    renderLiveTicker(bp, _cm.tier || localStorage.getItem('t2s_mode') || 'free', _cm.is_admin === true);
+                    renderLiveTicker(bp, _cm.tier || localStorage.getItem('t2s_uat_mode') || 'free', _cm.is_admin === true);
                 }
             }).catch(function() {});
         // Active-member tracking: update last_active in Supabase on open + every 5 min (fire-and-forget, never blocks UI)
         if(mode !== 'free' && memberId){
-            const _did = localStorage.getItem('t2s_device_id');
+            const _did = localStorage.getItem('t2s_uat_device_id');
             const _pingLastActive = () => {
                 if(!_did) return;
                 sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
@@ -5175,26 +5377,26 @@
         // Guarantees the FREE/PAID/ADMIN chip is visible on every tab, not just Trade Alert.
         if (!window._cachedMember) {
             // sbFetch failed or mode==='free' — synthesize minimal member object from localStorage
-            _renderMemberChip({ tier: localStorage.getItem('t2s_mode') || 'free', is_admin: false });
+            _renderMemberChip({ tier: localStorage.getItem('t2s_uat_mode') || 'free', is_admin: false });
         } else {
             // Ensure chip is shown even if the call inside try{} was a no-op (defensive)
             _renderMemberChip(window._cachedMember);
         }
         // Idle auto-lock: update last_active on real user interactions
         const IDLE_MS = 30 * 60 * 1000;
-        function markActive(){ localStorage.setItem('t2s_last_active', new Date().toISOString()); }
+        function markActive(){ localStorage.setItem('t2s_uat_last_active', new Date().toISOString()); }
         markActive();
         ['touchstart','click','keypress','scroll'].forEach(ev => document.addEventListener(ev, markActive, { passive:true }));
         // Check every 60s — redirect to login if idle > 30 min
         const _heartbeat = setInterval(() => {
-            const last = new Date(localStorage.getItem('t2s_last_active') || 0).getTime();
+            const last = new Date(localStorage.getItem('t2s_uat_last_active') || 0).getTime();
             if (Date.now() - last > IDLE_MS) { clearInterval(_heartbeat); window.location.href = 'login.html'; }
         }, 60000);
         window.addEventListener('beforeunload', () => clearInterval(_heartbeat));
-        const startTab = localStorage.getItem('t2s_start_tab');
-        const lastTab  = localStorage.getItem('t2s_last_tab');
+        const startTab = localStorage.getItem('t2s_uat_start_tab');
+        const lastTab  = localStorage.getItem('t2s_uat_last_tab');
         const restoreTab = startTab || lastTab;
-        if (startTab) localStorage.removeItem('t2s_start_tab');
+        if (startTab) localStorage.removeItem('t2s_uat_start_tab');
         // Paint Markets summary from cache immediately — eliminates skeleton flash on page load/refresh
         (function() {
             try {
@@ -5285,7 +5487,7 @@
     window.addEventListener('beforeinstallprompt', e => {
       e.preventDefault();
       deferredInstall = e;
-      if(!localStorage.getItem('t2s_install_dismissed')){
+      if(!localStorage.getItem('t2s_uat_install_dismissed')){
         const b = document.getElementById('install-banner');
         if(b) b.style.display = 'flex';
       }
@@ -5299,7 +5501,7 @@
       });
     }
     function dismissInstall(){
-      localStorage.setItem('t2s_install_dismissed','1');
+      localStorage.setItem('t2s_uat_install_dismissed','1');
       const b = document.getElementById('install-banner');
       if(b) b.style.display = 'none';
     }
@@ -5387,8 +5589,8 @@
 
     async function _sendTestPush() {
         try {
-            const memberId = localStorage.getItem('t2s_member_id');
-            const deviceId = localStorage.getItem('t2s_device_id') || 'web';
+            const memberId = localStorage.getItem('t2s_uat_member_id');
+            const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
             if (!memberId) return;
             const res = await fetch('https://api.trade2spend.com/test-push', {
                 method: 'POST',
@@ -5402,9 +5604,9 @@
 
     function _showNotifNudge() {
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
-        if (localStorage.getItem('t2s_notif_nudged') === '1') return;
+        if (localStorage.getItem('t2s_uat_notif_nudged') === '1') return;
         if (document.getElementById('notif-guide-ol')) return;
-        localStorage.setItem('t2s_notif_nudged', '1');
+        localStorage.setItem('t2s_uat_notif_nudged', '1');
         const n = document.createElement('div');
         n.id = '_notif-nudge';
         n.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #4a2a78;border-radius:14px;padding:12px 16px;max-width:320px;width:90%;z-index:8888;box-shadow:0 4px 20px rgba(74,42,120,0.15);display:flex;align-items:center;gap:10px;font-family:inherit;';
@@ -5435,13 +5637,13 @@
     function initNotifGuide() {
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return;
         if (Notification.permission === 'granted') return;
-        if (sessionStorage.getItem('t2s_ng_shown')) return;
-        if (!localStorage.getItem('t2s_member_id')) return;
+        if (sessionStorage.getItem('t2s_uat_ng_shown')) return;
+        if (!localStorage.getItem('t2s_uat_member_id')) return;
         const tourOl = document.getElementById('tour-overlay');
         if (tourOl && tourOl.style.display === 'block') return;
         const bell = document.getElementById('notif-bell-btn');
         if (!bell) return;
-        sessionStorage.setItem('t2s_ng_shown', '1');
+        sessionStorage.setItem('t2s_uat_ng_shown', '1');
         const r = bell.getBoundingClientRect();
         const pad = 8;
         const ol = document.createElement('div');
@@ -5489,8 +5691,8 @@
 
     async function initTour() {
         const forceReplay = new URLSearchParams(location.search).get('tour') === '1';
-        if (!forceReplay && sessionStorage.getItem('t2s_tour_shown')) return;
-        const mid = localStorage.getItem('t2s_member_id');
+        if (!forceReplay && sessionStorage.getItem('t2s_uat_tour_shown')) return;
+        const mid = localStorage.getItem('t2s_uat_member_id');
         if (!mid) return;
         if (!forceReplay) {
             try {
@@ -5498,7 +5700,7 @@
                 if (rows?.[0]?.tour_completed) return;
             } catch(e) { return; }
         }
-        sessionStorage.setItem('t2s_tour_shown', '1');
+        sessionStorage.setItem('t2s_uat_tour_shown', '1');
         _tourVisible = _TOUR.filter(s => {
             if (!s.target) return true;
             const el = document.querySelector(s.target);
@@ -5510,7 +5712,7 @@
     }
 
     function restartTour() {
-        sessionStorage.removeItem('t2s_tour_shown');
+        sessionStorage.removeItem('t2s_uat_tour_shown');
         _tourVisible = _TOUR.filter(s => {
             if (!s.target) return true;
             const el = document.querySelector(s.target);
@@ -5586,7 +5788,7 @@
 
     function _closeTour() {
         document.getElementById('tour-overlay').style.display = 'none';
-        const mid = localStorage.getItem('t2s_member_id');
+        const mid = localStorage.getItem('t2s_uat_member_id');
         if (mid) sbFetch(`members?id=eq.${mid}`, { method:'PATCH', body:JSON.stringify({ tour_completed:true }) }).catch(()=>{});
     }
 </script>
@@ -5680,11 +5882,11 @@
 // ── SEBI DISCLAIMER ───────────────────────────────────────────────────────────
 function checkDisclaimer() {
   const today = new Intl.DateTimeFormat('en-IN', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
-  if (localStorage.getItem('t2s_disclaimer_date') !== today) document.getElementById('sebi-modal').style.display = 'flex';
+  if (localStorage.getItem('t2s_uat_disclaimer_date') !== today) document.getElementById('sebi-modal').style.display = 'flex';
 }
 function dismissDisclaimer() {
   const today = new Intl.DateTimeFormat('en-IN', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
-  localStorage.setItem('t2s_disclaimer_date', today);
+  localStorage.setItem('t2s_uat_disclaimer_date', today);
   document.getElementById('sebi-modal').style.display = 'none';
 }
 // ── ADD TO HOME SCREEN ────────────────────────────────────────────────────────
@@ -5785,16 +5987,16 @@ function _shareApp() {
                 sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=1&select=id,content,post_type,sent_at', {method:'GET'}),
                 sbFetch('posts?is_deleted=eq.false&post_type=in.(general,market_update)&parent_id=is.null&order=sent_at.desc&limit=1&select=id,content,post_type,sent_at', {method:'GET'})
             ]);
-            const lastTradeId  = localStorage.getItem('t2s_last_trade_alert_id');
-            const lastUpdateId = localStorage.getItem('t2s_last_update_alert_id');
+            const lastTradeId  = localStorage.getItem('t2s_uat_last_trade_alert_id');
+            const lastUpdateId = localStorage.getItem('t2s_uat_last_update_alert_id');
             const latestTrade  = Array.isArray(tradeRes)  ? tradeRes[0]  : null;
             const latestUpdate = Array.isArray(updateRes) ? updateRes[0] : null;
             if (latestTrade && latestTrade.id !== lastTradeId) {
-                localStorage.setItem('t2s_last_trade_alert_id', latestTrade.id);
+                localStorage.setItem('t2s_uat_last_trade_alert_id', latestTrade.id);
                 if (lastTradeId) _triggerAlert(latestTrade); // skip first load — just seed the ID
             }
             if (latestUpdate && latestUpdate.id !== lastUpdateId) {
-                localStorage.setItem('t2s_last_update_alert_id', latestUpdate.id);
+                localStorage.setItem('t2s_uat_last_update_alert_id', latestUpdate.id);
                 if (lastUpdateId) _triggerAlert(latestUpdate);
             }
         } catch(e) { /* silent — polling is non-critical */ }
