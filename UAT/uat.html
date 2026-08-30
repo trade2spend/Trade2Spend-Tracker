@@ -1261,7 +1261,7 @@
                 }
             } catch(e) {}
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
-            localStorage.setItem('t2s_uat_mode', 'paid');
+            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier === 'paid' ? 'paid' : 'free');
             localStorage.setItem('t2s_uat_last_login', Date.now().toString());
             closeRequestModal();
             window.location.reload();
@@ -1285,12 +1285,12 @@
         const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = label || 'Enter your PIN to continue';
         _faRenderPhase('pin');
     }
-    function _faShowPinSetup(member) {
+    function _faShowPinSetup(member, pinLabel) {
         _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = ''; _faPinMode = 'setup_1';
         _faUpdateDots('');
         document.getElementById('fa-pin-err').textContent = '';
         document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
-        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Create a 4-digit PIN';
+        const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = pinLabel || 'Create a 4-digit PIN';
         _faRenderPhase('pin');
     }
     function _faSetupPin1() {
@@ -1312,7 +1312,7 @@
             const did = _faGetDeviceId();
             await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
-            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier || 'free');
+            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier === 'paid' ? 'paid' : 'free');
             localStorage.setItem('t2s_uat_last_login', Date.now().toString());
             closeRequestModal();
             window.location.reload();
@@ -1349,8 +1349,13 @@
                 // No PIN set yet — inline PIN setup
                 if (!member.pin_hash) {
                     hint.style.color = '#4a2a78';
-                    hint.textContent = 'First time here — set up your PIN below.';
-                    _faShowPinSetup(member); // calls _faRenderPhase('pin') internally
+                    if (tier === 'paid') {
+                        hint.textContent = 'Paid member — create your access PIN to log in.';
+                        _faShowPinSetup(member, 'Create your 4-digit access PIN');
+                    } else {
+                        hint.textContent = 'First time here — set up your PIN below.';
+                        _faShowPinSetup(member);
+                    }
                     input._blocked = true; _faCheckEnable(); return;
                 }
                 if (tier === 'paid') {
