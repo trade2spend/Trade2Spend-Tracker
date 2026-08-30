@@ -1,4 +1,3 @@
-<!-- T2S-PROD-20260830-002 | PROD index.html: parseFollowUpContent negation guard — "Will not hold overnight" was incorrectly setting isHolding=true (regex matched "hold overnight" without detecting the preceding "not"), causing isTradeFullyClosed() to skip all time-based auto-close and keep intraday trades open indefinitely. Fix: added _negHoldRe — isHolding only set when holding regex matches AND no negation phrase (not/won't/will not/don't/never + hold + overnight/next day/tomorrow) is present. Zero touch to any other logic, calculation, tab, or feature. Rollback: remove _negHoldRe declaration and revert the isHolding if-block to a bare single-regex check. -->
 <!-- T2S-PROD-20260826-001 | PROD: SL parser — added new pattern to parseFollowUpContent slPats for "SL [modifier] to [number]" word order (e.g. "SL modified to 24285", "SL revised to 24285"). Pattern 1 already handled the reverse order "[modifier] SL to N" — this adds the complement. Zero touch to all other code, logic, calculations, or any other feature. Rollback: remove the one added slPats line. -->
 <!-- T2S-PROD-20260823-002 | PROD: Advance/Decline panel auto-refresh with scroll preservation and directional flash — (1) _advDecRender(which): extracted HTML-building logic from toggleAdvDec into standalone function; rows now stamped with data-symbol attribute for post-rebuild targeting. (2) _advDecRefresh(oldPrices): on every 5s /market poll, if panel is open — saves scrollTop, rebuilds via _advDecRender, restores scrollTop (no scroll jump); compares old vs new prices and flashes changed rows green (#dcfce7) if price went up or red (#fee2e2) if price went down for 2.5s. (3) toggleAdvDec: replaced 25-line inline HTML block with single _advDecRender(which) call — behaviour identical. (4) renderMarketUI breadth block: snapshots current prices before _advDecStocks update, then passes snapshot to _advDecRefresh so comparison is old-vs-new not new-vs-new. Zero touch to _advDecCollapse, outside-click listener, chip counts, chevron logic, all other tabs, server.js, Supabase. Rollback: revert toggleAdvDec to inline HTML block; remove _advDecRender/_advDecRefresh functions; revert renderMarketUI line to plain _advDecStocks assignment. -->
 <!-- T2S-PROD-20260823-001 | PROD: Markets tab — NIFTY 50 Advance/Decline collapsible component: (1) movers-section hidden (display:none — data still renders to gainers/losers lists for the expand panel); (2) adv-dec-bar chips: old scroll-to-movers onclick replaced with toggleAdvDec() + green/red chip styling + flex-wrap for mobile overflow fix; (3) adv-note removed entirely from bar; (4) adv-dec-detail expand panel added — shows CMP, Change, % Change for all stocks sorted by magnitude; (5) _advDecCollapse(), toggleAdvDec() functions + outside-click listener added; (6) renderExpiryStrip() updated to show "Market Feed/NSE Data" source label right-aligned in the Upcoming F&O Expiry header row (same row, less vertical space); (7) mcard-src grid injection removed (was below price cards, now in expiry strip). server.js changes (gainers/losers >= 0, breadth, source preference) already live on VM from Aug 22. Rollback: revert adv-dec-bar HTML to old scroll-onclick spans + pipe separator + adv-note; remove adv-dec-detail div; remove _advDecCollapse/toggleAdvDec/outside-click; revert renderExpiryStrip to single-param; restore mcard-src injection; revert movers-section to display:block. -->
@@ -2334,7 +2333,7 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
-                localStorage.removeItem('t2s_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
+                localStorage.removeItem('t2s_upd_posts_v2'); // bust cache so next fetchUpdates() goes to Supabase
                 const _rtActiveEl = document.querySelector('.tab.active');
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
@@ -4130,8 +4129,13 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
-        // T2S-PROD-20260830-001: key v2→v3 invalidates stale 4-post cache; stale display removed so fresh data always renders.
-        const _uc = _cLoad('t2s_upd_posts_v3', 30 * 60 * 1000);
+        const _uc = _cLoad('t2s_upd_posts_v2', 30 * 60 * 1000);
+        if (_uc && _uc.posts && _cachedTier) {
+            renderUpdates(_uc.posts, _cachedTier, _cachedIsAdmin, _localReadCache);
+            _mqpScrollAfterRender();
+            (_uc.posts||[]).filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
+            // T2S-PROD-20260715-010: no early return — always fetch fresh so new/deleted posts appear without waiting for Realtime
+        }
         // Preserve any open compose box across the loading wipe
         let _fudCompose = null;
         const _fudOpenBox = container.querySelector('.admin-compose-box.open');
@@ -4140,8 +4144,8 @@
             const _fudTa  = document.getElementById('reply-text-' + _fudPId);
             _fudCompose = { postId: _fudPId, text: _fudTa ? _fudTa.value : '', audience: replyAudience[_fudPId] || 'all' };
         }
-        // Always show loading on first in-session visit; preserve DOM on subsequent visits
-        if (!_cachedPosts) {
+        // Only show loading spinner on truly first load (no in-memory cache and no localStorage cache)
+        if (!_cachedPosts && !_uc) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading updates...</div>';
         }
 
@@ -4162,12 +4166,8 @@
                 }
             }
 
-            // T2S-PROD-20260830-001: targeted queries — old limit=100 all-types caused follow_up replies to crowd out general posts (172 follow_ups in last 200 posts → only ~8 general shown out of 49 total).
-            const [_updParents, _updReplies] = await Promise.all([
-                sbFetch('posts?is_deleted=eq.false&parent_id=is.null&post_type=in.(general,market_update,banner)&order=sent_at.desc&limit=200', { method: 'GET' }),
-                sbFetch('posts?is_deleted=eq.false&parent_id=not.is.null&order=sent_at.desc&limit=500', { method: 'GET' })
-            ]);
-            const posts = [..._updParents, ..._updReplies];
+            // Always full-fetch so deleted posts never persist in cache
+            const posts = await sbFetch('posts?is_deleted=eq.false&order=sent_at.desc&limit=100', { method: 'GET' });
             // Supplement from GitHub backup if Supabase returns no general/market posts
             if (!posts.some(p => ['general','market_update'].includes(p.post_type))) {
                 try {
@@ -4193,7 +4193,7 @@
             }
 
             _cachedPosts = posts; _cachedTier = memberTier; _cachedIsAdmin = isAdmin; _cachedReadMap = readMap;
-            if (posts.length > 0) _cSave('t2s_upd_posts_v3', {posts});
+            if (posts.length > 0) _cSave('t2s_upd_posts_v2', {posts});
             // Unread badge — count all unread parent posts (today + T-1 fallback for free/anonymous)
             const cutoffT1 = new Date(); cutoffT1.setDate(cutoffT1.getDate()-1);
             let unreadCount;
