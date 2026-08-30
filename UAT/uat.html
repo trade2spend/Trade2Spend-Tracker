@@ -1427,10 +1427,12 @@
         const errEl = document.getElementById('fa-pin-err'); if (errEl) errEl.textContent = '';
         _faRenderPhase('mobile');
         document.getElementById('accessRequestOverlay').style.display = 'flex';
-        if (arguments[0]) {
-            const _pf = String(arguments[0]).replace(/\D/g,'').slice(-10);
+        const _pfSrc = (arguments[0]) || window._uatPrefillMob || '';
+        if (_pfSrc) {
+            window._uatPrefillMob = '';
+            const _pf = String(_pfSrc).replace(/\D/g,'').slice(-10);
             const _inp = document.getElementById('fa-mobile-input');
-            if (_inp && _pf.length === 10) { _inp.value = _pf; setTimeout(_faMobileBlur, 350); }
+            if (_inp && _pf.length === 10) { _inp.value = _pf; }
         }
     }
     function closeRequestModal() {
@@ -5972,7 +5974,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const _prefillMob = localStorage.getItem('t2s_uat_prefill_mobile');
     if (_prefillMob) {
         localStorage.removeItem('t2s_uat_prefill_mobile');
-        setTimeout(function() { showAccessRequestModal(_prefillMob); }, 900);
+        window._uatPrefillMob = _prefillMob;
+        setTimeout(function() { showGoldenOpportunityScreen(); }, 900);
     }
 });
 function _shareApp() {
