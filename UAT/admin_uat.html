@@ -1766,21 +1766,31 @@ async function loadAccessRequests(statusFilter = 'pending') {
 
 async function actionRequestDirect(requestId, memberId, action) {
     try {
+        const _cur = await sbGet(`access_requests?id=eq.${requestId}&select=status`);
+        if (!_cur || !_cur.length) { showToast('❌ Request not found'); return; }
+        if (_cur[0].status !== 'pending') {
+            showToast(`⚠️ Already ${_cur[0].status} — no action taken`);
+            loadAccessRequests('pending');
+            return;
+        }
         if (action === 'approve') {
             await Promise.all([
                 sbPatch(`access_requests?id=eq.${requestId}`, { status: 'approved' }),
                 sbPatch(`members?id=eq.${memberId}`, { free_access: true })
             ]);
             showToast('✅ Approved — free access granted');
+            sbPost('audit_log', { event_type: 'access_approved', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         } else if (action === 'reject') {
-            await sbPatch(`access_requests?id=eq.${requestId}`, { status: 'rejected' });
+            await sbPatch(`access_requests?id=eq.${requestId}`, { status: 'rejected', last_rejected_at: new Date().toISOString() });
             showToast('❌ Request rejected');
+            sbPost('audit_log', { event_type: 'access_rejected', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         } else if (action === 'block_number') {
             await Promise.all([
                 sbPatch(`access_requests?id=eq.${requestId}`, { status: 'blocked' }),
                 sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: true })
             ]);
             showToast('🚫 Number blocked — member cannot request again');
+            sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         }
         loadAccessRequests('pending');
         const pending = await sbGet('access_requests?status=eq.pending&select=id').catch(() => []);
