@@ -315,16 +315,48 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
         <div>✅ Active as long as you stay engaged</div>
         <div style="color:#9ca3af;">⚠️ Removed after 72 hours of inactivity</div>
       </div>
-      <button onclick="showScreen('screen-register')" class="submit-btn">Continue to Apply →</button>
+      <button onclick="showScreen('screen-dos-donts')" class="submit-btn">Continue →</button>
     </div>
   </div>
 </div>
 
-<!-- ── SCREEN 5: REQUEST ACCESS REGISTRATION ── -->
+<!-- ── SCREEN 5: DO'S AND DON'TS ── -->
+<div class="screen hidden" id="screen-dos-donts">
+  <div class="page-wrap">
+    <div class="form-card" style="margin-top:16px;">
+      <button onclick="showScreen('screen-intro')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;">← Back</button>
+      <div class="form-title" style="margin-bottom:4px;">Before You Apply</div>
+      <div class="form-sub" style="margin-bottom:16px;">Please read this carefully — it takes 30 seconds</div>
+      <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:14px;margin-bottom:12px;">
+        <div style="font-size:0.75rem;font-weight:800;color:#059669;margin-bottom:8px;letter-spacing:0.04em;">✅ DO's</div>
+        <div style="font-size:0.8rem;color:#1a2030;line-height:2;">
+          <div>• Use alerts as <b>learning examples</b> only</div>
+          <div>• Do your own research before every trade</div>
+          <div>• Set a stop loss on every trade you take</div>
+          <div>• Trade only with money you can afford to lose</div>
+          <div>• Ask questions freely in the Telegram channel</div>
+        </div>
+      </div>
+      <div style="background:#fff5f5;border:1.5px solid #fecaca;border-radius:12px;padding:14px;margin-bottom:18px;">
+        <div style="font-size:0.75rem;font-weight:800;color:#dc2626;margin-bottom:8px;letter-spacing:0.04em;">❌ DON'Ts</div>
+        <div style="font-size:0.8rem;color:#1a2030;line-height:2;">
+          <div>• Don't treat alerts as <b>guaranteed profit signals</b></div>
+          <div>• Don't trade with borrowed money or emergency funds</div>
+          <div>• Don't follow any alert without understanding it</div>
+          <div>• Don't expect guaranteed returns — none exist</div>
+          <div>• Don't share paid content with non-members</div>
+        </div>
+      </div>
+      <button onclick="showScreen('screen-register')" class="submit-btn">I Understand — Continue to Apply →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREEN 6: REQUEST ACCESS REGISTRATION ── -->
 <div class="screen hidden" id="screen-register">
   <div class="page-wrap">
     <div class="form-card" style="margin-top:16px;">
-      <button onclick="showScreen('screen-intro')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
+      <button onclick="showScreen('screen-dos-donts')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
       <div class="form-title" style="margin-bottom:4px;">Request Access</div>
       <div class="form-sub" style="margin-bottom:14px;">Limited access — Tushar will review your request</div>
       <div style="background:#f0f4ff;border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:0.83rem;color:#4a2a78;font-weight:600;">📱 +91 <span id="reg-mobile-display" style="font-weight:800;"></span></div>
@@ -401,7 +433,7 @@ async function checkMobile(){
     const member=members[0];
     if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @tusharview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
-    const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&is_active=eq.true&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
+    const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
     if(_acctLock&&_acctLock.length>0){const _lu=new Date(_acctLock[0].locked_until);const _mins=Math.max(1,Math.ceil((_lu-new Date())/60000));errEl.textContent=`Account temporarily locked due to multiple wrong attempts. Try again in ${_mins} minute${_mins>1?'s':''}.`;errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     currentMobile=mobile;currentMember=member;
     localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
@@ -443,10 +475,16 @@ async function verifyPin(){
         const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
         if(allActive&&allActive.length>=2){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
         await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
+        const _rc=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+        if(_rc&&_rc.length>2){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
       }
+      try{await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'login_success',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{tier:currentMember.tier}})});}catch(e){}
       showLoading(false);window.location.href=MAIN_APP_URL;
     }else{
-      showLoading(false);failedAttempts++;pinBuffer='';
+      showLoading(false);
+      try{const _fa=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=failed_attempts_today`,{method:'GET',headers:{'Accept':'application/json'}});if(_fa&&_fa.length>0&&(_fa[0].failed_attempts_today||0)>failedAttempts)failedAttempts=_fa[0].failed_attempts_today;}catch(e){}
+      failedAttempts++;pinBuffer='';
+      sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'login_fail',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{attempts:failedAttempts}})}).catch(()=>{});
       for(let i=0;i<4;i++){const d=document.getElementById(`d${i}`);d.classList.add('error','shake');}
       setTimeout(()=>updateDots(''),500);
       const rem=MAX_ATTEMPTS-failedAttempts;
@@ -467,6 +505,7 @@ async function verifyPin(){
             await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:false,locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});
           }
         }catch(e){}
+        sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'account_locked',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{locked_until:lu,attempts:failedAttempts}})}).catch(()=>{});
       }
       else{document.getElementById('pin-err').textContent=`Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;try{const regS=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});if(regS&&regS.length>0){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});}}catch(e){}}
     }
@@ -521,6 +560,8 @@ async function processSetupPin(){
       if(allActive&&allActive.length>=2){showLoading(false);document.getElementById('setup-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');return;}
       // Register this device in sessions (no pin_hash stored here)
       await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
+      const _rcSetup=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(_rcSetup&&_rcSetup.length>2){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});showLoading(false);document.getElementById('setup-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');return;}
       localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode','paid');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
     }catch(e){showLoading(false);document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');}
   }
