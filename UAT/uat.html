@@ -1266,6 +1266,8 @@
                     const all = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true&select=id`, { method:'GET' });
                     if (all && all.length >= 2) { document.getElementById('fa-pin-err').textContent = 'Maximum concurrent login limit reached. Log out from another device first.'; _faPinBuffer = ''; _faUpdateDots(''); return; }
                     await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
+                    const _rcFa=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true&select=id`,{method:'GET'});
+                    if(_rcFa&&_rcFa.length>2){await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});document.getElementById('fa-pin-err').textContent='Maximum concurrent login limit reached. Log out from another device first.';_faPinBuffer='';_faUpdateDots('');return;}
                 }
             } catch(e) {}
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
@@ -1275,14 +1277,18 @@
             closeRequestModal();
             window.location.reload();
         } else {
+            const _faDid = _faGetDeviceId();
+            try{const _faS=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${_faDid}&is_active=eq.true&select=failed_attempts_today`,{method:'GET'});if(_faS&&_faS.length>0&&(_faS[0].failed_attempts_today||0)>_faPinAttempts)_faPinAttempts=_faS[0].failed_attempts_today;}catch(e){}
             _faPinAttempts++;
             _faPinBuffer = ''; _faUpdateDots('');
             const rem = 3 - _faPinAttempts;
             if (rem <= 0) {
                 document.getElementById('fa-pin-err').textContent = 'Too many attempts. Contact @tusharview to unlock.';
                 document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
+                try{const _faLu=new Date(Date.now()+30*60000).toISOString();await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({locked_until:_faLu,failed_attempts_today:_faPinAttempts}),headers:{'Prefer':'return=minimal'}});}catch(e){}
             } else {
                 document.getElementById('fa-pin-err').textContent = `Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;
+                try{await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${_faDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:_faPinAttempts}),headers:{'Prefer':'return=minimal'}});}catch(e){}
             }
         }
     }
@@ -2911,7 +2917,10 @@
                     config: {
                         broadcast: { self: false },
                         presence: { key: '' },
-                        postgres_changes: [{ event: '*', schema: 'public', table: 'posts' }] // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
+                        postgres_changes: [
+                            { event: '*', schema: 'public', table: 'posts' }, // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
+                            { event: '*', schema: 'public', table: 'members', filter: 'id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') }
+                        ]
                     }
                 },
                 ref: String(++_rtRef)
@@ -2927,6 +2936,23 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
+                if (msg.payload?.table === 'members') {
+                    const _rtMid = localStorage.getItem('t2s_uat_member_id');
+                    if (!_rtMid) return;
+                    sbFetch(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked`, { method: 'GET' })
+                        .then(rows => {
+                            if (!rows || !rows.length) return;
+                            const m = rows[0];
+                            if (m.status === 'disabled') { window.location.href = 'login.html'; return; }
+                            window._cachedMember = Object.assign(window._cachedMember || {}, m);
+                            const newMode = (m.tier === 'paid' || m.free_access) ? 'paid' : 'free';
+                            localStorage.setItem('t2s_uat_mode', newMode);
+                            _renderMemberChip(m);
+                            fetchUpdates();
+                            fetchTradeAlerts();
+                        }).catch(() => {});
+                    return;
+                }
                 localStorage.removeItem('t2s_uat_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
                 const _rtActiveEl = document.querySelector('.tab.active');
                 const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
@@ -5360,7 +5386,17 @@
         }
     }
 
-    function logout(){
+    async function logout(){
+        const memberId = localStorage.getItem('t2s_uat_member_id');
+        const deviceId = localStorage.getItem('t2s_uat_device_id');
+        if (memberId && deviceId) {
+            try {
+                await sbFetch(
+                    `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
+                    { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
+                );
+            } catch(e) { /* best-effort — always redirect */ }
+        }
         ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active'].forEach(k=>localStorage.removeItem(k));
         window.location.href='login.html';
     }
