@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260902-001 | server.js: Day-after-expiry CMP fix — refreshActiveContracts() expiry past-check now falls back to nextRaw when currentRaw is stale (Kotak scrip master slow to roll after expiry). Previously: all "Weekly" contracts skipped on day after expiry → activeContracts empty all day → no CMP. Fix: `const expiry` → `let expiry`; when expDate < todayIST, try _expiryDates[instr].nextRaw; if nextRaw is valid (future date), use it and continue tracking; if no valid nextRaw, skip as before. Rollback: revert `let expiry` back to `const expiry`; remove the nextRaw fallback block; restore original single-line `console.warn + return`.
 // DEPLOY: T2S-PROD-20260830-001 | server.js: Stop [HIGH/LOW/CLOSEPRICE] posting for closed trades. (1) sbContractStillActive(post,replies): new helper — returns false when sbTradeFullyExited() is true (SL hit, explicit exit, "not holding overnight" + market closed), OR when no explicit overnight-hold signal is present and it is past 3:30 PM IST / last real activity was on a previous day (Option A intraday default). Mirrors isTradeFullyClosed() logic from member PWA. (2) refreshActiveContracts(): select now includes sent_at; batches a reply fetch for all post IDs after loading posts; calls sbContractStillActive() before pushing each contract — skips inactive trades; after building new contracts list, prunes stale entries from _optionHighs/_optionLows (previous-day closed trades only — today's entries preserved so saveOptionHighsToSupabase can post [HIGH:X] at 3:35 PM). Rollback: remove sbContractStillActive function; revert select to id,content; remove replyMap/postDateMap block; remove sbContractStillActive guard in posts.forEach; remove _optionHighs/_optionLows pruning block.
 // DEPLOY: T2S-PROD-20260815-002 | server.js: Push notification dedup + tier-aware content. (1) postId-based persistent dedup (_pushSentMap + .push_sent.json) — each postId pushed exactly once, survives VM restarts; body dedup kept as fallback when no postId. (2) Per-member dedup removed — all subscribed devices receive notification (previously only 1 device per member, causing missed notifications). (3) Tier-aware body — paid members see full message, free members see reference only (e.g. "📊 Trade Alert — Open app to view"). (4) Disabled members skipped. (5) Unique tag per post (t2s-post-{postId}) so multiple posts don't collapse each other. Rollback: remove _pushSentMap/PUSH_SENT_FILE/savePushSent block; revert /send-push endpoint to previous version (see T2S-PROD-20260715-009 rollback notes).
 // DEPLOY: T2S-PROD-20260805-001 | server.js: GET / response now includes kotakLtpRunning field — Admin PWA dot logic reads this to show green when LTP poll is active, even if session age check reports loggedIn:false. One new field added to GET / JSON response. No other endpoint, logic, or calculation touched. Rollback: remove kotakLtpRunning line from GET / res.end() block.
@@ -1458,9 +1459,10 @@ async function refreshActiveContracts() {
       const actionMatch = (p.content || '').match(/\b(SELL(?:ING)?|BUY(?:ING)?)\b/i);
       const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
-      const expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
+      let expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
       // Guard: skip if resolved expiry is already in the past (expired contract — price is near-zero)
       // Format DDMMMYYYY e.g. "28JUL2026" → parse as UTC date for comparison
+      // Edge case: day after expiry, Kotak scrip master currentRaw is stale → fall back to nextRaw
       const MONS_CHK = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
       const expM2 = (expiry || '').match(/^(\d{2})([A-Z]{3})(\d{4})$/);
       if (expM2) {
@@ -1468,8 +1470,16 @@ async function refreshActiveContracts() {
         const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
         todayIST.setHours(0, 0, 0, 0);
         if (expDate < todayIST) {
-          console.warn(`[contracts] SKIP ${instr}-${strike}-${type}: resolved expiry ${expiry} is in the past — post may be stale or expiry label ambiguous`);
-          return; // skip this post
+          const nextRaw = _expiryDates[instr] && _expiryDates[instr].nextRaw;
+          const expM3 = nextRaw && nextRaw.match(/^(\d{2})([A-Z]{3})(\d{4})$/);
+          const nextDate = expM3 && new Date(Date.UTC(parseInt(expM3[3]), MONS_CHK.indexOf(expM3[2]), parseInt(expM3[1])));
+          if (nextDate && nextDate >= todayIST) {
+            console.log(`[contracts] ${instr}-${strike}-${type}: currentRaw ${expiry} is past, falling back to nextRaw ${nextRaw}`);
+            expiry = nextRaw;
+          } else {
+            console.warn(`[contracts] SKIP ${instr}-${strike}-${type}: resolved expiry ${expiry} is in the past and no valid nextRaw available`);
+            return; // skip this post
+          }
         }
       }
       // Skip trades that are no longer active (SL hit, intraday closed, not holding overnight)
