@@ -1609,11 +1609,7 @@ async function fetchMemberStats(){
     const monthIST  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET);
     const nowMinus15 = new Date(Date.now() - 15 * 60 * 1000);
     async function querySessions(since){
-      const res = await fetch(`${SB_URL}/rest/v1/sessions?is_active=eq.true&last_active=gte.${since.toISOString()}&select=member_id,members(tier,status)`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-      });
-      const text = await res.text();
-      return (text ? JSON.parse(text) : []);
+      return sbFetch(`sessions?is_active=eq.true&last_active=gte.${since.toISOString()}&select=member_id,members(tier,status)`, { method: 'GET' });
     }
     function countByTier(rows){
       const seen = new Set(); let paid = 0, free = 0;
@@ -1676,11 +1672,7 @@ async function loadFreeAccessTab() {
 
 async function toggleFreeAccessFeature(enabled) {
     try {
-        await fetch(`${SB_URL}/rest/v1/feature_flags?key=eq.free_access_requests_enabled`, {
-            method: 'PATCH',
-            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-            body: JSON.stringify({ value: enabled, updated_at: new Date().toISOString() })
-        });
+        await sbPatch('feature_flags?key=eq.free_access_requests_enabled', { value: enabled, updated_at: new Date().toISOString() });
         showToast(enabled ? '✅ Free access requests enabled' : '🔴 Free access requests disabled');
     } catch(e) { showToast('❌ Error: ' + e.message); }
 }
@@ -1848,11 +1840,7 @@ async function faActionMember(memberId, action) {
         const patch = action === 'deactivate'
             ? { free_access: false }
             : { free_access: false, free_access_blocked: true };
-        await fetch(`${SB_URL}/rest/v1/members?id=eq.${memberId}`, {
-            method: 'PATCH',
-            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-            body: JSON.stringify(patch)
-        });
+        await sbPatch(`members?id=eq.${memberId}`, patch);
         showToast(action === 'deactivate' ? '✅ Access removed (can re-apply)' : '🚫 Member blocked');
         loadFreeAccessMembers();
     } catch(e) { showToast('❌ ' + e.message); }
@@ -1860,11 +1848,7 @@ async function faActionMember(memberId, action) {
 
 async function faUnblockMember(memberId) {
     try {
-        await fetch(`${SB_URL}/rest/v1/members?id=eq.${memberId}`, {
-            method: 'PATCH',
-            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-            body: JSON.stringify({ free_access_blocked: false })
-        });
+        await sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: false });
         showToast('✅ Member unblocked — they can now request access again');
         loadFreeAccessMembers();
     } catch(e) { showToast('❌ ' + e.message); }
@@ -1899,20 +1883,11 @@ async function loadFaAnalytics() {
 
 // ── END FREE ACCESS MANAGEMENT ────────────────────────────────────────────────
 
-async function sbGet(path){
-  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    method: 'GET',
-    headers: {'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
-  });
-  const text = await res.text(); return text ? JSON.parse(text) : [];
+async function sbGet(path) {
+  return sbFetch(path, { method: 'GET' });
 }
-async function sbPatch(path, body){
-  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    method:'PATCH',
-    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-    body: JSON.stringify(body)
-  });
-  if (!res.ok){ const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
+async function sbPatch(path, body) {
+  await sbFetch(path, { method: 'PATCH', body: JSON.stringify(body), headers: { 'Prefer': 'return=minimal' } });
 }
 
 async function loadMembers(){
@@ -2225,13 +2200,7 @@ async function sendFollowUp() {
             sent_at:       new Date().toISOString(),
             ...(parentId ? { parent_id: parentId } : {})
         };
-        const res = await fetch(`${SB_URL}/rest/v1/posts`, {
-            method:'POST',
-            headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-            body: JSON.stringify(postBody)
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const _fuData = await res.json().catch(() => []);
+        const _fuData = await sbPost('posts', postBody);
         const _fuPost = Array.isArray(_fuData) ? _fuData[0] : _fuData;
         if (_fuPost) writeBackup(_fuPost).catch(() => {});
 
@@ -2289,11 +2258,7 @@ async function resetMemberPin(memberId){
   const label = m ? (m.name||m.mobile) : 'this member';
   if(!confirm(`Reset PIN for ${label}?\n\nThey will be asked to set a new PIN on next login.`)) return;
   try {
-    const res = await fetch(`${SB_URL}/rest/v1/sessions?member_id=eq.${memberId}`, {
-      method:'DELETE',
-      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
-    });
-    if(!res.ok) throw new Error(await res.text());
+    await sbFetch(`sessions?member_id=eq.${memberId}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
     showToast(`✓ PIN reset for ${label}`);
   } catch(e){ alert('Failed: '+e.message); }
 }
@@ -2347,12 +2312,7 @@ async function addMember(){
       tour_completed: false,
       ...(subend ? {subscription_end: subend} : {})
     };
-    const res = await fetch(`${SB_URL}/rest/v1/members`, {
-      method:'POST',
-      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-      body: JSON.stringify(body)
-    });
-    if(!res.ok){ const t=await res.text(); throw new Error(t); }
+    await sbPost('members', body);
     msgEl.style.color='var(--green)'; msgEl.textContent=`✓ ${name} added as ${tier} member!`;
     document.getElementById('mgmt-mobile').value='';
     document.getElementById('mgmt-name').value='';
@@ -2411,12 +2371,8 @@ async function handleMagicLink() {
   const params = new URLSearchParams(hash.slice(1));
   if (params.get('type') !== 'magiclink') return false;
   try {
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
+    await sbFetch('keep_alive_log?source=eq.admin_pwa_locked', { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+    await sbFetch('keep_alive_log?source=like.admin_session_%25', { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
   } catch(e) {}
   // Clear PIN so user can set a new one after email verification
   localStorage.removeItem('t2s_pin');
@@ -2445,23 +2401,15 @@ async function registerAdminSession() {
     const rows = await sbGet('keep_alive_log?source=like.admin_session_%25&order=pinged_at.asc');
     const existing = rows.find(r => r.source === mySource);
     if (existing) {
-      await fetch(`${SB_URL}/rest/v1/keep_alive_log?id=eq.${existing.id}`, {
-        method:'PATCH', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
-        body: JSON.stringify({ pinged_at: new Date().toISOString() })
-      });
+      await sbPatch(`keep_alive_log?id=eq.${existing.id}`, { pinged_at: new Date().toISOString() });
       return;
     }
     // Remove oldest if at 2
     const others = rows.filter(r => r.source !== mySource);
     if (others.length >= 2) {
-      await fetch(`${SB_URL}/rest/v1/keep_alive_log?id=eq.${others[0].id}`, {
-        method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
-      });
+      await sbFetch(`keep_alive_log?id=eq.${others[0].id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
     }
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
-      method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-      body: JSON.stringify({ source: mySource, pinged_at: new Date().toISOString() })
-    });
+    await sbPost('keep_alive_log', { source: mySource, pinged_at: new Date().toISOString() });
   } catch(e) {}
 }
 
@@ -2501,12 +2449,8 @@ async function pinInit() {
   ]);
 
   if (pinReset && pinReset.length > 0) {
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pin_reset`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
+    await sbFetch('keep_alive_log?source=eq.admin_pin_reset', { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+    await sbFetch('keep_alive_log?source=eq.admin_pwa_locked', { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
     localStorage.removeItem('t2s_pin');
     localStorage.removeItem('t2s_admin_lock_until');
     document.getElementById('pin-overlay').classList.add('hidden');
@@ -2671,10 +2615,7 @@ async function checkPin() {
       const lockUntilISO = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       localStorage.setItem('t2s_admin_lock_until', lockUntilISO);
       try {
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
-          method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-          body: JSON.stringify({ source:'admin_pwa_locked', pinged_at: new Date().toISOString() })
-        });
+        await sbPost('keep_alive_log', { source: 'admin_pwa_locked', pinged_at: new Date().toISOString() });
       } catch(e) {}
       fetch('https://api.trade2spend.com/admin-alert', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -5348,24 +5289,28 @@ function cap2dec(input){
   }
 }
 
-// ── SUPABASE (Push to Members) ──
-const SB_URL = 'https://ivjyadnspyobzgbdoajj.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
+// ── SUPABASE (via VM proxy — key lives in server .env, never here) ──
+const UAT_PROXY = 'https://api.trade2spend.com';
+const UAT_TOKEN = 'T2SUATProxy2026';
 
-async function sbPost(path, body){
-  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    method: 'POST',
-    headers: {
-      'apikey': SB_KEY,
-      'Authorization': `Bearer ${SB_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    },
-    body: JSON.stringify(body)
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Save failed (${res.status}): ${text.slice(0, 120)}`);
-  return text ? JSON.parse(text) : [];
+async function sbFetch(path, opts = {}) {
+  const { headers: xh, ...rest } = opts;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(`${UAT_PROXY}/uat-sb`, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-t2s-uat': UAT_TOKEN },
+      body: JSON.stringify({ path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`proxy ${res.status}: ${text.slice(0, 120)}`);
+    return text ? JSON.parse(text) : [];
+  } finally { clearTimeout(timer); }
+}
+
+async function sbPost(path, body) {
+  return sbFetch(path, { method: 'POST', body: JSON.stringify(body) });
 }
 
 // ── GITHUB BACKUP (via VM — token stored securely in server .env) ──
