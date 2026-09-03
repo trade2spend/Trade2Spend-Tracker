@@ -377,10 +377,10 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 </div>
 
 <script>
-// PHASE 1 ISOLATION: points to UAT Supabase project (separate from production).
-// Replace UAT_REPLACE_ME with the UAT project ref after creating the project.
-const SUPABASE_URL='https://ivjyadnspyobzgbdoajj.supabase.co';
-const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
+// PHASE 1 ISOLATION: all Supabase calls go through the VM proxy (/uat-sb).
+// The UAT Supabase anon key lives in the server .env — never in this file.
+const UAT_PROXY='https://api.trade2spend.com';
+const UAT_TOKEN='T2SUATProxy2026';
 // MAIN_APP_URL: relative path from /UAT/ directory → resolves to /UAT/uat.html
 const MAIN_APP_URL='uat.html';
 const SESSION_24H=24*60*60*1000;
@@ -397,7 +397,9 @@ async function sbFetch(path,opts={}){
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),10000);
   const{headers:xh,...rest}=opts;
   try{
-    const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...rest,signal:ctrl.signal,headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...(xh||{})}});
+    const res=await fetch(`${UAT_PROXY}/uat-sb`,{method:'POST',signal:ctrl.signal,
+      headers:{'Content-Type':'application/json','x-t2s-uat':UAT_TOKEN},
+      body:JSON.stringify({path,method:rest.method||'GET',body:rest.body||null,headers:xh||{}})});
     if(!res.ok){const e=await res.text();throw new Error(e);}
     const t=await res.text();return t?JSON.parse(t):[];
   }finally{clearTimeout(timer);}
@@ -472,10 +474,11 @@ async function verifyPin(){
       if(sessions&&sessions.length>0){
         await sbFetch(`sessions?id=eq.${sessions[0].id}`,{method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),headers:{'Accept':'application/json'}});
       }else{
-        const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+        const _aaCutoff=new Date(Date.now()-2*60*60*1000).toISOString();
+        const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&last_active=gte.${encodeURIComponent(_aaCutoff)}&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
         if(allActive&&allActive.length>=2){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
         await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
-        const _rc=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
+        const _rc=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&last_active=gte.${encodeURIComponent(_aaCutoff)}&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
         if(_rc&&_rc.length>2){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
       }
       try{await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'login_success',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{tier:currentMember.tier}})});}catch(e){}
