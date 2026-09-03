@@ -95,7 +95,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Trade2Spend">
-    <link rel="preconnect" href="https://ivjyadnspyobzgbdoajj.supabase.co">
+    <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="logo.png">
@@ -2837,8 +2837,9 @@
     // --- SUPABASE CONFIG (UAT) ---
     // PHASE 1 ISOLATION: points to UAT Supabase project (separate from production).
     // Replace UAT_REPLACE_ME with the UAT project ref after creating the project.
-    const SUPABASE_URL = 'https://ivjyadnspyobzgbdoajj.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
+    // All Supabase calls go through the VM proxy (/uat-sb). Key lives in server .env.
+    const UAT_PROXY = 'https://api.trade2spend.com';
+    const UAT_TOKEN = 'T2SUATProxy2026';
     const VAPID_PUBLIC_KEY = 'BMVcAP6cf_uh6aCRXruTXZsnFdraj6fI7mRjPWLjhVPGkdGYTGYqxpyipQC0kNfZqVRJ79UOybp4whv-QSlQkxA';
 
     function _urlB64ToUint8(b64) {
@@ -2880,17 +2881,12 @@
         const timer = setTimeout(() => ctrl.abort(), 10000);
         const { headers: extraHeaders, ...restOpts } = opts;
         try {
-            const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-                ...restOpts, signal: ctrl.signal,
-                headers: {
-                    'apikey': SUPABASE_KEY,
-                    'Authorization': `Bearer ${SUPABASE_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=representation',
-                    ...(extraHeaders || {})
-                }
+            const res = await fetch(`${UAT_PROXY}/uat-sb`, {
+                method: 'POST', signal: ctrl.signal,
+                headers: { 'Content-Type': 'application/json', 'x-t2s-uat': UAT_TOKEN },
+                body: JSON.stringify({ path, method: restOpts.method || 'GET', body: restOpts.body || null, headers: extraHeaders || {} })
             });
-            if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+            if (!res.ok) throw new Error(`proxy ${res.status}: ${await res.text()}`);
             const text = await res.text();
             return text ? JSON.parse(text) : [];
         } finally { clearTimeout(timer); }
@@ -2906,8 +2902,11 @@
     function initRealtimeSubscription() {
         if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
         clearTimeout(_rtReconnectTimer);
-        const wsUrl = SUPABASE_URL.replace('https://', 'wss://') +
-            '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
+        // WebSocket cannot be proxied — anon key here is read-only (Realtime subscribe only).
+        // All REST writes go through /uat-sb proxy (sbFetch). This key has no write path.
+        const _RT_WSS = 'wss://ivjyadnspyobzgbdoajj.supabase.co';
+        const _RT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
+        const wsUrl = _RT_WSS + '/realtime/v1/websocket?apikey=' + _RT_KEY + '&vsn=1.0.0';
         _rtSocket = new WebSocket(wsUrl);
 
         _rtSocket.onopen = () => {
@@ -3200,7 +3199,8 @@
                 const afterStr = lo.slice(afterIdx, afterIdx + 25);
                 const isSLPhrasing = /\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/.test(afterStr);
                 const cmpM = lo.match(/\bcmp\s*[=:]?\s*(?:₹\s*)?(\d{2,6}(?:\.\d+)?)/);
-                if (isSLPhrasing) {
+                const cmpDiffers = cmpM && Math.abs(parseFloat(cmpM[1]) - exitVal) > 0.5;
+                if (isSLPhrasing || cmpDiffers) {
                     r.slRevised = exitVal;
                     if (!r.exitPct) r.type = 'sl_update';
                 } else {
@@ -5438,6 +5438,8 @@
         }
         if(mode !== 'free' && memberId){
             if(Date.now()-lastLogin >= SESSION_24H){
+                const _expDid=localStorage.getItem('t2s_uat_device_id');
+                if(_expDid){try{await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_expDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
                 window.location.href='login.html'; return;
             }
         }
@@ -5499,10 +5501,15 @@
         function markActive(){ localStorage.setItem('t2s_uat_last_active', new Date().toISOString()); }
         markActive();
         ['touchstart','click','keypress','scroll'].forEach(ev => document.addEventListener(ev, markActive, { passive:true }));
-        // Check every 60s — redirect to login if idle > 30 min
-        const _heartbeat = setInterval(() => {
+        // Check every 60s — redirect to login if idle > 30 min; deactivate session in DB first
+        const _heartbeat = setInterval(async () => {
             const last = new Date(localStorage.getItem('t2s_uat_last_active') || 0).getTime();
-            if (Date.now() - last > IDLE_MS) { clearInterval(_heartbeat); window.location.href = 'login.html'; }
+            if (Date.now() - last > IDLE_MS) {
+                clearInterval(_heartbeat);
+                const _idleDid=localStorage.getItem('t2s_uat_device_id');
+                if(memberId&&_idleDid){try{await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_idleDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
+                window.location.href='login.html';
+            }
         }, 60000);
         window.addEventListener('beforeunload', () => clearInterval(_heartbeat));
         const startTab = localStorage.getItem('t2s_uat_start_tab');
