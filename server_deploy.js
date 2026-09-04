@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260904-002 | server.js: Prod deploy gate. (1) import { createHmac } from 'crypto' added. (2) TOTP_DEPLOY_SEC constant from env. (3) verifyTOTP() — RFC 6238 TOTP in pure Node.js, checks ±1 window for clock drift, anti-replay via _usedTOTP Map. (4) POST /deploy-auth — verifies TOTP, returns {ok:true} on success, 401 on wrong/reused code, 503 if secret not configured. push_pwa.py calls this before any prod push. Rollback: remove createHmac import; remove TOTP_DEPLOY_SEC + _usedTOTP + verifyTOTP block; remove POST /deploy-auth block.
 // DEPLOY: T2S-PROD-20260904-001 | server.js + login.html + index.html: Prod Supabase key moved server-side via /prod-sb proxy. server.js: PROD_PROXY_SEC constant added; POST /prod-sb endpoint added (mirrors /uat-sb — auth via x-t2s-prod header, forwards to SB_URL/SB_KEY). login.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb. index.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb; Realtime WebSocket keeps hardcoded _RT_WSS/_RT_KEY (WS can't be HTTP-proxied — read-only subscribe). Also add PROD_PROXY_SECRET=T2SProdProxy2026 to VM .env (optional — default is hardcoded). Rollback: restore SUPABASE_URL/KEY in both HTML files; revert sbFetch() to direct Supabase fetch; remove /prod-sb block from server.js; remove PROD_PROXY_SEC constant.
 // DEPLOY: T2S-PROD-20260902-001 | server.js: Day-after-expiry CMP fix — refreshActiveContracts() expiry past-check now falls back to nextRaw when currentRaw is stale (Kotak scrip master slow to roll after expiry). Previously: all "Weekly" contracts skipped on day after expiry → activeContracts empty all day → no CMP. Fix: `const expiry` → `let expiry`; when expDate < todayIST, try _expiryDates[instr].nextRaw; if nextRaw is valid (future date), use it and continue tracking; if no valid nextRaw, skip as before. Rollback: revert `let expiry` back to `const expiry`; remove the nextRaw fallback block; restore original single-line `console.warn + return`.
 // DEPLOY: T2S-PROD-20260830-001 | server.js: Stop [HIGH/LOW/CLOSEPRICE] posting for closed trades. (1) sbContractStillActive(post,replies): new helper — returns false when sbTradeFullyExited() is true (SL hit, explicit exit, "not holding overnight" + market closed), OR when no explicit overnight-hold signal is present and it is past 3:30 PM IST / last real activity was on a previous day (Option A intraday default). Mirrors isTradeFullyClosed() logic from member PWA. (2) refreshActiveContracts(): select now includes sent_at; batches a reply fetch for all post IDs after loading posts; calls sbContractStillActive() before pushing each contract — skips inactive trades; after building new contracts list, prunes stale entries from _optionHighs/_optionLows (previous-day closed trades only — today's entries preserved so saveOptionHighsToSupabase can post [HIGH:X] at 3:35 PM). Rollback: remove sbContractStillActive function; revert select to id,content; remove replyMap/postDateMap block; remove sbContractStillActive guard in posts.forEach; remove _optionHighs/_optionLows pruning block.
@@ -41,6 +42,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
+import { createHmac } from 'crypto';
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE   = path.join(__dirname, 'state.json');
 const HOLIDAY_FILE = path.join(__dirname, '.holiday_state.json');
@@ -75,7 +77,33 @@ const GROQ_KEY       = process.env.GROQ_KEY       || '';
 const UAT_SB_URL    = 'https://ivjyadnspyobzgbdoajj.supabase.co';
 const UAT_SB_KEY    = process.env.UAT_SUPABASE_KEY   || '';
 const UAT_PROXY_SEC = process.env.UAT_PROXY_SECRET   || 'T2SUATProxy2026';
-const PROD_PROXY_SEC = process.env.PROD_PROXY_SECRET || 'T2SProdProxy2026';
+const PROD_PROXY_SEC    = process.env.PROD_PROXY_SECRET  || 'T2SProdProxy2026';
+const TOTP_DEPLOY_SEC   = process.env.TOTP_DEPLOY_SECRET || '';
+
+// ── TOTP VERIFIER (RFC 6238, no external deps) ────────────────────────────────
+const _usedTOTP = new Map(); // replayKey → timestamp, prevents reuse within window
+function verifyTOTP(secret, token) {
+  if (!secret) return false;
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const c of secret.toUpperCase().replace(/\s/g, '').replace(/=+$/, '')) {
+    const i = chars.indexOf(c); if (i === -1) continue;
+    bits += i.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  const key = Buffer.from(bytes);
+  const now = Math.floor(Date.now() / 1000 / 30);
+  for (const delta of [-1, 0, 1]) {
+    const ctr = Buffer.alloc(8); ctr.writeBigInt64BE(BigInt(now + delta));
+    const hmac = createHmac('sha1', key).update(ctr).digest();
+    const off  = hmac[hmac.length - 1] & 0xf;
+    const code = ((hmac[off] & 0x7f) << 24 | (hmac[off+1] & 0xff) << 16 |
+                  (hmac[off+2] & 0xff) << 8  | (hmac[off+3] & 0xff)) % 1_000_000;
+    if (code.toString().padStart(6, '0') === String(token).trim()) return true;
+  }
+  return false;
+}
 
 if (!BOT_TOKEN || !CHAT_ID) {
   console.warn('WARNING: TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set — Telegram notifications disabled, server starting anyway');
@@ -4585,6 +4613,39 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
+    });
+    return;
+  }
+
+  // ── DEPLOY AUTH GATE — POST /deploy-auth ─────────────────────────────────────
+  if (req.method === 'POST' && urlPath === '/deploy-auth') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (!TOTP_DEPLOY_SEC) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'TOTP_DEPLOY_SECRET not configured on server' })); return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { totp } = JSON.parse(body || '{}');
+        if (!totp) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'totp required' })); return; }
+        // Clean expired replay entries
+        for (const [k, ts] of _usedTOTP) { if (Date.now() - ts > 120000) _usedTOTP.delete(k); }
+        const replayKey = `${totp}-${Math.floor(Date.now() / 1000 / 30)}`;
+        if (_usedTOTP.has(replayKey)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'Code already used — wait for next code' })); return;
+        }
+        if (!verifyTOTP(TOTP_DEPLOY_SEC, totp)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'Invalid code' })); return;
+        }
+        _usedTOTP.set(replayKey, Date.now());
+        console.log(`[DEPLOY-AUTH] ✅ Approved at ${new Date().toISOString()}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     });
     return;
   }
