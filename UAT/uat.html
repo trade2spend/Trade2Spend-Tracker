@@ -2835,11 +2835,9 @@
     }
 
     // --- SUPABASE CONFIG (UAT) ---
-    // PHASE 1 ISOLATION: points to UAT Supabase project (separate from production).
-    // Replace UAT_REPLACE_ME with the UAT project ref after creating the project.
-    // All Supabase calls go through the VM proxy (/uat-sb). Key lives in server .env.
-    const UAT_PROXY = 'https://api.trade2spend.com';
-    const UAT_TOKEN = 'T2SUATProxy2026';
+    // UAT Supabase — direct connection (anon key is public, identical pattern to prod)
+    const UAT_SB_URL = 'https://ivjyadnspyobzgbdoajj.supabase.co';
+    const UAT_SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
     const VAPID_PUBLIC_KEY = 'BMVcAP6cf_uh6aCRXruTXZsnFdraj6fI7mRjPWLjhVPGkdGYTGYqxpyipQC0kNfZqVRJ79UOybp4whv-QSlQkxA';
 
     function _urlB64ToUint8(b64) {
@@ -2881,12 +2879,12 @@
         const timer = setTimeout(() => ctrl.abort(), 10000);
         const { headers: extraHeaders, ...restOpts } = opts;
         try {
-            const res = await fetch(`${UAT_PROXY}/uat-sb`, {
-                method: 'POST', signal: ctrl.signal,
-                headers: { 'Content-Type': 'application/json', 'x-t2s-uat': UAT_TOKEN },
-                body: JSON.stringify({ path, method: restOpts.method || 'GET', body: restOpts.body || null, headers: extraHeaders || {} })
+            const res = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, {
+                method: restOpts.method || 'GET', signal: ctrl.signal,
+                headers: { 'apikey': UAT_SB_KEY, 'Authorization': 'Bearer ' + UAT_SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...(extraHeaders || {}) },
+                ...(restOpts.body ? { body: restOpts.body } : {})
             });
-            if (!res.ok) throw new Error(`proxy ${res.status}: ${await res.text()}`);
+            if (!res.ok) throw new Error(`sb ${res.status}: ${await res.text()}`);
             const text = await res.text();
             return text ? JSON.parse(text) : [];
         } finally { clearTimeout(timer); }
