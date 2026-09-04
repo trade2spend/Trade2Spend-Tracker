@@ -4355,7 +4355,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-t2s-secret'
+      'Access-Control-Allow-Headers': 'Content-Type, x-t2s-secret, x-t2s-uat, x-t2s-prod'
     });
     res.end();
     return;
