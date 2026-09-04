@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260904-001 | server.js + login.html + index.html: Prod Supabase key moved server-side via /prod-sb proxy. server.js: PROD_PROXY_SEC constant added; POST /prod-sb endpoint added (mirrors /uat-sb — auth via x-t2s-prod header, forwards to SB_URL/SB_KEY). login.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb. index.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb; Realtime WebSocket keeps hardcoded _RT_WSS/_RT_KEY (WS can't be HTTP-proxied — read-only subscribe). Also add PROD_PROXY_SECRET=T2SProdProxy2026 to VM .env (optional — default is hardcoded). Rollback: restore SUPABASE_URL/KEY in both HTML files; revert sbFetch() to direct Supabase fetch; remove /prod-sb block from server.js; remove PROD_PROXY_SEC constant.
 // DEPLOY: T2S-PROD-20260902-001 | server.js: Day-after-expiry CMP fix — refreshActiveContracts() expiry past-check now falls back to nextRaw when currentRaw is stale (Kotak scrip master slow to roll after expiry). Previously: all "Weekly" contracts skipped on day after expiry → activeContracts empty all day → no CMP. Fix: `const expiry` → `let expiry`; when expDate < todayIST, try _expiryDates[instr].nextRaw; if nextRaw is valid (future date), use it and continue tracking; if no valid nextRaw, skip as before. Rollback: revert `let expiry` back to `const expiry`; remove the nextRaw fallback block; restore original single-line `console.warn + return`.
 // DEPLOY: T2S-PROD-20260830-001 | server.js: Stop [HIGH/LOW/CLOSEPRICE] posting for closed trades. (1) sbContractStillActive(post,replies): new helper — returns false when sbTradeFullyExited() is true (SL hit, explicit exit, "not holding overnight" + market closed), OR when no explicit overnight-hold signal is present and it is past 3:30 PM IST / last real activity was on a previous day (Option A intraday default). Mirrors isTradeFullyClosed() logic from member PWA. (2) refreshActiveContracts(): select now includes sent_at; batches a reply fetch for all post IDs after loading posts; calls sbContractStillActive() before pushing each contract — skips inactive trades; after building new contracts list, prunes stale entries from _optionHighs/_optionLows (previous-day closed trades only — today's entries preserved so saveOptionHighsToSupabase can post [HIGH:X] at 3:35 PM). Rollback: remove sbContractStillActive function; revert select to id,content; remove replyMap/postDateMap block; remove sbContractStillActive guard in posts.forEach; remove _optionHighs/_optionLows pruning block.
 // DEPLOY: T2S-PROD-20260815-002 | server.js: Push notification dedup + tier-aware content. (1) postId-based persistent dedup (_pushSentMap + .push_sent.json) — each postId pushed exactly once, survives VM restarts; body dedup kept as fallback when no postId. (2) Per-member dedup removed — all subscribed devices receive notification (previously only 1 device per member, causing missed notifications). (3) Tier-aware body — paid members see full message, free members see reference only (e.g. "📊 Trade Alert — Open app to view"). (4) Disabled members skipped. (5) Unique tag per post (t2s-post-{postId}) so multiple posts don't collapse each other. Rollback: remove _pushSentMap/PUSH_SENT_FILE/savePushSent block; revert /send-push endpoint to previous version (see T2S-PROD-20260715-009 rollback notes).
@@ -70,6 +71,11 @@ const GH_REPO        = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker'
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
 const GEMINI_KEY     = process.env.GEMINI_KEY     || '';
 const GROQ_KEY       = process.env.GROQ_KEY       || '';
+// ── UAT SUPABASE PROXY ────────────────────────────────────────────────────────
+const UAT_SB_URL    = 'https://ivjyadnspyobzgbdoajj.supabase.co';
+const UAT_SB_KEY    = process.env.UAT_SUPABASE_KEY   || '';
+const UAT_PROXY_SEC = process.env.UAT_PROXY_SECRET   || 'T2SUATProxy2026';
+const PROD_PROXY_SEC = process.env.PROD_PROXY_SECRET || 'T2SProdProxy2026';
 
 if (!BOT_TOKEN || !CHAT_ID) {
   console.warn('WARNING: TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set — Telegram notifications disabled, server starting anyway');
@@ -4510,6 +4516,76 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     await saveState();
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // ── UAT SUPABASE PROXY — POST /uat-sb ────────────────────────────────────────
+  if (req.method === 'OPTIONS' && urlPath === '/uat-sb') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-uat' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/uat-sb') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const sec = req.headers['x-t2s-uat'];
+    if (!sec || sec !== UAT_PROXY_SEC) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' })); return;
+    }
+    if (!UAT_SB_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT_SUPABASE_KEY not set on server' })); return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(body || '{}');
+        if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
+        const fwdHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
+        const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
+        const text = await sbRes.text();
+        res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+        res.end(text || '[]');
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── PROD SUPABASE PROXY — POST /prod-sb ────────────────────────────────────────
+  if (req.method === 'OPTIONS' && urlPath === '/prod-sb') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-prod' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/prod-sb') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const sec = req.headers['x-t2s-prod'];
+    if (!sec || sec !== PROD_PROXY_SEC) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' })); return;
+    }
+    if (!SB_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'SUPABASE_KEY not set on server' })); return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(body || '{}');
+        if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
+        const fwdHeaders = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
+        const sbRes = await fetch(`${SB_URL}/rest/v1/${path}`, { method, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
+        const text = await sbRes.text();
+        res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+        res.end(text || '[]');
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     return;
   }
 
