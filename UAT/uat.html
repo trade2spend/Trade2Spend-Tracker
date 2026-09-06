@@ -126,10 +126,9 @@
             background: var(--bg-color);
             z-index: 100; padding: 14px 16px 0;
             transition: padding .25s ease, box-shadow .25s ease;
-            will-change: padding;
         }
         .header-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-        .header-brand { display: flex; align-items: center; gap: 10px; transition: transform .25s ease; transform-origin: left center; will-change: transform; flex: 1; min-width: 0; }
+        .header-brand { display: flex; align-items: center; gap: 10px; transition: transform .25s ease; transform-origin: left center; flex: 1; min-width: 0; }
         .logo-img { height: 38px; width: 38px; object-fit: contain; transition: height .25s ease, width .25s ease; }
         .header-titles { min-width: 0; }
         .header-titles h1 { font-size: 0.95rem; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -5497,6 +5496,17 @@
         } else {
             // Ensure chip is shown even if the call inside try{} was a no-op (defensive)
             _renderMemberChip(window._cachedMember);
+        }
+        // Verify t2s_uat_request_pending against DB — clears stale flag if request was resolved
+        if (localStorage.getItem('t2s_uat_request_pending') === '1' && memberId) {
+            sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status`, {method:'GET'})
+                .then(rows => {
+                    if (!rows || !rows[0] || rows[0].status !== 'pending') {
+                        localStorage.removeItem('t2s_uat_request_pending');
+                        const el = document.getElementById('req-pending-banner');
+                        if (el) el.remove();
+                    }
+                }).catch(() => {});
         }
         // Idle auto-lock: update last_active on real user interactions
         const IDLE_MS = 30 * 60 * 1000;
