@@ -1500,6 +1500,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
 
+  <!-- PIN Resets & Unlocks -->
+  <div class="card" style="margin-bottom:10px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><span class="card-title-dot"></span>🔓 PIN Resets &amp; Unlocks <span id="pru-badge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 7px;margin-left:6px;"></span></span>
+      <button onclick="loadPinUnlockRequests()" style="background:none;border:none;color:var(--muted2);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:6px;" title="Refresh">↻</button>
+    </div>
+    <div id="pru-list" style="font-size:13px;"></div>
+  </div>
+
   <!-- Add Member -->
   <div class="card" style="margin-bottom:10px;">
     <div class="card-title"><span class="card-title-dot"></span>Add New Member</div>
@@ -1605,7 +1614,7 @@ function showTab(t){
   if(t==='setup') { checkKotakStatus(); checkServerStatus(); }
   if(t==='campaign'){if(typeof updateCanvas==='function')updateCanvas();if(typeof updateCaption==='function')updateCaption();}
   if(t==='campaign') updateCampaignPreview();
-  if(t==='manage') { loadMembers(); loadFreeAccessTab(); }
+  if(t==='manage') { loadMembers(); loadFreeAccessTab(); loadPinUnlockRequests(); }
   if(t==='membership') fetchMemberStats();
 }
 
@@ -1894,6 +1903,85 @@ async function unblockDevice(deviceId) {
         showToast('✅ Device unblocked');
         loadBlockedDevices();
     } catch(e) { showToast('❌ ' + e.message); }
+}
+
+// ── PIN RESETS & UNLOCKS ──────────────────────────────────────────────────────
+function _pruAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+async function loadPinUnlockRequests() {
+  const el = document.getElementById('pru-list');
+  const badge = document.getElementById('pru-badge');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--muted2);font-size:12px;padding:8px 0;">Loading...</div>';
+  try {
+    const rows = await sbGet('audit_log?event_type=in.(pin_reset_request,unlock_request)&select=id,event_type,member_id,event_data,created_at&order=created_at.desc&limit=20');
+    if (!rows || rows.length === 0) {
+      el.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No pending requests</div>';
+      badge.style.display = 'none'; return;
+    }
+    badge.textContent = rows.length; badge.style.display = 'inline';
+    const memberIds = [...new Set(rows.filter(r => r.member_id).map(r => r.member_id))];
+    let memberMap = {};
+    if (memberIds.length) {
+      const mems = await sbGet(`members?id=in.(${memberIds.join(',')})&select=id,mobile`);
+      mems.forEach(m => { memberMap[m.id] = m.mobile; });
+    }
+    el.innerHTML = rows.map(row => {
+      const mobile = memberMap[row.member_id] || (row.event_data && row.event_data.mobile) || 'Unknown';
+      const isPinReset = row.event_type === 'pin_reset_request';
+      const label = isPinReset ? '🔑 PIN Reset' : '🔓 Unlock';
+      const labelColor = isPinReset ? '#d97706' : '#4a2a78';
+      const actionBtn = isPinReset
+        ? `<button onclick="handlePinReset('${row.member_id}','${row.id}')" style="padding:6px 12px;border:none;border-radius:7px;background:#d97706;color:#fff;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔑 Reset PIN</button>`
+        : `<button onclick="handleUnlock('${row.member_id}','${row.id}')" style="padding:6px 12px;border:none;border-radius:7px;background:#4a2a78;color:#fff;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">🔓 Unlock</button>`;
+      return `<div style="padding:10px 0;border-bottom:0.5px solid var(--border2);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:11px;font-weight:700;color:${labelColor};">${label}</span>
+          <span style="font-size:11px;color:var(--muted2);">${_pruAgo(row.created_at)}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">${esc(mobile)}</div>
+        <div style="display:flex;gap:6px;">
+          ${actionBtn}
+          <button onclick="dismissPinRequest('${row.id}')" style="padding:6px 12px;border:0.5px solid var(--border2);border-radius:7px;background:var(--bg3);color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Dismiss</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<div style="color:var(--red);font-size:12px;">Error: ${esc(e.message)}</div>`; }
+}
+
+async function handlePinReset(memberId, auditId) {
+  if (!confirm('Clear this member\'s PIN? They will be asked to set a new one on next login.')) return;
+  try {
+    await sbFetch(`members?id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ pin_hash: null }), headers: { 'Prefer': 'return=minimal' } });
+    await sbDelete(`audit_log?id=eq.${auditId}`);
+    showToast('✅ PIN cleared — member can set a new one on next login');
+    loadPinUnlockRequests();
+  } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function handleUnlock(memberId, auditId) {
+  if (!confirm('Unlock this member\'s account?')) return;
+  try {
+    await sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ locked_until: null, failed_attempts_today: 0 }), headers: { 'Prefer': 'return=minimal' } });
+    await sbDelete(`audit_log?id=eq.${auditId}`);
+    showToast('✅ Account unlocked');
+    loadPinUnlockRequests();
+  } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function dismissPinRequest(auditId) {
+  try {
+    await sbDelete(`audit_log?id=eq.${auditId}`);
+    loadPinUnlockRequests();
+  } catch(e) { showToast('❌ ' + e.message); }
 }
 
 async function loadFaAnalytics() {
