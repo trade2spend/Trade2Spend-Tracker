@@ -1966,6 +1966,7 @@
             start: function(reconnectFn) {
                 if (watchdogInterval) clearInterval(watchdogInterval);
                 watchdogInterval = setInterval(function() {
+                    if (isMarketClosedNow()) { lastTickTimestamp = Date.now(); return; }
                     const timeSinceLastTick = Date.now() - lastTickTimestamp;
                     if (timeSinceLastTick > STALL_THRESHOLD_MS && !isReconnecting) {
                         console.warn('[T2S Watchdog] Feed stall detected in memory. Triggering reconnect...');
@@ -2958,6 +2959,7 @@
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
                 if (_rtTabId === 'trades') fetchTradeAlerts();
                 if (_rtTabId === 'markets') fetchMarketPreview(); // refresh Markets quick-preview Updates sub-tab on new post
+                if (msg.payload?.eventType === 'INSERT' && msg.payload?.new && !msg.payload.new.is_deleted && !msg.payload.new.parent_id && ['trade_alert','general','market_update'].includes(msg.payload.new.post_type)) _triggerAlert(msg.payload.new);
             } catch(_) {}
         };
 
@@ -6036,7 +6038,7 @@ async function triggerA2HS() {
   }
 }
 document.addEventListener('DOMContentLoaded', function() {
-    checkDisclaimer(); initA2HS(); _startAlertPolling();
+    checkDisclaimer(); initA2HS();
     setTimeout(function() {
         const header = document.querySelector('.sticky-header');
         if (!header) return;
@@ -6122,32 +6124,6 @@ function _shareApp() {
         const dest  = _alertDestTab(_pendingAlertType);
         const tabEl = document.querySelector(`.tab[onclick*="'${dest}'"]`);
         if (tabEl) switchTab(dest, tabEl);
-    }
-
-    async function _pollForAlerts() {
-        try {
-            const [tradeRes, updateRes] = await Promise.all([
-                sbFetch('posts?is_deleted=eq.false&post_type=eq.trade_alert&parent_id=is.null&order=sent_at.desc&limit=1&select=id,content,post_type,sent_at', {method:'GET'}),
-                sbFetch('posts?is_deleted=eq.false&post_type=in.(general,market_update)&parent_id=is.null&order=sent_at.desc&limit=1&select=id,content,post_type,sent_at', {method:'GET'})
-            ]);
-            const lastTradeId  = localStorage.getItem('t2s_uat_last_trade_alert_id');
-            const lastUpdateId = localStorage.getItem('t2s_uat_last_update_alert_id');
-            const latestTrade  = Array.isArray(tradeRes)  ? tradeRes[0]  : null;
-            const latestUpdate = Array.isArray(updateRes) ? updateRes[0] : null;
-            if (latestTrade && latestTrade.id !== lastTradeId) {
-                localStorage.setItem('t2s_uat_last_trade_alert_id', latestTrade.id);
-                if (lastTradeId) _triggerAlert(latestTrade); // skip first load — just seed the ID
-            }
-            if (latestUpdate && latestUpdate.id !== lastUpdateId) {
-                localStorage.setItem('t2s_uat_last_update_alert_id', latestUpdate.id);
-                if (lastUpdateId) _triggerAlert(latestUpdate);
-            }
-        } catch(e) { /* silent — polling is non-critical */ }
-    }
-
-    function _startAlertPolling() {
-        _pollForAlerts();
-        setInterval(_pollForAlerts, 60000);
     }
 
     // ── TOTP MODAL ───────────────────────────────────────────────────────────
