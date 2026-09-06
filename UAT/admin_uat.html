@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20260906-002 | admin_uat: Admin UX — (1) Topbar: 🔒 lock/logout button added (calls lockAdminApp()). (2) Topbar: purple "Admin" pill added next to brand name to confirm active session. Rollback: remove lock button and identity pill span from topbar-inner. -->
+<!-- T2S-UAT-20260906-001 | admin_uat: (1) Branding: @T2Sview + t.me/T2Sview replaces @tusharview/@trade2spend everywhere including canvas fillText, Telegram chat_id API calls, campaign captions, and setup instructions. (2) C4 fix: Approve button now visible on rejected requests (Reject/Block buttons remain pending-only); actionRequestDirect guard allows approve action on rejected status. (3) C5 fix: sbDelete() added; new "Devices" sub-tab in Free Access section lists all device_blocks with Unblock button; loadBlockedDevices()/unblockDevice() added; showFaSubTab updated. Rollback: revert @T2Sview to @tusharview/@trade2spend; revert isRejected card render; revert guard condition; remove sbDelete/loadBlockedDevices/unblockDevice; remove devices sub-tab HTML+JS. -->
 <!-- T2S-UAT-20260816-002 | admin_uat: Active Banners panel at top of Posts tab — loadActiveBanners() fetches post_type=banner at Posts tab open; deactivateBannerPanel() soft-deletes; panel shows count badge + audience + preview + Deactivate per row; synced with uat.html admin compose. -->
 <!-- T2S-UAT-20260816-001 | admin_uat: Live Banner support — Push modal banner toggle (gen only), banner post_type routing, Deactivate button in Posts tab, banner visible in General feed filter. -->
 <!-- T2S-UAT-20260815-002 | admin_uat: postId + post_type added to confirmPushToMembers push call for UAT testing of permanent dedup. -->
@@ -416,13 +418,17 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   <div class="brand">
     <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
     <div>
-      <div class="brand-name">Trade2Spend</div>
+      <div style="display:flex;align-items:center;gap:7px;">
+        <div class="brand-name">Trade2Spend</div>
+        <span id="admin-identity-pill" style="font-size:10px;font-weight:700;background:#4a2a78;color:#fff;padding:2px 7px;border-radius:10px;letter-spacing:0.03em;">Admin</span>
+      </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:3px;">
         <button id="kotak-hdr-btn" onclick="showQuickTotp(null)" title="Kotak — tap to connect" style="display:flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;font-family:'Space Grotesk',sans-serif;color:#6b7280;">
           <span id="kotak-hdr-dot" style="width:9px;height:9px;border-radius:50%;background:#dc2626;flex-shrink:0;transition:background .3s;"></span>🔑
         </button>
         <a href="https://app.trade2spend.com/?tab=trades" target="_blank" title="Open member view" style="text-decoration:none;font-size:13px;color:#6b7280;line-height:1;">🔗</a>
         <button onclick="softRefresh()" title="Refresh screen" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:15px;color:#6b7280;line-height:1;">↻</button>
+        <button onclick="lockAdminApp()" title="Lock / Logout" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:13px;color:#dc2626;line-height:1;font-weight:700;">🔒</button>
       </div>
     </div>
   </div>
@@ -1060,7 +1066,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   <!-- Telegram Token -->
   <div class="setup-card" style="border-color:var(--goldborder);background:var(--goldbg);">
     <div class="setup-label" style="color:var(--gold);">Telegram Bot Token</div>
-    <div class="info-text" style="margin-bottom:8px;">Get from @BotFather → /newbot → add bot as Admin to @trade2spend channel</div>
+    <div class="info-text" style="margin-bottom:8px;">Get from @BotFather → /newbot → add bot as Admin to @T2Sview channel</div>
     <input type="password" class="setup-input" id="tg-token-input" placeholder="7123456789:AAF...">
     <button class="setup-btn" onclick="saveTGKey()">Save Token</button>
     <div class="setup-saved" id="tg-saved">✓ Saved</div>
@@ -1146,7 +1152,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   </div>
 
   <div class="info-text">
-    <strong>Telegram:</strong> https://t.me/tusharview<br><br>
+    <strong>Telegram:</strong> https://t.me/T2Sview<br><br>
     <strong>Add to iPhone home screen:</strong><br>
     Open file in Safari → Share → Add to Home Screen
   </div>
@@ -1202,7 +1208,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
             <div class="sw-title" style="color:#fbbf24;">PREMIUM</div>
             <div class="sw-sub" style="color:#fff;">MEMBERSHIP</div>
             <div class="sw-banner" style="background:#f59e0b;color:#000;">3 DAYS LEFT</div>
-            <div class="sw-btn" style="background:#fff;color:#000;">✈ @tusharview</div>
+            <div class="sw-btn" style="background:#fff;color:#000;">✈ @T2Sview</div>
           </div>
           <div class="tmpl-name" style="color:#b87a00;">Gold on Black</div>
         </div>
@@ -1211,7 +1217,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
             <div class="sw-title" style="color:#fff;">PREMIUM</div>
             <div class="sw-sub" style="color:#93c5fd;">MEMBERSHIP</div>
             <div class="sw-banner" style="background:#1e3a5f;color:#fff;border:1px solid #3b82f6;">3 DAYS LEFT</div>
-            <div class="sw-btn" style="background:#3b82f6;color:#fff;">✈ @tusharview</div>
+            <div class="sw-btn" style="background:#3b82f6;color:#fff;">✈ @T2Sview</div>
           </div>
           <div class="tmpl-name" style="color:#185fa5;">White on Navy</div>
         </div>
@@ -1220,7 +1226,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
             <div class="sw-title" style="color:#000;">PREMIUM</div>
             <div class="sw-sub" style="color:#1a0a00;">MEMBERSHIP</div>
             <div class="sw-banner" style="background:#000;color:#fbbf24;">3 DAYS LEFT</div>
-            <div class="sw-btn" style="background:#1a0a00;color:#fbbf24;">✈ @tusharview</div>
+            <div class="sw-btn" style="background:#1a0a00;color:#fbbf24;">✈ @T2Sview</div>
           </div>
           <div class="tmpl-name" style="color:#854f0b;">Black on Gold</div>
         </div>
@@ -1229,7 +1235,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
             <div class="sw-title" style="color:#fff;">PREMIUM</div>
             <div class="sw-sub" style="color:#fee2e2;">MEMBERSHIP</div>
             <div class="sw-banner" style="background:#000;color:#fff;">3 DAYS LEFT</div>
-            <div class="sw-btn" style="background:#fff;color:#dc2626;">✈ @tusharview</div>
+            <div class="sw-btn" style="background:#fff;color:#dc2626;">✈ @T2Sview</div>
           </div>
           <div class="tmpl-name" style="color:#a32d2d;">White on Red</div>
         </div>
@@ -1241,7 +1247,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
             </div>
             <div style="background:#fff;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;">
               <div class="sw-banner" style="background:#000;color:#fff;width:95%;">3 DAYS LEFT</div>
-              <div class="sw-btn" style="background:#000;color:#fff;margin-top:5px;">✈ @tusharview</div>
+              <div class="sw-btn" style="background:#000;color:#fff;margin-top:5px;">✈ @T2Sview</div>
             </div>
           </div>
           <div class="tmpl-name" style="color:#2c2c2a;">Black &amp; White</div>
@@ -1462,6 +1468,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
       <button id="fa-sub-requests" onclick="showFaSubTab('requests')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Pending</button>
       <button id="fa-sub-active" onclick="showFaSubTab('active')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Active Members</button>
       <button id="fa-sub-analytics" onclick="showFaSubTab('analytics')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Analytics</button>
+      <button id="fa-sub-devices" onclick="showFaSubTab('devices')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;">🔒 Devices</button>
     </div>
 
     <!-- Requests panel -->
@@ -1484,6 +1491,12 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     <!-- Analytics panel -->
     <div id="fa-panel-analytics" style="display:none;">
       <div id="fa-analytics-data" style="font-size:13px;">Loading...</div>
+    </div>
+
+    <!-- Blocked Devices panel -->
+    <div id="fa-panel-devices" style="display:none;">
+      <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;">Devices blocked from submitting access requests. Unblocking lets the owner apply again.</div>
+      <div id="fa-devices-list" style="font-size:13px;">Loading...</div>
     </div>
   </div>
 
@@ -1678,13 +1691,14 @@ async function toggleFreeAccessFeature(enabled) {
 }
 
 function showFaSubTab(tab) {
-    ['requests','active','analytics'].forEach(t => {
+    ['requests','active','analytics','devices'].forEach(t => {
         document.getElementById(`fa-panel-${t}`).style.display = t === tab ? 'block' : 'none';
         const btn = document.getElementById(`fa-sub-${t}`);
         if (btn) { btn.style.background = t === tab ? 'var(--gold)' : 'var(--bg3)'; btn.style.color = t === tab ? '#fff' : 'var(--text)'; }
     });
     if (tab === 'active') loadFreeAccessMembers();
     if (tab === 'analytics') loadFaAnalytics();
+    if (tab === 'devices') loadBlockedDevices();
 }
 
 async function loadAccessRequests(statusFilter = 'pending') {
@@ -1731,6 +1745,7 @@ async function loadAccessRequests(statusFilter = 'pending') {
             const date = req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
             const statusColor = { pending:'#d97706', approved:'#059669', rejected:'#6b7280', blocked:'#dc2626' }[req.status] || '#6b7280';
             const isPending = req.status === 'pending';
+            const isRejected = req.status === 'rejected';
             const devIcon = req.device_type === 'mobile' ? '📱' : req.device_type === 'desktop' ? '🖥️' : '';
             const dh = devMap[req.device_id];
             const hasMultiple = dh && dh.count > 1;
@@ -1745,11 +1760,11 @@ async function loadAccessRequests(statusFilter = 'pending') {
                     <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;white-space:nowrap;">${req.status.toUpperCase()}</span>
                 </div>
                 ${deviceBadge}
-                ${isPending ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+                ${(isPending || isRejected) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
                     <button onclick="actionRequestDirect('${req.id}','${req.member_id}','approve')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">✅ Approve</button>
-                    <button onclick="actionRequestDirect('${req.id}','${req.member_id}','reject')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">❌ Reject</button>
+                    ${isPending ? `<button onclick="actionRequestDirect('${req.id}','${req.member_id}','reject')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">❌ Reject</button>
                     <button onclick="actionRequestDirect('${req.id}','${req.member_id}','block_number')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block #</button>
-                    ${req.device_id ? `<button onclick="blockDeviceDirect('${req.device_id}')" style="flex:1;min-width:80px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#7c3aed;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📵 Block Device</button>` : ''}
+                    ${req.device_id ? `<button onclick="blockDeviceDirect('${req.device_id}')" style="flex:1;min-width:80px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#7c3aed;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📵 Block Device</button>` : ''}` : ''}
                 </div>` : ''}
             </div>`;
         }).join('');
@@ -1760,7 +1775,7 @@ async function actionRequestDirect(requestId, memberId, action) {
     try {
         const _cur = await sbGet(`access_requests?id=eq.${requestId}&select=status`);
         if (!_cur || !_cur.length) { showToast('❌ Request not found'); return; }
-        if (_cur[0].status !== 'pending') {
+        if (_cur[0].status !== 'pending' && !(_cur[0].status === 'rejected' && action === 'approve')) {
             showToast(`⚠️ Already ${_cur[0].status} — no action taken`);
             loadAccessRequests('pending');
             return;
@@ -1851,6 +1866,33 @@ async function faUnblockMember(memberId) {
         await sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: false });
         showToast('✅ Member unblocked — they can now request access again');
         loadFreeAccessMembers();
+    } catch(e) { showToast('❌ ' + e.message); }
+}
+
+async function loadBlockedDevices() {
+    const list = document.getElementById('fa-devices-list');
+    if (!list) return;
+    list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
+    try {
+        const blocks = await sbGet('device_blocks?select=device_id,reason,blocked_at&order=blocked_at.desc');
+        if (!blocks.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No blocked devices.</div>'; return; }
+        list.innerHTML = blocks.map(b => {
+            const when = b.blocked_at ? new Date(b.blocked_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+            return `<div style="border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:8px;background:#fff5f5;">
+                <div style="font-size:11px;font-weight:700;color:#dc2626;word-break:break-all;margin-bottom:2px;">${b.device_id}</div>
+                <div style="font-size:11px;color:var(--muted2);margin-bottom:6px;">${b.reason || '—'} · ${when}</div>
+                <button onclick="unblockDevice('${b.device_id}')" style="font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🔓 Unblock</button>
+            </div>`;
+        }).join('');
+    } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+}
+
+async function unblockDevice(deviceId) {
+    if (!confirm('Unblock this device? The owner will be able to submit access requests again.')) return;
+    try {
+        await sbDelete(`device_blocks?device_id=eq.${deviceId}`);
+        showToast('✅ Device unblocked');
+        loadBlockedDevices();
     } catch(e) { showToast('❌ ' + e.message); }
 }
 
@@ -3135,7 +3177,7 @@ function buildTradeMessage(){
 
   // Channel links
   if(clinks){
-    msg+=`\n\n📍 Join: https://t.me/trade2spend`;
+    msg+=`\n\n📍 Join: https://t.me/T2Sview`;
   }
 
   return msg;
@@ -3247,7 +3289,7 @@ function generateGeneral(){
     let msg='';
     if(useHdr) msg+=`📊 TRADE2SPEND ${ctx.toUpperCase()}\n━━━━━━━━━━━━━━━━━━\n\n`;
     msg+=input;
-    if(useFtr) msg+=`\n\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/trade2spend\n━━━━━━━━━━━━━━━━━━`;
+    if(useFtr) msg+=`\n\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/T2Sview\n━━━━━━━━━━━━━━━━━━`;
     renderGenOutput(msg);return;
   }
   const btn=document.getElementById('gen-btn');
@@ -3281,7 +3323,7 @@ REWRITING RULES:
 - Tone: ${genTone} — ${tG[genTone]}
 
 ${useHdr?`START the message with exactly this header (do not change it):\n📊 TRADE2SPEND ${ctx.toUpperCase()}\n━━━━━━━━━━━━━━━━━━\n`:'Do not add any header.'}
-${useFtr?`END the message with exactly this footer (do not change it):\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/trade2spend\n━━━━━━━━━━━━━━━━━━`:'Do not add any footer.'}
+${useFtr?`END the message with exactly this footer (do not change it):\n━━━━━━━━━━━━━━━━━━\n📍 TG: https://t.me/T2Sview\n━━━━━━━━━━━━━━━━━━`:'Do not add any footer.'}
 
 Now rewrite the message:`;
   callAPI(prompt,400)
@@ -3410,10 +3452,10 @@ async function shareTG(type){
     const resp=await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({chat_id:'@trade2spend',text:msg,parse_mode:'Markdown'})
+      body:JSON.stringify({chat_id:'@T2Sview',text:msg,parse_mode:'Markdown'})
     });
     const data=await resp.json();
-    if(data.ok) showToast('✓ Posted to @trade2spend!');
+    if(data.ok) showToast('✓ Posted to @T2Sview!');
     else showToast('TG Error: '+data.description);
   }catch(e){showToast('Failed. Check bot token in Setup.');}
   btn.disabled=false;btn.innerHTML=orig;
@@ -3797,7 +3839,7 @@ function updateCampaignPreview(){
   const urgency=selectedUrgency==='auto'?getAutoUrgency(date):selectedUrgency;
   drawCampaignCanvas(selectedTemplate, date, time, urgency);
   // Update caption
-  const caption=`🔔 PREMIUM MEMBERSHIP IS OPEN NOW!\n\nCloses ${date} – ${time}\n\n${urgency}\n\nMessage @tusharview on Telegram to join.\n\n📍 TG: https://t.me/tusharview`;
+  const caption=`🔔 PREMIUM MEMBERSHIP IS OPEN NOW!\n\nCloses ${date} – ${time}\n\n${urgency}\n\nMessage @T2Sview on Telegram to join.\n\n📍 TG: https://t.me/T2Sview`;
   document.getElementById('camp-caption').textContent=caption;
 }
 
@@ -3872,7 +3914,7 @@ function drawTemplate1(ctx,W,H,date,time,urgency){
   // Telegram button
   roundRect(ctx,200,640,400,70,35,'#0088cc');
   ctx.font='bold 24px Arial,sans-serif';
-  ctx.fillStyle='#ffffff';ctx.fillText('✈  @tusharview on Telegram',W/2,682);
+  ctx.fillStyle='#ffffff';ctx.fillText('✈  @T2Sview on Telegram',W/2,682);
 
   // Bottom tag
   ctx.font='16px Arial,sans-serif';
@@ -3932,7 +3974,7 @@ function drawTemplate2(ctx,W,H,date,time,urgency){
   // TG button
   roundRect(ctx,220,665,360,60,30,'rgba(99,102,241,0.8)',true,'#a78bfa',1);
   ctx.font='bold 21px Arial,sans-serif';
-  ctx.fillStyle='#ffffff';ctx.fillText('✈ @tusharview',W/2,702);
+  ctx.fillStyle='#ffffff';ctx.fillText('✈ @T2Sview',W/2,702);
   ctx.font='14px Arial,sans-serif';
   ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fillText('Message to join on Telegram',W/2,760);
 }
@@ -3981,7 +4023,7 @@ function drawTemplate3(ctx,W,H,date,time,urgency){
   // TG
   roundRect(ctx,190,625,420,65,32,'#10b981');
   ctx.font='bold 23px Arial,sans-serif';
-  ctx.fillStyle='#ffffff';ctx.fillText('✈  @tusharview',W/2,665);
+  ctx.fillStyle='#ffffff';ctx.fillText('✈  @T2Sview',W/2,665);
   ctx.font='15px Arial,sans-serif';
   ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillText('Message to join • Telegram',W/2,748);
 }
@@ -4032,7 +4074,7 @@ function drawTemplate4(ctx,W,H,date,time,urgency){
   // TG
   roundRect(ctx,180,630,440,65,32,'rgba(124,58,237,0.9)',true,'rgba(251,191,36,0.5)',1.5);
   ctx.font='bold 22px Arial,sans-serif';
-  ctx.fillStyle='#fde68a';ctx.fillText('✈  @tusharview on Telegram',W/2,670);
+  ctx.fillStyle='#fde68a';ctx.fillText('✈  @T2Sview on Telegram',W/2,670);
   ctx.font='15px Arial,sans-serif';
   ctx.fillStyle='rgba(255,255,255,0.3)';ctx.fillText('Message to join • Limited access',W/2,752);
 }
@@ -4085,7 +4127,7 @@ function drawTemplate5(ctx,W,H,date,time,urgency){
   // TG
   roundRect(ctx,200,630,400,65,8,'#1a1a1a',true,'rgba(255,255,255,0.15)',1);
   ctx.font='bold 22px Arial,sans-serif';
-  ctx.fillStyle='#ffffff';ctx.fillText('✈  @tusharview on Telegram',W/2,669);
+  ctx.fillStyle='#ffffff';ctx.fillText('✈  @T2Sview on Telegram',W/2,669);
   ctx.font='15px Arial,sans-serif';
   ctx.fillStyle='rgba(255,255,255,0.25)';ctx.fillText('Message to join • Limited seats available',W/2,750);
 }
@@ -4112,12 +4154,12 @@ async function postCampaignToTelegram(){
   try{
     const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
     const formData=new FormData();
-    formData.append('chat_id','@trade2spend');
+    formData.append('chat_id','@T2Sview');
     formData.append('photo',blob,'campaign.png');
     formData.append('caption',caption);
     const resp=await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{method:'POST',body:formData});
     const data=await resp.json();
-    if(data.ok) showToast('✓ Campaign posted to @trade2spend!');
+    if(data.ok) showToast('✓ Campaign posted to @T2Sview!');
     else showToast('Error: '+data.description);
   }catch(e){showToast('Failed: '+e.message);}
   btn.disabled=false;btn.textContent=orig;
@@ -4294,7 +4336,7 @@ function updateCaption(){
     else urgLine='\n📅 Open until '+closingDate+' – '+closingTime+'.';
   }
   const caption=closingDate
-    ?`🔔 PREMIUM MEMBERSHIP IS OPEN NOW!\n\nCloses ${closingDate} – ${closingTime}\n${getUrgency(getDaysLeft(closingDate))}${urgLine}\n\nIf you're interested in joining, feel free to reach out.\nYou're also welcome to share with friends and family.\n\n📍 TG: https://t.me/tusharview\n📍 Free Channel: https://t.me/trade2spend`
+    ?`🔔 PREMIUM MEMBERSHIP IS OPEN NOW!\n\nCloses ${closingDate} – ${closingTime}\n${getUrgency(getDaysLeft(closingDate))}${urgLine}\n\nIf you're interested in joining, feel free to reach out.\nYou're also welcome to share with friends and family.\n\n📍 TG: https://t.me/T2Sview\n📍 Free Channel: https://t.me/T2Sview`
     :'Enter closing date to see caption...';
   document.getElementById('caption-text').textContent=caption;
 }
@@ -4346,7 +4388,7 @@ function drawT1(ctx,W,H,date,time,urgency){
   ctx.beginPath();ctx.moveTo(s(60,W),s(736,W));ctx.lineTo(s(1020,W),s(736,W));
   ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=1;ctx.stroke();
   rr(ctx,s(200,W),s(758,W),s(680,W),s(82,W),s(41,W),'#ffffff');
-  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#000000';ctx.fillText('✈  @tusharview on Telegram',W/2,s(806,W));
+  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#000000';ctx.fillText('✈  @T2Sview on Telegram',W/2,s(806,W));
   ctx.font=`${s(24,W)}px Arial`;ctx.fillStyle='rgba(255,255,255,0.18)';ctx.fillText('Message to join • Limited seats available',W/2,s(920,W));
   ctx.font=`${s(20,W)}px Arial`;ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillText('trade2spend',W/2,s(1055,W));
 }
@@ -4369,7 +4411,7 @@ function drawT2(ctx,W,H,date,time,urgency){
   ctx.beginPath();ctx.moveTo(s(60,W),s(738,W));ctx.lineTo(s(1020,W),s(738,W));
   ctx.strokeStyle='rgba(59,130,246,0.18)';ctx.lineWidth=1;ctx.stroke();
   rr(ctx,s(200,W),s(760,W),s(680,W),s(82,W),s(41,W),'#3b82f6');
-  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#ffffff';ctx.fillText('✈  @tusharview on Telegram',W/2,s(808,W));
+  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#ffffff';ctx.fillText('✈  @T2Sview on Telegram',W/2,s(808,W));
   ctx.font=`${s(24,W)}px Arial`;ctx.fillStyle='rgba(147,197,253,0.22)';ctx.fillText('Message to join • Limited seats available',W/2,s(922,W));
   ctx.font=`${s(20,W)}px Arial`;ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillText('trade2spend',W/2,s(1055,W));
 }
@@ -4390,7 +4432,7 @@ function drawT3(ctx,W,H,date,time,urgency){
   ctx.beginPath();ctx.moveTo(s(60,W),s(736,W));ctx.lineTo(s(1020,W),s(736,W));
   ctx.strokeStyle='rgba(0,0,0,0.12)';ctx.lineWidth=1;ctx.stroke();
   rr(ctx,s(200,W),s(758,W),s(680,W),s(82,W),s(41,W),'#1a0a00');
-  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#fbbf24';ctx.fillText('✈  @tusharview on Telegram',W/2,s(806,W));
+  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#fbbf24';ctx.fillText('✈  @T2Sview on Telegram',W/2,s(806,W));
   ctx.font=`${s(24,W)}px Arial`;ctx.fillStyle='rgba(0,0,0,0.28)';ctx.fillText('Message to join • Limited seats available',W/2,s(920,W));
   ctx.font=`${s(20,W)}px Arial`;ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillText('trade2spend',W/2,s(1055,W));
 }
@@ -4411,7 +4453,7 @@ function drawT4(ctx,W,H,date,time,urgency){
   ctx.beginPath();ctx.moveTo(s(60,W),s(736,W));ctx.lineTo(s(1020,W),s(736,W));
   ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;ctx.stroke();
   rr(ctx,s(200,W),s(758,W),s(680,W),s(82,W),s(41,W),'#ffffff');
-  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#dc2626';ctx.fillText('✈  @tusharview on Telegram',W/2,s(806,W));
+  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#dc2626';ctx.fillText('✈  @T2Sview on Telegram',W/2,s(806,W));
   ctx.font=`${s(24,W)}px Arial`;ctx.fillStyle='rgba(255,255,255,0.28)';ctx.fillText('Message to join • Limited seats available',W/2,s(920,W));
   ctx.font=`${s(20,W)}px Arial`;ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillText('trade2spend',W/2,s(1055,W));
 }
@@ -4432,7 +4474,7 @@ function drawT5(ctx,W,H,date,time,urgency){
   ctx.beginPath();ctx.moveTo(s(60,W),s(732,W));ctx.lineTo(s(1020,W),s(732,W));
   ctx.strokeStyle='rgba(0,0,0,0.1)';ctx.lineWidth=1;ctx.stroke();
   rr(ctx,s(200,W),s(752,W),s(680,W),s(82,W),s(8,W),'#000000');
-  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#ffffff';ctx.fillText('✈  @tusharview on Telegram',W/2,s(800,W));
+  ctx.font=`bold ${s(32,W)}px Arial,sans-serif`;ctx.fillStyle='#ffffff';ctx.fillText('✈  @T2Sview on Telegram',W/2,s(800,W));
   ctx.font=`${s(24,W)}px Arial`;ctx.fillStyle='rgba(0,0,0,0.28)';ctx.fillText('Message to join • Limited seats available',W/2,s(916,W));
   ctx.font=`${s(20,W)}px Arial`;ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillText('trade2spend',W/2,s(1055,W));
 }
@@ -4453,12 +4495,12 @@ async function postNow(){
     const blob=await new Promise(res=>canvas.toBlob(res,'image/png',0.95));
     const caption=document.getElementById('caption-text').textContent;
     const fd=new FormData();
-    fd.append('chat_id','@trade2spend');
+    fd.append('chat_id','@T2Sview');
     fd.append('photo',blob,'premium.png');
     fd.append('caption',caption);
     const r=await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{method:'POST',body:fd});
     const d=await r.json();
-    if(d.ok){ showToast('✓ Posted to @trade2spend!'); logPost('Telegram', caption); }
+    if(d.ok){ showToast('✓ Posted to @T2Sview!'); logPost('Telegram', caption); }
     else showToast('Error: '+d.description);
   }catch(e){showToast('Failed: '+e.message);}
   btn.disabled=false;btn.textContent=orig;
@@ -4926,7 +4968,7 @@ function buildCaption(){
   const hasContext = tradeContext || followupAction;
   if(hasContext) caption += `\n\nNot just levels — live follow-up at every step. DM to join.`;
   if(extra) caption += `\n\n${extra}`;
-  caption += `\n\n📍 TG: https://t.me/tusharview\n📍 Free Channel: https://t.me/trade2spend`;
+  caption += `\n\n📍 TG: https://t.me/T2Sview\n📍 Free Channel: https://t.me/T2Sview`;
   return caption;
 }
 
@@ -4946,12 +4988,12 @@ async function postResultToTelegram(){
     const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
     const caption = buildCaption();
     const fd = new FormData();
-    fd.append('chat_id', '@trade2spend');
+    fd.append('chat_id', '@T2Sview');
     fd.append('photo', blob, 'result.jpg');
     fd.append('caption', caption);
     const r = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body:fd});
     const d = await r.json();
-    if(d.ok) showToast('✓ Result posted to @trade2spend!');
+    if(d.ok) showToast('✓ Result posted to @T2Sview!');
     else showToast('Error: ' + d.description);
   }catch(e){ showToast('Failed: ' + e.message); }
 
@@ -5311,6 +5353,9 @@ async function sbFetch(path, opts = {}) {
 
 async function sbPost(path, body) {
   return sbFetch(path, { method: 'POST', body: JSON.stringify(body) });
+}
+async function sbDelete(path) {
+  return sbFetch(path, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
 }
 
 // ── GITHUB BACKUP (via VM — token stored securely in server .env) ──
