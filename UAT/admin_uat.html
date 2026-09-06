@@ -1792,7 +1792,7 @@ async function actionRequestDirect(requestId, memberId, action) {
         if (action === 'approve') {
             await Promise.all([
                 sbPatch(`access_requests?id=eq.${requestId}`, { status: 'approved' }),
-                sbPatch(`members?id=eq.${memberId}`, { free_access: true })
+                sbPatch(`members?id=eq.${memberId}`, { free_access: true, status: 'enabled' })
             ]);
             showToast('✅ Approved — free access granted');
             sbPost('audit_log', { event_type: 'access_approved', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
