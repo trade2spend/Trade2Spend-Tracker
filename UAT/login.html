@@ -247,7 +247,14 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
       <div class="pin-lock-msg" id="pin-lock"></div>
       <button id="request-unlock-btn" onclick="requestUnlock()" style="display:none;margin-top:8px;padding:8px 18px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">🔓 Request Unlock</button>
       <div id="unlock-sent-msg" style="display:none;font-size:11px;color:#059669;margin-top:6px;">✓ Unlock request sent to admin.</div>
-      <span class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @T2Sview</span>
+      <span class="pin-forgot" onclick="forgotPin()">Forgot PIN?</span>
+      <div id="forgot-pin-section" style="display:none;margin-top:10px;padding:12px;background:#f3f0f8;border-radius:10px;text-align:left;">
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:6px;">Submit a reset request — admin will clear your PIN so you can set a new one.</div>
+        <div style="font-size:12px;font-weight:700;color:#4a2a78;margin-bottom:8px;" id="forgot-pin-mobile"></div>
+        <div id="forgot-pin-timer" style="font-size:11px;color:#d97706;margin-bottom:6px;display:none;"></div>
+        <button id="forgot-pin-btn" onclick="submitPinResetRequest()" style="width:100%;padding:9px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">Submit Reset Request</button>
+        <div id="forgot-pin-msg" style="font-size:11px;margin-top:6px;display:none;"></div>
+      </div>
       <span class="pin-switch" onclick="switchAccount()">← Back to login options</span>
     </div>
   </div>
@@ -530,7 +537,44 @@ async function verifyPin(){
     }
   }catch(e){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Verification failed. Check connection.';}
 }
-function forgotPin(){window.open('https://t.me/T2Sview','_blank');}
+function forgotPin(){
+  const section=document.getElementById('forgot-pin-section');
+  const visible=section.style.display==='none';
+  section.style.display=visible?'block':'none';
+  if(!visible)return;
+  const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
+  document.getElementById('forgot-pin-mobile').textContent='📱 '+mob;
+  const lastAt=parseInt(localStorage.getItem('t2s_uat_pin_reset_at')||'0');
+  const TWO_HOURS=2*60*60*1000;
+  const btn=document.getElementById('forgot-pin-btn');
+  const timerEl=document.getElementById('forgot-pin-timer');
+  const msgEl=document.getElementById('forgot-pin-msg');
+  msgEl.style.display='none';
+  if(lastAt&&Date.now()-lastAt<TWO_HOURS){
+    const rem=TWO_HOURS-(Date.now()-lastAt);
+    const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
+    timerEl.textContent=`Request already submitted. You can retry in ${h}h ${m}m.`;
+    timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';
+  }else{
+    timerEl.style.display='none';btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';
+  }
+}
+async function submitPinResetRequest(){
+  const btn=document.getElementById('forgot-pin-btn');
+  const msg=document.getElementById('forgot-pin-msg');
+  btn.disabled=true;btn.textContent='Sending…';
+  try{
+    const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
+    const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
+    await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'pin_reset_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
+    localStorage.setItem('t2s_uat_pin_reset_at',Date.now().toString());
+    msg.style.color='#059669';msg.textContent='✓ Request submitted. Admin will reset your PIN shortly.';msg.style.display='block';
+    btn.style.display='none';document.getElementById('forgot-pin-timer').style.display='none';
+  }catch(e){
+    btn.disabled=false;btn.textContent='Submit Reset Request';
+    msg.style.color='#dc2626';msg.textContent='Failed to send. Check connection.';msg.style.display='block';
+  }
+}
 function continuePendingAsLimited(){localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;}
 function _checkRegEnable(){const n=(document.getElementById('reg-name-input')?.value||'').trim();const c=document.getElementById('reg-consent-check')?.checked;const btn=document.getElementById('reg-submit-btn');if(btn){btn.disabled=!(n&&c);btn.style.opacity=(n&&c)?'1':'0.5';}}
 async function submitRegistration(){
@@ -609,9 +653,25 @@ document.addEventListener('keydown',function(e){
   else if(sv){if(e.key>='0'&&e.key<='9'){e.preventDefault();setupKey(e.key);}else if(e.key==='Backspace'){e.preventDefault();setupDel();}}
 });
 async function requestUnlock(){
-  const btn=document.getElementById('request-unlock-btn');btn.disabled=true;btn.textContent='Sending…';
-  try{const mid=localStorage.getItem('t2s_uat_member_id')||'';const mob=localStorage.getItem('t2s_uat_mobile')||'';await fetch('https://api.trade2spend.com/request-unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({memberId:mid,mobile:mob,deviceInfo:{platform:navigator.platform,userAgent:navigator.userAgent.slice(0,100)}})});btn.style.display='none';document.getElementById('unlock-sent-msg').style.display='block';}
-  catch(e){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
+  const btn=document.getElementById('request-unlock-btn');
+  const sentMsg=document.getElementById('unlock-sent-msg');
+  const lastAt=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
+  const TWO_HOURS=2*60*60*1000;
+  if(lastAt&&Date.now()-lastAt<TWO_HOURS){
+    const rem=TWO_HOURS-(Date.now()-lastAt);
+    const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
+    sentMsg.style.color='#d97706';sentMsg.textContent=`Request already sent. You can retry in ${h}h ${m}m.`;sentMsg.style.display='block';
+    return;
+  }
+  btn.disabled=true;btn.textContent='Sending…';
+  try{
+    const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
+    const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
+    await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
+    localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
+    btn.style.display='none';
+    sentMsg.style.color='#059669';sentMsg.textContent='✓ Unlock request sent to admin.';sentMsg.style.display='block';
+  }catch(e){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
 }
 function checkDisclaimer(){const today=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());if(localStorage.getItem('t2s_uat_disclaimer_date')!==today)document.getElementById('sebi-modal').style.display='flex';}
 function dismissDisclaimer(){const today=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());localStorage.setItem('t2s_uat_disclaimer_date',today);document.getElementById('sebi-modal').style.display='none';}
