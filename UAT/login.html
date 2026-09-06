@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260906-001 | login_uat.html: (1) Branding: @tusharview/@trade2spend → @T2Sview across all user-visible text and t.me/ links. (2) C2 fix: checkMobile now fetches free_access+free_access_blocked; approved free_access members go to PIN/setup screen (mode=free) instead of stuck on screen-pending; verifyPin/processSetupPin set mode based on actual tier instead of hardcoding paid. (3) C3 fix: rejected/new members see screen-intro (apply form) instead of screen-pending, with a notice if previously rejected; pending requests still show screen-pending. Rollback: revert SELECT query, revert checkMobile if/else block, revert verifyPin/processSetupPin mode lines. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -246,7 +247,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
       <div class="pin-lock-msg" id="pin-lock"></div>
       <button id="request-unlock-btn" onclick="requestUnlock()" style="display:none;margin-top:8px;padding:8px 18px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">🔓 Request Unlock</button>
       <div id="unlock-sent-msg" style="display:none;font-size:11px;color:#059669;margin-top:6px;">✓ Unlock request sent to admin.</div>
-      <span class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @tusharview</span>
+      <span class="pin-forgot" onclick="forgotPin()">Forgot PIN? Contact @T2Sview</span>
       <span class="pin-switch" onclick="switchAccount()">← Back to login options</span>
     </div>
   </div>
@@ -295,7 +296,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
     <div class="form-card" style="margin-top:16px;text-align:center;">
       <div style="font-size:2.5rem;margin-bottom:10px;">⏳</div>
       <div class="form-title" style="margin-bottom:6px;">Request Under Review</div>
-      <div class="form-sub" style="margin-bottom:16px;">Your access request has been submitted. Tushar will review and notify you once approved.</div>
+      <div class="form-sub" style="margin-bottom:16px;">Your access request has been submitted. T2Sview will review and notify you once approved.</div>
       <div style="background:#f0f4ff;border-radius:10px;padding:12px;font-size:0.78rem;color:#4a2a78;margin-bottom:20px;line-height:1.5;">Save the app to your home screen to get notified instantly when your request is approved.</div>
       <button onclick="continuePendingAsLimited()" class="submit-btn">Continue as Limited Access →</button>
     </div>
@@ -308,7 +309,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
     <div class="form-card" style="margin-top:16px;">
       <button onclick="showScreen('screen-mobile')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;">← Back</button>
       <div class="form-title" style="margin-bottom:4px;">Apply for Limited Access</div>
-      <div class="form-sub" style="margin-bottom:16px;">Tushar will review your request and approve manually</div>
+      <div class="form-sub" style="margin-bottom:16px;">T2Sview will review your request and approve manually</div>
       <div style="background:#f3f0f8;border-radius:12px;padding:14px;margin-bottom:18px;font-size:0.82rem;line-height:1.8;color:#1a2030;">
         <div>✅ Free access to paid trade alerts</div>
         <div>✅ Full analysis &amp; follow-ups</div>
@@ -358,7 +359,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
     <div class="form-card" style="margin-top:16px;">
       <button onclick="showScreen('screen-dos-donts')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
       <div class="form-title" style="margin-bottom:4px;">Request Access</div>
-      <div class="form-sub" style="margin-bottom:14px;">Limited access — Tushar will review your request</div>
+      <div class="form-sub" style="margin-bottom:14px;">Limited access — T2Sview will review your request</div>
       <div style="background:#f0f4ff;border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:0.83rem;color:#4a2a78;font-weight:600;">📱 +91 <span id="reg-mobile-display" style="font-weight:800;"></span></div>
       <label class="input-label">Your Name *</label>
       <input id="reg-name-input" type="text" placeholder="Enter your full name" maxlength="60" oninput="_checkRegEnable()"
@@ -431,26 +432,40 @@ async function checkMobile(){
   showLoading(true);document.getElementById('mobile-btn').disabled=true;
   try{
     const mobile='+91'+inp;
-    const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
+    const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash,free_access,free_access_blocked`,{method:'GET',headers:{'Accept':'application/json'}});
     if(!members||members.length===0){currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';document.getElementById('reg-msg').style.display='none';showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');return;}
     const member=members[0];
-    if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @tusharview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @T2Sview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
     const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
     if(_acctLock&&_acctLock.length>0){const _lu=new Date(_acctLock[0].locked_until);const _mins=Math.max(1,Math.ceil((_lu-new Date())/60000));errEl.textContent=`Account temporarily locked due to multiple wrong attempts. Try again in ${_mins} minute${_mins>1?'s':''}.`;errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     currentMobile=mobile;currentMember=member;
     localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
-    showLoading(false);
-    if(member.tier !== 'paid'){
-      localStorage.setItem('t2s_uat_mode','free');
-      localStorage.setItem('t2s_uat_member_id',member.id);
-      localStorage.setItem('t2s_uat_request_pending','1');
-      showScreen('screen-pending');
-    }else if(member.pin_hash){
-      if(await checkLock()){showScreen('screen-pin');return;}
-      showScreen('screen-pin');
+    if(member.tier !== 'paid' && !member.free_access){
+      if(member.free_access_blocked){errEl.textContent='Your access has been blocked. Contact @T2Sview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+      // C3: check request status — pending stays on pending screen; rejected/none → re-apply
+      const _latestReq=await sbFetch(`access_requests?member_id=eq.${member.id}&order=created_at.desc&limit=1&select=status`,{method:'GET',headers:{'Accept':'application/json'}}).catch(()=>[]);
+      const _reqStatus=_latestReq&&_latestReq[0]?_latestReq[0].status:null;
+      if(_reqStatus==='pending'){
+        localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');
+        showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-pending');
+      }else{
+        // rejected or no request → show registration form to re-apply
+        currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;
+        document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;
+        document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';
+        const _rm=document.getElementById('reg-msg');
+        if(_reqStatus==='rejected'){_rm.style.display='block';_rm.style.color='#d97706';_rm.textContent='Your previous request was not approved. You may apply again.';}
+        else{_rm.style.display='none';}
+        showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');
+      }
     }else{
-      showScreen('screen-setup');
+      // C2: paid tier OR approved free_access member
+      localStorage.removeItem('t2s_uat_request_pending');
+      if(member.free_access&&member.tier!=='paid'){localStorage.setItem('t2s_uat_mode','free');}
+      showLoading(false);document.getElementById('mobile-btn').disabled=false;
+      if(member.pin_hash){if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');}
+      else{showScreen('screen-setup');}
     }
   }catch(e){errEl.textContent='Unable to verify. Check your connection and try again.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;}
 }
@@ -465,11 +480,11 @@ async function verifyPin(){
     const hash=await hashPin(pinBuffer);const did=getDeviceId();
     // Fresh member fetch to get latest pin_hash and confirm account still active
     const members=await sbFetch(`members?id=eq.${currentMember.id}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!members||members.length===0){showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @tusharview.';setTimeout(()=>{localStorage.clear();location.reload();},2500);return;}
+    if(!members||members.length===0){showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @T2Sview.';setTimeout(()=>{localStorage.clear();location.reload();},2500);return;}
     currentMember=members[0];
     if(currentMember.pin_hash===hash){
       failedAttempts=0;localStorage.removeItem('t2s_uat_lock_until');
-      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode','paid');
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember.tier==='paid'?'paid':'free');
       // Create session if new device, otherwise update last_active
       const sessions=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
       if(sessions&&sessions.length>0){
@@ -515,7 +530,7 @@ async function verifyPin(){
     }
   }catch(e){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Verification failed. Check connection.';}
 }
-function forgotPin(){window.open('https://t.me/tusharview','_blank');}
+function forgotPin(){window.open('https://t.me/T2Sview','_blank');}
 function continuePendingAsLimited(){localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;}
 function _checkRegEnable(){const n=(document.getElementById('reg-name-input')?.value||'').trim();const c=document.getElementById('reg-consent-check')?.checked;const btn=document.getElementById('reg-submit-btn');if(btn){btn.disabled=!(n&&c);btn.style.opacity=(n&&c)?'1':'0.5';}}
 async function submitRegistration(){
@@ -529,7 +544,7 @@ async function submitRegistration(){
     const mobile='+91'+currentUnregisteredMobile;
     const consentText='I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.';
     const _devBlk=await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&select=device_id`,{method:'GET'});
-    if(_devBlk&&_devBlk.length>0){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='This device has been restricted. Contact @tusharview on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
+    if(_devBlk&&_devBlk.length>0){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='This device has been restricted. Contact @T2Sview on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
     const _rlSince=new Date(Date.now()-24*3600000).toISOString();
     const _rlRecent=await sbFetch(`access_requests?device_id=eq.${did}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`,{method:'GET'});
     if(_rlRecent&&_rlRecent.length>=3){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Too many requests from this device. Try again after 24 hours.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
@@ -566,7 +581,7 @@ async function processSetupPin(){
       await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
       const _rcSetup=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
       if(_rcSetup&&_rcSetup.length>2){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});showLoading(false);document.getElementById('setup-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');return;}
-      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode','paid');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember&&currentMember.tier==='paid'?'paid':'free');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
     }catch(e){showLoading(false);document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');}
   }
 }
