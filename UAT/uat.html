@@ -45,6 +45,7 @@
 <!-- T2S-UAT-20260723-005 | uat.html: (1) Exit breakdown separator changed from · to / with space before @ — now renders as "50% @₹100 / 25% @₹110 / 25% @₹140" in both closed-card breakdowns and active-card trigger banner. (2) Card header layout: BUY/SELL pill and P&L/status badge now on SAME row (reverts 004 stacked rows back to side-by-side per user-confirmed image). S1/S2 active: pill + P&L span wrapped in one flex row. S2.5/S3 closed: BUY span + badge in one flex row. S3 active: actionBadge3 + P&L span in one flex row. Rollback: revert join(' / ') to join(' · ') and `% @` to `% @ ` in 4 places; revert S1/S2 from wrapper-div to bare span + outer div; revert S2.5/S3 closed from single-row to two separate elements; revert S3 active from wrapper-div to bare actionBadge3 + outer div. -->
 <!-- T2S-UAT-20260723-004 | uat.html: Card header layout standardisation — P&L/status badge now always in its own row BELOW the BUY/SELL pill across ALL card types. Previously: active cards (S1/S2/S3) had P&L badge inline (same row as BUY/SELL pill); Section 2.5 closed had Profit/Loss as display:inline-block alongside BUY. Now: all 4 sections move the badge to a flex row below BUY/SELL, matching Section 3 closed card format. Zero functional change — purely layout position of the badge. Rollback: revert S1 header to display:flex gap:5px wrapper, revert S2 header same, revert S2.5 badge from flex-div wrapper to inline-block span, revert S3 active header from separate rows to inner flex gap:5px wrapper. -->
 <!-- T2S-UAT-20260723-003 | uat.html: Exit breakdown display — (1) getExitLegs() helper extracts each partial exit leg [{pct,price}] from follow-ups (mirrors getWeightedExitPrice logic); (2) buildExitBreakdownHtml() renders "50%@₹115 · 25%@₹132 · 25%@₹149" only when ≥2 legs; (3) Closed trade cards (Sections 2.5 + 3): "Exit" label changes to "Effective Exit" for multi-exit trades, breakdown appears below the price value; (4) Active partial-exit trigger banner (Sections 1/2/3): holdingText changed from "Exited 50% · Remaining 50%" to "50% @ ₹115 · 50% Remaining" — price of locked portion now visible. Single-exit closed trades (D10/D11/D12) unchanged. Rollback: remove getExitLegs+buildExitBreakdownHtml functions; revert _holdingText1/_activeLegs1, holdingText2/_activeLegs2, holdingText3/_activeLegs3 to single-line ternaries; remove _exitLegs25/label/breakdown and _exitLegs3/label/breakdown vars; revert metric-label template literals back to hardcoded "Exit". -->
+<!-- T2S-UAT-20260906-001 | uat.html: Branding — replaced all @tusharview/@trade2spend display handles and t.me/ links with @T2Sview / t.me/T2Sview across all user-visible text (CTAs, error messages, about section, live ticker, premium popup). YouTube channel updated to @T2Sview. Rollback: revert all @T2Sview occurrences to @tusharview / @trade2spend respectively. -->
 <!-- T2S-UAT-20260723-002 | uat.html: D2/D3/D4 feedback fixes — (1) D-number labels (D1–D14) stamped on each dummy card via DOM injection after render; (2) Session high/low initialized from entry price so high≥entry (BUY) and low≤entry (SELL) always — data-entry attr added to spans, updateTradeCMPs seeds dict from entry before comparing LTP; (3) All BankNifty dummies changed weekly→monthly (BankNifty is monthly-only); all Nifty dummies changed weekly→monthly (Jul 28 = last Tuesday = monthly); (4) Dummy follow-up CMPs fixed to be near entry price to avoid trigger-at-wrong-price confusion; "session high/low X" text removed from follow-up content; D4 follow-up "SL at 51000 spot" removed (was causing false SL revision display). -->
 <!-- T2S-UAT-20260723-001 | uat.html: D1 feedback fixes — (1) Card header layout compressed to 2 rows: date/time top, BUY/SELL pill + P&L badge same row below (Sections 1/2/3 active); (2) "Yet to Trigger" label added below entry metric when trade not yet triggered (all sections); (3) Session high tracking added inside updateTradeCMPs so mock CMPs correctly update data-live-high elements (was only driven by VM optionHighs data, not CMP LTPs). -->
 <!-- T2S-UAT-20260722-001 | uat.html: Trade Alert Card Logic fixes — (1) Live P&L badge on active triggered trades (BUY/SELL), with adjusted threshold after partial exits; (2) 2:45 PM free member time-based unlock; (3) SL field unlock for free members after trade closes; (4) Session High→Low label fixed for SELL in Section 2; (5) Loss trade: static session high/low instead of live updating data-live-high; (6) [CLOSEPRICE:X] support for Scenario 4 remaining position close price; (7) UAT dummy posts for all 15 trade scenarios (deleted after Tushar confirms). Rollback: revert getTradeState/isTradeFullyClosed mock overrides, revert getFreeUnlockedFields to previous signature, remove computePlBadgeAttrs/calculateMinPrice/extractClosePriceFromReplies, remove P&L badge spans from sections 1/2/3, revert Section 2 Session High label, revert Section 3 closed loss session display, revert getWeightedExitPrice to single-opts.sl block, remove UAT dummy data injection, remove _UAT_DUMMY_* vars. -->
@@ -531,7 +532,7 @@
             <div class="tab" onclick="switchTab('about', this)">About</div>
         </div>
         <!-- Live Banner Ticker — filled by renderLiveTicker(); click opens t.me/tusharview -->
-        <div id="live-ticker-wrap" onclick="window.open('https://t.me/tusharview','_blank')">
+        <div id="live-ticker-wrap" onclick="window.open('https://t.me/T2Sview','_blank')">
             <div id="live-ticker-inner">
                 <div id="live-ticker-track"><div id="live-ticker-anim"></div></div>
             </div>
@@ -755,11 +756,11 @@
 
             <p style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Follow us</p>
             <div style="display:flex;gap:10px;margin-bottom:20px;">
-                <a href="https://www.youtube.com/@trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#fff0f0;border:1px solid #fecaca;border-radius:12px;text-decoration:none;">
+                <a href="https://www.youtube.com/@T2Sview" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#fff0f0;border:1px solid #fecaca;border-radius:12px;text-decoration:none;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="#dc2626"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.7 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg>
                     <span style="font-size:0.68rem;font-weight:700;color:#dc2626;">YouTube</span>
                 </a>
-                <a href="https://t.me/trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;text-decoration:none;">
+                <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;text-decoration:none;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="#2563eb"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.94 8.19l-2.02 9.52c-.15.67-.54.84-1.09.52l-3-2.21-1.45 1.4c-.16.16-.3.3-.61.3l.22-3.07 5.6-5.06c.24-.22-.05-.34-.38-.12L6.18 14.4l-2.96-.92c-.64-.2-.65-.64.14-.95l11.55-4.45c.54-.19 1.01.13.83.95-.16.68-.15.69-.15.69l.35-.53z"/></svg>
                     <span style="font-size:0.68rem;font-weight:700;color:#2563eb;">Telegram</span>
                 </a>
@@ -769,8 +770,8 @@
                 </a>
             </div>
 
-            <a href="https://t.me/tusharview" class="btn-primary" style="text-align:center;">Join Premium → Message @tusharview</a>
-            <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align:center;">Free Telegram Channel @trade2spend</a>
+            <a href="https://t.me/T2Sview" class="btn-primary" style="text-align:center;">Join Premium → Message @T2Sview</a>
+            <a href="https://t.me/T2Sview" class="btn-secondary" style="text-align:center;">Free Telegram Channel @T2Sview</a>
         </div>
     </div>
 
@@ -784,8 +785,8 @@
         <div class="popup-icon">🔒</div>
         <h3 class="popup-title">Premium Members Only</h3>
         <p class="popup-text">Get real-time trade entries, exact stop loss levels, targets, and detailed analysis — exclusively for premium members.</p>
-        <a href="https://t.me/tusharview" class="btn-primary">Join Premium → Message @tusharview</a>
-        <a href="https://t.me/trade2spend" class="btn-secondary">Join Free Channel</a>
+        <a href="https://t.me/T2Sview" class="btn-primary">Join Premium → Message @T2Sview</a>
+        <a href="https://t.me/T2Sview" class="btn-secondary">Join Free Channel</a>
         <div id="popup-free-access-cta" style="margin-top:14px;width:100%;"></div>
         <p style="font-size: 0.7rem; color: #a8a29e; margin-top: 10px;">Educational purposes only. Not investment advice.</p>
     </div>
@@ -868,7 +869,7 @@
     <div id="fa-pending-section" style="display:none;text-align:center;padding-top:4px;">
       <div style="font-size:2rem;margin-bottom:10px;">⏳</div>
       <p style="font-size:0.9rem;font-weight:700;color:#4a2a78;margin:0 0 8px;">Request Under Review</p>
-      <p style="font-size:0.8rem;color:#6b7280;margin:0 0 18px;line-height:1.5;">Your access request has been submitted. You'll be notified when Tushar approves it.</p>
+      <p style="font-size:0.8rem;color:#6b7280;margin:0 0 18px;line-height:1.5;">Your access request has been submitted. You'll be notified when T2Sview approves it.</p>
       <button onclick="_faContinueLimited()" style="background:#4a2a78;color:#fff;border:none;border-radius:12px;padding:11px 20px;font-size:0.88rem;font-weight:700;cursor:pointer;width:100%;font-family:inherit;">Continue as Limited Access →</button>
     </div>
   </div>
@@ -1162,7 +1163,7 @@
             if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
             const m = member && member[0] ? member[0] : {};
             if (m.free_access === true) { cta.innerHTML = `<p style="font-size:0.78rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">✅ You already have free access!</p>`; return; }
-            if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="https://t.me/tusharview" style="color:var(--primary);">@tusharview</a>.</p>`; return; }
+            if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="https://t.me/T2Sview" style="color:var(--primary);">@T2Sview</a>.</p>`; return; }
             const reqs = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,last_rejected_at,block_reason`, { method: 'GET' });
             const lr = reqs && reqs[0];
             if (lr && lr.status === 'pending') {
@@ -1283,7 +1284,7 @@
             _faPinBuffer = ''; _faUpdateDots('');
             const rem = 3 - _faPinAttempts;
             if (rem <= 0) {
-                document.getElementById('fa-pin-err').textContent = 'Too many attempts. Contact @tusharview to unlock.';
+                document.getElementById('fa-pin-err').textContent = 'Too many attempts. Contact @T2Sview to unlock.';
                 document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
                 try{const _faLu=new Date(Date.now()+30*60000).toISOString();await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({locked_until:_faLu,failed_attempts_today:_faPinAttempts}),headers:{'Prefer':'return=minimal'}});}catch(e){}
             } else {
@@ -1408,7 +1409,7 @@
             if (members && members[0]) {
                 const { id: mid, tier, status } = members[0];
                 // Disabled account — block immediately
-                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @tusharview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
+                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
                 // Fetch full member record including pin_hash for inline PIN verification
                 const fullMember = await sbFetch(`members?id=eq.${mid}&select=id,tier,status,pin_hash`, { method:'GET' });
                 const member = (fullMember && fullMember[0]) ? fullMember[0] : members[0];
@@ -1489,7 +1490,7 @@
                 const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier,pin_hash`, { method: 'GET' });
                 if (members && members[0]) {
                     const m = members[0];
-                    if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This account is suspended. Contact @tusharview on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
+                    if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This account is suspended. Contact @T2Sview on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
                     if (m.tier === 'paid') {
                         if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                         m.pin_hash ? _faShowPinSection(m,'Enter your PIN to access your account') : _faShowPinSetup(m,'Create your 4-digit access PIN');
@@ -1515,7 +1516,7 @@
             // Check if this device has been blocked by admin
             const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=device_id`, { method: 'GET', headers: { 'Accept': 'application/json' } });
             if (_devBlk && _devBlk.length > 0) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This device has been restricted. Contact @tusharview on Telegram.'; }
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This device has been restricted. Contact @T2Sview on Telegram.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                 return;
             }
@@ -1545,7 +1546,7 @@
                     }
                 }
                 if (lr.status === 'blocked') {
-                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Your account is blocked. Contact @tusharview on Telegram.'; }
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Your account is blocked. Contact @T2Sview on Telegram.'; }
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                     return;
                 }
@@ -2616,7 +2617,7 @@
                                 <span class="metric-value ${pnlClass}">${pnlValue}</span>
                             </div>
                             <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-                                <div class="rationale-box" onclick="window.open('https://t.me/tusharview','_blank')" style="margin:0;padding:5px 8px;border-radius:6px;cursor:pointer;">
+                                <div class="rationale-box" onclick="window.open('https://t.me/T2Sview','_blank')" style="margin:0;padding:5px 8px;border-radius:6px;cursor:pointer;">
                                     <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
                                     <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
                                 </div>
