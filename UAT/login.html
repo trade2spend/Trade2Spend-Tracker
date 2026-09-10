@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260910-001 | login_uat.html: forgot PIN hardening — (C) device check: forgotPin() now queries sessions table first; only allows request if this device_id has a prior login for this member — blocks strangers submitting reset for someone else's number; (D) admin-reset detection: if pin_hash is already null, shows "Admin has reset your PIN, reload to set new" instead of rate limit; (E) session expiry: submitPinResetRequest() clears t2s_uat_last_login so refresh lands on PIN screen instead of auto-login. Rollback: restore original forgotPin() function, remove localStorage.removeItem('t2s_uat_last_login') from submitPinResetRequest(). -->
 <!-- T2S-UAT-20260906-001 | login_uat.html: (1) Branding: @tusharview/@trade2spend → @T2Sview across all user-visible text and t.me/ links. (2) C2 fix: checkMobile now fetches free_access+free_access_blocked; approved free_access members go to PIN/setup screen (mode=free) instead of stuck on screen-pending; verifyPin/processSetupPin set mode based on actual tier instead of hardcoding paid. (3) C3 fix: rejected/new members see screen-intro (apply form) instead of screen-pending, with a notice if previously rejected; pending requests still show screen-pending. Rollback: revert SELECT query, revert checkMobile if/else block, revert verifyPin/processSetupPin mode lines. -->
 <!DOCTYPE html>
 <html lang="en">
@@ -544,20 +545,47 @@ function forgotPin(){
   if(!visible)return;
   const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
   document.getElementById('forgot-pin-mobile').textContent='📱 '+mob;
-  const lastAt=parseInt(localStorage.getItem('t2s_uat_pin_reset_at')||'0');
-  const TWO_HOURS=2*60*60*1000;
   const btn=document.getElementById('forgot-pin-btn');
   const timerEl=document.getElementById('forgot-pin-timer');
   const msgEl=document.getElementById('forgot-pin-msg');
   msgEl.style.display='none';
-  if(lastAt&&Date.now()-lastAt<TWO_HOURS){
-    const rem=TWO_HOURS-(Date.now()-lastAt);
-    const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
-    timerEl.textContent=`Request already submitted. You can retry in ${h}h ${m}m.`;
-    timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';
-  }else{
-    timerEl.style.display='none';btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';
+  timerEl.style.display='none';
+  btn.disabled=true;btn.style.opacity='0.5';btn.textContent='Checking…';
+  const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
+  const did=getDeviceId();
+  if(!mid){
+    timerEl.textContent='Cannot verify your identity. Please contact @T2Sview on Telegram.';
+    timerEl.style.display='block';btn.textContent='Submit Reset Request';return;
   }
+  Promise.all([
+    sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${did}&select=id`,{method:'GET',headers:{'Accept':'application/json'}}),
+    sbFetch(`members?id=eq.${mid}&select=pin_hash`,{method:'GET',headers:{'Accept':'application/json'}})
+  ]).then(([sessions,members])=>{
+    btn.textContent='Submit Reset Request';
+    // Device check — must have a prior successful login on this device
+    if(!sessions||sessions.length===0){
+      timerEl.textContent='PIN reset is only allowed from a device you have previously logged in on. Contact @T2Sview on Telegram.';
+      timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';return;
+    }
+    // Admin already reset — pin_hash is null
+    if(members&&members[0]&&members[0].pin_hash===null){
+      timerEl.style.color='#059669';
+      timerEl.textContent='Your PIN has already been reset by admin. Please reload this page to set a new one.';
+      timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';return;
+    }
+    // Rate limit check
+    const lastAt=parseInt(localStorage.getItem('t2s_uat_pin_reset_at')||'0');
+    const TWO_HOURS=2*60*60*1000;
+    if(lastAt&&Date.now()-lastAt<TWO_HOURS){
+      const rem=TWO_HOURS-(Date.now()-lastAt);
+      const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
+      timerEl.style.color='#d97706';
+      timerEl.textContent=`Request already submitted. You can retry in ${h}h ${m}m.`;
+      timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';
+    }else{
+      timerEl.style.display='none';btn.disabled=false;btn.style.opacity='1';
+    }
+  }).catch(()=>{btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';});
 }
 async function submitPinResetRequest(){
   const btn=document.getElementById('forgot-pin-btn');
@@ -568,6 +596,7 @@ async function submitPinResetRequest(){
     const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
     await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'pin_reset_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
     localStorage.setItem('t2s_uat_pin_reset_at',Date.now().toString());
+    localStorage.removeItem('t2s_uat_last_login');
     msg.style.color='#059669';msg.textContent='✓ Request submitted. Admin will reset your PIN shortly.';msg.style.display='block';
     btn.style.display='none';document.getElementById('forgot-pin-timer').style.display='none';
   }catch(e){
