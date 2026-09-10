@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260910-001 | uat.html: two fixes — (A) Realtime handler: after admin approves, if t2s_uat_request_pending=1 clear pending+mode+last_login and redirect to login_uat.html so member sets PIN before entering PWA; (B) _faMobileBlur: removed inline paid/free PIN entry from mini-form — any registered member found in DB now sees "Already registered, login here" link to login_uat.html. Only truly unregistered numbers proceed to the request form. Rollback: revert Realtime handler to remove the request_pending redirect block; revert _faMobileBlur member-found block to restore inline PIN setup/entry. -->
 <!-- T2S-UAT-20260907-002 | uat.html: free_access lock icon bug — 5 fixes: (1-4) all 4 member fetch calls (fetchTradeAlerts, fetchTrades, fetchUpdates, fetchMarketData fallback) were missing free_access in select query, so free_access=true members saw the premium lock; (5) init() had a race condition — fetched _cachedMember without free_access, then patched it in a separate async call that lost the race with fetchTradeAlerts; fixed by merging free_access+free_access_blocked into the single init query. Rollback: remove free_access from all 5 select queries, remove the 4 direct free_access override lines, restore the separate sbFetch patch block in init(). -->
 <!-- T2S-UAT-20260907-001 | uat.html: stale pending banner fix — when t2s_uat_request_pending=1 but member_id is null, banner now clears immediately on init instead of staying forever. Rollback: remove the !memberId block added before the memberId check. -->
 <!-- T2S-UAT-20260830-003 | uat.html: parseFollowUpContent negation guard — "Will not hold overnight" was incorrectly setting isHolding=true (regex matched "hold overnight" without detecting the "not" before it), causing isTradeFullyClosed() to skip all time-based auto-close conditions and keep the trade open indefinitely. Fix: added _negHoldRe check — only sets isHolding=true when holding regex matches AND no negation phrase ("not/won't/will not/don't/never + hold + overnight/next day/tomorrow") is found. Also updated sbTradeFullyExited() in server.js to detect "not holding overnight" intent so VM stops posting [HIGH:X] after market close. Rollback: remove _negHoldRe declaration and revert the isHolding line back to a bare if(_holdRe.test(text)) check. -->
@@ -1409,31 +1410,13 @@
         try {
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
-                const { id: mid, tier, status } = members[0];
+                const { status } = members[0];
                 // Disabled account — block immediately
                 if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
-                // Fetch full member record including pin_hash for inline PIN verification
-                const fullMember = await sbFetch(`members?id=eq.${mid}&select=id,tier,status,pin_hash`, { method:'GET' });
-                const member = (fullMember && fullMember[0]) ? fullMember[0] : members[0];
-                if (!member.pin_hash) {
-                    if (tier === 'paid') {
-                        hint.style.color = '#4a2a78';
-                        hint.textContent = 'Paid member — create your access PIN to log in.';
-                        _faShowPinSetup(member, 'Create your 4-digit access PIN');
-                    } else {
-                        _faPendingMember = member;
-                        _faRenderPhase('pending');
-                    }
-                    input._blocked = true; _faCheckEnable(); return;
-                }
-                if (tier === 'paid') {
-                    hint.style.color = '#4a2a78';
-                    hint.textContent = 'Paid member — enter your PIN below.';
-                    _faShowPinSection(member, 'Enter your PIN to access your account');
-                } else {
-                    _faPendingMember = member;
-                    _faRenderPhase('pending');
-                }
+                // Registered member (any tier) — redirect to login_uat.html to authenticate with PIN
+                localStorage.setItem('t2s_uat_mobile', mob);
+                hint.style.color = '#4a2a78';
+                hint.innerHTML = `✓ You're already registered. <a href="login_uat.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>`;
                 input._blocked = true;
             } else {
                 // Not in DB — show registration form so they can submit a request
@@ -1493,12 +1476,10 @@
                 if (members && members[0]) {
                     const m = members[0];
                     if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This account is suspended. Contact @T2Sview on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
-                    if (m.tier === 'paid') {
-                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                        m.pin_hash ? _faShowPinSection(m,'Enter your PIN to access your account') : _faShowPinSetup(m,'Create your 4-digit access PIN');
-                        return;
-                    }
-                    if (msg) { msg.style.display='block'; msg.style.color='#d97706'; msg.textContent='Your request is already under review. You\'ll be notified when approved.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return;
+                    // Registered member — redirect to login_uat.html
+                    localStorage.setItem('t2s_uat_mobile', mob);
+                    if (msg) { msg.style.display='block'; msg.style.color='#4a2a78'; msg.innerHTML='✓ You\'re already registered. <a href="login_uat.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return;
                 }
                 const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
                 const newM = await sbFetch('members', { method: 'POST', body: JSON.stringify({ mobile: '+91' + mob, name: nameVal, tier: 'free', status: 'enabled' }) });
@@ -2944,6 +2925,14 @@
                             if (!rows || !rows.length) return;
                             const m = rows[0];
                             if (m.status === 'disabled') { window.location.href = 'login.html'; return; }
+                            // If member was in the free-access approval queue, redirect to login to set PIN
+                            if (localStorage.getItem('t2s_uat_request_pending') === '1') {
+                                localStorage.removeItem('t2s_uat_request_pending');
+                                localStorage.removeItem('t2s_uat_mode');
+                                localStorage.removeItem('t2s_uat_last_login');
+                                window.location.href = 'login_uat.html';
+                                return;
+                            }
                             window._cachedMember = Object.assign(window._cachedMember || {}, m);
                             const newMode = (m.tier === 'paid' || m.free_access) ? 'paid' : 'free';
                             localStorage.setItem('t2s_uat_mode', newMode);
