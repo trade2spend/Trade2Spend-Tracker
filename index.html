@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20260910-001 | PROD: Trigger state latch — _triggeredPostIds Set + sessionStorage (today-only, key t2s_triggered) added. getTradeState() checks Set before CMP auto-detect; on first CMP-based trigger, latches postId so state never reverts to Yet to Trigger on LTP dip. Promoted from T2S-UAT-20260828-001. Rollback: remove _triggeredPostIds Set+IIFE; remove Set check + latch block from getTradeState(). -->
 <!-- T2S-PROD-20260826-001 | PROD: SL parser — added new pattern to parseFollowUpContent slPats for "SL [modifier] to [number]" word order (e.g. "SL modified to 24285", "SL revised to 24285"). Pattern 1 already handled the reverse order "[modifier] SL to N" — this adds the complement. Zero touch to all other code, logic, calculations, or any other feature. Rollback: remove the one added slPats line. -->
 <!-- T2S-PROD-20260823-002 | PROD: Advance/Decline panel auto-refresh with scroll preservation and directional flash — (1) _advDecRender(which): extracted HTML-building logic from toggleAdvDec into standalone function; rows now stamped with data-symbol attribute for post-rebuild targeting. (2) _advDecRefresh(oldPrices): on every 5s /market poll, if panel is open — saves scrollTop, rebuilds via _advDecRender, restores scrollTop (no scroll jump); compares old vs new prices and flashes changed rows green (#dcfce7) if price went up or red (#fee2e2) if price went down for 2.5s. (3) toggleAdvDec: replaced 25-line inline HTML block with single _advDecRender(which) call — behaviour identical. (4) renderMarketUI breadth block: snapshots current prices before _advDecStocks update, then passes snapshot to _advDecRefresh so comparison is old-vs-new not new-vs-new. Zero touch to _advDecCollapse, outside-click listener, chip counts, chevron logic, all other tabs, server.js, Supabase. Rollback: revert toggleAdvDec to inline HTML block; remove _advDecRender/_advDecRefresh functions; revert renderMarketUI line to plain _advDecStocks assignment. -->
 <!-- T2S-PROD-20260823-001 | PROD: Markets tab — NIFTY 50 Advance/Decline collapsible component: (1) movers-section hidden (display:none — data still renders to gainers/losers lists for the expand panel); (2) adv-dec-bar chips: old scroll-to-movers onclick replaced with toggleAdvDec() + green/red chip styling + flex-wrap for mobile overflow fix; (3) adv-note removed entirely from bar; (4) adv-dec-detail expand panel added — shows CMP, Change, % Change for all stocks sorted by magnitude; (5) _advDecCollapse(), toggleAdvDec() functions + outside-click listener added; (6) renderExpiryStrip() updated to show "Market Feed/NSE Data" source label right-aligned in the Upcoming F&O Expiry header row (same row, less vertical space); (7) mcard-src grid injection removed (was below price cards, now in expiry strip). server.js changes (gainers/losers >= 0, breadth, source preference) already live on VM from Aug 22. Rollback: revert adv-dec-bar HTML to old scroll-onclick spans + pipe separator + adv-note; remove adv-dec-detail div; remove _advDecCollapse/toggleAdvDec/outside-click; revert renderExpiryStrip to single-param; restore mcard-src injection; revert movers-section to display:block. -->
@@ -808,6 +809,14 @@
     let _advDecOpen   = null;      // null | 'advancing' | 'declining' — adv/dec expand state
     let _advDecStocks = { gainers: [], losers: [] }; // cached from last renderMarketUI
     const _tradeTargetHits = {};             // FSM: post.id → {t1,t2,t3} — target hit latches, never reset to false
+    const _triggeredPostIds = new Set(); // FSM: CMP-auto-triggered post IDs — one-way latch, never reverts on LTP dip
+    (function(){
+        try {
+            const _d = new Date().toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata'});
+            const _t = JSON.parse(sessionStorage.getItem('t2s_triggered')||'null');
+            if (_t && _t.date === _d) (_t.ids||[]).forEach(function(id){ _triggeredPostIds.add(id); });
+        } catch(_e) {}
+    })();
     (function(){
         try {
             const _now = new Date();
@@ -2705,6 +2714,7 @@
             return true;
         });
         if (validReplies.length > 0) return 'triggered';
+        if (_triggeredPostIds.has(post.id)) return 'triggered'; // latch: once triggered via CMP, never reverts on LTP dip
         // Auto-detect: if live CMP >= entry price, trade is triggered (no manual follow-up needed)
         if (_lastOptionLTPs) {
             const f = extractTradeAlertFields(post.content||'');
@@ -2712,7 +2722,13 @@
                 const key = `${f.instrument}-${f.strike}-${f.optType}`;
                 const liveCMP = _lastOptionLTPs[key];
                 const _sellTrigger = f.action === 'SELL' ? liveCMP <= f.entry : liveCMP >= f.entry;
-                if (liveCMP != null && _sellTrigger) return 'triggered';
+                if (liveCMP != null && _sellTrigger) {
+                    if (post.id) {
+                        _triggeredPostIds.add(post.id);
+                        try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_triggered',JSON.stringify({date:_d,ids:[..._triggeredPostIds]})); } catch(_e) {}
+                    }
+                    return 'triggered';
+                }
             }
         }
         const tz = { timeZone:'Asia/Kolkata' };
