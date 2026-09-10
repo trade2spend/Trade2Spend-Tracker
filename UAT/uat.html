@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20260910-003 | uat.html: logout hardening — (1) localStorage clear now happens synchronously FIRST before any async call, so a slow Supabase PATCH cannot leave t2s_uat_last_login set; (2) redirect fixed from login.html (prod) to login_uat.html (UAT); (3) t2s_uat_request_pending added to the cleared keys list. Rollback: revert logout() to original async-first order, change redirect back to login.html, remove request_pending from cleared keys. -->
+<!-- T2S-UAT-20260910-002 | uat.html: Realtime PIN reset kick-out — added pin_hash to Realtime member fetch; if pin_hash===null (admin reset) while member is in PWA, immediately clears last_login+mode+request_pending and redirects to login_uat.html so member is forced to set new PIN. Rollback: remove pin_hash from select query, remove the pin_hash===null redirect block. -->
 <!-- T2S-UAT-20260910-001 | uat.html: two fixes — (A) Realtime handler: after admin approves, if t2s_uat_request_pending=1 clear pending+mode+last_login and redirect to login_uat.html so member sets PIN before entering PWA; (B) _faMobileBlur: removed inline paid/free PIN entry from mini-form — any registered member found in DB now sees "Already registered, login here" link to login_uat.html. Only truly unregistered numbers proceed to the request form. Rollback: revert Realtime handler to remove the request_pending redirect block; revert _faMobileBlur member-found block to restore inline PIN setup/entry. -->
 <!-- T2S-UAT-20260907-002 | uat.html: free_access lock icon bug — 5 fixes: (1-4) all 4 member fetch calls (fetchTradeAlerts, fetchTrades, fetchUpdates, fetchMarketData fallback) were missing free_access in select query, so free_access=true members saw the premium lock; (5) init() had a race condition — fetched _cachedMember without free_access, then patched it in a separate async call that lost the race with fetchTradeAlerts; fixed by merging free_access+free_access_blocked into the single init query. Rollback: remove free_access from all 5 select queries, remove the 4 direct free_access override lines, restore the separate sbFetch patch block in init(). -->
 <!-- T2S-UAT-20260907-001 | uat.html: stale pending banner fix — when t2s_uat_request_pending=1 but member_id is null, banner now clears immediately on init instead of staying forever. Rollback: remove the !memberId block added before the memberId check. -->
@@ -2920,11 +2922,19 @@
                 if (msg.payload?.table === 'members') {
                     const _rtMid = localStorage.getItem('t2s_uat_member_id');
                     if (!_rtMid) return;
-                    sbFetch(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked`, { method: 'GET' })
+                    sbFetch(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`, { method: 'GET' })
                         .then(rows => {
                             if (!rows || !rows.length) return;
                             const m = rows[0];
                             if (m.status === 'disabled') { window.location.href = 'login.html'; return; }
+                            // Admin reset this member's PIN — kick out immediately so they set a new one
+                            if (m.pin_hash === null) {
+                                localStorage.removeItem('t2s_uat_last_login');
+                                localStorage.removeItem('t2s_uat_mode');
+                                localStorage.removeItem('t2s_uat_request_pending');
+                                window.location.href = 'login_uat.html';
+                                return;
+                            }
                             // If member was in the free-access approval queue, redirect to login to set PIN
                             if (localStorage.getItem('t2s_uat_request_pending') === '1') {
                                 localStorage.removeItem('t2s_uat_request_pending');
@@ -5379,16 +5389,16 @@
     async function logout(){
         const memberId = localStorage.getItem('t2s_uat_member_id');
         const deviceId = localStorage.getItem('t2s_uat_device_id');
+        // Clear session immediately before any async work so refresh cannot auto-login
+        ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active','t2s_uat_request_pending'].forEach(k=>localStorage.removeItem(k));
+        // Best-effort: mark session inactive in DB
         if (memberId && deviceId) {
-            try {
-                await sbFetch(
-                    `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
-                    { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
-                );
-            } catch(e) { /* best-effort — always redirect */ }
+            sbFetch(
+                `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
+                { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
+            ).catch(()=>{});
         }
-        ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active'].forEach(k=>localStorage.removeItem(k));
-        window.location.href='login.html';
+        window.location.href='login_uat.html';
     }
 
     function toggleCurrMonthDetail() {
