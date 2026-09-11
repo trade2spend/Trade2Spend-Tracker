@@ -605,9 +605,9 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       if (data.session) session = { ...session, ...data.session };
-      // Override only if saved value is the decommissioned gw-napi host (Sep 2026); preserve any valid URL from state
-      if (!session.baseUrl || session.baseUrl === 'https://gw-napi.kotaksecurities.com') {
-        session.baseUrl = 'https://mnapi.kotaksecurities.com';
+      // Override dead/missing baseUrl — gw-napi decommissioned Sep 2026; mnapi unreachable from VM DNS
+      if (!session.baseUrl || session.baseUrl === 'https://gw-napi.kotaksecurities.com' || session.baseUrl === 'https://mnapi.kotaksecurities.com') {
+        session.baseUrl = 'https://mis.kotaksecurities.com';
       }
       if (data.state)   state   = { ...state,   ...data.state };
       // Restore intraday option highs — only if from same IST trading day
@@ -927,8 +927,8 @@ async function loginKotak(totp) {
     session.rid        = d2.data.rid        || '';
     session.auth       = d2.data.auth       || d1.data.token || '';  // step1 token is used as Auth header for step2 — valid for FO LTP too
     session.hsServerId = d2.data.hsServerId || d2.data.serverId || d2.data.rid || '';
-    // Use Kotak-assigned baseUrl from MPIN response (dynamic routing); fallback to mnapi (gw-napi decommissioned Sep 2026)
-    session.baseUrl    = d2.data.baseUrl || 'https://mnapi.kotaksecurities.com';
+    // Use Kotak-assigned baseUrl from MPIN response; fallback to mis (gw-napi dead, mnapi unreachable from VM DNS)
+    session.baseUrl    = d2.data.baseUrl || 'https://mis.kotaksecurities.com';
     session.lastLogin  = Date.now();
     _sessionExpiryWarned = false;
     state.paperMode    = false;
