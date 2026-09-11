@@ -605,7 +605,10 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       if (data.session) session = { ...session, ...data.session };
-      session.baseUrl = 'https://gw-napi.kotaksecurities.com'; // gw-napi is the working LTP endpoint (mis.kotaksecurities.com broken)
+      // Override only if saved value is the decommissioned gw-napi host (Sep 2026); preserve any valid URL from state
+      if (!session.baseUrl || session.baseUrl === 'https://gw-napi.kotaksecurities.com') {
+        session.baseUrl = 'https://mnapi.kotaksecurities.com';
+      }
       if (data.state)   state   = { ...state,   ...data.state };
       // Restore intraday option highs — only if from same IST trading day
       if (data.optionHighs && data.optionHighsDate) {
@@ -924,8 +927,8 @@ async function loginKotak(totp) {
     session.rid        = d2.data.rid        || '';
     session.auth       = d2.data.auth       || d1.data.token || '';  // step1 token is used as Auth header for step2 — valid for FO LTP too
     session.hsServerId = d2.data.hsServerId || d2.data.serverId || d2.data.rid || '';
-    // gw-napi is the working LTP endpoint — mis.kotaksecurities.com broken for LTP since Jul 2026
-    session.baseUrl    = 'https://gw-napi.kotaksecurities.com';
+    // Use Kotak-assigned baseUrl from MPIN response (dynamic routing); fallback to mnapi (gw-napi decommissioned Sep 2026)
+    session.baseUrl    = d2.data.baseUrl || 'https://mnapi.kotaksecurities.com';
     session.lastLogin  = Date.now();
     _sessionExpiryWarned = false;
     state.paperMode    = false;
@@ -1599,7 +1602,7 @@ async function fetchKotakOptionLTPs() {
         if (r.status >= 500) {
           _ltpConsecFailures++;
           if (_ltpConsecFailures >= 2) {
-            const alt = session.baseUrl === DATA_URL ? 'https://gw-napi.kotaksecurities.com' : DATA_URL;
+            const alt = session.baseUrl === DATA_URL ? 'https://mnapi.kotaksecurities.com' : DATA_URL;
             session.baseUrl = alt; _ltpConsecFailures = 0;
             console.log(`[ltp] ${r.status} x2 — switched to: ${alt}`);
           }
@@ -1640,7 +1643,7 @@ async function fetchKotakOptionLTPs() {
       _ltpConsecFailures++;
       if (_ltpConsecFailures >= 2) {
         const alt = session.baseUrl === DATA_URL
-          ? 'https://gw-napi.kotaksecurities.com'
+          ? 'https://mnapi.kotaksecurities.com'
           : DATA_URL;
         session.baseUrl = alt;
         _ltpConsecFailures = 0;
