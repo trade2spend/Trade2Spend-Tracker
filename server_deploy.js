@@ -3738,7 +3738,8 @@ const server = http.createServer(async (req, res) => {
       if (testToken) {
         try {
           const url = `${gwBase}/script-details/1.0/quotes/neosymbol/nse_fo|${testToken}/ltp`;
-          const r = await fetch(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token }, signal: AbortSignal.timeout(4000) });
+          // Use ftKotak (native https, IPv4-forced) — same as actual LTP polling, so result is representative
+          const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token } }, 4000);
           const txt = await r.text();
           ltpTest = { url, status: r.status, body: txt.slice(0, 400), key: testKey, token: testToken };
         } catch(e) { ltpTest = { error: e.message, key: testKey, token: testToken }; }
