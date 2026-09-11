@@ -3790,6 +3790,22 @@ const server = http.createServer(async (req, res) => {
         }
       } else { ltpTest = { note: 'no scrip master, no active contracts' }; }
     }
+    // Multi-URL LTP probe — tests all candidate base URLs with ftKotak (same as live polling)
+    let ltpProbe = null;
+    if (session.token) {
+      const _pt = Object.entries(_scripMaster).find(([k]) => k.startsWith('NIFTY-'));
+      if (_pt) {
+        ltpProbe = [];
+        for (const base of ['https://mis.kotaksecurities.com','https://mnapi.kotaksecurities.com','https://lapi.kotaksecurities.com']) {
+          const url = `${base}/script-details/1.0/quotes/neosymbol/nse_fo|${_pt[1]}/ltp`;
+          try {
+            const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token } }, 5000);
+            const txt = await r.text().catch(() => '');
+            ltpProbe.push({ base, status: r.status, ok: r.ok, body: txt.slice(0, 150) });
+          } catch(e) { ltpProbe.push({ base, error: e.message }); }
+        }
+      }
+    }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const smSensexSample = Object.keys(_scripMaster).filter(k => k.startsWith('SENSEX-')).slice(0, 3);
     const debugVars = { tokenOk: !!session.token, sidOk: !!session.sid, authOk: !!session.auth, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
@@ -3811,6 +3827,7 @@ const server = http.createServer(async (req, res) => {
       marketScraperRunning: !!marketScraperInterval,
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
+      ltpProbe,
       yahooMoversStatus: _yahooMoversStatus,
       khMemberRateSize: _khMemberRate.size
     }));
