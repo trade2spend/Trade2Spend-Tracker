@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260912-004 | login_uat.html: RU-4 fix — when locked account detected on mobile entry screen, CTA changes from "Continue" to "🔓 Request Unlock"; if already submitted changes to "Request Submitted" (disabled); changing the mobile number resets CTA back to "Continue" via _resetMobileBtn(). New functions: _resetMobileBtn(), requestUnlockFromMobile(). Rollback: revert checkMobile() lock block, remove two new functions, revert oninput attribute on mobile-input. -->
 <!-- T2S-UAT-20260912-003 | login_uat.html: (A) FP-3: live countdown timer on forgot-PIN rate limit (30s intervals, updates button + message); (B) FP-6: init() detects pin_hash===null → shows screen-setup instead of screen-pin so member goes directly to setup after admin reset; (C) FP-6: admin-reset detection in forgotPin() now shows "Set New PIN →" button instead of "reload" message — no reload needed; (D) FP-S1: @T2Sview references are now clickable Telegram links; (E) FP-S2: CTA button shows live countdown text. Rollback: revert init() checkLock block, revert forgotPin() .then block, remove _startForgotPinCountdown. -->
 <!-- T2S-UAT-20260912-002 | login_uat.html: remove 24h auto-redirect — visiting login.html now always requires PIN regardless of session age. Only truly limited-access members (mode=free AND no member_id) are redirected to PWA. Also shows masked mobile number on PIN screen so member can identify which account they are logging into. Rollback: restore SESSION_24H check and original mode=free redirect in init(). -->
 <!-- T2S-UAT-20260910-001 | login_uat.html: forgot PIN hardening — (C) device check: forgotPin() now queries sessions table first; only allows request if this device_id has a prior login for this member — blocks strangers submitting reset for someone else's number; (D) admin-reset detection: if pin_hash is already null, shows "Admin has reset your PIN, reload to set new" instead of rate limit; (E) session expiry: submitPinResetRequest() clears t2s_uat_last_login so refresh lands on PIN screen instead of auto-login. Rollback: restore original forgotPin() function, remove localStorage.removeItem('t2s_uat_last_login') from submitPinResetRequest(). -->
@@ -191,7 +192,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
           <div class="prefix-pill">🇮🇳 +91</div>
           <input type="tel" class="phone-input" id="mobile-input"
             placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric"
-            onkeyup="onMobileKey(event)" oninput="this.value=this.value.replace(/\D/g,'')">
+            onkeyup="onMobileKey(event)" oninput="this.value=this.value.replace(/\D/g,'');_resetMobileBtn()">
         </div>
         <button class="submit-btn" id="mobile-btn" onclick="checkMobile()">Continue →</button>
       </div>
@@ -448,7 +449,22 @@ async function checkMobile(){
     if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @T2Sview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
     const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(_acctLock&&_acctLock.length>0){const _lu=new Date(_acctLock[0].locked_until);const _mins=Math.max(1,Math.ceil((_lu-new Date())/60000));errEl.textContent=`Account temporarily locked due to multiple wrong attempts. Try again in ${_mins} minute${_mins>1?'s':''}.`;errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    if(_acctLock&&_acctLock.length>0){
+      const _lu=new Date(_acctLock[0].locked_until);const _mins=Math.max(1,Math.ceil((_lu-new Date())/60000));
+      const _mBtn=document.getElementById('mobile-btn');
+      const _lastUnlock=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
+      const _alreadySent=_lastUnlock&&Date.now()-_lastUnlock<2*60*60*1000;
+      showLoading(false);
+      if(_alreadySent){
+        errEl.textContent=`Account locked (${_mins} min remaining). Unlock request already submitted — contact @T2Sview if needed.`;
+        errEl.classList.add('show');_mBtn.textContent='Request Submitted';_mBtn.disabled=true;_mBtn.style.opacity='0.5';
+      }else{
+        errEl.textContent=`Account locked — ${_mins} minute${_mins>1?'s':''} remaining.`;
+        errEl.classList.add('show');_mBtn.textContent='🔓 Request Unlock';_mBtn.disabled=false;_mBtn.style.opacity='1';
+        _mBtn.onclick=function(){requestUnlockFromMobile(member.id,'+91'+inp);};
+      }
+      return;
+    }
     currentMobile=mobile;currentMember=member;
     localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
     if(member.tier !== 'paid' && !member.free_access){
@@ -719,6 +735,33 @@ async function requestUnlock(){
     btn.style.display='none';
     sentMsg.style.color='#059669';sentMsg.textContent='✓ Unlock request sent to admin.';sentMsg.style.display='block';
   }catch(e){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
+}
+function _resetMobileBtn(){
+  const btn=document.getElementById('mobile-btn');
+  btn.textContent='Continue →';btn.onclick=checkMobile;btn.disabled=false;btn.style.opacity='1';
+  const errEl=document.getElementById('mobile-err');
+  errEl.classList.remove('show');errEl.style.color='';errEl.style.background='';errEl.style.borderColor='';
+}
+async function requestUnlockFromMobile(mid,mob){
+  const btn=document.getElementById('mobile-btn');
+  const errEl=document.getElementById('mobile-err');
+  const lastAt=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
+  if(lastAt&&Date.now()-lastAt<2*60*60*1000){
+    errEl.textContent='Unlock request already submitted. Contact @T2Sview on Telegram if needed.';errEl.classList.add('show');
+    btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';return;
+  }
+  btn.disabled=true;btn.textContent='Sending…';
+  try{
+    await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
+    localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
+    errEl.style.color='#059669';errEl.style.background='#f0fdf4';errEl.style.borderColor='#bbf7d0';
+    errEl.textContent='✓ Unlock request sent to admin. Contact @T2Sview if needed.';errEl.classList.add('show');
+    btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';
+  }catch(e){
+    btn.disabled=false;btn.textContent='🔓 Request Unlock';
+    errEl.style.color='';errEl.style.background='';errEl.style.borderColor='';
+    errEl.textContent='Failed to send. Check connection.';errEl.classList.add('show');
+  }
 }
 function checkDisclaimer(){const today=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());if(localStorage.getItem('t2s_uat_disclaimer_date')!==today)document.getElementById('sebi-modal').style.display='flex';}
 function dismissDisclaimer(){const today=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());localStorage.setItem('t2s_uat_disclaimer_date',today);document.getElementById('sebi-modal').style.display='none';}
