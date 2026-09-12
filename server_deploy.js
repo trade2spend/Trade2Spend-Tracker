@@ -1602,7 +1602,7 @@ async function fetchKotakOptionLTPs() {
         if (r.status >= 500) {
           _ltpConsecFailures++;
           if (_ltpConsecFailures >= 2) {
-            const alt = session.baseUrl === DATA_URL ? 'https://mnapi.kotaksecurities.com' : DATA_URL;
+            const alt = DATA_URL; // always failover to mis — confirmed reachable from VM (mnapi unreachable)
             session.baseUrl = alt; _ltpConsecFailures = 0;
             console.log(`[ltp] ${r.status} x2 — switched to: ${alt}`);
           }
@@ -1642,9 +1642,7 @@ async function fetchKotakOptionLTPs() {
       // Primary/secondary failover — switch URL after 2 consecutive network failures
       _ltpConsecFailures++;
       if (_ltpConsecFailures >= 2) {
-        const alt = session.baseUrl === DATA_URL
-          ? 'https://mnapi.kotaksecurities.com'
-          : DATA_URL;
+        const alt = DATA_URL; // always failover to mis — confirmed reachable from VM (mnapi unreachable)
         session.baseUrl = alt;
         _ltpConsecFailures = 0;
         console.log(`[ltp] 2 consecutive failures — switched to backup: ${alt}`);
@@ -3535,38 +3533,6 @@ const server = http.createServer(async (req, res) => {
       tgAlert('✅ <b>HTTP update complete.</b> Restarting in 3s…').catch(()=>{});
       setTimeout(() => process.exit(0), 3000);
     } catch(e) { tgAlert(`❌ HTTP update error: ${e.message}`).catch(()=>{}); }
-    return;
-  }
-
-  // ── TEMPORARY: LTP endpoint probe — GET /probe-ltp?key=T2SMonitor2026 ──────
-  // Tests every candidate Kotak base URL with ftKotak (IPv4-forced, same as live LTP polling).
-  // Remove once correct base URL is confirmed.
-  if (req.method === 'GET' && urlPath === '/probe-ltp') {
-    const _pk = new URL('https://x' + req.url).searchParams.get('key');
-    if (_pk !== 'T2SMonitor2026') { res.writeHead(401); res.end('{}'); return; }
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-    const candidates = [
-      'https://mis.kotaksecurities.com',
-      'https://mnapi.kotaksecurities.com',
-      'https://lapi.kotaksecurities.com',
-    ];
-    const firstToken = Object.entries(_scripMaster).find(([k,v]) => k.startsWith('NIFTY-'));
-    const testKey = firstToken?.[0] || null;
-    const testToken = firstToken?.[1] || null;
-    const results = [];
-    if (!session.token || !testToken) {
-      res.end(JSON.stringify({ error: 'no session or scrip master', hasToken: !!session.token, testToken }));
-      return;
-    }
-    for (const base of candidates) {
-      const url = `${base}/script-details/1.0/quotes/neosymbol/nse_fo|${testToken}/ltp`;
-      try {
-        const r = await ftKotak(url, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi', 'Sid': session.sid, 'Auth': session.token } }, 5000);
-        const txt = await r.text().catch(() => '');
-        results.push({ base, status: r.status, ok: r.ok, body: txt.slice(0, 300) });
-      } catch(e) { results.push({ base, error: e.message }); }
-    }
-    res.end(JSON.stringify({ testKey, testToken, results }, null, 2));
     return;
   }
 
