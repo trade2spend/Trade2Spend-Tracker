@@ -597,7 +597,7 @@ function _startForgotPinCountdown(remMs){
     if(rem<=0){clearInterval(_iv);timerEl.style.display='none';btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';btn.onclick=submitPinResetRequest;return;}
     const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
     timerEl.style.color='#d97706';
-    timerEl.textContent=`Request already submitted. Retry in ${h>0?h+'h ':''}${m}m.`;
+    timerEl.textContent='Request already submitted.';
     timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';
     btn.textContent=`Retry in ${h>0?h+'h ':''}${m}m`;
   }
