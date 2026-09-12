@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260912-001 | uat.html: mini-form registered member PIN fix — (1) _faMobileBlur and submit path: replaced "Login here" link with inline PIN entry (_faShowPinSection for existing PIN, _faShowPinSetup for new); (2) _faVerifyPin + _faSetupPin2: mode now uses free_access flag (paid || free_access → paid) so approved free members enter PWA correctly; (3) _faBackBtn: back from PIN goes to mobile-only state (not mobile+form). Rollback: revert _faMobileBlur and submit path to show link, revert mode lines to tier-only check, revert _faBackBtn to render mobile+form. -->
 <!-- T2S-UAT-20260910-003 | uat.html: logout hardening — (1) localStorage clear now happens synchronously FIRST before any async call, so a slow Supabase PATCH cannot leave t2s_uat_last_login set; (2) redirect fixed from login.html (prod) to login.html (UAT); (3) t2s_uat_request_pending added to the cleared keys list. Rollback: revert logout() to original async-first order, change redirect back to login.html, remove request_pending from cleared keys. -->
 <!-- T2S-UAT-20260910-002 | uat.html: Realtime PIN reset kick-out — added pin_hash to Realtime member fetch; if pin_hash===null (admin reset) while member is in PWA, immediately clears last_login+mode+request_pending and redirects to login.html so member is forced to set new PIN. Rollback: remove pin_hash from select query, remove the pin_hash===null redirect block. -->
 <!-- T2S-UAT-20260910-001 | uat.html: two fixes — (A) Realtime handler: after admin approves, if t2s_uat_request_pending=1 clear pending+mode+last_login and redirect to login.html so member sets PIN before entering PWA; (B) _faMobileBlur: removed inline paid/free PIN entry from mini-form — any registered member found in DB now sees "Already registered, login here" link to login.html. Only truly unregistered numbers proceed to the request form. Rollback: revert Realtime handler to remove the request_pending redirect block; revert _faMobileBlur member-found block to restore inline PIN setup/entry. -->
@@ -1277,9 +1278,9 @@
                 }
             } catch(e) {}
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
-            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier === 'paid' ? 'paid' : 'free');
+            localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
             localStorage.setItem('t2s_uat_last_login', Date.now().toString());
-            if (_faPendingMember.tier === 'paid') localStorage.removeItem('t2s_uat_request_pending');
+            if (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) localStorage.removeItem('t2s_uat_request_pending');
             closeRequestModal();
             window.location.reload();
         } else {
@@ -1333,9 +1334,9 @@
             const did = _faGetDeviceId();
             await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
-            localStorage.setItem('t2s_uat_mode', _faPendingMember.tier === 'paid' ? 'paid' : 'free');
+            localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
             localStorage.setItem('t2s_uat_last_login', Date.now().toString());
-            if (_faPendingMember.tier === 'paid') localStorage.removeItem('t2s_uat_request_pending');
+            if (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) localStorage.removeItem('t2s_uat_request_pending');
             closeRequestModal();
             window.location.reload();
         } catch(e) {
@@ -1384,8 +1385,8 @@
                 _faShowBlocked(blockUntil);
                 return;
             }
-            // Back from PIN → restore full registration form, blank fields
-            _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0;
+            // Back from PIN → go to mobile entry only (clear everything)
+            _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinSetupFirst = '';
             document.getElementById('fa-pin-err').textContent = '';
             const _nameEl = document.getElementById('fa-name-input');
             const _cbEl = document.getElementById('fa-consent-check');
@@ -1395,7 +1396,9 @@
             if (_cbEl) _cbEl.checked = false;
             if (_msgEl) { _msgEl.style.display = 'none'; _msgEl.innerHTML = ''; }
             if (_btnEl) { _btnEl.disabled = true; _btnEl.style.opacity = '0.5'; _btnEl.style.display = ''; _btnEl.textContent = 'Submit Request →'; }
-            _faRenderPhase('mobile'); _faRenderPhase('form'); _faCheckEnable();
+            // Returning from registered-member PIN (verify mode) → mobile input only
+            // Returning from new-member PIN setup → mobile input only (same UX, they re-enter details)
+            _faRenderPhase('mobile'); _faCheckEnable();
         } else {
             // Back from form or anywhere else → close modal entirely
             closeRequestModal();
@@ -1412,14 +1415,15 @@
         try {
             const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
             if (members && members[0]) {
-                const { status } = members[0];
+                const { status, id: _faMid } = members[0];
                 // Disabled account — block immediately
                 if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
-                // Registered member (any tier) — redirect to login.html to authenticate with PIN
-                localStorage.setItem('t2s_uat_mobile', mob);
-                hint.style.color = '#4a2a78';
-                hint.innerHTML = `✓ You're already registered. <a href="login.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>`;
+                // Registered member — fetch pin_hash and show inline PIN entry
+                const _faFull = await sbFetch(`members?id=eq.${_faMid}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
+                const _faMember = (_faFull && _faFull[0]) ? _faFull[0] : members[0];
+                if (hint) { hint.style.color = '#4a2a78'; hint.textContent = _faMember.pin_hash ? 'Registered member — enter your PIN below.' : 'Registered member — set up your PIN below.'; }
                 input._blocked = true;
+                _faMember.pin_hash ? _faShowPinSection(_faMember, 'Enter your PIN to continue') : _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
             } else {
                 // Not in DB — show registration form so they can submit a request
                 if (hint) { hint.style.color = '#9ca3af'; hint.textContent = ''; }
@@ -1478,10 +1482,13 @@
                 if (members && members[0]) {
                     const m = members[0];
                     if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This account is suspended. Contact @T2Sview on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
-                    // Registered member — redirect to login.html
-                    localStorage.setItem('t2s_uat_mobile', mob);
-                    if (msg) { msg.style.display='block'; msg.style.color='#4a2a78'; msg.innerHTML='✓ You\'re already registered. <a href="login.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>'; }
-                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return;
+                    // Registered member — show inline PIN entry
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    // Fetch free_access for correct mode setting after login
+                    const _faFull2 = await sbFetch(`members?id=eq.${m.id}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
+                    const _faMem2 = (_faFull2 && _faFull2[0]) ? _faFull2[0] : m;
+                    _faMem2.pin_hash ? _faShowPinSection(_faMem2, 'Enter your PIN to continue') : _faShowPinSetup(_faMem2, 'Create your 4-digit PIN');
+                    return;
                 }
                 const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
                 const newM = await sbFetch('members', { method: 'POST', body: JSON.stringify({ mobile: '+91' + mob, name: nameVal, tier: 'free', status: 'enabled' }) });
