@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260912-003 | login_uat.html: (A) FP-3: live countdown timer on forgot-PIN rate limit (30s intervals, updates button + message); (B) FP-6: init() detects pin_hash===null → shows screen-setup instead of screen-pin so member goes directly to setup after admin reset; (C) FP-6: admin-reset detection in forgotPin() now shows "Set New PIN →" button instead of "reload" message — no reload needed; (D) FP-S1: @T2Sview references are now clickable Telegram links; (E) FP-S2: CTA button shows live countdown text. Rollback: revert init() checkLock block, revert forgotPin() .then block, remove _startForgotPinCountdown. -->
 <!-- T2S-UAT-20260912-002 | login_uat.html: remove 24h auto-redirect — visiting login.html now always requires PIN regardless of session age. Only truly limited-access members (mode=free AND no member_id) are redirected to PWA. Also shows masked mobile number on PIN screen so member can identify which account they are logging into. Rollback: restore SESSION_24H check and original mode=free redirect in init(). -->
 <!-- T2S-UAT-20260910-001 | login_uat.html: forgot PIN hardening — (C) device check: forgotPin() now queries sessions table first; only allows request if this device_id has a prior login for this member — blocks strangers submitting reset for someone else's number; (D) admin-reset detection: if pin_hash is already null, shows "Admin has reset your PIN, reload to set new" instead of rate limit; (E) session expiry: submitPinResetRequest() clears t2s_uat_last_login so refresh lands on PIN screen instead of auto-login. Rollback: restore original forgotPin() function, remove localStorage.removeItem('t2s_uat_last_login') from submitPinResetRequest(). -->
 <!-- T2S-UAT-20260906-001 | login_uat.html: (1) Branding: @tusharview/@trade2spend → @T2Sview across all user-visible text and t.me/ links. (2) C2 fix: checkMobile now fetches free_access+free_access_blocked; approved free_access members go to PIN/setup screen (mode=free) instead of stuck on screen-pending; verifyPin/processSetupPin set mode based on actual tier instead of hardcoding paid. (3) C3 fix: rejected/new members see screen-intro (apply form) instead of screen-pending, with a notice if previously rejected; pending requests still show screen-pending. Rollback: revert SELECT query, revert checkMobile if/else block, revert verifyPin/processSetupPin mode lines. -->
@@ -555,38 +556,53 @@ function forgotPin(){
   const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
   const did=getDeviceId();
   if(!mid){
-    timerEl.textContent='Cannot verify your identity. Please contact @T2Sview on Telegram.';
+    timerEl.innerHTML='Cannot verify your identity. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
     timerEl.style.display='block';btn.textContent='Submit Reset Request';return;
   }
   Promise.all([
     sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${did}&select=id`,{method:'GET',headers:{'Accept':'application/json'}}),
     sbFetch(`members?id=eq.${mid}&select=pin_hash`,{method:'GET',headers:{'Accept':'application/json'}})
   ]).then(([sessions,members])=>{
-    btn.textContent='Submit Reset Request';
+    btn.textContent='Submit Reset Request';btn.onclick=submitPinResetRequest;
     // Device check — must have a prior successful login on this device
     if(!sessions||sessions.length===0){
-      timerEl.textContent='PIN reset is only allowed from a device you have previously logged in on. Contact @T2Sview on Telegram.';
+      timerEl.innerHTML='PIN reset is only allowed from a device you have previously logged in on. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
       timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';return;
     }
-    // Admin already reset — pin_hash is null
+    // Admin already reset — show direct action, no reload needed
     if(members&&members[0]&&members[0].pin_hash===null){
       timerEl.style.color='#059669';
-      timerEl.textContent='Your PIN has already been reset by admin. Please reload this page to set a new one.';
-      timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';return;
+      timerEl.textContent='Your PIN has been reset by admin.';
+      timerEl.style.display='block';
+      btn.disabled=false;btn.style.opacity='1';btn.textContent='Set New PIN →';
+      btn.onclick=function(){document.getElementById('forgot-pin-section').style.display='none';showScreen('screen-setup');};
+      return;
     }
-    // Rate limit check
+    // Rate limit check — live countdown
     const lastAt=parseInt(localStorage.getItem('t2s_uat_pin_reset_at')||'0');
     const TWO_HOURS=2*60*60*1000;
     if(lastAt&&Date.now()-lastAt<TWO_HOURS){
-      const rem=TWO_HOURS-(Date.now()-lastAt);
-      const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
-      timerEl.style.color='#d97706';
-      timerEl.textContent=`Request already submitted. You can retry in ${h}h ${m}m.`;
-      timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';
+      _startForgotPinCountdown(TWO_HOURS-(Date.now()-lastAt));
     }else{
       timerEl.style.display='none';btn.disabled=false;btn.style.opacity='1';
     }
   }).catch(()=>{btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';});
+}
+function _startForgotPinCountdown(remMs){
+  const timerEl=document.getElementById('forgot-pin-timer');
+  const btn=document.getElementById('forgot-pin-btn');
+  let rem=remMs;
+  let _iv;
+  function _upd(){
+    if(rem<=0){clearInterval(_iv);timerEl.style.display='none';btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';btn.onclick=submitPinResetRequest;return;}
+    const h=Math.floor(rem/3600000);const m=Math.ceil((rem%3600000)/60000);
+    timerEl.style.color='#d97706';
+    timerEl.textContent=`Request already submitted. Retry in ${h>0?h+'h ':''}${m}m.`;
+    timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';
+    btn.textContent=`Retry in ${h>0?h+'h ':''}${m}m`;
+  }
+  _upd();
+  _iv=setInterval(()=>{rem-=30000;_upd();},30000);
 }
 async function submitPinResetRequest(){
   const btn=document.getElementById('forgot-pin-btn');
@@ -667,7 +683,7 @@ async function processSetupPin(){
   const mid=localStorage.getItem('t2s_uat_member_id'),mob=localStorage.getItem('t2s_uat_mobile');
   if(mid&&mob){
     // Always show PIN screen — visiting login.html requires authentication regardless of session age
-    try{const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});if(members&&members.length>0){currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='📱 +91 '+mob;if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');return;}}catch(e){}
+    try{const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});if(members&&members.length>0){currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='📱 +91 '+mob;if(currentMember.pin_hash===null){showScreen('screen-setup');return;}if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');return;}}catch(e){}
   }
   showLoading(false);showScreen('screen-mobile');
 })();
