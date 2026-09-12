@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-001 | uat.html: RU-4 lock enforcement on mini-form path — (1) _faMobileBlur: added sessions lock check after member fetch; locked member sees "Account locked — N min remaining. Contact @T2Sview" and PIN form is never shown; (2) _faVerifyPin: added same lock check before accepting a correct PIN (defence-in-depth for race condition where lock occurred after form was displayed). Rollback: remove lock check block in _faMobileBlur, remove lock check block in _faVerifyPin. -->
 <!-- T2S-UAT-20260912-001 | uat.html: mini-form registered member PIN fix — (1) _faMobileBlur and submit path: replaced "Login here" link with inline PIN entry (_faShowPinSection for existing PIN, _faShowPinSetup for new); (2) _faVerifyPin + _faSetupPin2: mode now uses free_access flag (paid || free_access → paid) so approved free members enter PWA correctly; (3) _faBackBtn: back from PIN restores mobile+form (not mobile-only) so mobile users have a CTA to proceed. Rollback: revert _faMobileBlur and submit path to show link, revert mode lines to tier-only check, revert _faBackBtn to render mobile-only. -->
 <!-- T2S-UAT-20260910-003 | uat.html: logout hardening — (1) localStorage clear now happens synchronously FIRST before any async call, so a slow Supabase PATCH cannot leave t2s_uat_last_login set; (2) redirect fixed from login.html (prod) to login.html (UAT); (3) t2s_uat_request_pending added to the cleared keys list. Rollback: revert logout() to original async-first order, change redirect back to login.html, remove request_pending from cleared keys. -->
 <!-- T2S-UAT-20260910-002 | uat.html: Realtime PIN reset kick-out — added pin_hash to Realtime member fetch; if pin_hash===null (admin reset) while member is in PWA, immediately clears last_login+mode+request_pending and redirects to login.html so member is forced to set new PIN. Rollback: remove pin_hash from select query, remove the pin_hash===null redirect block. -->
@@ -1264,6 +1265,10 @@
         if (!_faPendingMember) return;
         const hash = await _faHashPin(_faPinBuffer);
         if (_faPendingMember.pin_hash === hash) {
+            // Defence-in-depth: enforce lock even if correct PIN entered (race condition guard)
+            const _faVNow=new Date().toISOString();
+            const _faVLock=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&locked_until=gt.${encodeURIComponent(_faVNow)}&select=locked_until&limit=1`,{method:'GET'});
+            if(_faVLock&&_faVLock.length>0){const _faVLu=new Date(_faVLock[0].locked_until);const _faVMins=Math.max(1,Math.ceil((_faVLu-new Date())/60000));document.getElementById('fa-pin-err').textContent=`Account locked — ${_faVMins} min remaining. Contact @T2Sview to unlock.`;_faPinBuffer='';_faUpdateDots('');return;}
             const did = _faGetDeviceId();
             try {
                 const ex = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`, { method:'GET' });
@@ -1419,6 +1424,10 @@
                 // Registered member — fetch pin_hash and show inline PIN entry
                 const _faFull = await sbFetch(`members?id=eq.${_faMid}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
                 const _faMember = (_faFull && _faFull[0]) ? _faFull[0] : members[0];
+                // Lock check — locked account must not reach PIN form regardless of path taken
+                const _faNowLock=new Date().toISOString();
+                const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
+                if(_faLockRow&&_faLockRow.length>0){const _faLu=new Date(_faLockRow[0].locked_until);const _faMins=Math.max(1,Math.ceil((_faLu-new Date())/60000));if(hint){hint.style.color='#dc2626';hint.textContent=`Account locked — ${_faMins} min remaining. Contact @T2Sview on Telegram.`;}input._blocked=true;_faCheckEnable();return;}
                 if (hint) { hint.style.color = '#4a2a78'; hint.textContent = _faMember.pin_hash ? 'Registered member — enter your PIN below.' : 'Registered member — set up your PIN below.'; }
                 input._blocked = true;
                 _faMember.pin_hash ? _faShowPinSection(_faMember, 'Enter your PIN to continue') : _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
