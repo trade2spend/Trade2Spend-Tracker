@@ -1,6 +1,6 @@
-<!-- T2S-UAT-20260910-003 | uat.html: logout hardening — (1) localStorage clear now happens synchronously FIRST before any async call, so a slow Supabase PATCH cannot leave t2s_uat_last_login set; (2) redirect fixed from login.html (prod) to login_uat.html (UAT); (3) t2s_uat_request_pending added to the cleared keys list. Rollback: revert logout() to original async-first order, change redirect back to login.html, remove request_pending from cleared keys. -->
-<!-- T2S-UAT-20260910-002 | uat.html: Realtime PIN reset kick-out — added pin_hash to Realtime member fetch; if pin_hash===null (admin reset) while member is in PWA, immediately clears last_login+mode+request_pending and redirects to login_uat.html so member is forced to set new PIN. Rollback: remove pin_hash from select query, remove the pin_hash===null redirect block. -->
-<!-- T2S-UAT-20260910-001 | uat.html: two fixes — (A) Realtime handler: after admin approves, if t2s_uat_request_pending=1 clear pending+mode+last_login and redirect to login_uat.html so member sets PIN before entering PWA; (B) _faMobileBlur: removed inline paid/free PIN entry from mini-form — any registered member found in DB now sees "Already registered, login here" link to login_uat.html. Only truly unregistered numbers proceed to the request form. Rollback: revert Realtime handler to remove the request_pending redirect block; revert _faMobileBlur member-found block to restore inline PIN setup/entry. -->
+<!-- T2S-UAT-20260910-003 | uat.html: logout hardening — (1) localStorage clear now happens synchronously FIRST before any async call, so a slow Supabase PATCH cannot leave t2s_uat_last_login set; (2) redirect fixed from login.html (prod) to login.html (UAT); (3) t2s_uat_request_pending added to the cleared keys list. Rollback: revert logout() to original async-first order, change redirect back to login.html, remove request_pending from cleared keys. -->
+<!-- T2S-UAT-20260910-002 | uat.html: Realtime PIN reset kick-out — added pin_hash to Realtime member fetch; if pin_hash===null (admin reset) while member is in PWA, immediately clears last_login+mode+request_pending and redirects to login.html so member is forced to set new PIN. Rollback: remove pin_hash from select query, remove the pin_hash===null redirect block. -->
+<!-- T2S-UAT-20260910-001 | uat.html: two fixes — (A) Realtime handler: after admin approves, if t2s_uat_request_pending=1 clear pending+mode+last_login and redirect to login.html so member sets PIN before entering PWA; (B) _faMobileBlur: removed inline paid/free PIN entry from mini-form — any registered member found in DB now sees "Already registered, login here" link to login.html. Only truly unregistered numbers proceed to the request form. Rollback: revert Realtime handler to remove the request_pending redirect block; revert _faMobileBlur member-found block to restore inline PIN setup/entry. -->
 <!-- T2S-UAT-20260907-002 | uat.html: free_access lock icon bug — 5 fixes: (1-4) all 4 member fetch calls (fetchTradeAlerts, fetchTrades, fetchUpdates, fetchMarketData fallback) were missing free_access in select query, so free_access=true members saw the premium lock; (5) init() had a race condition — fetched _cachedMember without free_access, then patched it in a separate async call that lost the race with fetchTradeAlerts; fixed by merging free_access+free_access_blocked into the single init query. Rollback: remove free_access from all 5 select queries, remove the 4 direct free_access override lines, restore the separate sbFetch patch block in init(). -->
 <!-- T2S-UAT-20260907-001 | uat.html: stale pending banner fix — when t2s_uat_request_pending=1 but member_id is null, banner now clears immediately on init instead of staying forever. Rollback: remove the !memberId block added before the memberId check. -->
 <!-- T2S-UAT-20260830-003 | uat.html: parseFollowUpContent negation guard — "Will not hold overnight" was incorrectly setting isHolding=true (regex matched "hold overnight" without detecting the "not" before it), causing isTradeFullyClosed() to skip all time-based auto-close conditions and keep the trade open indefinitely. Fix: added _negHoldRe check — only sets isHolding=true when holding regex matches AND no negation phrase ("not/won't/will not/don't/never + hold + overnight/next day/tomorrow") is found. Also updated sbTradeFullyExited() in server.js to detect "not holding overnight" intent so VM stops posting [HIGH:X] after market close. Rollback: remove _negHoldRe declaration and revert the isHolding line back to a bare if(_holdRe.test(text)) check. -->
@@ -1415,10 +1415,10 @@
                 const { status } = members[0];
                 // Disabled account — block immediately
                 if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
-                // Registered member (any tier) — redirect to login_uat.html to authenticate with PIN
+                // Registered member (any tier) — redirect to login.html to authenticate with PIN
                 localStorage.setItem('t2s_uat_mobile', mob);
                 hint.style.color = '#4a2a78';
-                hint.innerHTML = `✓ You're already registered. <a href="login_uat.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>`;
+                hint.innerHTML = `✓ You're already registered. <a href="login.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>`;
                 input._blocked = true;
             } else {
                 // Not in DB — show registration form so they can submit a request
@@ -1478,9 +1478,9 @@
                 if (members && members[0]) {
                     const m = members[0];
                     if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This account is suspended. Contact @T2Sview on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
-                    // Registered member — redirect to login_uat.html
+                    // Registered member — redirect to login.html
                     localStorage.setItem('t2s_uat_mobile', mob);
-                    if (msg) { msg.style.display='block'; msg.style.color='#4a2a78'; msg.innerHTML='✓ You\'re already registered. <a href="login_uat.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>'; }
+                    if (msg) { msg.style.display='block'; msg.style.color='#4a2a78'; msg.innerHTML='✓ You\'re already registered. <a href="login.html" style="color:#4a2a78;font-weight:800;text-decoration:underline;">Login here →</a>'; }
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return;
                 }
                 const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
@@ -2932,7 +2932,7 @@
                                 localStorage.removeItem('t2s_uat_last_login');
                                 localStorage.removeItem('t2s_uat_mode');
                                 localStorage.removeItem('t2s_uat_request_pending');
-                                window.location.href = 'login_uat.html';
+                                window.location.href = 'login.html';
                                 return;
                             }
                             // If member was in the free-access approval queue, redirect to login to set PIN
@@ -2940,7 +2940,7 @@
                                 localStorage.removeItem('t2s_uat_request_pending');
                                 localStorage.removeItem('t2s_uat_mode');
                                 localStorage.removeItem('t2s_uat_last_login');
-                                window.location.href = 'login_uat.html';
+                                window.location.href = 'login.html';
                                 return;
                             }
                             window._cachedMember = Object.assign(window._cachedMember || {}, m);
@@ -5398,7 +5398,7 @@
                 { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
             ).catch(()=>{});
         }
-        window.location.href='login_uat.html';
+        window.location.href='login.html';
     }
 
     function toggleCurrMonthDetail() {
