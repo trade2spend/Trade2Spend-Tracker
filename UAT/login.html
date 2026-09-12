@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260912-002 | login_uat.html: remove 24h auto-redirect — visiting login.html now always requires PIN regardless of session age. Only truly limited-access members (mode=free AND no member_id) are redirected to PWA. Also shows masked mobile number on PIN screen so member can identify which account they are logging into. Rollback: restore SESSION_24H check and original mode=free redirect in init(). -->
 <!-- T2S-UAT-20260910-001 | login_uat.html: forgot PIN hardening — (C) device check: forgotPin() now queries sessions table first; only allows request if this device_id has a prior login for this member — blocks strangers submitting reset for someone else's number; (D) admin-reset detection: if pin_hash is already null, shows "Admin has reset your PIN, reload to set new" instead of rate limit; (E) session expiry: submitPinResetRequest() clears t2s_uat_last_login so refresh lands on PIN screen instead of auto-login. Rollback: restore original forgotPin() function, remove localStorage.removeItem('t2s_uat_last_login') from submitPinResetRequest(). -->
 <!-- T2S-UAT-20260906-001 | login_uat.html: (1) Branding: @tusharview/@trade2spend → @T2Sview across all user-visible text and t.me/ links. (2) C2 fix: checkMobile now fetches free_access+free_access_blocked; approved free_access members go to PIN/setup screen (mode=free) instead of stuck on screen-pending; verifyPin/processSetupPin set mode based on actual tier instead of hardcoding paid. (3) C3 fix: rejected/new members see screen-intro (apply form) instead of screen-pending, with a notice if previously rejected; pending requests still show screen-pending. Rollback: revert SELECT query, revert checkMobile if/else block, revert verifyPin/processSetupPin mode lines. -->
 <!DOCTYPE html>
@@ -661,11 +662,12 @@ async function processSetupPin(){
 
 (async function init(){
   showLoading(true);installPinKeyboardBlock();
-  if(localStorage.getItem('t2s_uat_mode')==='free'){window.location.href=MAIN_APP_URL;return;}
-  const mid=localStorage.getItem('t2s_uat_member_id'),mob=localStorage.getItem('t2s_uat_mobile'),ll=parseInt(localStorage.getItem('t2s_uat_last_login')||'0');
+  // Limited access (no registration) — send back to PWA directly
+  if(localStorage.getItem('t2s_uat_mode')==='free'&&!localStorage.getItem('t2s_uat_member_id')){window.location.href=MAIN_APP_URL;return;}
+  const mid=localStorage.getItem('t2s_uat_member_id'),mob=localStorage.getItem('t2s_uat_mobile');
   if(mid&&mob){
-    if(Date.now()-ll<SESSION_24H){window.location.href=MAIN_APP_URL;return;}
-    try{const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});if(members&&members.length>0){currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='Session expired — enter PIN to continue';if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');return;}}catch(e){}
+    // Always show PIN screen — visiting login.html requires authentication regardless of session age
+    try{const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});if(members&&members.length>0){currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='📱 +91 '+mob;if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');return;}}catch(e){}
   }
   showLoading(false);showScreen('screen-mobile');
 })();
