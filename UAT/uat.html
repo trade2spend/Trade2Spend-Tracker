@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-002 | uat.html: RT-2 fix — stale pending check in init() now consistent with Realtime handler: when request is no longer 'pending' (approved or rejected), clears request_pending + mode + last_login and redirects to login.html, forcing proper re-authentication (PIN setup if approved). Previously only cleared the flag and removed the banner, leaving member logged in as paid without PIN. Rollback: revert the .then() block to remove redirect lines, restore localStorage.removeItem + banner remove only. -->
 <!-- T2S-UAT-20260913-001 | uat.html: RU-4 lock enforcement on mini-form path — (1) _faMobileBlur: added sessions lock check after member fetch; locked member sees "Account locked — N min remaining. Contact @T2Sview" and PIN form is never shown; (2) _faVerifyPin: added same lock check before accepting a correct PIN (defence-in-depth for race condition where lock occurred after form was displayed). Rollback: remove lock check block in _faMobileBlur, remove lock check block in _faVerifyPin. -->
 <!-- T2S-UAT-20260912-001 | uat.html: mini-form registered member PIN fix — (1) _faMobileBlur and submit path: replaced "Login here" link with inline PIN entry (_faShowPinSection for existing PIN, _faShowPinSetup for new); (2) _faVerifyPin + _faSetupPin2: mode now uses free_access flag (paid || free_access → paid) so approved free members enter PWA correctly; (3) _faBackBtn: back from PIN restores mobile+form (not mobile-only) so mobile users have a CTA to proceed. Rollback: revert _faMobileBlur and submit path to show link, revert mode lines to tier-only check, revert _faBackBtn to render mobile-only. -->
 <!-- T2S-UAT-20260910-003 | uat.html: logout hardening — (1) localStorage clear now happens synchronously FIRST before any async call, so a slow Supabase PATCH cannot leave t2s_uat_last_login set; (2) redirect fixed from login.html (prod) to login.html (UAT); (3) t2s_uat_request_pending added to the cleared keys list. Rollback: revert logout() to original async-first order, change redirect back to login.html, remove request_pending from cleared keys. -->
@@ -5513,9 +5514,12 @@
             sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status`, {method:'GET'})
                 .then(rows => {
                     if (!rows || !rows[0] || rows[0].status !== 'pending') {
+                        // Request resolved (approved or rejected) — same action as Realtime handler:
+                        // force re-login so member goes through PIN setup before entering PWA
                         localStorage.removeItem('t2s_uat_request_pending');
-                        const el = document.getElementById('req-pending-banner');
-                        if (el) el.remove();
+                        localStorage.removeItem('t2s_uat_mode');
+                        localStorage.removeItem('t2s_uat_last_login');
+                        window.location.href = 'login.html';
                     }
                 }).catch(() => {});
         }
