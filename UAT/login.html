@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-004 | login_uat.html: @T2Sview links in lock/unlock messages — changed three textContent references to innerHTML with clickable t.me/T2Sview links: (1) checkMobile already-sent lock message; (2) requestUnlockFromMobile rate-limit message; (3) requestUnlockFromMobile success message. Rollback: revert three innerHTML lines back to textContent. -->
 <!-- T2S-UAT-20260912-004 | login_uat.html: RU-4 fix — when locked account detected on mobile entry screen, CTA changes from "Continue" to "🔓 Request Unlock"; if already submitted changes to "Request Submitted" (disabled); changing the mobile number resets CTA back to "Continue" via _resetMobileBtn(). New functions: _resetMobileBtn(), requestUnlockFromMobile(). Rollback: revert checkMobile() lock block, remove two new functions, revert oninput attribute on mobile-input. -->
 <!-- T2S-UAT-20260912-003 | login_uat.html: (A) FP-3: live countdown timer on forgot-PIN rate limit (30s intervals, updates button + message); (B) FP-6: init() detects pin_hash===null → shows screen-setup instead of screen-pin so member goes directly to setup after admin reset; (C) FP-6: admin-reset detection in forgotPin() now shows "Set New PIN →" button instead of "reload" message — no reload needed; (D) FP-S1: @T2Sview references are now clickable Telegram links; (E) FP-S2: CTA button shows live countdown text. Rollback: revert init() checkLock block, revert forgotPin() .then block, remove _startForgotPinCountdown. -->
 <!-- T2S-UAT-20260912-002 | login_uat.html: remove 24h auto-redirect — visiting login.html now always requires PIN regardless of session age. Only truly limited-access members (mode=free AND no member_id) are redirected to PWA. Also shows masked mobile number on PIN screen so member can identify which account they are logging into. Rollback: restore SESSION_24H check and original mode=free redirect in init(). -->
@@ -456,7 +457,7 @@ async function checkMobile(){
       const _alreadySent=_lastUnlock&&Date.now()-_lastUnlock<2*60*60*1000;
       showLoading(false);
       if(_alreadySent){
-        errEl.textContent=`Account locked (${_mins} min remaining). Unlock request already submitted — contact @T2Sview if needed.`;
+        errEl.innerHTML=`Account locked (${_mins} min remaining). Unlock request already submitted — <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">contact @T2Sview</a> if needed.`;
         errEl.classList.add('show');_mBtn.textContent='Request Submitted';_mBtn.disabled=true;_mBtn.style.opacity='0.5';
       }else{
         errEl.textContent=`Account locked — ${_mins} minute${_mins>1?'s':''} remaining.`;
@@ -747,7 +748,7 @@ async function requestUnlockFromMobile(mid,mob){
   const errEl=document.getElementById('mobile-err');
   const lastAt=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
   if(lastAt&&Date.now()-lastAt<2*60*60*1000){
-    errEl.textContent='Unlock request already submitted. Contact @T2Sview on Telegram if needed.';errEl.classList.add('show');
+    errEl.innerHTML='Unlock request already submitted. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram if needed.';errEl.classList.add('show');
     btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';return;
   }
   btn.disabled=true;btn.textContent='Sending…';
@@ -755,7 +756,7 @@ async function requestUnlockFromMobile(mid,mob){
     await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
     localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
     errEl.style.color='#059669';errEl.style.background='#f0fdf4';errEl.style.borderColor='#bbf7d0';
-    errEl.textContent='✓ Unlock request sent to admin. Contact @T2Sview if needed.';errEl.classList.add('show');
+    errEl.innerHTML='✓ Unlock request sent to admin. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';errEl.classList.add('show');
     btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';
   }catch(e){
     btn.disabled=false;btn.textContent='🔓 Request Unlock';
