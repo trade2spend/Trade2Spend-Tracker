@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-005 | login_uat.html: permanent lock+request state fix — (A) checkLock() now DB-first authoritative; if DB not locked but localStorage lock exists for same member_id, uses localStorage; both paths call _applyWaitingState() when request is pending (disables PIN pad, hides Forgot PIN, shows Request Submitted); (B) new _applyWaitingState() function; (C) requestUnlock() success calls _applyWaitingState() immediately; (D) checkMobile() adds localStorage lock check after DB check using t2s_uat_locked_mid. Rollback: revert checkLock() to original, remove _applyWaitingState(), remove _applyWaitingState() call in requestUnlock(), remove localStorage lock block in checkMobile(). -->
 <!-- T2S-UAT-20260913-004 | login_uat.html: @T2Sview links in lock/unlock messages — changed three textContent references to innerHTML with clickable t.me/T2Sview links: (1) checkMobile already-sent lock message; (2) requestUnlockFromMobile rate-limit message; (3) requestUnlockFromMobile success message. Rollback: revert three innerHTML lines back to textContent. -->
 <!-- T2S-UAT-20260912-004 | login_uat.html: RU-4 fix — when locked account detected on mobile entry screen, CTA changes from "Continue" to "🔓 Request Unlock"; if already submitted changes to "Request Submitted" (disabled); changing the mobile number resets CTA back to "Continue" via _resetMobileBtn(). New functions: _resetMobileBtn(), requestUnlockFromMobile(). Rollback: revert checkMobile() lock block, remove two new functions, revert oninput attribute on mobile-input. -->
 <!-- T2S-UAT-20260912-003 | login_uat.html: (A) FP-3: live countdown timer on forgot-PIN rate limit (30s intervals, updates button + message); (B) FP-6: init() detects pin_hash===null → shows screen-setup instead of screen-pin so member goes directly to setup after admin reset; (C) FP-6: admin-reset detection in forgotPin() now shows "Set New PIN →" button instead of "reload" message — no reload needed; (D) FP-S1: @T2Sview references are now clickable Telegram links; (E) FP-S2: CTA button shows live countdown text. Rollback: revert init() checkLock block, revert forgotPin() .then block, remove _startForgotPinCountdown. -->
@@ -429,10 +430,40 @@ function browseFree(){localStorage.setItem('t2s_uat_mode','free');['t2s_uat_memb
 function switchAccount(){['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
 
 async function checkLock(){
-  const loc=localStorage.getItem('t2s_uat_lock_until');
-  if(loc&&new Date()<new Date(loc)){const m=Math.ceil((new Date(loc)-new Date())/60000);document.getElementById('pin-lock').style.display='block';document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;return true;}
-  try{const mid=localStorage.getItem('t2s_uat_member_id');if(mid){const s=await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}});if(s&&s.length>0&&s[0].locked_until){const sl=new Date(s[0].locked_until);if(new Date()<sl){const m=Math.ceil((sl-new Date())/60000);localStorage.setItem('t2s_uat_lock_until',sl.toISOString());document.getElementById('pin-lock').style.display='block';document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;document.getElementById('request-unlock-btn').style.display='inline-block';return true;}}}}catch(e){}
+  function _showLockMsg(m){
+    document.getElementById('pin-lock').style.display='block';
+    const req=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
+    if(req&&Date.now()-req<2*60*60*1000){
+      document.getElementById('pin-lock').textContent=`Unlock request submitted — waiting for admin. ${m} minute${m>1?'s':''} remaining.`;
+      _applyWaitingState();
+    }else{
+      document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;
+      document.getElementById('request-unlock-btn').style.display='inline-block';
+    }
+  }
+  // DB is authoritative — check it first
+  try{
+    const mid=localStorage.getItem('t2s_uat_member_id');
+    if(mid){
+      const s=await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(s&&s.length>0&&s[0].locked_until){const sl=new Date(s[0].locked_until);if(new Date()<sl){const m=Math.ceil((sl-new Date())/60000);localStorage.setItem('t2s_uat_lock_until',sl.toISOString());_showLockMsg(m);return true;}}
+      // DB says not locked for this device — check localStorage-only lock (set by mini-form when no active session existed)
+      const _lsLk=localStorage.getItem('t2s_uat_lock_until');const _lsMid=localStorage.getItem('t2s_uat_locked_mid');
+      if(_lsLk&&new Date()<new Date(_lsLk)&&_lsMid===mid){const m=Math.ceil((new Date(_lsLk)-new Date())/60000);_showLockMsg(m);return true;}
+      localStorage.removeItem('t2s_uat_lock_until');return false;
+    }
+  }catch(e){
+    // DB failed — fall back to localStorage
+    const loc=localStorage.getItem('t2s_uat_lock_until');
+    if(loc&&new Date()<new Date(loc)){const m=Math.ceil((new Date(loc)-new Date())/60000);_showLockMsg(m);return true;}
+  }
   localStorage.removeItem('t2s_uat_lock_until');return false;
+}
+function _applyWaitingState(){
+  document.querySelectorAll('.pin-key').forEach(b=>{b.disabled=true;b.style.opacity='0.4';});
+  document.getElementById('pin-forgot').style.display='none';
+  const rub=document.getElementById('request-unlock-btn');
+  rub.style.display='inline-block';rub.textContent='Request Submitted';rub.disabled=true;rub.style.opacity='0.5';
 }
 function installPinKeyboardBlock(){document.addEventListener('keydown',function(e){const pv=!document.getElementById('screen-pin').classList.contains('hidden');const sv=!document.getElementById('screen-setup').classList.contains('hidden');if(pv||sv){if(!['Tab','Escape'].includes(e.key))e.preventDefault();}});}
 function onMobileKey(e){if(e.key==='Enter')checkMobile();}
@@ -463,6 +494,23 @@ async function checkMobile(){
         errEl.textContent=`Account locked — ${_mins} minute${_mins>1?'s':''} remaining.`;
         errEl.classList.add('show');_mBtn.textContent='🔓 Request Unlock';_mBtn.disabled=false;_mBtn.style.opacity='1';
         _mBtn.onclick=function(){requestUnlockFromMobile(member.id,'+91'+inp);};
+      }
+      return;
+    }
+    // Also check localStorage-only lock (set by mini-form when no active DB session existed)
+    const _lsLk=localStorage.getItem('t2s_uat_lock_until');const _lsMid=localStorage.getItem('t2s_uat_locked_mid');
+    if(_lsLk&&new Date()<new Date(_lsLk)&&_lsMid===member.id){
+      const _lsMins=Math.max(1,Math.ceil((new Date(_lsLk)-new Date())/60000));
+      const _lsMBtn=document.getElementById('mobile-btn');
+      const _lsReqSent=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')&&Date.now()-parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')<2*60*60*1000;
+      showLoading(false);
+      if(_lsReqSent){
+        errEl.innerHTML=`Account locked (${_lsMins} min remaining). Unlock request already submitted — <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">contact @T2Sview</a> if needed.`;
+        errEl.classList.add('show');_lsMBtn.textContent='Request Submitted';_lsMBtn.disabled=true;_lsMBtn.style.opacity='0.5';
+      }else{
+        errEl.textContent=`Account locked — ${_lsMins} minute${_lsMins>1?'s':''} remaining.`;
+        errEl.classList.add('show');_lsMBtn.textContent='🔓 Request Unlock';_lsMBtn.disabled=false;_lsMBtn.style.opacity='1';
+        _lsMBtn.onclick=function(){requestUnlockFromMobile(member.id,'+91'+inp);};
       }
       return;
     }
@@ -735,6 +783,8 @@ async function requestUnlock(){
     localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
     btn.style.display='none';
     sentMsg.style.color='#059669';sentMsg.textContent='✓ Unlock request sent to admin.';sentMsg.style.display='block';
+    // Block further PIN screen interaction — member must wait
+    _applyWaitingState();
   }catch(e){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
 }
 function _resetMobileBtn(){
