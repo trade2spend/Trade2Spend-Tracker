@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-003 | uat.html: @T2Sview links + mini-form Request Unlock button — (1) "Too many attempts" message now shows clickable @T2Sview link + "🔓 Request Unlock" button (new _faRequestUnlock function, same audit_log pattern as other unlock paths); (2) _faVerifyPin lock check message uses innerHTML for clickable link; (3) _faMobileBlur lock check hint uses innerHTML; (4) _faShowPinSection hides the unlock button on reset. Rollback: revert three innerHTML lines back to textContent, remove _faRequestUnlock function, remove unlock btn show/hide lines. -->
 <!-- T2S-UAT-20260913-002 | uat.html: RT-2 fix — stale pending check in init() now consistent with Realtime handler: when request is no longer 'pending' (approved or rejected), clears request_pending + mode + last_login and redirects to login.html, forcing proper re-authentication (PIN setup if approved). Previously only cleared the flag and removed the banner, leaving member logged in as paid without PIN. Rollback: revert the .then() block to remove redirect lines, restore localStorage.removeItem + banner remove only. -->
 <!-- T2S-UAT-20260913-001 | uat.html: RU-4 lock enforcement on mini-form path — (1) _faMobileBlur: added sessions lock check after member fetch; locked member sees "Account locked — N min remaining. Contact @T2Sview" and PIN form is never shown; (2) _faVerifyPin: added same lock check before accepting a correct PIN (defence-in-depth for race condition where lock occurred after form was displayed). Rollback: remove lock check block in _faMobileBlur, remove lock check block in _faVerifyPin. -->
 <!-- T2S-UAT-20260912-001 | uat.html: mini-form registered member PIN fix — (1) _faMobileBlur and submit path: replaced "Login here" link with inline PIN entry (_faShowPinSection for existing PIN, _faShowPinSetup for new); (2) _faVerifyPin + _faSetupPin2: mode now uses free_access flag (paid || free_access → paid) so approved free members enter PWA correctly; (3) _faBackBtn: back from PIN restores mobile+form (not mobile-only) so mobile users have a CTA to proceed. Rollback: revert _faMobileBlur and submit path to show link, revert mode lines to tier-only check, revert _faBackBtn to render mobile-only. -->
@@ -1269,7 +1270,7 @@
             // Defence-in-depth: enforce lock even if correct PIN entered (race condition guard)
             const _faVNow=new Date().toISOString();
             const _faVLock=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&locked_until=gt.${encodeURIComponent(_faVNow)}&select=locked_until&limit=1`,{method:'GET'});
-            if(_faVLock&&_faVLock.length>0){const _faVLu=new Date(_faVLock[0].locked_until);const _faVMins=Math.max(1,Math.ceil((_faVLu-new Date())/60000));document.getElementById('fa-pin-err').textContent=`Account locked — ${_faVMins} min remaining. Contact @T2Sview to unlock.`;_faPinBuffer='';_faUpdateDots('');return;}
+            if(_faVLock&&_faVLock.length>0){const _faVLu=new Date(_faVLock[0].locked_until);const _faVMins=Math.max(1,Math.ceil((_faVLu-new Date())/60000));document.getElementById('fa-pin-err').innerHTML=`Account locked — ${_faVMins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.`;_faPinBuffer='';_faUpdateDots('');return;}
             const did = _faGetDeviceId();
             try {
                 const ex = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`, { method:'GET' });
@@ -1296,8 +1297,12 @@
             _faPinBuffer = ''; _faUpdateDots('');
             const rem = 3 - _faPinAttempts;
             if (rem <= 0) {
-                document.getElementById('fa-pin-err').textContent = 'Too many attempts. Contact @T2Sview to unlock.';
+                document.getElementById('fa-pin-err').innerHTML = 'Too many attempts. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.';
                 document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
+                // Show Request Unlock button
+                let _faUBtn=document.getElementById('fa-pin-unlock-btn');
+                if(!_faUBtn){_faUBtn=document.createElement('button');_faUBtn.id='fa-pin-unlock-btn';_faUBtn.style.cssText='margin-top:8px;padding:8px 18px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;width:100%;';_faUBtn.textContent='🔓 Request Unlock';_faUBtn.onclick=_faRequestUnlock;document.getElementById('fa-pin-section').appendChild(_faUBtn);}
+                _faUBtn.style.display='block';_faUBtn.disabled=false;_faUBtn.style.opacity='1';_faUBtn.textContent='🔓 Request Unlock';_faUBtn.onclick=_faRequestUnlock;
                 try{const _faLu=new Date(Date.now()+30*60000).toISOString();await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({locked_until:_faLu,failed_attempts_today:_faPinAttempts}),headers:{'Prefer':'return=minimal'}});}catch(e){}
             } else {
                 document.getElementById('fa-pin-err').textContent = `Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;
@@ -1308,8 +1313,9 @@
     function _faShowPinSection(member, label) {
         _faPendingMember = member; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify';
         _faUpdateDots('');
-        document.getElementById('fa-pin-err').textContent = '';
+        document.getElementById('fa-pin-err').innerHTML = '';
         document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
+        const _faExUBtn=document.getElementById('fa-pin-unlock-btn');if(_faExUBtn)_faExUBtn.style.display='none';
         const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = label || 'Enter your PIN to continue';
         _faRenderPhase('pin');
     }
@@ -1320,6 +1326,27 @@
         document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = false);
         const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = pinLabel || 'Create a 4-digit PIN';
         _faRenderPhase('pin');
+    }
+    async function _faRequestUnlock(){
+        const btn=document.getElementById('fa-pin-unlock-btn');
+        const errEl=document.getElementById('fa-pin-err');
+        const lastAt=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
+        if(lastAt&&Date.now()-lastAt<2*60*60*1000){
+            errEl.innerHTML='Unlock request already submitted. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
+            if(btn){btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';}return;
+        }
+        if(btn){btn.disabled=true;btn.textContent='Sending…';}
+        try{
+            const mid=_faPendingMember?_faPendingMember.id:null;
+            const mob='+91'+(document.getElementById('fa-mobile-input')?.value||'');
+            await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:_faGetDeviceId(),event_data:{mobile:mob}})});
+            localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
+            errEl.style.color='#059669';
+            errEl.innerHTML='✓ Unlock request sent. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
+            if(btn){btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';}
+        }catch(e){
+            if(btn){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
+        }
     }
     function _faSetupPin1() {
         _faPinSetupFirst = _faPinBuffer; _faPinBuffer = ''; _faUpdateDots('');
@@ -1428,7 +1455,7 @@
                 // Lock check — locked account must not reach PIN form regardless of path taken
                 const _faNowLock=new Date().toISOString();
                 const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
-                if(_faLockRow&&_faLockRow.length>0){const _faLu=new Date(_faLockRow[0].locked_until);const _faMins=Math.max(1,Math.ceil((_faLu-new Date())/60000));if(hint){hint.style.color='#dc2626';hint.textContent=`Account locked — ${_faMins} min remaining. Contact @T2Sview on Telegram.`;}input._blocked=true;_faCheckEnable();return;}
+                if(_faLockRow&&_faLockRow.length>0){const _faLu=new Date(_faLockRow[0].locked_until);const _faMins=Math.max(1,Math.ceil((_faLu-new Date())/60000));if(hint){hint.style.color='#dc2626';hint.innerHTML=`Account locked — ${_faMins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.`;}input._blocked=true;_faCheckEnable();return;}
                 if (hint) { hint.style.color = '#4a2a78'; hint.textContent = _faMember.pin_hash ? 'Registered member — enter your PIN below.' : 'Registered member — set up your PIN below.'; }
                 input._blocked = true;
                 _faMember.pin_hash ? _faShowPinSection(_faMember, 'Enter your PIN to continue') : _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
