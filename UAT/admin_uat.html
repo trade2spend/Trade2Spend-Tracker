@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-006 | admin_uat: Phase 1 UI — (1) Header: two-row layout (Row 1: logo+brand+Admin+icons; Row 2: scrollable tab bar). topbar-inner changed to flex-column; topbar-row1 and topbar-tabs added; app padding-top adjusted to 88px. (2) Member list: exact two-row rows per card (Row 1: Name|Mobile|Tier; Row 2: AcqSource|Expiry|Enable/Disable); expLine → expText (inline span, no div wrapper). Rollback: revert topbar CSS + HTML block; revert renderMemberList template + expLine. -->
 <!-- T2S-UAT-20260913-005 | admin_uat: Phase 1 corrections — (1) Search: name+mobile, no digit restriction. (2) Acquisition filter pills: All/Direct Paid/Free→Paid/Free. (3) filterMembers: applies both text+acq filter together. (4) loadMembers: uses filterMembers (respects active filters on refresh). (5) renderMemberList: compact single-row; removed +7d/+1M/tier-change inline buttons; acq badge in right column below tier badge; DISABLED always shown in expLine. (6) openMemberDetail: removed acq badge + dead mJson var; plain expiry line restored. (7) extendSubscription+setExpiryDate: removed status:enabled from patch — disabled members stay disabled after extension. Rollback: revert all nine targets to T2S-UAT-20260913-004 state. -->
 <!-- T2S-UAT-20260913-004 | admin_uat: Phase 1 — Member Management enhancements. (1) DB: acquisition_source column added (run phase1_manage_migration.sql). (2) loadMembers: fetches acquisition_source. (3) renderMemberList: shows acquisition source badge (Direct Paid/Free→Paid/Free) below mobile — permanent, never changes on tier toggle. (4) openMemberDetail: acquisition badge shown alongside expiry. (5) toggleTier: confirm dialog added; sets acquisition_source=free_to_paid on first free→paid upgrade. (6) setMemberDetailStatus: confirm dialog added for enable/disable. (7) addMember: sets acquisition_source at creation. (8) Removed dead code: toggleStatus(), copyRenewalMessage(). Rollback: revert all eight targets; drop acquisition_source column. -->
 <!-- T2S-UAT-20260906-002 | admin_uat: Admin UX — (1) Topbar: 🔒 lock/logout button added (calls lockAdminApp()). (2) Topbar: purple "Admin" pill added next to brand name to confirm active session. Rollback: remove lock button and identity pill span from topbar-inner. -->
@@ -39,10 +40,12 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:var(--bg2);}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
-.app{max-width:520px;margin:0 auto;padding:62px 0 5rem;overflow-x:hidden;overscroll-behavior:none;}
+.app{max-width:520px;margin:0 auto;padding:88px 0 5rem;overflow-x:hidden;overscroll-behavior:none;}
 
 .topbar{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(244,246,249,0.97);backdrop-filter:blur(16px);border-bottom:0.5px solid var(--border);}
-.topbar-inner{display:flex;align-items:center;justify-content:center;gap:24px;max-width:900px;margin:0 auto;padding:12px 16px;}
+.topbar-inner{max-width:900px;margin:0 auto;}
+.topbar-row1{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;}
+.topbar-tabs{padding:0 8px 6px;}
 @keyframes spin-once{to{transform:rotate(360deg)}}
 .refreshing{animation:spin-once .4s linear;display:inline-block;}
 .brand{display:flex;align-items:center;gap:10px;}
@@ -417,35 +420,37 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 
 <div class="topbar">
   <div class="topbar-inner">
-  <div class="brand">
-    <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
-    <div>
+  <div class="topbar-row1">
+    <div class="brand">
+      <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
       <div style="display:flex;align-items:center;gap:7px;">
         <div class="brand-name">Trade2Spend</div>
         <span id="admin-identity-pill" style="font-size:10px;font-weight:700;background:#4a2a78;color:#fff;padding:2px 7px;border-radius:10px;letter-spacing:0.03em;">Admin</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:3px;">
-        <button id="kotak-hdr-btn" onclick="showQuickTotp(null)" title="Kotak — tap to connect" style="display:flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;font-family:'Space Grotesk',sans-serif;color:#6b7280;">
-          <span id="kotak-hdr-dot" style="width:9px;height:9px;border-radius:50%;background:#dc2626;flex-shrink:0;transition:background .3s;"></span>🔑
-        </button>
-        <a href="https://app.trade2spend.com/?tab=trades" target="_blank" title="Open member view" style="text-decoration:none;font-size:13px;color:#6b7280;line-height:1;">🔗</a>
-        <button onclick="softRefresh()" title="Refresh screen" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:15px;color:#6b7280;line-height:1;">↻</button>
-        <button onclick="lockAdminApp()" title="Lock / Logout" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:13px;color:#dc2626;line-height:1;font-weight:700;">🔒</button>
-      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button id="kotak-hdr-btn" onclick="showQuickTotp(null)" title="Kotak — tap to connect" style="display:flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;font-family:'Space Grotesk',sans-serif;color:#6b7280;">
+        <span id="kotak-hdr-dot" style="width:9px;height:9px;border-radius:50%;background:#dc2626;flex-shrink:0;transition:background .3s;"></span>🔑
+      </button>
+      <a href="https://app.trade2spend.com/?tab=trades" target="_blank" title="Open member view" style="text-decoration:none;font-size:13px;color:#6b7280;line-height:1;">🔗</a>
+      <button onclick="softRefresh()" title="Refresh screen" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:15px;color:#6b7280;line-height:1;">↻</button>
+      <button onclick="lockAdminApp()" title="Lock / Logout" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;font-size:13px;color:#dc2626;line-height:1;font-weight:700;">🔒</button>
     </div>
   </div>
-  <div class="tabs">
-    <button class="tab" onclick="showTab('chart')">Analysis</button>
-    <button class="tab on" onclick="showTab('trade')">Trade</button>
-    <button class="tab" onclick="showTab('general')">General</button>
-    <button class="tab" onclick="showTab('posts')">📢 Posts</button>
-    <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
-    <button class="tab" onclick="showTab('setup')">Setup</button>
-    <button class="tab" onclick="showTab('manage')">Manage</button>
-    <button class="tab" onclick="showTab('membership')">Cards</button>
-    <button class="tab" style="display:none;" onclick="showTab('campaign')">Campaign</button>
-    <button class="tab" style="display:none;" onclick="showTab('results')">Results</button>
-    <button class="tab" style="display:none;" onclick="showTab('history')">History</button>
+  <div class="topbar-tabs">
+    <div class="tabs">
+      <button class="tab" onclick="showTab('chart')">Analysis</button>
+      <button class="tab on" onclick="showTab('trade')">Trade</button>
+      <button class="tab" onclick="showTab('general')">General</button>
+      <button class="tab" onclick="showTab('posts')">📢 Posts</button>
+      <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
+      <button class="tab" onclick="showTab('setup')">Setup</button>
+      <button class="tab" onclick="showTab('manage')">Manage</button>
+      <button class="tab" onclick="showTab('membership')">Cards</button>
+      <button class="tab" style="display:none;" onclick="showTab('campaign')">Campaign</button>
+      <button class="tab" style="display:none;" onclick="showTab('results')">Results</button>
+      <button class="tab" style="display:none;" onclick="showTab('history')">History</button>
+    </div>
   </div>
   </div>
 </div>
@@ -2104,27 +2109,27 @@ function renderMemberList(members){
     const acqStyles = { direct_paid: ['Direct Paid','var(--gold)','var(--goldbg)','var(--goldborder)'], free_to_paid: ['Free → Paid','var(--blue)','var(--bluebg)','var(--blueborder)'], free: ['Free','var(--muted)','var(--bg3)','var(--border2)'] };
     const acqE    = acqStyles[m.acquisition_source];
     const acqBadge = acqE ? `<span style="font-size:9px;font-weight:700;color:${acqE[1]};background:${acqE[2]};border:0.5px solid ${acqE[3]};border-radius:10px;padding:1px 6px;">${acqE[0]}</span>` : '';
-    const expLine = m.status === 'disabled'
+    const expText = m.status === 'disabled'
       ? m.subscription_end
-        ? `<div style="font-size:10px;color:var(--red);margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>DISABLED</b></div>`
-        : `<div style="font-size:10px;color:var(--red);margin-top:2px;"><b>DISABLED</b></div>`
+        ? `<span style="color:var(--red);">Exp: ${esc(m.subscription_end)} · <b>DISABLED</b></span>`
+        : `<span style="color:var(--red);"><b>DISABLED</b></span>`
       : m.subscription_end
-        ? `<div style="font-size:10px;color:${st.color};margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>${st.label}</b></div>`
-        : `<div style="font-size:10px;color:var(--muted);margin-top:2px;">No expiry set</div>`;
+        ? `<span style="color:${st.color};">Exp: ${esc(m.subscription_end)} · <b>${st.label}</b></span>`
+        : `<span style="color:var(--muted);">No expiry set</span>`;
     const statusBtn = isEnabled
       ? `<button onclick="setMemberDetailStatus('${safeId}','disabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✕ Disable</button>`
       : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--greenborder);background:var(--greenbg);color:var(--green);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✓ Enable</button>`;
     return `
-      <div style="padding:8px 0;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;">
-        <div style="flex:1;min-width:0;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
-          <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
-          <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
-          ${expLine}
+      <div style="padding:7px 0;border-bottom:0.5px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
+          <div style="font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
+          <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;">${esc(m.mobile)||''}</div>
+          <div style="flex-shrink:0;">${tierBadge}</div>
         </div>
-        <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-          ${tierBadge}
-          ${acqBadge}
-          ${statusBtn}
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex-shrink:0;">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
+          <div style="flex:1;min-width:0;font-size:10px;">${expText}</div>
+          <div style="flex-shrink:0;">${statusBtn}</div>
         </div>
       </div>`;
   }).join('');
