@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260914-008 | admin_uat: Phase 1 permanent layout fixes — (1) Sub-tabs: flex→CSS grid (repeat(4,1fr)); font 12px→10px; padding 5px 12px→5px 4px; "Active Members"→"Members" (display label only; showFaSubTab uses IDs); no scroll needed. (2) Action buttons: removed [style*="flex-wrap"] attribute-selector hack; replaced with structural :has(>button) selector + min-width/font/padding !important on #fa-requests-list buttons — frozen loadAccessRequests() untouched. (3) Member list: proper CSS classes (.mgmt-row/.mgmt-r1/.mgmt-r2 etc.) replace all-inline renderMemberList template; ensures identical column structure every row. (4) PIN section: #pru-body collapsible wrapper + togglePruSection() + MutationObserver on #pru-list — auto-expands when pending, auto-collapses when empty; frozen loadPinUnlockRequests() untouched. Rollback: revert CSS additions; revert sub-tab HTML; remove pru-body wrapper; revert renderMemberList template; remove togglePruSection/initPruObserver/onload call. -->
 <!-- T2S-UAT-20260914-007 | admin_uat: Phase 1 UI fixes — (1) topbar: transform:translateZ(0) added for GPU compositing (prevents fixed header flicker on iOS keyboard open). (2) Search: scroll-margin-top:100px on #mgmt-search + autocomplete/autocorrect/autocapitalize off — fixes keyboard focus scroll-to-top on mobile. (3) Sub-tabs: overflow-x:auto + flex-wrap:nowrap on sub-tab row; white-space:nowrap;flex-shrink:0 on each button — single scrollable row on narrow screens. (4) Action buttons: CSS [style*="flex-wrap"] rule forces nowrap + overflow-x:auto on dynamically-rendered action row inside #fa-requests-list without touching frozen loadAccessRequests(). (5) Member list: border-bottom strengthened; acq badge container min-width:68px for consistent Row 2 alignment. Rollback: revert topbar CSS; remove #mgmt-search scroll-margin CSS; revert sub-tab div + 4 buttons; remove action-row CSS block; revert renderMemberList border + min-width. -->
 <!-- T2S-UAT-20260913-006 | admin_uat: Phase 1 UI — (1) Header: two-row layout (Row 1: logo+brand+Admin+icons; Row 2: scrollable tab bar). topbar-inner changed to flex-column; topbar-row1 and topbar-tabs added; app padding-top adjusted to 88px. (2) Member list: exact two-row rows per card (Row 1: Name|Mobile|Tier; Row 2: AcqSource|Expiry|Enable/Disable); expLine → expText (inline span, no div wrapper). Rollback: revert topbar CSS + HTML block; revert renderMemberList template + expLine. -->
 <!-- T2S-UAT-20260913-005 | admin_uat: Phase 1 corrections — (1) Search: name+mobile, no digit restriction. (2) Acquisition filter pills: All/Direct Paid/Free→Paid/Free. (3) filterMembers: applies both text+acq filter together. (4) loadMembers: uses filterMembers (respects active filters on refresh). (5) renderMemberList: compact single-row; removed +7d/+1M/tier-change inline buttons; acq badge in right column below tier badge; DISABLED always shown in expLine. (6) openMemberDetail: removed acq badge + dead mJson var; plain expiry line restored. (7) extendSubscription+setExpiryDate: removed status:enabled from patch — disabled members stay disabled after extension. Rollback: revert all nine targets to T2S-UAT-20260913-004 state. -->
@@ -47,12 +48,21 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 .topbar-inner{max-width:900px;margin:0 auto;}
 .topbar-row1{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;}
 .topbar-tabs{padding:0 8px 6px;}
-/* Fix 2: search scroll-margin keeps input below fixed header when keyboard opens */
+/* Search — keeps input below fixed header when keyboard raises it */
 #mgmt-search{scroll-margin-top:100px;}
-/* Fix 4: action button row inside access-requests — CSS-only fix, does not touch frozen loadAccessRequests() */
-#fa-requests-list [style*="flex-wrap"]{flex-wrap:nowrap!important;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none;}
-#fa-requests-list [style*="flex-wrap"]::-webkit-scrollbar{display:none;}
-#fa-requests-list [style*="flex-wrap"] button{flex-shrink:0;white-space:nowrap;}
+/* Member list — CSS classes for consistent two-row layout across all members */
+.mgmt-row{padding:7px 0 8px;border-bottom:1px solid var(--border2);}
+.mgmt-r1{display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;}
+.mgmt-r1-name{font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mgmt-r1-mobile{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
+.mgmt-r1-tier{flex-shrink:0;}
+.mgmt-r2{display:flex;align-items:center;gap:6px;}
+.mgmt-r2-acq{flex-shrink:0;min-width:68px;}
+.mgmt-r2-exp{flex:1;min-width:0;font-size:10px;}
+.mgmt-r2-btn{flex-shrink:0;}
+/* Request action buttons — :has(>button) is a structural selector, not an inline-style selector */
+#fa-requests-list div:has(>button){flex-wrap:nowrap!important;}
+#fa-requests-list div:has(>button)>button{min-width:0!important;font-size:10px!important;padding:5px 3px!important;}
 @keyframes spin-once{to{transform:rotate(360deg)}}
 .refreshing{animation:spin-once .4s linear;display:inline-block;}
 .brand{display:flex;align-items:center;gap:10px;}
@@ -1477,12 +1487,12 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
       </label>
     </div>
 
-    <!-- Sub-tabs -->
-    <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--border2);padding-bottom:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none;flex-wrap:nowrap;">
-      <button id="fa-sub-requests" onclick="showFaSubTab('requests')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;flex-shrink:0;">Pending</button>
-      <button id="fa-sub-active" onclick="showFaSubTab('active')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;flex-shrink:0;">Active Members</button>
-      <button id="fa-sub-analytics" onclick="showFaSubTab('analytics')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;flex-shrink:0;">Analytics</button>
-      <button id="fa-sub-devices" onclick="showFaSubTab('devices')" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;flex-shrink:0;">🔒 Devices</button>
+    <!-- Sub-tabs — CSS grid keeps all 4 in one visible row on any screen width -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:12px;border-bottom:1px solid var(--border2);padding-bottom:10px;">
+      <button id="fa-sub-requests" onclick="showFaSubTab('requests')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Pending</button>
+      <button id="fa-sub-active" onclick="showFaSubTab('active')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Members</button>
+      <button id="fa-sub-analytics" onclick="showFaSubTab('analytics')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Analytics</button>
+      <button id="fa-sub-devices" onclick="showFaSubTab('devices')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Devices</button>
     </div>
 
     <!-- Requests panel -->
@@ -1514,14 +1524,19 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
 
-  <!-- PIN Resets & Unlocks -->
+  <!-- PIN Resets & Unlocks — collapsed when no pending; auto-expands via MutationObserver when requests arrive -->
   <div class="card" style="margin-bottom:10px;">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span><span class="card-title-dot"></span>🔓 PIN Resets &amp; Unlocks <span id="pru-badge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 7px;margin-left:6px;"></span></span>
-      <button onclick="loadPinUnlockRequests()" style="background:none;border:none;color:var(--muted2);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:6px;" title="Refresh">↻</button>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button onclick="loadPinUnlockRequests()" style="background:none;border:none;color:var(--muted2);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:6px;" title="Refresh">↻</button>
+        <button id="pru-toggle-btn" onclick="togglePruSection()" style="background:none;border:none;color:var(--muted2);font-size:13px;cursor:pointer;padding:2px 6px;border-radius:6px;line-height:1;" title="Expand / Collapse">▸</button>
+      </div>
     </div>
-    <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;">⚠️ Verify member identity on Telegram before acting on any request.</div>
-    <div id="pru-list" style="font-size:13px;"><div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">Loading...</div></div>
+    <div id="pru-body" style="display:none;">
+      <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;">⚠️ Verify member identity on Telegram before acting on any request.</div>
+      <div id="pru-list" style="font-size:13px;"><div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">Loading...</div></div>
+    </div>
   </div>
 
   <!-- Add Member -->
@@ -1604,6 +1619,8 @@ window.onload=()=>{
   initHolidayFromStorage();
   // Check Kotak status on load so header shows correct state immediately
   checkKotakStatus();
+  // PIN section: observe #pru-list mutations so section auto-expands when requests arrive
+  initPruObserver();
 };
 
 // ── TABS ──
@@ -1687,6 +1704,31 @@ async function fetchMemberStats(){
     const eb = document.getElementById('mem-stats-body');
     if(eb) eb.innerHTML = `<div style="font-size:11px;color:var(--red);grid-column:1/-1;">Failed to load — ${e.message}</div>`;
   }
+}
+
+// ── PIN SECTION COLLAPSE ─────────────────────────────────────────────────────
+function togglePruSection() {
+  const body = document.getElementById('pru-body');
+  const btn  = document.getElementById('pru-toggle-btn');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (btn) btn.textContent = open ? '▸' : '▾';
+}
+
+function initPruObserver() {
+  const list = document.getElementById('pru-list');
+  if (!list) return;
+  new MutationObserver(() => {
+    const badge      = document.getElementById('pru-badge');
+    const hasPending = badge && badge.style.display !== 'none';
+    const body = document.getElementById('pru-body');
+    const btn  = document.getElementById('pru-toggle-btn');
+    if (body) {
+      body.style.display = hasPending ? 'block' : 'none';
+      if (btn) btn.textContent = hasPending ? '▾' : '▸';
+    }
+  }).observe(list, { childList: true });
 }
 
 // ── MEMBER MANAGEMENT ────────────────────────────────────────────────────────
@@ -2127,16 +2169,16 @@ function renderMemberList(members){
       ? `<button onclick="setMemberDetailStatus('${safeId}','disabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✕ Disable</button>`
       : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--greenborder);background:var(--greenbg);color:var(--green);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✓ Enable</button>`;
     return `
-      <div style="padding:7px 0 8px;border-bottom:1px solid var(--border2);">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
-          <div style="font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
-          <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;">${esc(m.mobile)||''}</div>
-          <div style="flex-shrink:0;">${tierBadge}</div>
+      <div class="mgmt-row">
+        <div class="mgmt-r1" onclick="openMemberDetail('${safeId}')">
+          <div class="mgmt-r1-name">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
+          <div class="mgmt-r1-mobile">${esc(m.mobile)||''}</div>
+          <div class="mgmt-r1-tier">${tierBadge}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="flex-shrink:0;min-width:68px;">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
-          <div style="flex:1;min-width:0;font-size:10px;">${expText}</div>
-          <div style="flex-shrink:0;">${statusBtn}</div>
+        <div class="mgmt-r2">
+          <div class="mgmt-r2-acq">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
+          <div class="mgmt-r2-exp">${expText}</div>
+          <div class="mgmt-r2-btn">${statusBtn}</div>
         </div>
       </div>`;
   }).join('');
