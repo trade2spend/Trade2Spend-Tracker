@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-005 | admin_uat: Phase 1 corrections — (1) Search: name+mobile, no digit restriction. (2) Acquisition filter pills: All/Direct Paid/Free→Paid/Free. (3) filterMembers: applies both text+acq filter together. (4) loadMembers: uses filterMembers (respects active filters on refresh). (5) renderMemberList: compact single-row; removed +7d/+1M/tier-change inline buttons; acq badge in right column below tier badge; DISABLED always shown in expLine. (6) openMemberDetail: removed acq badge + dead mJson var; plain expiry line restored. (7) extendSubscription+setExpiryDate: removed status:enabled from patch — disabled members stay disabled after extension. Rollback: revert all nine targets to T2S-UAT-20260913-004 state. -->
 <!-- T2S-UAT-20260913-004 | admin_uat: Phase 1 — Member Management enhancements. (1) DB: acquisition_source column added (run phase1_manage_migration.sql). (2) loadMembers: fetches acquisition_source. (3) renderMemberList: shows acquisition source badge (Direct Paid/Free→Paid/Free) below mobile — permanent, never changes on tier toggle. (4) openMemberDetail: acquisition badge shown alongside expiry. (5) toggleTier: confirm dialog added; sets acquisition_source=free_to_paid on first free→paid upgrade. (6) setMemberDetailStatus: confirm dialog added for enable/disable. (7) addMember: sets acquisition_source at creation. (8) Removed dead code: toggleStatus(), copyRenewalMessage(). Rollback: revert all eight targets; drop acquisition_source column. -->
 <!-- T2S-UAT-20260906-002 | admin_uat: Admin UX — (1) Topbar: 🔒 lock/logout button added (calls lockAdminApp()). (2) Topbar: purple "Admin" pill added next to brand name to confirm active session. Rollback: remove lock button and identity pill span from topbar-inner. -->
 <!-- T2S-UAT-20260906-001 | admin_uat: (1) Branding: @T2Sview + t.me/T2Sview replaces @tusharview/@trade2spend everywhere including canvas fillText, Telegram chat_id API calls, campaign captions, and setup instructions. (2) C4 fix: Approve button now visible on rejected requests (Reject/Block buttons remain pending-only); actionRequestDirect guard allows approve action on rejected status. (3) C5 fix: sbDelete() added; new "Devices" sub-tab in Free Access section lists all device_blocks with Unblock button; loadBlockedDevices()/unblockDevice() added; showFaSubTab updated. Rollback: revert @T2Sview to @tusharview/@trade2spend; revert isRejected card render; revert guard condition; remove sbDelete/loadBlockedDevices/unblockDevice; remove devices sub-tab HTML+JS. -->
@@ -1544,9 +1545,15 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   <!-- Search + List -->
   <div class="card">
     <div class="card-title"><span class="card-title-dot"></span>Member List</div>
-    <div style="display:flex;gap:8px;margin-bottom:10px;">
-      <input type="tel" id="mgmt-search" inputmode="numeric" maxlength="10" placeholder="Search by mobile..." style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:9px 10px;outline:none;font-family:'Space Grotesk',sans-serif;" oninput="this.value=this.value.replace(/\D/g,'');filterMembers(this.value)">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="text" id="mgmt-search" placeholder="Search by name or mobile..." style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:9px 10px;outline:none;font-family:'Space Grotesk',sans-serif;" oninput="filterMembers(this.value)">
       <button onclick="loadMembers()" style="padding:9px 14px;background:var(--bg4);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↺ Refresh</button>
+    </div>
+    <div id="mgmt-acq-pills" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+      <button id="acq-pill-all" onclick="setAcqFilter('all')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--goldborder);background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">All</button>
+      <button id="acq-pill-direct_paid" onclick="setAcqFilter('direct_paid')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Direct Paid</button>
+      <button id="acq-pill-free_to_paid" onclick="setAcqFilter('free_to_paid')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Free → Paid</button>
+      <button id="acq-pill-free" onclick="setAcqFilter('free')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Free</button>
     </div>
     <div id="mgmt-list" style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">Tap Refresh to load members</div>
   </div>
@@ -1672,6 +1679,7 @@ async function fetchMemberStats(){
 
 // ── MEMBER MANAGEMENT ────────────────────────────────────────────────────────
 let allMembers = [];
+let _mgmtAcqFilter = 'all';
 
 // ── FREE ACCESS MANAGEMENT ────────────────────────────────────────────────────
 const _VM_ADMIN = 'https://api.trade2spend.com';
@@ -2027,15 +2035,38 @@ async function loadMembers(){
   el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">Loading...</div>';
   try {
     allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end,acquisition_source&order=created_at.desc&limit=200');
-    renderMemberList(allMembers);
+    filterMembers(document.getElementById('mgmt-search').value || '');
   } catch(e){
     el.innerHTML = `<div style="color:var(--red);text-align:center;padding:16px;">Failed to load: ${esc(e.message)}</div>`;
   }
 }
 
-function filterMembers(q){
-  if(!q){ renderMemberList(allMembers); return; }
-  renderMemberList(allMembers.filter(m => m.mobile && m.mobile.includes(q)));
+function filterMembers(q) {
+  const txt = (q || '').toLowerCase().trim();
+  let filtered = allMembers;
+  if (_mgmtAcqFilter !== 'all') {
+    filtered = filtered.filter(m => m.acquisition_source === _mgmtAcqFilter);
+  }
+  if (txt) {
+    filtered = filtered.filter(m =>
+      (m.mobile && m.mobile.includes(txt)) ||
+      (m.name && m.name.toLowerCase().includes(txt))
+    );
+  }
+  renderMemberList(filtered);
+}
+
+function setAcqFilter(src) {
+  _mgmtAcqFilter = src;
+  ['all','direct_paid','free_to_paid','free'].forEach(k => {
+    const btn = document.getElementById('acq-pill-' + k);
+    if (!btn) return;
+    const active = k === src;
+    btn.style.background = active ? 'var(--gold)' : 'var(--bg3)';
+    btn.style.color      = active ? '#fff' : 'var(--muted2)';
+    btn.style.border     = active ? '0.5px solid var(--goldborder)' : '0.5px solid var(--border2)';
+  });
+  filterMembers(document.getElementById('mgmt-search').value || '');
 }
 
 function memberExpiryStatus(subscription_end, memberStatus) {
@@ -2055,47 +2086,44 @@ function renderMemberList(members){
   if(!members||!members.length){
     el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">No members found.</div>'; return;
   }
-  // Sort: soonest expiry first
+  // Sort: soonest expiry first; disabled members sink to bottom
   const sorted = [...members].sort((a,b) => {
+    if (a.status === 'disabled' && b.status !== 'disabled') return 1;
+    if (b.status === 'disabled' && a.status !== 'disabled') return -1;
     const da = a.subscription_end ? new Date(a.subscription_end) : new Date('2099-01-01');
     const db = b.subscription_end ? new Date(b.subscription_end) : new Date('2099-01-01');
     return da - db;
   });
-  const qb = `padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);`;
   el.innerHTML = sorted.map(m => {
-    const safeId  = esc(m.id);
-    const st      = memberExpiryStatus(m.subscription_end, m.status);
+    const safeId    = esc(m.id);
+    const st        = memberExpiryStatus(m.subscription_end, m.status);
     const isEnabled = m.status === 'enabled';
     const tierBadge = m.tier === 'paid'
       ? `<span style="background:var(--goldbg);color:var(--gold);border:0.5px solid var(--goldborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">PAID</span>`
       : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">FREE</span>`;
-    const expLine = m.subscription_end
-      ? `<div style="font-size:10px;color:${st.color};margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>${st.label}</b></div>`
-      : `<div style="font-size:10px;color:var(--muted);margin-top:2px;">No expiry set</div>`;
     const acqStyles = { direct_paid: ['Direct Paid','var(--gold)','var(--goldbg)','var(--goldborder)'], free_to_paid: ['Free → Paid','var(--blue)','var(--bluebg)','var(--blueborder)'], free: ['Free','var(--muted)','var(--bg3)','var(--border2)'] };
-    const acqE = acqStyles[m.acquisition_source];
-    const acqBadge = acqE ? `<div style="margin-top:3px;"><span style="font-size:9px;font-weight:700;color:${acqE[1]};background:${acqE[2]};border:0.5px solid ${acqE[3]};border-radius:10px;padding:1px 6px;">${acqE[0]}</span></div>` : '';
-    const tierBtn = m.tier === 'paid'
-      ? `<button onclick="toggleTier('${safeId}','free')" style="${qb}">→ Free</button>`
-      : `<button onclick="toggleTier('${safeId}','paid')" style="${qb};background:var(--goldbg);color:var(--gold);border-color:var(--goldborder);">→ Paid</button>`;
+    const acqE    = acqStyles[m.acquisition_source];
+    const acqBadge = acqE ? `<span style="font-size:9px;font-weight:700;color:${acqE[1]};background:${acqE[2]};border:0.5px solid ${acqE[3]};border-radius:10px;padding:1px 6px;">${acqE[0]}</span>` : '';
+    const expLine = m.status === 'disabled'
+      ? m.subscription_end
+        ? `<div style="font-size:10px;color:var(--red);margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>DISABLED</b></div>`
+        : `<div style="font-size:10px;color:var(--red);margin-top:2px;"><b>DISABLED</b></div>`
+      : m.subscription_end
+        ? `<div style="font-size:10px;color:${st.color};margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>${st.label}</b></div>`
+        : `<div style="font-size:10px;color:var(--muted);margin-top:2px;">No expiry set</div>`;
     const statusBtn = isEnabled
-      ? `<button onclick="setMemberDetailStatus('${safeId}','disabled',true)" style="${qb};background:var(--redbg);color:var(--red);border-color:var(--redborder);">✕ Disable</button>`
-      : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="${qb};background:var(--greenbg);color:var(--green);border-color:var(--greenborder);">✓ Enable</button>`;
+      ? `<button onclick="setMemberDetailStatus('${safeId}','disabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✕ Disable</button>`
+      : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--greenborder);background:var(--greenbg);color:var(--green);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✓ Enable</button>`;
     return `
-      <div style="padding:10px 0;border-bottom:0.5px solid var(--border);">
-        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
-            <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
-            ${acqBadge}
-            ${expLine}
-          </div>
-          <div style="flex-shrink:0;margin-top:2px;">${tierBadge}</div>
+      <div style="padding:8px 0;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;min-width:0;cursor:pointer;" onclick="openMemberDetail('${safeId}')">
+          <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
+          <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
+          ${expLine}
         </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;">
-          <button onclick="extendSubscription('${safeId}',7,true)" style="${qb}">+7d</button>
-          <button onclick="extendSubscription('${safeId}',30,true)" style="${qb}">+1M</button>
-          ${tierBtn}
+        <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          ${tierBadge}
+          ${acqBadge}
           ${statusBtn}
         </div>
       </div>`;
@@ -2113,11 +2141,7 @@ function openMemberDetail(memberId) {
   const expDate   = m.subscription_end ? new Date(m.subscription_end) : null;
   expDate && expDate.setHours(0,0,0,0);
   const extendFrom = (expDate && expDate > today) ? 'Expiry' : 'Today';
-  const mJson     = JSON.stringify({id:m.id, name:m.name||'', mobile:m.mobile||'', subscription_end:m.subscription_end||''}).replace(/'/g,"&#39;");
   const btnBase   = `padding:10px 4px;border-radius:8px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg3);color:var(--text);`;
-  const detailAcqStyles = { direct_paid: ['Direct Paid','var(--gold)','var(--goldbg)','var(--goldborder)'], free_to_paid: ['Free → Paid','var(--blue)','var(--bluebg)','var(--blueborder)'], free: ['Free','var(--muted)','var(--bg3)','var(--border2)'] };
-  const detailAcqE = detailAcqStyles[m.acquisition_source];
-  const detailAcqBadge = detailAcqE ? `<span style="font-size:10px;font-weight:700;color:${detailAcqE[1]};background:${detailAcqE[2]};border:0.5px solid ${detailAcqE[3]};border-radius:10px;padding:2px 8px;">${detailAcqE[0]}</span>` : '';
 
   let ov = document.getElementById('member-detail-overlay');
   if (!ov) {
@@ -2146,11 +2170,8 @@ function openMemberDetail(memberId) {
         </div>
       </div>
 
-      <!-- Expiry + Acquisition source -->
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:14px;">
-        <div style="font-size:12px;color:${st.color};font-weight:600;">Expires: ${m.subscription_end || 'Not set'}</div>
-        ${detailAcqBadge}
-      </div>
+      <!-- Expiry -->
+      <div style="font-size:12px;color:${st.color};font-weight:600;margin-bottom:14px;">Expires: ${m.subscription_end || 'Not set'}</div>
 
       <!-- Quick extend -->
       <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Extend from ${extendFrom}</div>
@@ -2214,9 +2235,8 @@ async function extendSubscription(memberId, extraDays, skipSheet = false){
   base.setDate(base.getDate() + extraDays);
   const newEnd = base.toISOString().slice(0,10);
   try {
-    await sbPatch(`members?id=eq.${memberId}`, { subscription_end: newEnd, status: 'enabled' });
+    await sbPatch(`members?id=eq.${memberId}`, { subscription_end: newEnd });
     m.subscription_end = newEnd;
-    m.status = 'enabled';
     renderMemberList(allMembers);
     if (!skipSheet) openMemberDetail(memberId);
     else showToast(`✓ Extended +${extraDays}d → ${newEnd}`);
@@ -2417,9 +2437,9 @@ async function setExpiryDate(memberId){
   const val = document.getElementById('detail-set-date').value;
   if (!val){ alert('Please pick a date.'); return; }
   try {
-    await sbPatch(`members?id=eq.${memberId}`, { subscription_end: val, status: 'enabled' });
+    await sbPatch(`members?id=eq.${memberId}`, { subscription_end: val });
     const m = allMembers.find(x => x.id === memberId);
-    if(m){ m.subscription_end = val; m.status = 'enabled'; }
+    if(m){ m.subscription_end = val; }
     renderMemberList(allMembers);
     openMemberDetail(memberId);
   } catch(e){ alert('Failed to set date: ' + e.message); }
