@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260915-009 | admin_uat: Phase 1 final UI fixes — (1) PIN section: pru-toggle-btn enlarged (font 13px→20px, gold color, rounded bg pill) for clear visibility. (2) Member list: replaced dual-flex-row approach with single 6-cell CSS grid (grid-template-columns:1fr 100px auto; 3col×2row) on .mgmt-row; both rows share identical column widths by grid construction; 100px for mobile/expiry column (mobile always 13 chars ≈91px; expiry truncates with ellipsis); Column 3 auto-sized to button width. New CSS classes: .mgmt-row, .mgmt-c1r1, .mgmt-name, .mgmt-c2r1, .mgmt-c3r1, .mgmt-c1r2, .mgmt-c2r2, .mgmt-c3r2. (3) Member count: #mgmt-total-count span added to Member List card title; set in loadMembers() from allMembers.length; unaffected by filter/search. Rollback: revert CSS block; revert pru-toggle-btn style; revert Member List card-title HTML; revert renderMemberList template; remove count update from loadMembers(). -->
 <!-- T2S-UAT-20260914-008 | admin_uat: Phase 1 permanent layout fixes — (1) Sub-tabs: flex→CSS grid (repeat(4,1fr)); font 12px→10px; padding 5px 12px→5px 4px; "Active Members"→"Members" (display label only; showFaSubTab uses IDs); no scroll needed. (2) Action buttons: removed [style*="flex-wrap"] attribute-selector hack; replaced with structural :has(>button) selector + min-width/font/padding !important on #fa-requests-list buttons — frozen loadAccessRequests() untouched. (3) Member list: proper CSS classes (.mgmt-row/.mgmt-r1/.mgmt-r2 etc.) replace all-inline renderMemberList template; ensures identical column structure every row. (4) PIN section: #pru-body collapsible wrapper + togglePruSection() + MutationObserver on #pru-list — auto-expands when pending, auto-collapses when empty; frozen loadPinUnlockRequests() untouched. Rollback: revert CSS additions; revert sub-tab HTML; remove pru-body wrapper; revert renderMemberList template; remove togglePruSection/initPruObserver/onload call. -->
 <!-- T2S-UAT-20260914-007 | admin_uat: Phase 1 UI fixes — (1) topbar: transform:translateZ(0) added for GPU compositing (prevents fixed header flicker on iOS keyboard open). (2) Search: scroll-margin-top:100px on #mgmt-search + autocomplete/autocorrect/autocapitalize off — fixes keyboard focus scroll-to-top on mobile. (3) Sub-tabs: overflow-x:auto + flex-wrap:nowrap on sub-tab row; white-space:nowrap;flex-shrink:0 on each button — single scrollable row on narrow screens. (4) Action buttons: CSS [style*="flex-wrap"] rule forces nowrap + overflow-x:auto on dynamically-rendered action row inside #fa-requests-list without touching frozen loadAccessRequests(). (5) Member list: border-bottom strengthened; acq badge container min-width:68px for consistent Row 2 alignment. Rollback: revert topbar CSS; remove #mgmt-search scroll-margin CSS; revert sub-tab div + 4 buttons; remove action-row CSS block; revert renderMemberList border + min-width. -->
 <!-- T2S-UAT-20260913-006 | admin_uat: Phase 1 UI — (1) Header: two-row layout (Row 1: logo+brand+Admin+icons; Row 2: scrollable tab bar). topbar-inner changed to flex-column; topbar-row1 and topbar-tabs added; app padding-top adjusted to 88px. (2) Member list: exact two-row rows per card (Row 1: Name|Mobile|Tier; Row 2: AcqSource|Expiry|Enable/Disable); expLine → expText (inline span, no div wrapper). Rollback: revert topbar CSS + HTML block; revert renderMemberList template + expLine. -->
@@ -50,16 +51,16 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 .topbar-tabs{padding:0 8px 6px;}
 /* Search — keeps input below fixed header when keyboard raises it */
 #mgmt-search{scroll-margin-top:100px;}
-/* Member list — CSS classes for consistent two-row layout across all members */
-.mgmt-row{padding:7px 0 8px;border-bottom:1px solid var(--border2);}
-.mgmt-r1{display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;}
-.mgmt-r1-name{font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.mgmt-r1-mobile{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
-.mgmt-r1-tier{flex-shrink:0;}
-.mgmt-r2{display:flex;align-items:center;gap:6px;}
-.mgmt-r2-acq{flex-shrink:0;min-width:68px;}
-.mgmt-r2-exp{flex:1;min-width:0;font-size:10px;}
-.mgmt-r2-btn{flex-shrink:0;}
+/* Member list — true 3-column CSS grid per member; 6 direct-child cells (3col×2row);
+   both rows share identical column widths by grid construction */
+.mgmt-row{display:grid;grid-template-columns:1fr 100px auto;column-gap:6px;row-gap:4px;padding:7px 0 8px;border-bottom:1px solid var(--border2);}
+.mgmt-c1r1{min-width:0;overflow:hidden;cursor:pointer;display:flex;align-items:center;gap:4px;}
+.mgmt-name{font-weight:600;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.mgmt-c2r1{display:flex;align-items:center;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
+.mgmt-c3r1{display:flex;align-items:center;justify-content:flex-end;}
+.mgmt-c1r2{min-width:0;display:flex;align-items:center;}
+.mgmt-c2r2{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center;min-width:0;}
+.mgmt-c3r2{display:flex;align-items:center;justify-content:flex-end;}
 /* Request action buttons — :has(>button) is a structural selector, not an inline-style selector */
 #fa-requests-list div:has(>button){flex-wrap:nowrap!important;}
 #fa-requests-list div:has(>button)>button{min-width:0!important;font-size:10px!important;padding:5px 3px!important;}
@@ -1530,7 +1531,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
       <span><span class="card-title-dot"></span>🔓 PIN Resets &amp; Unlocks <span id="pru-badge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 7px;margin-left:6px;"></span></span>
       <div style="display:flex;align-items:center;gap:4px;">
         <button onclick="loadPinUnlockRequests()" style="background:none;border:none;color:var(--muted2);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:6px;" title="Refresh">↻</button>
-        <button id="pru-toggle-btn" onclick="togglePruSection()" style="background:none;border:none;color:var(--muted2);font-size:13px;cursor:pointer;padding:2px 6px;border-radius:6px;line-height:1;" title="Expand / Collapse">▸</button>
+        <button id="pru-toggle-btn" onclick="togglePruSection()" style="background:var(--goldbg);border:0.5px solid var(--goldborder);color:var(--gold);font-size:20px;font-weight:700;cursor:pointer;padding:1px 8px;border-radius:8px;line-height:1.2;" title="Expand / Collapse">▸</button>
       </div>
     </div>
     <div id="pru-body" style="display:none;">
@@ -1571,7 +1572,7 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 
   <!-- Search + List -->
   <div class="card">
-    <div class="card-title"><span class="card-title-dot"></span>Member List</div>
+    <div class="card-title"><span class="card-title-dot"></span>Member List <span id="mgmt-total-count" style="font-size:10px;font-weight:500;color:var(--muted);margin-left:4px;"></span></div>
     <div style="display:flex;gap:8px;margin-bottom:8px;">
       <input type="text" id="mgmt-search" placeholder="Search by name or mobile..." style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:9px 10px;outline:none;font-family:'Space Grotesk',sans-serif;" oninput="filterMembers(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       <button onclick="loadMembers()" style="padding:9px 14px;background:var(--bg4);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">↺ Refresh</button>
@@ -2089,6 +2090,8 @@ async function loadMembers(){
   el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">Loading...</div>';
   try {
     allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end,acquisition_source&order=created_at.desc&limit=200');
+    const countEl = document.getElementById('mgmt-total-count');
+    if (countEl) countEl.textContent = `${allMembers.length} members`;
     filterMembers(document.getElementById('mgmt-search').value || '');
   } catch(e){
     el.innerHTML = `<div style="color:var(--red);text-align:center;padding:16px;">Failed to load: ${esc(e.message)}</div>`;
@@ -2170,16 +2173,15 @@ function renderMemberList(members){
       : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--greenborder);background:var(--greenbg);color:var(--green);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✓ Enable</button>`;
     return `
       <div class="mgmt-row">
-        <div class="mgmt-r1" onclick="openMemberDetail('${safeId}')">
-          <div class="mgmt-r1-name">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
-          <div class="mgmt-r1-mobile">${esc(m.mobile)||''}</div>
-          <div class="mgmt-r1-tier">${tierBadge}</div>
+        <div class="mgmt-c1r1" onclick="openMemberDetail('${safeId}')">
+          <span class="mgmt-name">${esc(m.name)||'—'}</span>
+          <span style="font-size:10px;color:var(--muted);flex-shrink:0;">›</span>
         </div>
-        <div class="mgmt-r2">
-          <div class="mgmt-r2-acq">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
-          <div class="mgmt-r2-exp">${expText}</div>
-          <div class="mgmt-r2-btn">${statusBtn}</div>
-        </div>
+        <div class="mgmt-c2r1">${esc(m.mobile)||''}</div>
+        <div class="mgmt-c3r1">${tierBadge}</div>
+        <div class="mgmt-c1r2">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
+        <div class="mgmt-c2r2">${expText}</div>
+        <div class="mgmt-c3r2">${statusBtn}</div>
       </div>`;
   }).join('');
 }
