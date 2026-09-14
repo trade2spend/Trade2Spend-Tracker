@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260913-004 | admin_uat: Phase 1 — Member Management enhancements. (1) DB: acquisition_source column added (run phase1_manage_migration.sql). (2) loadMembers: fetches acquisition_source. (3) renderMemberList: shows acquisition source badge (Direct Paid/Free→Paid/Free) below mobile — permanent, never changes on tier toggle. (4) openMemberDetail: acquisition badge shown alongside expiry. (5) toggleTier: confirm dialog added; sets acquisition_source=free_to_paid on first free→paid upgrade. (6) setMemberDetailStatus: confirm dialog added for enable/disable. (7) addMember: sets acquisition_source at creation. (8) Removed dead code: toggleStatus(), copyRenewalMessage(). Rollback: revert all eight targets; drop acquisition_source column. -->
 <!-- T2S-UAT-20260906-002 | admin_uat: Admin UX — (1) Topbar: 🔒 lock/logout button added (calls lockAdminApp()). (2) Topbar: purple "Admin" pill added next to brand name to confirm active session. Rollback: remove lock button and identity pill span from topbar-inner. -->
 <!-- T2S-UAT-20260906-001 | admin_uat: (1) Branding: @T2Sview + t.me/T2Sview replaces @tusharview/@trade2spend everywhere including canvas fillText, Telegram chat_id API calls, campaign captions, and setup instructions. (2) C4 fix: Approve button now visible on rejected requests (Reject/Block buttons remain pending-only); actionRequestDirect guard allows approve action on rejected status. (3) C5 fix: sbDelete() added; new "Devices" sub-tab in Free Access section lists all device_blocks with Unblock button; loadBlockedDevices()/unblockDevice() added; showFaSubTab updated. Rollback: revert @T2Sview to @tusharview/@trade2spend; revert isRejected card render; revert guard condition; remove sbDelete/loadBlockedDevices/unblockDevice; remove devices sub-tab HTML+JS. -->
 <!-- T2S-UAT-20260816-002 | admin_uat: Active Banners panel at top of Posts tab — loadActiveBanners() fetches post_type=banner at Posts tab open; deactivateBannerPanel() soft-deletes; panel shows count badge + audience + preview + Deactivate per row; synced with uat.html admin compose. -->
@@ -2025,7 +2026,7 @@ async function loadMembers(){
   const el = document.getElementById('mgmt-list');
   el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">Loading...</div>';
   try {
-    allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end&order=created_at.desc&limit=200');
+    allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end,acquisition_source&order=created_at.desc&limit=200');
     renderMemberList(allMembers);
   } catch(e){
     el.innerHTML = `<div style="color:var(--red);text-align:center;padding:16px;">Failed to load: ${esc(e.message)}</div>`;
@@ -2071,6 +2072,9 @@ function renderMemberList(members){
     const expLine = m.subscription_end
       ? `<div style="font-size:10px;color:${st.color};margin-top:2px;">Exp: ${esc(m.subscription_end)} · <b>${st.label}</b></div>`
       : `<div style="font-size:10px;color:var(--muted);margin-top:2px;">No expiry set</div>`;
+    const acqStyles = { direct_paid: ['Direct Paid','var(--gold)','var(--goldbg)','var(--goldborder)'], free_to_paid: ['Free → Paid','var(--blue)','var(--bluebg)','var(--blueborder)'], free: ['Free','var(--muted)','var(--bg3)','var(--border2)'] };
+    const acqE = acqStyles[m.acquisition_source];
+    const acqBadge = acqE ? `<div style="margin-top:3px;"><span style="font-size:9px;font-weight:700;color:${acqE[1]};background:${acqE[2]};border:0.5px solid ${acqE[3]};border-radius:10px;padding:1px 6px;">${acqE[0]}</span></div>` : '';
     const tierBtn = m.tier === 'paid'
       ? `<button onclick="toggleTier('${safeId}','free')" style="${qb}">→ Free</button>`
       : `<button onclick="toggleTier('${safeId}','paid')" style="${qb};background:var(--goldbg);color:var(--gold);border-color:var(--goldborder);">→ Paid</button>`;
@@ -2083,6 +2087,7 @@ function renderMemberList(members){
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:13px;color:var(--text);">${esc(m.name)||'—'} <span style="font-size:10px;color:var(--muted);">›</span></div>
             <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${esc(m.mobile)||''}</div>
+            ${acqBadge}
             ${expLine}
           </div>
           <div style="flex-shrink:0;margin-top:2px;">${tierBadge}</div>
@@ -2110,6 +2115,9 @@ function openMemberDetail(memberId) {
   const extendFrom = (expDate && expDate > today) ? 'Expiry' : 'Today';
   const mJson     = JSON.stringify({id:m.id, name:m.name||'', mobile:m.mobile||'', subscription_end:m.subscription_end||''}).replace(/'/g,"&#39;");
   const btnBase   = `padding:10px 4px;border-radius:8px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg3);color:var(--text);`;
+  const detailAcqStyles = { direct_paid: ['Direct Paid','var(--gold)','var(--goldbg)','var(--goldborder)'], free_to_paid: ['Free → Paid','var(--blue)','var(--bluebg)','var(--blueborder)'], free: ['Free','var(--muted)','var(--bg3)','var(--border2)'] };
+  const detailAcqE = detailAcqStyles[m.acquisition_source];
+  const detailAcqBadge = detailAcqE ? `<span style="font-size:10px;font-weight:700;color:${detailAcqE[1]};background:${detailAcqE[2]};border:0.5px solid ${detailAcqE[3]};border-radius:10px;padding:2px 8px;">${detailAcqE[0]}</span>` : '';
 
   let ov = document.getElementById('member-detail-overlay');
   if (!ov) {
@@ -2138,9 +2146,10 @@ function openMemberDetail(memberId) {
         </div>
       </div>
 
-      <!-- Expiry (compact inline line) -->
-      <div style="font-size:12px;color:${st.color};font-weight:600;margin-bottom:14px;">
-        Expires: ${m.subscription_end || 'Not set'}
+      <!-- Expiry + Acquisition source -->
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:14px;">
+        <div style="font-size:12px;color:${st.color};font-weight:600;">Expires: ${m.subscription_end || 'Not set'}</div>
+        ${detailAcqBadge}
       </div>
 
       <!-- Quick extend -->
@@ -2221,6 +2230,12 @@ function extendCustomDays(memberId){
 }
 
 async function setMemberDetailStatus(memberId, status, skipSheet = false){
+  const _m = allMembers.find(x => x.id === memberId);
+  const _label = _m ? (_m.name || _m.mobile) : 'this member';
+  const _msg = status === 'enabled'
+    ? `Enable ${_label}?\n\nThey will be able to log in again.`
+    : `Disable ${_label}?\n\nThey will be locked out immediately.`;
+  if (!confirm(_msg)) return;
   try {
     await sbPatch(`members?id=eq.${memberId}`, { status });
     const m = allMembers.find(x => x.id === memberId);
@@ -2229,19 +2244,6 @@ async function setMemberDetailStatus(memberId, status, skipSheet = false){
     if (!skipSheet) openMemberDetail(memberId);
     else showToast(status === 'enabled' ? '✓ Member enabled' : '✓ Member disabled');
   } catch(e){ alert('Failed: ' + e.message); }
-}
-
-function copyRenewalMessage(mJson){
-  let m;
-  try { m = JSON.parse(mJson.replace(/&#39;/g,"'")); } catch(e){ return; }
-  const expStr = m.subscription_end
-    ? new Date(m.subscription_end).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
-    : 'soon';
-  const msg = `Hi${m.name?' '+m.name:''}, your Trade2Spend premium access expires on ${expStr}. Renew now to keep getting live trade alerts — ping me to continue. 🙏`;
-  navigator.clipboard.writeText(msg).then(() => {
-    const btn = document.getElementById('detail-copy-btn');
-    if (btn){ btn.textContent='✓ Copied!'; setTimeout(()=>{ btn.textContent='📋 Copy Message'; },2000); }
-  });
 }
 
 // ── FOLLOW-UP SYSTEM ────────────────────────────────────────────────────────
@@ -2395,10 +2397,17 @@ async function resetMemberPin(memberId){
 }
 
 async function toggleTier(id, newTier){
+  const m = allMembers.find(m=>m.id===id);
+  const label = m ? (m.name || m.mobile) : 'this member';
+  if (!confirm(`Switch ${label} to ${newTier === 'paid' ? 'Paid' : 'Free'} tier?`)) return;
+  const patch = { tier: newTier };
+  // Set acquisition_source only on first free→paid upgrade; never overwrite existing paid/free_to_paid source
+  if (newTier === 'paid' && m && (m.acquisition_source === 'free' || !m.acquisition_source)) {
+    patch.acquisition_source = 'free_to_paid';
+  }
   try {
-    await sbPatch(`members?id=eq.${id}`, {tier: newTier});
-    const m = allMembers.find(m=>m.id===id);
-    if(m){ m.tier=newTier; renderMemberList(allMembers); }
+    await sbPatch(`members?id=eq.${id}`, patch);
+    if(m){ m.tier = newTier; if(patch.acquisition_source) m.acquisition_source = patch.acquisition_source; renderMemberList(allMembers); }
     showToast(`✓ Switched to ${newTier}`);
     openMemberDetail(id);
   } catch(e){ alert('Failed: '+e.message); }
@@ -2414,14 +2423,6 @@ async function setExpiryDate(memberId){
     renderMemberList(allMembers);
     openMemberDetail(memberId);
   } catch(e){ alert('Failed to set date: ' + e.message); }
-}
-
-async function toggleStatus(id, newStatus){
-  try {
-    await sbPatch(`members?id=eq.${id}`, {status: newStatus});
-    const m = allMembers.find(m=>m.id===id);
-    if(m){ m.status=newStatus; renderMemberList(allMembers); }
-  } catch(e){ alert('Failed: '+e.message); }
 }
 
 async function addMember(){
@@ -2441,6 +2442,7 @@ async function addMember(){
       status: 'enabled',
       is_admin: false,
       tour_completed: false,
+      acquisition_source: tier === 'paid' ? 'direct_paid' : 'free',
       ...(subend ? {subscription_end: subend} : {})
     };
     await sbPost('members', body);
