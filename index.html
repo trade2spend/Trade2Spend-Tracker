@@ -10,6 +10,7 @@
 <!-- T2S-UAT-20260816-005 | uat.html: Remove UAT dummy data overrides — deleted post._mockState guard from getTradeState() and post._mockClosed guard from isTradeFullyClosed(); both were dead code since T2S-UAT-20260812-003 removed all dummy post objects. Rollback: restore the two single-line if(post._mock*) early-return guards. -->
 <!-- T2S-UAT-20260816-004 | uat.html: Updates tab silent background refresh — (1) switchTab() cache path: removed renderUpdates() call entirely; DOM is preserved between tab switches so re-render is unnecessary; (2) fetchUpdates() loading wipe removed: 'Loading updates...' only shown on true first load (no _cachedPosts and no localStorage cache); subsequent fetches keep existing posts visible; (3) renderLiveTicker() content guard: _lastTickerKey tracks last rendered banner IDs; if content unchanged and wrap already showing, returns early without restarting animation. Rollback: restore renderUpdates() call in switchTab cache path; restore unconditional container.innerHTML=Loading line; remove _lastTickerKey var and the 3-line guard block in renderLiveTicker. -->
 <!-- T2S-UAT-20260816-003 | uat.html: Updates tab no-refetch on tab switch — switchTab() now checks _cachedPosts; if populated, calls renderUpdates() directly (no Supabase calls, no loading flash); fetchUpdates() only fires on first load (cache null); 60s polling timer removed; all mutation events (sendReply, sendNewUpdate, deletePost, Realtime) still call fetchUpdates() to keep cache current. Rollback: restore original one-liner: if (tabId==='updates'){...fetchUpdates();_updatesRefreshTimer=setInterval(fetchUpdates,60000);} -->
+<!-- T2S-UAT-20260915-001 | index.html: Time-aware SL floor for partial exit legs — getWeightedExitPrice + getExitLegs: replaced static opts.sl floor with runningSL that tracks the SL chronologically as follow-ups are processed oldest-first. runningSL starts null; updated AFTER each exit leg is recorded (so SL and exit in the same post use the prior SL); numeric revisions: runningSL=parseFloat(fp.slRevised); cost SL: runningSL=opts.sl (caller already resolves cost to entry price). Per-leg floor now uses runningSL instead of opts.sl. Fallback remaining position (totalPct<100) still uses opts.sl — unchanged. Root cause: NIFTY 23300 PE 15 Sep — 50%@₹177 + 25%@₹213 before SL was raised to ₹215; final SL (opts.sl=215) was applied retroactively as floor to all legs, overriding 177→215 and 213→215, showing "50%@₹215/25%@₹215/25%@₹215" instead of "50%@₹177/25%@₹213/25%@₹215". Regression guard: cost SL case (T2S-UAT-20260814-002) preserved — when SL is set to cost before a slippage exit, runningSL=opts.sl (entry price) floors the slippage correctly. Rollback: remove `let runningSL=null;` lines; revert per-leg floor back to `opts && opts.sl && opts.sl<5000 && (!opts.isSell ? _rawPrice<opts.sl : _rawPrice>opts.sl)) ? opts.sl`; remove the two runningSL update lines after each totalPct increment. -->
 <!-- T2S-UAT-20260815-002 | uat.html: Live Scrolling Banner Module — (1) CSS: #live-ticker-wrap (dark #1e293b sticky bar, display:none by default), tickerScroll @keyframes translateX 32s, .banner-pin-card + .live-banner-badge for admin view, #admin-updates-compose-wrap + .banner-toggle-row for compose. (2) HTML: #live-ticker-wrap added INSIDE .sticky-header after .tabs close (stays sticky); #admin-updates-compose-wrap with "＋ Post Update" button + inner compose form (textarea, audience row with All/Paid/CUG, banner checkbox, Post→ button) inserted in Updates tab before #updates-container. (3) JS: _updComposeAud state var; selectUpdAud(val) — updates 3 audience buttons; toggleUpdCompose() — shows/hides compose form; sendNewUpdate() — POSTs post_type='banner' or 'general' to Supabase (NOTE: if Supabase CHECK constraint blocks 'banner', run: ALTER TABLE posts ADD CONSTRAINT posts_post_type_check CHECK (post_type IN ('trade_alert','follow_up','market_update','general','banner'))); renderLiveTicker(bannerPosts,memberTier,isAdmin) — builds duplicate track for seamless -50% loop, shows/hides wrap by audience. (4) renderUpdates(): admin compose wrap shown/hidden by isAdmin; bannerPosts extracted (post_type==='banner'); renderLiveTicker called; bannerHtml prepended for admin (pinned cards with LIVE BANNER badge + Deactivate button); container.innerHTML=bannerHtml+html. Zero touch to FSM, SL math, CMP loops, Service Worker, or trade card rendering. Rollback: remove T2S-UAT-20260815-002 CSS block; remove #live-ticker-wrap HTML; remove #admin-updates-compose-wrap HTML; remove _updComposeAud var; remove selectUpdAud/toggleUpdCompose/sendNewUpdate/renderLiveTicker functions; revert renderUpdates to remove _updWrap/bannerPosts/renderLiveTicker/bannerHtml lines; revert container.innerHTML back to bare html. -->
 <!-- T2S-UAT-20260815-001 | uat.html: localStorage T-2 months + Option B SL floor on closePrice — (1) _sblAutoClosedPostIds persistence changed from sessionStorage (date-keyed, expires midnight) to localStorage key 't2s_sbl_closed_v2' (per-post-id: {postId:"YYYY-MM-DD"}); restore IIFE on page load drops entries older than first of T-2 months (e.g. in Aug: entries before Jun 1 cleaned); on SL-breach detection: post.id + ISO date saved to localStorage — persists across page refreshes, app restarts, and days. (2) getWeightedExitPrice closePrice fallback: Option B — if VM [CLOSEPRICE:X] is worse than revised premium SL (BUY: closePrice<sl; SELL: closePrice>sl; guard: sl<5000 excludes spot SLs) → use opts.sl as exit (VM missed posting SL hit); otherwise use closePrice as-is. (3) getExitLegs closePrice fallback: same Option B guard — floors leg price at SL when VM close price crossed revised SL. Rollback: revert restore IIFE back to sessionStorage block; revert isTradeFullyClosed save to sessionStorage; revert getWeightedExitPrice fallback to bare opts.closePrice; revert getExitLegs fallback to bare opts.closePrice. -->
 <!-- T2S-UAT-20260814-005 | uat.html: Two-path exit price architecture — reverts closePrice SL floor (T2S-UAT-20260814-004 Fix 1); implements clean split: Path A (SL breach confirmed via _sblAutoClosedPostIds) → closePrice passed as null to getWeightedExitPrice/getExitLegs → SL used as exit, VM close price ignored; Path B (SL not breached) → closePrice passed as-is → VM close price is the exit. Changes: (1) getWeightedExitPrice closePrice fallback reverted to bare opts.closePrice (SL floor removed). (2) getExitLegs closePrice fallback reverted to bare opts.closePrice leg. (3) _isSlBreachClosed3/_isSlBreachClosed25/_isSlBreachPerf added at 3 call sites; closePrice arg changed to `_isSlBreach ? null : _closePrice`. Rollback: remove _isSlBreach* vars and revert closePrice args to bare _closePrice*; re-add SL floor block to getWeightedExitPrice + getExitLegs fallbacks. -->
@@ -2791,19 +2792,25 @@
     function getWeightedExitPrice(replies, opts) {
         const sorted = [...(replies||[])].reverse(); // oldest first
         let totalPct = 0, weightedSum = 0;
+        let runningSL = null; // tracks SL active at time of each exit, not the final SL
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
             const _rawPriceRaw = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             const _rawPrice = (_rawPriceRaw !== null && _rawPriceRaw <= 0.10) ? null : _rawPriceRaw; // sub-₹0.10 = corrupted/expired zero — skip; SL fallback provides exit
-            // SL floor: any exit leg (full or partial) priced worse than revised premium SL is floored at SL — no keyword required
-            const price = (_rawPrice && (fp.isFullExit || fp.exitPct) && opts && opts.sl && opts.sl < 5000 && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
+            // SL floor: use runningSL (SL active at time of this exit) not opts.sl (final SL) —
+            // prevents early partial exits from being floored to a SL that was raised later
+            const price = (_rawPrice && (fp.isFullExit || fp.exitPct) && runningSL && runningSL < 5000 && (!opts?.isSell ? _rawPrice < runningSL : _rawPrice > runningSL)) ? runningSL : _rawPrice;
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
             weightedSum += price * pct;
             totalPct += pct;
+            // Update runningSL after exit so SL and exit in same post use the prior SL.
+            // 'cost' SL resolves to opts.sl (which the caller already resolves to entry price).
+            if (fp.slRevised && fp.slRevised !== 'cost') runningSL = parseFloat(fp.slRevised);
+            else if (fp.slRevised === 'cost' && opts?.sl && opts.sl < 5000) runningSL = opts.sl;
             if (fp.isFullExit || totalPct >= 100) break;
         }
         // For auto-closed remaining position: use CLOSEPRICE (VM-posted LTP at ~3:30 PM) if available,
@@ -2829,19 +2836,25 @@
         const sorted = [...(replies||[])].reverse();
         const legs = [];
         let totalPct = 0;
+        let runningSL = null; // tracks SL active at time of each exit, not the final SL
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
             const _rawPriceRaw = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             const _rawPrice = (_rawPriceRaw !== null && _rawPriceRaw <= 0.10) ? null : _rawPriceRaw; // sub-₹0.10 = corrupted/expired zero — skip; SL fallback provides exit
-            // SL floor: any exit leg (full or partial) priced worse than revised premium SL is floored at SL — no keyword required
-            const price = (_rawPrice && (fp.isFullExit || fp.exitPct) && opts && opts.sl && opts.sl < 5000 && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
+            // SL floor: use runningSL (SL active at time of this exit) not opts.sl (final SL) —
+            // prevents early partial exits from being floored to a SL that was raised later
+            const price = (_rawPrice && (fp.isFullExit || fp.exitPct) && runningSL && runningSL < 5000 && (!opts?.isSell ? _rawPrice < runningSL : _rawPrice > runningSL)) ? runningSL : _rawPrice;
             if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
             legs.push({ pct, price });
             totalPct += pct;
+            // Update runningSL after exit so SL and exit in same post use the prior SL.
+            // 'cost' SL resolves to opts.sl (which the caller already resolves to entry price).
+            if (fp.slRevised && fp.slRevised !== 'cost') runningSL = parseFloat(fp.slRevised);
+            else if (fp.slRevised === 'cost' && opts?.sl && opts.sl < 5000) runningSL = opts.sl;
             if (fp.isFullExit || totalPct >= 100) break;
         }
         if (totalPct < 100 && opts) {
