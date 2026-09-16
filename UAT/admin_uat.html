@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260915-010 | admin_uat: Phase 1 final UI fixes v2 — (1) PIN observer: changed from observing #pru-list childList to #pru-badge style attribute — eliminates timing race where observer fired before frozen fn updated badge.style.display. (2) Member grid: grid-template-columns 1fr 100px auto → 1fr auto 1.5fr; Row2 column order corrected to Acq|Button|Expiry per spec; .mgmt-c2r2 is now button container, .mgmt-c3r2 is now expiry with truncation. (3) Member count: loadMembers() and setAcqFilter() both use acquisition-filter-aware count; text search never affects count. Rollback: revert initPruObserver; revert CSS .mgmt-row/.mgmt-c2r2/.mgmt-c3r2; revert renderMemberList Col2/Col3 Row2 content; revert count lines in loadMembers+setAcqFilter. -->
 <!-- T2S-UAT-20260915-009 | admin_uat: Phase 1 final UI fixes — (1) PIN section: pru-toggle-btn enlarged (font 13px→20px, gold color, rounded bg pill) for clear visibility. (2) Member list: replaced dual-flex-row approach with single 6-cell CSS grid (grid-template-columns:1fr 100px auto; 3col×2row) on .mgmt-row; both rows share identical column widths by grid construction; 100px for mobile/expiry column (mobile always 13 chars ≈91px; expiry truncates with ellipsis); Column 3 auto-sized to button width. New CSS classes: .mgmt-row, .mgmt-c1r1, .mgmt-name, .mgmt-c2r1, .mgmt-c3r1, .mgmt-c1r2, .mgmt-c2r2, .mgmt-c3r2. (3) Member count: #mgmt-total-count span added to Member List card title; set in loadMembers() from allMembers.length; unaffected by filter/search. Rollback: revert CSS block; revert pru-toggle-btn style; revert Member List card-title HTML; revert renderMemberList template; remove count update from loadMembers(). -->
 <!-- T2S-UAT-20260914-008 | admin_uat: Phase 1 permanent layout fixes — (1) Sub-tabs: flex→CSS grid (repeat(4,1fr)); font 12px→10px; padding 5px 12px→5px 4px; "Active Members"→"Members" (display label only; showFaSubTab uses IDs); no scroll needed. (2) Action buttons: removed [style*="flex-wrap"] attribute-selector hack; replaced with structural :has(>button) selector + min-width/font/padding !important on #fa-requests-list buttons — frozen loadAccessRequests() untouched. (3) Member list: proper CSS classes (.mgmt-row/.mgmt-r1/.mgmt-r2 etc.) replace all-inline renderMemberList template; ensures identical column structure every row. (4) PIN section: #pru-body collapsible wrapper + togglePruSection() + MutationObserver on #pru-list — auto-expands when pending, auto-collapses when empty; frozen loadPinUnlockRequests() untouched. Rollback: revert CSS additions; revert sub-tab HTML; remove pru-body wrapper; revert renderMemberList template; remove togglePruSection/initPruObserver/onload call. -->
 <!-- T2S-UAT-20260914-007 | admin_uat: Phase 1 UI fixes — (1) topbar: transform:translateZ(0) added for GPU compositing (prevents fixed header flicker on iOS keyboard open). (2) Search: scroll-margin-top:100px on #mgmt-search + autocomplete/autocorrect/autocapitalize off — fixes keyboard focus scroll-to-top on mobile. (3) Sub-tabs: overflow-x:auto + flex-wrap:nowrap on sub-tab row; white-space:nowrap;flex-shrink:0 on each button — single scrollable row on narrow screens. (4) Action buttons: CSS [style*="flex-wrap"] rule forces nowrap + overflow-x:auto on dynamically-rendered action row inside #fa-requests-list without touching frozen loadAccessRequests(). (5) Member list: border-bottom strengthened; acq badge container min-width:68px for consistent Row 2 alignment. Rollback: revert topbar CSS; remove #mgmt-search scroll-margin CSS; revert sub-tab div + 4 buttons; remove action-row CSS block; revert renderMemberList border + min-width. -->
@@ -51,16 +52,18 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
 .topbar-tabs{padding:0 8px 6px;}
 /* Search — keeps input below fixed header when keyboard raises it */
 #mgmt-search{scroll-margin-top:100px;}
-/* Member list — true 3-column CSS grid per member; 6 direct-child cells (3col×2row);
-   both rows share identical column widths by grid construction */
-.mgmt-row{display:grid;grid-template-columns:1fr 100px auto;column-gap:6px;row-gap:4px;padding:7px 0 8px;border-bottom:1px solid var(--border2);}
+/* Member list — 3-column CSS grid; 6 direct-child cells share identical column widths
+   Col1=1fr  Col2=auto(mobile/button)  Col3=1.5fr(tier-badge/expiry)
+   Row1: Name | Mobile | PAID/FREE
+   Row2: Acquisition | Disable/Enable | Expiry/Status                       */
+.mgmt-row{display:grid;grid-template-columns:1fr auto 1.5fr;column-gap:6px;row-gap:4px;padding:7px 0 8px;border-bottom:1px solid var(--border2);}
 .mgmt-c1r1{min-width:0;overflow:hidden;cursor:pointer;display:flex;align-items:center;gap:4px;}
 .mgmt-name{font-weight:600;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .mgmt-c2r1{display:flex;align-items:center;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
-.mgmt-c3r1{display:flex;align-items:center;justify-content:flex-end;}
+.mgmt-c3r1{display:flex;align-items:center;}
 .mgmt-c1r2{min-width:0;display:flex;align-items:center;}
-.mgmt-c2r2{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center;min-width:0;}
-.mgmt-c3r2{display:flex;align-items:center;justify-content:flex-end;}
+.mgmt-c2r2{display:flex;align-items:center;}
+.mgmt-c3r2{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center;min-width:0;}
 /* Request action buttons — :has(>button) is a structural selector, not an inline-style selector */
 #fa-requests-list div:has(>button){flex-wrap:nowrap!important;}
 #fa-requests-list div:has(>button)>button{min-width:0!important;font-size:10px!important;padding:5px 3px!important;}
@@ -1718,18 +1721,20 @@ function togglePruSection() {
 }
 
 function initPruObserver() {
-  const list = document.getElementById('pru-list');
-  if (!list) return;
+  // Observe the badge's style attribute directly — fires AFTER the frozen
+  // loadPinUnlockRequests() writes badge.style.display, eliminating the race
+  // condition that occurred when observing #pru-list childList.
+  const badge = document.getElementById('pru-badge');
+  if (!badge) return;
   new MutationObserver(() => {
-    const badge      = document.getElementById('pru-badge');
-    const hasPending = badge && badge.style.display !== 'none';
+    const hasPending = badge.style.display !== 'none';
     const body = document.getElementById('pru-body');
     const btn  = document.getElementById('pru-toggle-btn');
     if (body) {
       body.style.display = hasPending ? 'block' : 'none';
       if (btn) btn.textContent = hasPending ? '▾' : '▸';
     }
-  }).observe(list, { childList: true });
+  }).observe(badge, { attributes: true, attributeFilter: ['style'] });
 }
 
 // ── MEMBER MANAGEMENT ────────────────────────────────────────────────────────
@@ -2090,8 +2095,7 @@ async function loadMembers(){
   el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">Loading...</div>';
   try {
     allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end,acquisition_source&order=created_at.desc&limit=200');
-    const countEl = document.getElementById('mgmt-total-count');
-    if (countEl) countEl.textContent = `${allMembers.length} members`;
+    updateMgmtCount();
     filterMembers(document.getElementById('mgmt-search').value || '');
   } catch(e){
     el.innerHTML = `<div style="color:var(--red);text-align:center;padding:16px;">Failed to load: ${esc(e.message)}</div>`;
@@ -2113,6 +2117,15 @@ function filterMembers(q) {
   renderMemberList(filtered);
 }
 
+function updateMgmtCount() {
+  const countEl = document.getElementById('mgmt-total-count');
+  if (!countEl) return;
+  const n = _mgmtAcqFilter === 'all'
+    ? allMembers.length
+    : allMembers.filter(m => m.acquisition_source === _mgmtAcqFilter).length;
+  countEl.textContent = `${n} members`;
+}
+
 function setAcqFilter(src) {
   _mgmtAcqFilter = src;
   ['all','direct_paid','free_to_paid','free'].forEach(k => {
@@ -2123,6 +2136,7 @@ function setAcqFilter(src) {
     btn.style.color      = active ? '#fff' : 'var(--muted2)';
     btn.style.border     = active ? '0.5px solid var(--goldborder)' : '0.5px solid var(--border2)';
   });
+  updateMgmtCount();
   filterMembers(document.getElementById('mgmt-search').value || '');
 }
 
@@ -2180,8 +2194,8 @@ function renderMemberList(members){
         <div class="mgmt-c2r1">${esc(m.mobile)||''}</div>
         <div class="mgmt-c3r1">${tierBadge}</div>
         <div class="mgmt-c1r2">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
-        <div class="mgmt-c2r2">${expText}</div>
-        <div class="mgmt-c3r2">${statusBtn}</div>
+        <div class="mgmt-c2r2">${statusBtn}</div>
+        <div class="mgmt-c3r2">${expText}</div>
       </div>`;
   }).join('');
 }
