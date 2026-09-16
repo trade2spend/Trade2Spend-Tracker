@@ -3004,7 +3004,7 @@ async function handleMessage(text) {
     const tz = { timeZone: 'Asia/Kolkata' };
     const nowIST = new Date(new Date().toLocaleString('en-US', tz));
     const timeStr = nowIST.toLocaleTimeString('en-IN', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const scraperOn = !!_marketScraperInterval;
+    const scraperOn = !!marketScraperInterval;
     const kotak = session.token ? `✅ LIVE (login ${session.lastLogin ? Math.round((Date.now()-session.lastLogin)/60000)+'m ago' : 'N/A'})` : '❌ Not logged in';
     let msg = `📊 <b>PWA Health</b> — ${timeStr} IST\n━━━━━━━━━━━━━━━━━━\n`;
     msg += `${scraperOn ? '🟢' : '🔴'} <b>Scraper:</b> ${scraperOn ? 'RUNNING' : 'STOPPED'}\n`;
