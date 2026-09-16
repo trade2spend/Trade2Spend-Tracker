@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20260917-001 | server.js: Per-postId session minimum LTP for reliable SL breach detection — (1) _slMinPerPost{} global added: keyed by postId (not instrument-strike), never reset when new trade posted for same instrument. (2) fetchKotakOptionLTPs(): on each LTP tick, updates _slMinPerPost[c.postId] = Math.min(existing, ltp). (3) checkSupabaseSLs(): for BUY trades, uses Math.min(currentCMP, _slMinPerPost[post.id]) as effectiveCmp — breach detected if CMP was EVER below SL this session, not just right now. SELL trades unchanged. (4) Daily reset: _slMinPerPost cleared alongside _sbSlAlertedToday. Root cause: CMP briefly dipped below SL, recovered before 30s check ran; new trade posting reset _optionLows[key].low=undefined; checkSupabaseSLs saw currentCMP=172>SL=155, posted nothing; trade re-evaluated as ACTIVE. Rollback: remove _slMinPerPost var; remove 5-line update block in fetchKotakOptionLTPs; revert checkSupabaseSLs breach block to original 4 lines; revert daily reset line.
 // DEPLOY: T2S-PROD-20260904-002 | server.js: Prod deploy gate. (1) import { createHmac } from 'crypto' added. (2) TOTP_DEPLOY_SEC constant from env. (3) verifyTOTP() — RFC 6238 TOTP in pure Node.js, checks ±1 window for clock drift, anti-replay via _usedTOTP Map. (4) POST /deploy-auth — verifies TOTP, returns {ok:true} on success, 401 on wrong/reused code, 503 if secret not configured. push_pwa.py calls this before any prod push. Rollback: remove createHmac import; remove TOTP_DEPLOY_SEC + _usedTOTP + verifyTOTP block; remove POST /deploy-auth block.
 // DEPLOY: T2S-PROD-20260904-001 | server.js + login.html + index.html: Prod Supabase key moved server-side via /prod-sb proxy. server.js: PROD_PROXY_SEC constant added; POST /prod-sb endpoint added (mirrors /uat-sb — auth via x-t2s-prod header, forwards to SB_URL/SB_KEY). login.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb. index.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb; Realtime WebSocket keeps hardcoded _RT_WSS/_RT_KEY (WS can't be HTTP-proxied — read-only subscribe). Also add PROD_PROXY_SECRET=T2SProdProxy2026 to VM .env (optional — default is hardcoded). Rollback: restore SUPABASE_URL/KEY in both HTML files; revert sbFetch() to direct Supabase fetch; remove /prod-sb block from server.js; remove PROD_PROXY_SEC constant.
 // DEPLOY: T2S-PROD-20260902-001 | server.js: Day-after-expiry CMP fix — refreshActiveContracts() expiry past-check now falls back to nextRaw when currentRaw is stale (Kotak scrip master slow to roll after expiry). Previously: all "Weekly" contracts skipped on day after expiry → activeContracts empty all day → no CMP. Fix: `const expiry` → `let expiry`; when expDate < todayIST, try _expiryDates[instr].nextRaw; if nextRaw is valid (future date), use it and continue tracking; if no valid nextRaw, skip as before. Rollback: revert `let expiry` back to `const expiry`; remove the nextRaw fallback block; restore original single-line `console.warn + return`.
@@ -550,6 +551,7 @@ let _activeContractsTs   = 0;  // last Supabase refresh timestamp
 let _contractsMutexLocked = false; // prevents parallel refreshActiveContracts() executions
 let _optionHighs         = {}; // key → { high: number, postId: string } — max LTP since session start
 let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
+let _slMinPerPost        = {}; // postId → min LTP seen this session — SL breach persists even after CMP recovery
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
@@ -1628,6 +1630,13 @@ async function fetchKotakOptionLTPs() {
         const _prevLow = _optionLows[key]?.low;
         if (_prevLow === undefined || ltp < _prevLow) {
           _optionLows[key] = { low: ltp, postId: c.postId || _optionLows[key]?.postId, action: c.action || 'BUY' };
+        }
+        // Track session minimum per postId for SL breach persistence — keyed by postId not instrument
+        // so posting a new trade for the same strike does NOT reset the old trade's minimum
+        if (c.postId) {
+          _slMinPerPost[c.postId] = (_slMinPerPost[c.postId] !== undefined)
+            ? Math.min(_slMinPerPost[c.postId], ltp)
+            : ltp;
         }
         _ltpConsecFailures = 0; // successful fetch — current URL is working, reset failure counter
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
@@ -4808,7 +4817,7 @@ async function checkSupabaseSLs() {
   if (!isMarketHours() || !session.token) return;
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const today = ist.toDateString();
-  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; }
+  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; _slMinPerPost = {}; }
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
     const posts = await sbFetch(
@@ -4847,11 +4856,19 @@ async function checkSupabaseSLs() {
       const tm = t.match(/\b(CE|PE)\b/); if (!tm) continue;
       const key = `${im[1]}-${am[1]}-${tm[1]}`;
       const cmp = _optionChain[key];
-      if (!cmp) continue;
+      // For BUY: use lowest CMP seen this session (persists even if CMP recovered above SL)
+      // For SELL: use current CMP (highs already tracked via _optionHighs for [HIGH:X])
+      const _minEver = _slMinPerPost[post.id];
+      const effectiveCmp = (!_isSellPost && _minEver !== undefined)
+        ? Math.min(cmp || Infinity, _minEver)
+        : cmp;
+      if (!effectiveCmp || effectiveCmp === Infinity) continue;
       // Direction-aware SL check: SELL hits SL when premium RISES above sl; BUY when it falls below
-      if (_isSellPost ? (cmp >= sl) : (cmp <= sl)) {
+      if (_isSellPost ? (effectiveCmp >= sl) : (effectiveCmp <= sl)) {
         _sbSlAlertedToday.add(post.id);
-        const ep = Math.round(cmp * 100) / 100;
+        // Use effectiveCmp (minimum seen) as exit price — when breach detected via history,
+        // current cmp may have recovered above SL; effectiveCmp is the accurate exit level
+        const ep = Math.round(effectiveCmp * 100) / 100;
         await sbFetch('posts', {
           method: 'POST',
           body: JSON.stringify({
