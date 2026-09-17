@@ -5499,8 +5499,8 @@
         const _mktLoad = fetchMarketData();
         if(mode !== 'free' && memberId){
             try {
-                const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked`,{method:'GET'});
-                if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'){
+                const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`,{method:'GET'});
+                if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'||members[0].pin_hash===null){
                     window.location.href='login.html'; return;
                 }
                 window._cachedMember = members[0];
