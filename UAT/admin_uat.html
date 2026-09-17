@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260917-012 | admin_uat: Structural scroll/header fixes — (A) Removed visualViewport IIFE (was writing bar.style.top on every scroll/resize event; conflicted with position:fixed CSS causing ghost double-header and scroll flicker — no other code referenced vv or fixTopbar). (B) .app overflow-x:hidden → overflow-x:clip (clip does not create a scroll container; hidden was silently making .app the scroll container that iOS targeted on keyboard focus, causing page-jump-to-top; no JS accesses .app by selector). (C) overscroll-behavior:none removed from body only (kept on html and .app; dual body+html setting suppressed iOS scroll recalculation on input focus; removal resolves scroll-to-top; no JS reads overscroll-behavior). Add New Member collapse code is already correct in local file from v011 — no code change needed, deploy only. Rollback: restore visualViewport IIFE block; revert .app overflow-x:clip → hidden; restore overscroll-behavior:none on body. -->
 <!-- T2S-UAT-20260917-011 | admin_uat: Phase 1 final UI fixes v3 — (1) Search/header: html split from body CSS; scroll-padding-top:92px on html (root-cause fix for iOS keyboard focus scroll-to-top — browser respects the offset when scrolling inputs into view); backdrop-filter removed + topbar bg changed to fully opaque #f4f6f9 (eliminates header flicker caused by blur filter repaints). (2) Member list Row2 column order changed to Expiry|Acq|Enable/Disable per spec; .mgmt-c1r2 now holds expText (has truncation); .mgmt-c2r2 now holds acqBadge; .mgmt-c3r2 now holds statusBtn (no truncation needed). CSS comment updated. (3) Add New Member: collapsed by default; gold ▸/▾ toggle button in card-title; form wrapped in #add-member-body (display:none); toggleAddMemberSection() added next to togglePruSection(); addMember() logic untouched. Rollback: revert html/body CSS split; revert topbar bg; revert .mgmt-c1r2/.mgmt-c3r2 CSS; revert renderMemberList Row2 order; revert Add Member card-title HTML; remove #add-member-body wrapper; remove toggleAddMemberSection(). -->
 <!-- T2S-UAT-20260915-010 | admin_uat: Phase 1 final UI fixes v2 — (1) PIN observer: changed from observing #pru-list childList to #pru-badge style attribute — eliminates timing race where observer fired before frozen fn updated badge.style.display. (2) Member grid: grid-template-columns 1fr 100px auto → 1fr auto 1.5fr; Row2 column order corrected to Acq|Button|Expiry per spec; .mgmt-c2r2 is now button container, .mgmt-c3r2 is now expiry with truncation. (3) Member count: loadMembers() and setAcqFilter() both use acquisition-filter-aware count; text search never affects count. Rollback: revert initPruObserver; revert CSS .mgmt-row/.mgmt-c2r2/.mgmt-c3r2; revert renderMemberList Col2/Col3 Row2 content; revert count lines in loadMembers+setAcqFilter. -->
 <!-- T2S-UAT-20260915-009 | admin_uat: Phase 1 final UI fixes — (1) PIN section: pru-toggle-btn enlarged (font 13px→20px, gold color, rounded bg pill) for clear visibility. (2) Member list: replaced dual-flex-row approach with single 6-cell CSS grid (grid-template-columns:1fr 100px auto; 3col×2row) on .mgmt-row; both rows share identical column widths by grid construction; 100px for mobile/expiry column (mobile always 13 chars ≈91px; expiry truncates with ellipsis); Column 3 auto-sized to button width. New CSS classes: .mgmt-row, .mgmt-c1r1, .mgmt-name, .mgmt-c2r1, .mgmt-c3r1, .mgmt-c1r2, .mgmt-c2r2, .mgmt-c3r2. (3) Member count: #mgmt-total-count span added to Member List card title; set in loadMembers() from allMembers.length; unaffected by filter/search. Rollback: revert CSS block; revert pru-toggle-btn style; revert Member List card-title HTML; revert renderMemberList template; remove count update from loadMembers(). -->
@@ -42,11 +43,11 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;font-size:15px;overscroll-behavior:none;scroll-padding-top:92px;}
-body{background:var(--bg);min-height:100vh;overscroll-behavior:none;}
+body{background:var(--bg);min-height:100vh;}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:var(--bg2);}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
-.app{max-width:520px;margin:0 auto;padding:88px 0 5rem;overflow-x:hidden;overscroll-behavior:none;}
+.app{max-width:520px;margin:0 auto;padding:88px 0 5rem;overflow-x:clip;overscroll-behavior:none;}
 
 .topbar{position:fixed;top:0;left:0;right:0;z-index:1000;background:#f4f6f9;border-bottom:0.5px solid var(--border);transform:translateZ(0);-webkit-transform:translateZ(0);}
 .topbar-inner{max-width:900px;margin:0 auto;}
@@ -6167,20 +6168,6 @@ async function submitBugReport() {
   }
 }
 
-// ── iOS KEYBOARD: keep fixed topbar visible when virtual keyboard opens ─────
-// On iOS PWA, the visual viewport scrolls when keyboard appears.
-// position:fixed is relative to the layout viewport, so it drifts off screen.
-// We use the visualViewport API to pin the topbar to the visual viewport top.
-(function() {
-  if (!window.visualViewport) return;
-  const vv = window.visualViewport;
-  function fixTopbar() {
-    const bar = document.querySelector('.topbar');
-    if (bar) bar.style.top = Math.max(0, vv.offsetTop) + 'px';
-  }
-  vv.addEventListener('resize', fixTopbar);
-  vv.addEventListener('scroll', fixTopbar);
-})();
 </script>
 
 
