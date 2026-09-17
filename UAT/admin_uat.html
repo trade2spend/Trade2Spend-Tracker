@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260917-011 | admin_uat: Phase 1 final UI fixes v3 — (1) Search/header: html split from body CSS; scroll-padding-top:92px on html (root-cause fix for iOS keyboard focus scroll-to-top — browser respects the offset when scrolling inputs into view); backdrop-filter removed + topbar bg changed to fully opaque #f4f6f9 (eliminates header flicker caused by blur filter repaints). (2) Member list Row2 column order changed to Expiry|Acq|Enable/Disable per spec; .mgmt-c1r2 now holds expText (has truncation); .mgmt-c2r2 now holds acqBadge; .mgmt-c3r2 now holds statusBtn (no truncation needed). CSS comment updated. (3) Add New Member: collapsed by default; gold ▸/▾ toggle button in card-title; form wrapped in #add-member-body (display:none); toggleAddMemberSection() added next to togglePruSection(); addMember() logic untouched. Rollback: revert html/body CSS split; revert topbar bg; revert .mgmt-c1r2/.mgmt-c3r2 CSS; revert renderMemberList Row2 order; revert Add Member card-title HTML; remove #add-member-body wrapper; remove toggleAddMemberSection(). -->
 <!-- T2S-UAT-20260915-010 | admin_uat: Phase 1 final UI fixes v2 — (1) PIN observer: changed from observing #pru-list childList to #pru-badge style attribute — eliminates timing race where observer fired before frozen fn updated badge.style.display. (2) Member grid: grid-template-columns 1fr 100px auto → 1fr auto 1.5fr; Row2 column order corrected to Acq|Button|Expiry per spec; .mgmt-c2r2 is now button container, .mgmt-c3r2 is now expiry with truncation. (3) Member count: loadMembers() and setAcqFilter() both use acquisition-filter-aware count; text search never affects count. Rollback: revert initPruObserver; revert CSS .mgmt-row/.mgmt-c2r2/.mgmt-c3r2; revert renderMemberList Col2/Col3 Row2 content; revert count lines in loadMembers+setAcqFilter. -->
 <!-- T2S-UAT-20260915-009 | admin_uat: Phase 1 final UI fixes — (1) PIN section: pru-toggle-btn enlarged (font 13px→20px, gold color, rounded bg pill) for clear visibility. (2) Member list: replaced dual-flex-row approach with single 6-cell CSS grid (grid-template-columns:1fr 100px auto; 3col×2row) on .mgmt-row; both rows share identical column widths by grid construction; 100px for mobile/expiry column (mobile always 13 chars ≈91px; expiry truncates with ellipsis); Column 3 auto-sized to button width. New CSS classes: .mgmt-row, .mgmt-c1r1, .mgmt-name, .mgmt-c2r1, .mgmt-c3r1, .mgmt-c1r2, .mgmt-c2r2, .mgmt-c3r2. (3) Member count: #mgmt-total-count span added to Member List card title; set in loadMembers() from allMembers.length; unaffected by filter/search. Rollback: revert CSS block; revert pru-toggle-btn style; revert Member List card-title HTML; revert renderMemberList template; remove count update from loadMembers(). -->
 <!-- T2S-UAT-20260914-008 | admin_uat: Phase 1 permanent layout fixes — (1) Sub-tabs: flex→CSS grid (repeat(4,1fr)); font 12px→10px; padding 5px 12px→5px 4px; "Active Members"→"Members" (display label only; showFaSubTab uses IDs); no scroll needed. (2) Action buttons: removed [style*="flex-wrap"] attribute-selector hack; replaced with structural :has(>button) selector + min-width/font/padding !important on #fa-requests-list buttons — frozen loadAccessRequests() untouched. (3) Member list: proper CSS classes (.mgmt-row/.mgmt-r1/.mgmt-r2 etc.) replace all-inline renderMemberList template; ensures identical column structure every row. (4) PIN section: #pru-body collapsible wrapper + togglePruSection() + MutationObserver on #pru-list — auto-expands when pending, auto-collapses when empty; frozen loadPinUnlockRequests() untouched. Rollback: revert CSS additions; revert sub-tab HTML; remove pru-body wrapper; revert renderMemberList template; remove togglePruSection/initPruObserver/onload call. -->
@@ -40,30 +41,31 @@
   --radius:10px;--radius-sm:7px;--radius-lg:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;font-size:15px;overscroll-behavior:none;}
+html{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;font-size:15px;overscroll-behavior:none;scroll-padding-top:92px;}
+body{background:var(--bg);min-height:100vh;overscroll-behavior:none;}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:var(--bg2);}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
 .app{max-width:520px;margin:0 auto;padding:88px 0 5rem;overflow-x:hidden;overscroll-behavior:none;}
 
-.topbar{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(244,246,249,0.97);backdrop-filter:blur(16px);border-bottom:0.5px solid var(--border);transform:translateZ(0);-webkit-transform:translateZ(0);}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:1000;background:#f4f6f9;border-bottom:0.5px solid var(--border);transform:translateZ(0);-webkit-transform:translateZ(0);}
 .topbar-inner{max-width:900px;margin:0 auto;}
 .topbar-row1{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;}
 .topbar-tabs{padding:0 8px 6px;}
 /* Search — keeps input below fixed header when keyboard raises it */
 #mgmt-search{scroll-margin-top:100px;}
 /* Member list — 3-column CSS grid; 6 direct-child cells share identical column widths
-   Col1=1fr  Col2=auto(mobile/button)  Col3=1.5fr(tier-badge/expiry)
+   Col1=1fr  Col2=auto(mobile/badge)  Col3=1.5fr(tier-badge/button)
    Row1: Name | Mobile | PAID/FREE
-   Row2: Acquisition | Disable/Enable | Expiry/Status                       */
+   Row2: Expiry/Status | Acquisition | Enable/Disable                       */
 .mgmt-row{display:grid;grid-template-columns:1fr auto 1.5fr;column-gap:6px;row-gap:4px;padding:7px 0 8px;border-bottom:1px solid var(--border2);}
 .mgmt-c1r1{min-width:0;overflow:hidden;cursor:pointer;display:flex;align-items:center;gap:4px;}
 .mgmt-name{font-weight:600;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .mgmt-c2r1{display:flex;align-items:center;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
 .mgmt-c3r1{display:flex;align-items:center;}
-.mgmt-c1r2{min-width:0;display:flex;align-items:center;}
+.mgmt-c1r2{min-width:0;font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center;}
 .mgmt-c2r2{display:flex;align-items:center;}
-.mgmt-c3r2{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center;min-width:0;}
+.mgmt-c3r2{display:flex;align-items:center;}
 /* Request action buttons — :has(>button) is a structural selector, not an inline-style selector */
 #fa-requests-list div:has(>button){flex-wrap:nowrap!important;}
 #fa-requests-list div:has(>button)>button{min-width:0!important;font-size:10px!important;padding:5px 3px!important;}
@@ -1543,34 +1545,39 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
     </div>
   </div>
 
-  <!-- Add Member -->
+  <!-- Add Member — collapsed by default; expand via toggle -->
   <div class="card" style="margin-bottom:10px;">
-    <div class="card-title"><span class="card-title-dot"></span>Add New Member</div>
-    <div class="grid2" style="margin-bottom:8px;">
-      <div class="field">
-        <div class="field-label">Mobile (10 digits)</div>
-        <input type="tel" id="mgmt-mobile" inputmode="numeric" maxlength="10" placeholder="98XXXXXXXX" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;" oninput="this.value=this.value.replace(/\D/g,'')">
-      </div>
-      <div class="field">
-        <div class="field-label">Name</div>
-        <input type="text" id="mgmt-name" placeholder="e.g. Rahul Sharma" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;">
-      </div>
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><span class="card-title-dot"></span>Add New Member</span>
+      <button id="add-member-toggle-btn" onclick="toggleAddMemberSection()" style="background:var(--goldbg);border:0.5px solid var(--goldborder);color:var(--gold);font-size:20px;font-weight:700;cursor:pointer;padding:1px 8px;border-radius:8px;line-height:1.2;" title="Expand / Collapse">▸</button>
     </div>
-    <div class="grid2" style="margin-bottom:12px;">
-      <div class="field">
-        <div class="field-label">Tier</div>
-        <select id="mgmt-tier" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;box-sizing:border-box;min-height:44px;">
-          <option value="paid">Paid Member</option>
-          <option value="free">Free Member</option>
-        </select>
+    <div id="add-member-body" style="display:none;">
+      <div class="grid2" style="margin-bottom:8px;">
+        <div class="field">
+          <div class="field-label">Mobile (10 digits)</div>
+          <input type="tel" id="mgmt-mobile" inputmode="numeric" maxlength="10" placeholder="98XXXXXXXX" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <div class="field">
+          <div class="field-label">Name</div>
+          <input type="text" id="mgmt-name" placeholder="e.g. Rahul Sharma" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;">
+        </div>
       </div>
-      <div class="field">
-        <div class="field-label">Subscription End</div>
-        <input type="date" id="mgmt-subend" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;box-sizing:border-box;min-height:44px;-webkit-appearance:none;appearance:none;">
+      <div class="grid2" style="margin-bottom:12px;">
+        <div class="field">
+          <div class="field-label">Tier</div>
+          <select id="mgmt-tier" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;box-sizing:border-box;min-height:44px;">
+            <option value="paid">Paid Member</option>
+            <option value="free">Free Member</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="field-label">Subscription End</div>
+          <input type="date" id="mgmt-subend" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:600;padding:10px;outline:none;width:100%;font-family:'Space Grotesk',sans-serif;box-sizing:border-box;min-height:44px;-webkit-appearance:none;appearance:none;">
+        </div>
       </div>
+      <button onclick="addMember()" style="width:100%;padding:12px;background:var(--green);border:none;border-radius:var(--radius-sm);color:#fff;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">+ Add Member</button>
+      <div id="mgmt-add-msg" style="font-size:12px;margin-top:8px;text-align:center;display:none;"></div>
     </div>
-    <button onclick="addMember()" style="width:100%;padding:12px;background:var(--green);border:none;border-radius:var(--radius-sm);color:#fff;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">+ Add Member</button>
-    <div id="mgmt-add-msg" style="font-size:12px;margin-top:8px;text-align:center;display:none;"></div>
   </div>
 
   <!-- Search + List -->
@@ -1714,6 +1721,15 @@ async function fetchMemberStats(){
 function togglePruSection() {
   const body = document.getElementById('pru-body');
   const btn  = document.getElementById('pru-toggle-btn');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (btn) btn.textContent = open ? '▸' : '▾';
+}
+
+function toggleAddMemberSection() {
+  const body = document.getElementById('add-member-body');
+  const btn  = document.getElementById('add-member-toggle-btn');
   if (!body) return;
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
@@ -2193,9 +2209,9 @@ function renderMemberList(members){
         </div>
         <div class="mgmt-c2r1">${esc(m.mobile)||''}</div>
         <div class="mgmt-c3r1">${tierBadge}</div>
-        <div class="mgmt-c1r2">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
-        <div class="mgmt-c2r2">${statusBtn}</div>
-        <div class="mgmt-c3r2">${expText}</div>
+        <div class="mgmt-c1r2">${expText}</div>
+        <div class="mgmt-c2r2">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
+        <div class="mgmt-c3r2">${statusBtn}</div>
       </div>`;
   }).join('');
 }
