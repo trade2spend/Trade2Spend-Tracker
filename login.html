@@ -304,7 +304,7 @@ async function sbFetch(path,opts={}){
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),12000);
   const{headers:xh,method:m='GET',body:reqBody,..._}=opts;
   try{
-    const res=await fetch(_PROD_PROXY,{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json','x-t2s-prod':'T2SProdProxy2026'},body:JSON.stringify({path,method:m,body:reqBody||null,headers:xh||{}})});
+    const res=await fetch(_PROD_PROXY,{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json','x-t2s-prod':'240fafab6202751db308729ca1aac35023c5531dde428b58'},body:JSON.stringify({path,method:m,body:reqBody||null,headers:xh||{}})});
     if(!res.ok){const e=await res.text();throw new Error(e);}
     const t=await res.text();return t?JSON.parse(t):[];
   }finally{clearTimeout(timer);}
