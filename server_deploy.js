@@ -77,7 +77,7 @@ const GROQ_KEY       = process.env.GROQ_KEY       || '';
 // ── UAT SUPABASE PROXY ────────────────────────────────────────────────────────
 const UAT_SB_URL    = 'https://ivjyadnspyobzgbdoajj.supabase.co';
 const UAT_SB_KEY    = process.env.UAT_SUPABASE_KEY   || '';
-const UAT_PROXY_SEC = process.env.UAT_PROXY_SECRET   || 'T2SUATProxy2026';
+const UAT_PROXY_SEC = process.env.UAT_PROXY_SECRET   ;
 const PROD_PROXY_SEC    = process.env.PROD_PROXY_SECRET  ;
 const TOTP_DEPLOY_SEC   = process.env.TOTP_DEPLOY_SECRET || '';
 
