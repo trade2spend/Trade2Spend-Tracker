@@ -81,6 +81,26 @@ const UAT_PROXY_SEC = process.env.UAT_PROXY_SECRET   ;
 const PROD_PROXY_SEC    = process.env.PROD_PROXY_SECRET  ;
 const TOTP_DEPLOY_SEC   = process.env.TOTP_DEPLOY_SECRET || '';
 
+// ── DISABLE SWITCHES (read once at startup; set env var to any non-empty value to disable) ──
+const _DISABLE_ACTIVE_CONTRACTS    = !!process.env.DISABLE_ACTIVE_CONTRACTS;
+const _DISABLE_TEST_LTP            = !!process.env.DISABLE_TEST_LTP;
+const _DISABLE_TEST_CMP            = !!process.env.DISABLE_TEST_CMP;
+const _DISABLE_TEST_NSE_CHAIN      = !!process.env.DISABLE_TEST_NSE_CHAIN;
+const _DISABLE_DEBUG_SCRIP         = !!process.env.DISABLE_DEBUG_SCRIP;
+const _DISABLE_RELOAD_SCRIP        = !!process.env.DISABLE_RELOAD_SCRIP;
+const _DISABLE_SET_HIGH            = !!process.env.DISABLE_SET_HIGH;
+const _DISABLE_ACCESS_REQUESTS_GET = !!process.env.DISABLE_ACCESS_REQUESTS_GET;
+const _DISABLE_STORAGE_STATUS      = !!process.env.DISABLE_STORAGE_STATUS;
+const _DISABLE_APPLY_FIX           = !!process.env.DISABLE_APPLY_FIX;
+const _DISABLE_PROMOTE_UAT         = !!process.env.DISABLE_PROMOTE_UAT;
+const _DISABLE_CHART_ANALYSE       = !!process.env.DISABLE_CHART_ANALYSE;
+const _DISABLE_REPORT_ISSUE        = !!process.env.DISABLE_REPORT_ISSUE;
+function _send503(route, res) {
+  console.log('disabled route invoked: ' + route);
+  res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.end(JSON.stringify({ ok: false, error: 'This endpoint is currently disabled.' }));
+}
+
 // ── TOTP VERIFIER (RFC 6238, no external deps) ────────────────────────────────
 const _usedTOTP = new Map(); // replayKey → timestamp, prevents reuse within window
 function verifyTOTP(secret, token) {
@@ -2717,6 +2737,12 @@ async function handleCallback(cb) {
   if (action === 'stay_paper')   { await tgAnswer(cbId, 'Staying Paper'); return; }
   if (action === 'confirm_kill') { await tgAnswer(cbId, 'Executing...'); await killSwitch(); return; }
   if (action.startsWith('bugfix_apply:')) {
+    if (_DISABLE_APPLY_FIX) {
+      console.log('disabled route invoked: bugfix_apply');
+      await tgAnswer(cbId, 'Apply Fix is currently disabled.');
+      await tgEdit(msgId, (cb.message?.text || '') + '\n\n<i>⚠️ Apply Fix is currently disabled (DISABLE_APPLY_FIX is set).</i>', { inline_keyboard: [] });
+      return;
+    }
     await tgAnswer(cbId, 'Applying fix...');
     await tgEdit(msgId, '⏳ Applying fix — please wait...', { inline_keyboard: [] });
     await applyBugFix(action.slice('bugfix_apply:'.length), msgId);
@@ -3270,6 +3296,7 @@ const server = http.createServer(async (req, res) => {
     res.end(); return;
   }
   if (req.method === 'POST' && urlPath === '/chart-analyse') {
+    if (_DISABLE_CHART_ANALYSE) { _send503('/chart-analyse', res); return; }
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-t2s-secret');
     const secret = req.headers['x-t2s-secret'];
@@ -3386,6 +3413,7 @@ const server = http.createServer(async (req, res) => {
   // HTTP debug endpoint — GET /debug-scrip?key=T2SMonitor2026
   // Runs scrip master debug without needing Telegram webhook
   if (req.method === 'GET' && urlPath === '/debug-scrip') {
+    if (_DISABLE_DEBUG_SCRIP) { _send503('/debug-scrip', res); return; }
     const key = new URL('https://x' + req.url).searchParams.get('key');
     if (key !== 'T2SMonitor2026') {
       res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -3458,6 +3486,7 @@ const server = http.createServer(async (req, res) => {
 
   // Force scrip master re-download — GET /reload-scrip?key=T2SMonitor2026
   if (req.method === 'GET' && urlPath === '/reload-scrip') {
+    if (_DISABLE_RELOAD_SCRIP) { _send503('/reload-scrip', res); return; }
     const key = new URL('https://x' + req.url).searchParams.get('key');
     if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
@@ -3482,6 +3511,7 @@ const server = http.createServer(async (req, res) => {
 
   // T2S-CUG-20260716-003: Push UAT to Prod — fetches uat.html from GitHub, strips UAT elements, pushes as index.html
   if (req.method === 'GET' && urlPath === '/push-uat-to-prod') {
+    if (_DISABLE_PROMOTE_UAT) { _send503('/push-uat-to-prod', res); return; }
     const key = new URL('https://x' + req.url).searchParams.get('key');
     if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     if (!GH_TOKEN) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on VM' })); return; }
@@ -3550,6 +3580,7 @@ const server = http.createServer(async (req, res) => {
   // Manual session-high override — POST /set-high?key=T2SMonitor2026
   // Body: { "NIFTY-24200-CE": 127, "NIFTY-24250-PE": 145 }
   if (req.method === 'POST' && urlPath === '/set-high') {
+    if (_DISABLE_SET_HIGH) { _send503('/set-high', res); return; }
     const _shKey = new URL('https://x' + req.url).searchParams.get('key');
     if (_shKey !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     let _shBody = '';
@@ -3613,6 +3644,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && urlPath === '/active-contracts-for-ltp') {
+    if (_DISABLE_ACTIVE_CONTRACTS) { _send503('/active-contracts-for-ltp', res); return; }
     const k = new URL('https://x' + req.url).searchParams.get('key');
     if (k !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     if (!session.token || !_activeContracts.length) {
@@ -3638,6 +3670,7 @@ const server = http.createServer(async (req, res) => {
   // Test CMP — GET /test-cmp?key=T2SMonitor2026
   // Returns dummy optionLTPs so UAT can verify the CMP display path without needing Kotak login
   if (req.method === 'GET' && urlPath === '/test-nse-chain') {
+    if (_DISABLE_TEST_NSE_CHAIN) { _send503('/test-nse-chain', res); return; }
     const parsedUrl2 = new URL('https://x' + req.url);
     if (parsedUrl2.searchParams.get('key') !== 'T2SMonitor2026') {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -3664,6 +3697,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && urlPath === '/test-cmp') {
+    if (_DISABLE_TEST_CMP) { _send503('/test-cmp', res); return; }
     const parsedUrl = new URL('https://x' + req.url);
     if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -3684,6 +3718,7 @@ const server = http.createServer(async (req, res) => {
   // Test LTP — GET /test-ltp?key=T2SMonitor2026&symbol=NIFTY-24250-PE
   // Runs a real Kotak LTP fetch for one contract and returns full diagnostics
   if (req.method === 'GET' && urlPath === '/test-ltp') {
+    if (_DISABLE_TEST_LTP) { _send503('/test-ltp', res); return; }
     const parsedUrl = new URL('https://x' + req.url);
     if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -3811,6 +3846,7 @@ const server = http.createServer(async (req, res) => {
 
   // Get access requests (admin) — GET /access-requests?status=pending
   if (req.method === 'GET' && urlPath === '/access-requests') {
+    if (_DISABLE_ACCESS_REQUESTS_GET) { _send503('/access-requests', res); return; }
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     try {
@@ -3828,6 +3864,7 @@ const server = http.createServer(async (req, res) => {
 
   // Storage status — GET /storage-status
   if (req.method === 'GET' && urlPath === '/storage-status') {
+    if (_DISABLE_STORAGE_STATUS) { _send503('/storage-status', res); return; }
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     try {
@@ -4069,6 +4106,7 @@ const server = http.createServer(async (req, res) => {
     res.end(); return;
   }
   if (req.method === 'POST' && urlPath === '/report-issue') {
+    if (_DISABLE_REPORT_ISSUE) { _send503('/report-issue', res); return; }
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
