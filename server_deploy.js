@@ -4717,6 +4717,18 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
   }
 
   if (req.method === 'POST') {
+    const incomingSecret = req.headers['x-telegram-bot-api-secret-token'] || '';
+    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET || '';
+    const secretOk = expectedSecret.length > 0
+      && incomingSecret.length === expectedSecret.length
+      && crypto.timingSafeEqual(Buffer.from(incomingSecret), Buffer.from(expectedSecret));
+
+    if (!secretOk) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('OK');
+      return;
+    }
+
     let rawBody = '';
     req.on('data', chunk => { rawBody += chunk.toString(); });
     req.on('end', async () => {
