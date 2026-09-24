@@ -572,6 +572,7 @@ let _contractsMutexLocked = false; // prevents parallel refreshActiveContracts()
 let _optionHighs         = {}; // key → { high: number, postId: string } — max LTP since session start
 let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
 let _slMinPerPost        = {}; // postId → min LTP seen this session — SL breach persists even after CMP recovery
+let _slLevelPerPost      = {}; // postId → SL level last seen — companion to _slMinPerPost for SL-change awareness
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
@@ -4831,7 +4832,10 @@ function extractOptSL(text) {
     /(?:revised?|modif|moved?|shifted?|new|updated?)\s+sl\s+(?:to\s+)?(?:₹\s*)?(\d+(?:\.\d+)?)/i,
     /sl\s+(?:to|at|now|=)\s*(?:₹\s*)?(\d+(?:\.\d+)?)/i,
     /(?:sl|stop[\s-]?loss).{0,20}(?:revised?|changed|updated|moved)\s*(?:to\s*)?(?:₹\s*)?(\d+(?:\.\d+)?)/i,
-    /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
+    /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i,  // bare "SL 166" or "SL ₹166"
+    /(\d+(?:\.\d+)?)\s+as\s+(?:my\s+|the\s+|a\s+)?(?:sl|stop[\s-]?loss)\b/i,  // "106 as SL" (mirrors client slPats[8])
+    /modif[a-z]*\s+sl[^0-9]*to\s+(\d{3,6}(?:\.\d+)?)/i,  // "Modifying SL for remaining to 187"
+    /\b(\d{2,4}(?:\.\d+)?)[^0-9\n]{0,25}?\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/i  // "110 (day's low) as SL" (mirrors client isSLPhrasing L2589); \b prevents sub-digit match
   ];
   for (const p of pats) {
     const m = text.match(p);
@@ -4867,7 +4871,7 @@ async function checkSupabaseSLs() {
   if (!isMarketHours() || !session.token) return;
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const today = ist.toDateString();
-  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; _slMinPerPost = {}; }
+  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; _slMinPerPost = {}; _slLevelPerPost = {}; }
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
     const posts = await sbFetch(
@@ -4893,7 +4897,7 @@ async function checkSupabaseSLs() {
       for (const r of pr) { const v = extractOptSL(r.content || ''); if (v) { sl = v; break; } }
       // "SL to cost / no loss" = entry price — resolve from original post
       if (!sl) {
-        const hasCostSL = pr.some(r => /sl\s+(?:to|at|moved?\s+to|revised?\s+to)\s+cost|no[\s-]?loss|breakeven|cost\s+sl/i.test(r.content || ''));
+        const hasCostSL = pr.some(r => /sl\s+(?:to|at|moved?\s+to|revised?\s+to)\s+cost|modif[a-z]*\s+sl[^0-9]*to\s+cost|no[\s-]?loss|breakeven|cost\s+sl/i.test(r.content || ''));
         if (hasCostSL) {
           const em = (post.content || '').match(/(?:buy(?:ing)?|sell(?:ing)?)[\s\S]*?\bat\s+₹?\s*(\d+(?:\.\d+)?)/i);
           if (em) sl = parseFloat(em[1]);
@@ -4906,6 +4910,32 @@ async function checkSupabaseSLs() {
       const tm = t.match(/\b(CE|PE)\b/); if (!tm) continue;
       const key = `${im[1]}-${am[1]}-${tm[1]}`;
       const cmp = _optionChain[key];
+      // S2 (BUY only): evaluate old-SL breach BEFORE resetting minimum on SL change (RCA_20260923 Q2)
+      if (!_isSellPost) {
+        const _oldSL = _slLevelPerPost[post.id];
+        if (_oldSL !== undefined && sl !== _oldSL
+            && _slMinPerPost[post.id] != null && _slMinPerPost[post.id] <= _oldSL) {
+          // Min LTP breached under the old SL — fire breach at old SL level (R2), skip normal check
+          _sbSlAlertedToday.add(post.id);
+          const ep = Math.round(_oldSL * 100) / 100;
+          await sbFetch('posts', {
+            method: 'POST',
+            body: JSON.stringify({
+              content: `🔴 SL hit\nExiting at ₹${ep}\nCMP ₹${ep}`,
+              post_type: 'follow_up', audience: 'all',
+              allow_sharing: false, is_deleted: false,
+              parent_id: post.id, sent_at: new Date().toISOString()
+            })
+          });
+          await tgSend(`🔴 <b>SL HIT (auto, old SL)</b>\n<b>${key}</b>\nMin ₹${_slMinPerPost[post.id]} ≤ old SL ₹${_oldSL}\nFollow-up posted to PWA.`);
+          continue;
+        } else if (sl !== _oldSL) {
+          // SL changed or first appearance — reset min so pre-SL LTP dips don't retroactively breach
+          // Guard: only store a valid positive finite CMP; undefined/null/NaN/0 would be unsafe via Math.min
+          _slMinPerPost[post.id] = (cmp > 0 && isFinite(cmp)) ? cmp : undefined;
+        }
+        _slLevelPerPost[post.id] = sl;
+      }
       // For BUY: use lowest CMP seen this session (persists even if CMP recovered above SL)
       // For SELL: use current CMP (highs already tracked via _optionHighs for [HIGH:X])
       const _minEver = _slMinPerPost[post.id];
@@ -4916,9 +4946,8 @@ async function checkSupabaseSLs() {
       // Direction-aware SL check: SELL hits SL when premium RISES above sl; BUY when it falls below
       if (_isSellPost ? (effectiveCmp >= sl) : (effectiveCmp <= sl)) {
         _sbSlAlertedToday.add(post.id);
-        // Use effectiveCmp (minimum seen) as exit price — when breach detected via history,
-        // current cmp may have recovered above SL; effectiveCmp is the accurate exit level
-        const ep = Math.round(effectiveCmp * 100) / 100;
+        // R2: exit price = SL level in force at breach (not effectiveCmp which is the historical min LTP)
+        const ep = Math.round(sl * 100) / 100;
         await sbFetch('posts', {
           method: 'POST',
           body: JSON.stringify({
