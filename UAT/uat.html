@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20260924-C | uat.html: Stage C client fixes — C1: getLastSLNumeric stops at first slRevised (cost→null); C2: runningSL updated in standalone-SL-revision continue branch + post-exit branch for Sep 15 rule; Exemption: isVmSLAutoPost helper skips runningSL floor for VM auto-posts (server.js L4924). No breach operator change, no prod files touched. Rollback: revert getLastSLNumeric to skip-cost version; revert getWeightedExitPrice/getExitLegs to static opts.sl floor; remove isVmSLAutoPost. -->
 <!-- T2S-UAT-20260918-002 | uat.html: disabled-account logout reason flag — init() auth check: when members[0].status==='disabled', sets localStorage t2s_uat_logout_reason='disabled' before the existing window.location.href='login.html' redirect. One line added inside existing if-block; no logic change. Companion: login_uat.html init() reads and displays the message. Rollback: remove the single localStorage.setItem line from inside the init() auth check if-block. -->
 <!-- T2S-UAT-20260913-004 | uat.html: permanent mini-form lock persistence fix — (A) _faVerifyPin() lock block now sets localStorage t2s_uat_lock_until and t2s_uat_locked_mid so login.html detects the lock even when no active DB session existed to patch; (B) _faMobileBlur() lock check: checks localStorage first (using t2s_uat_locked_mid === _faMid), then DB; both paths show request-submitted message when t2s_uat_unlock_req_at is active; DB check syncs result to localStorage. Rollback: revert _faVerifyPin lock block to single-line try/catch, revert _faMobileBlur lock check to single DB query line. -->
 <!-- T2S-UAT-20260913-003 | uat.html: @T2Sview links + mini-form Request Unlock button — (1) "Too many attempts" message now shows clickable @T2Sview link + "🔓 Request Unlock" button (new _faRequestUnlock function, same audit_log pattern as other unlock paths); (2) _faVerifyPin lock check message uses innerHTML for clickable link; (3) _faMobileBlur lock check hint uses innerHTML; (4) _faShowPinSection hides the unlock button on reset. Rollback: revert three innerHTML lines back to textContent, remove _faRequestUnlock function, remove unlock btn show/hide lines. -->
@@ -3455,20 +3456,28 @@
     // Accounts for partial exits: "50% at 180, remaining at 158" → avg 169
     function getWeightedExitPrice(replies, opts) {
         const sorted = [...(replies||[])].reverse(); // oldest first
-        let totalPct = 0, weightedSum = 0;
+        let totalPct = 0, weightedSum = 0, runningSL = null;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
             const _rawPriceRaw = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             const _rawPrice = (_rawPriceRaw !== null && _rawPriceRaw <= 0.10) ? null : _rawPriceRaw; // sub-₹0.10 = corrupted/expired zero — skip; SL fallback provides exit
-            // SL floor: any exit leg (full or partial) priced worse than revised premium SL is floored at SL — no keyword required
-            const price = (_rawPrice && (fp.isFullExit || fp.exitPct) && opts && opts.sl && opts.sl < 5000 && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
-            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            // SL floor: use runningSL (tracks revisions chronologically); VM auto-posts are R2-authoritative — no re-floor
+            const price = (!isVmSLAutoPost(r) && _rawPrice && (fp.isFullExit || fp.exitPct) && runningSL && runningSL < 5000 && (!opts?.isSell ? _rawPrice < runningSL : _rawPrice > runningSL)) ? runningSL : _rawPrice;
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) {
+                // C2: standalone SL revision — advance runningSL so future exits in this loop are floored correctly
+                if (fp.slRevised && fp.slRevised !== 'cost') runningSL = parseFloat(fp.slRevised);
+                else if (fp.slRevised === 'cost' && opts && opts.sl && opts.sl < 5000) runningSL = opts.sl;
+                continue;
+            }
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
             weightedSum += price * pct;
             totalPct += pct;
+            // Post-exit update: same-FU SL+exit records the exit at the SL active BEFORE this FU (Sep 15 rule)
+            if (fp.slRevised && fp.slRevised !== 'cost') runningSL = parseFloat(fp.slRevised);
+            else if (fp.slRevised === 'cost' && opts && opts.sl && opts.sl < 5000) runningSL = opts.sl;
             if (fp.isFullExit || totalPct >= 100) break;
         }
         // For auto-closed remaining position: use CLOSEPRICE (VM-posted LTP at ~3:30 PM) if available,
@@ -3493,20 +3502,28 @@
     function getExitLegs(replies, opts) {
         const sorted = [...(replies||[])].reverse();
         const legs = [];
-        let totalPct = 0;
+        let totalPct = 0, runningSL = null;
         for (const r of sorted) {
             const fp = parseFollowUpContent(r.content||'');
             // fp.cmp fallback: "CMP 115, exiting 50%" stores price in fp.cmp not fp.price
             // fp.cmp < 10000 guard: excludes spot index values (Nifty ~24000, Sensex ~80000)
             const _rawPriceRaw = fp.price || ((fp.exitPct || fp.isFullExit) && fp.cmp && fp.cmp < 10000 ? fp.cmp : null);
             const _rawPrice = (_rawPriceRaw !== null && _rawPriceRaw <= 0.10) ? null : _rawPriceRaw; // sub-₹0.10 = corrupted/expired zero — skip; SL fallback provides exit
-            // SL floor: any exit leg (full or partial) priced worse than revised premium SL is floored at SL — no keyword required
-            const price = (_rawPrice && (fp.isFullExit || fp.exitPct) && opts && opts.sl && opts.sl < 5000 && (!opts.isSell ? _rawPrice < opts.sl : _rawPrice > opts.sl)) ? opts.sl : _rawPrice;
-            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) continue;
+            // SL floor: use runningSL (tracks revisions chronologically); VM auto-posts are R2-authoritative — no re-floor
+            const price = (!isVmSLAutoPost(r) && _rawPrice && (fp.isFullExit || fp.exitPct) && runningSL && runningSL < 5000 && (!opts?.isSell ? _rawPrice < runningSL : _rawPrice > runningSL)) ? runningSL : _rawPrice;
+            if (!price || !(fp.isFullExit || fp.type==='exit' || fp.exitPct)) {
+                // C2: standalone SL revision — advance runningSL so future exits in this loop are floored correctly
+                if (fp.slRevised && fp.slRevised !== 'cost') runningSL = parseFloat(fp.slRevised);
+                else if (fp.slRevised === 'cost' && opts && opts.sl && opts.sl < 5000) runningSL = opts.sl;
+                continue;
+            }
             const pct = fp.isFullExit ? (100 - totalPct) : (fp.exitPct||0);
             if (pct <= 0) continue;
             legs.push({ pct, price });
             totalPct += pct;
+            // Post-exit update: same-FU SL+exit records the exit at the SL active BEFORE this FU (Sep 15 rule)
+            if (fp.slRevised && fp.slRevised !== 'cost') runningSL = parseFloat(fp.slRevised);
+            else if (fp.slRevised === 'cost' && opts && opts.sl && opts.sl < 5000) runningSL = opts.sl;
             if (fp.isFullExit || totalPct >= 100) break;
         }
         if (totalPct < 100 && opts) {
@@ -3525,13 +3542,21 @@
         return `<div style="font-size:0.62rem;color:var(--text-muted);margin-top:1px;line-height:1.4;">${legs.map(l=>`${l.pct}% @₹${l.price}`).join(' / ')}</div>`;
     }
 
-    // Returns numeric option-price SL from most recent SL update reply (replies are newest-first)
+    // Returns numeric option-price SL from most recent SL update reply (replies are newest-first).
+    // C1: stop at the FIRST slRevised found (cost or numeric); if cost, return null so the caller's
+    // cost-SL fallback fires rather than falling through to a superseded spot SL.
     function getLastSLNumeric(replies) {
         for (const r of (replies||[])) {
             const p = parseFollowUpContent(r.content||'');
-            if (p.slRevised && p.slRevised !== 'cost') return parseFloat(p.slRevised);
+            if (p.slRevised) return p.slRevised === 'cost' ? null : parseFloat(p.slRevised);
         }
         return null;
+    }
+
+    // VM SL auto-posts are the R2-authoritative exit price source (server.js checkSupabaseSLs, L4924).
+    // The runningSL floor must not be re-applied to them on the client side.
+    function isVmSLAutoPost(r) {
+        return (r.content||'').startsWith('🔴 SL hit');
     }
 
     // FSM: accumulate and latch target hits per trade — hits are one-way (true never reverts to false)
@@ -4647,10 +4672,14 @@
             // so we don't show live data-live-high updating after SL was hit
             const _lossShLabel3 = (() => {
                 if (!_loss3 || !fields.entry) return '';
+                const _shLbl = fields.action === 'SELL' ? 'Session Low' : 'Session High';
+                // 2c: prefer live-tracked peak over text-scan fallback (closes gap before [HIGH:X] is posted)
+                const _tracked = fields.action === 'SELL' ? _sessionOptionLows[post.id] : _sessionOptionHighs[post.id];
+                const _trackedValid = _tracked != null && (fields.action === 'SELL' ? _tracked < fields.entry : _tracked > fields.entry);
+                if (_trackedValid) return `<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${_shLbl}</span><span style="font-size:0.8rem;font-weight:700;color:#9ca3af;">₹${_tracked.toFixed(2)}</span></div>`;
                 const _lmp = fields.action === 'SELL' ? calculateMinPrice(fields.entry, postReplies) : calculateMaxProfit(fields.entry, postReplies);
                 if (!_lmp) return '';
                 const _shVal = fields.action === 'SELL' ? _lmp.min : _lmp.max;
-                const _shLbl = fields.action === 'SELL' ? 'Session Low' : 'Session High';
                 return `<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.67rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${_shLbl}</span><span style="font-size:0.8rem;font-weight:700;color:#9ca3af;">₹${_shVal}</span></div>`;
             })();
             // Max possible: shown when overall trade is in PROFIT (not when overall loss)
@@ -5721,8 +5750,8 @@
                     if (p.exitPct) cum += p.exitPct;
                 }
                 if (hasFullExit || cum >= 100) continue;
-                const sl = getLastSLNumeric(pr);
                 const f = extractTradeAlertFields(post.content);
+                const sl = getLastSLNumeric(pr) || (getCurrentSL(pr) === 'Cost (No Loss)' && f.entry && f.entry < 5000 ? f.entry : null);
                 if (f.instrument) unresolved.push({
                     label: `${f.instrument} ${f.strike || ''} ${f.optType || ''}`.trim(),
                     cum, sl
