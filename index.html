@@ -3883,8 +3883,15 @@
         const revSL3  = getCurrentSL(postReplies);
         const revSL3Display = (revSL3 === 'Cost (No Loss)' && fields.entry) ? `₹${fields.entry}` : revSL3;
         const _prevRevSL3 = getPenultimateSL(postReplies); // second-to-last revision — strikethrough target when multiple revisions exist
+        // Fix (a): for trades closed by VM SL-hit where the strikethrough shows a confusing spot SL (>5000),
+        // display the authoritative exit price from the VM post instead of the getCurrentSL-derived transition.
+        // Guard _prevRevSL3 > 5000 limits this to the specific case: spot-SL strikethrough obscures the real option SL at breach.
+        const _vmSlHit3 = isClosed ? postReplies.find(r => isVmSLAutoPost(r)) : null;
+        const _vmSlPrice3 = _vmSlHit3 ? (parseFollowUpContent(_vmSlHit3.content||'').price || null) : null;
         let slDisplay3, slLabel3 = 'SL';
-        if (revSL3) {
+        if (_vmSlPrice3 && _prevRevSL3 && _prevRevSL3 > 5000) {
+            slDisplay3 = `₹${_vmSlPrice3}`;
+        } else if (revSL3) {
             const revNum3  = parseFloat(String(revSL3).replace(/[^0-9.]/g,''));
             const initNum3 = typeof initSL3 === 'number' ? initSL3 : 0;
             const slChanged3 = initSL3 && (revSL3 === 'Cost (No Loss)' || (revNum3 > 0 && Math.round(revNum3) !== Math.round(initNum3)));
@@ -3993,7 +4000,8 @@
                     const _adjEntry = fields.entry - _banked / (100 - _cumExit3);
                     maxPnlPts3 = Math.round((latestCmp - _adjEntry) * _pnlDir3);
                 } else {
-                    maxPnlPts3 = Math.round((_effectiveExitPrice - fields.entry) * _pnlDir3);
+                    const _rawPts3 = (_effectiveExitPrice - fields.entry) * _pnlDir3;
+                    maxPnlPts3 = _rawPts3 < 0 ? -Math.ceil(-_rawPts3) : Math.round(_rawPts3);
                 }
                 maxPnlRs3 = Math.abs(maxPnlPts3) * lotSize3;
                 // Publish finalized P&L to Markets quick preview store — strict inheritance, no re-computation
