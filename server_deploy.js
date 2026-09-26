@@ -2183,11 +2183,11 @@ async function runMarketScraper(force = false) {
     if (isSessionValid()) {
       nifty       = await fetchKotakIndexLTP('NIFTY')     || parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
       banknifty   = await fetchKotakIndexLTP('BANKNIFTY') || parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-      sensexFinal = await fetchKotakIndexLTP('SENSEX')    || await fetchYahooIndex('SENSEX') || sensex;
+      sensexFinal = await fetchKotakIndexLTP('SENSEX')    || sensex                               || await fetchYahooIndex('SENSEX');
     } else {
       nifty       = parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
       banknifty   = parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-      sensexFinal = await fetchYahooIndex('SENSEX')      || sensex;
+      sensexFinal = sensex                               || await fetchYahooIndex('SENSEX');
     }
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     // Kotak-derived breadth (change ≥ 0 = advancing) takes priority over NSE API counts
