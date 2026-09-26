@@ -961,7 +961,7 @@ async function loginKotak(totp) {
       `Mode: 🔴 Live (auto-switched)\n` +
       `Base URL: <code>${session.baseUrl}</code>\n\n` +
       `Ready. Send trades from PWA or use /status.\n` +
-      `<i>Market scraper runs automatically 9:15–3:35 IST (no TOTP needed)</i>`
+      `<i>Market scraper runs automatically 9:15–3:45 IST (no TOTP needed)</i>`
     ).catch(()=>{});
     await saveState();
     // Only reset tracked highs/lows on a NEW trading day — same-day re-logins preserve accumulated peaks
@@ -2157,7 +2157,7 @@ async function runMarketScraper(force = false) {
       }
       await pushMarketToGitHub(existing);
     } catch {}
-    await tgAlert('🔴 <b>Market scraper auto-stopped</b> (3:35 PM IST). market.json marked closed.').catch(()=>{});
+    await tgAlert('🔴 <b>Market scraper auto-stopped</b> (3:45 PM IST). market.json marked closed.').catch(()=>{});
     return;
   }
   // Warn 30 min before Kotak session expires so TOTP can be re-done without a CMP gap
@@ -3106,10 +3106,10 @@ async function handleMessage(text) {
     if (!GH_TOKEN) { await tgSend('❌ GH_TOKEN not set in .env — cannot push to GitHub.'); return; }
     const nowIST  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const minsIST = nowIST.getHours() * 60 + nowIST.getMinutes();
-    const inMarket = minsIST >= 9 * 60 + 15 && minsIST < 15 * 60 + 35;
+    const inMarket = minsIST >= 9 * 60 + 15 && minsIST < 15 * 60 + 45;
     if (inMarket) {
       if (startMarketScraper()) {
-        await tgSend('📊 <b>Market scraper started</b>\nFetching NIFTY / SENSEX / BANKNIFTY every 15s\nPushing to market.json on GitHub\nAuto-stops at 3:35 PM IST');
+        await tgSend('📊 <b>Market scraper started</b>\nFetching NIFTY / SENSEX / BANKNIFTY every 15s\nPushing to market.json on GitHub\nAuto-stops at 3:45 PM IST');
       } else {
         await tgSend('⚠️ Market scraper already running. Use /market_off to stop.');
       }
@@ -4772,7 +4772,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
 function isMarketHours() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const h = now.getHours(), m = now.getMinutes(), day = now.getDay();
-  return day >= 1 && day <= 5 && (h > 9 || (h === 9 && m >= 15)) && (h < 15 || (h === 15 && m <= 35));
+  return day >= 1 && day <= 5 && (h > 9 || (h === 9 && m >= 15)) && (h < 15 || (h === 15 && m <= 45));
 }
 
 process.on('uncaughtException', (err) => {
@@ -5205,7 +5205,7 @@ setInterval(() => {
       startMarketScraper();
       if (_isFirstStartToday) {
         // Normal daily 9:15 auto-start — calm confirmation, not an alarm
-        tgAlert('📊 <b>Market scraper started</b> (9:15 IST)\nFetching NIFTY / SENSEX / BANKNIFTY every 15s\nAuto-stops at 3:35 PM IST').catch(()=>{});
+        tgAlert('📊 <b>Market scraper started</b> (9:15 IST)\nFetching NIFTY / SENSEX / BANKNIFTY every 15s\nAuto-stops at 3:45 PM IST').catch(()=>{});
       } else if (!_scraperStopAlerted) {
         // Was already running today and died mid-session — this is a real problem
         _scraperStopAlerted = true;
