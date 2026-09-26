@@ -2183,11 +2183,11 @@ async function runMarketScraper(force = false) {
     if (isSessionValid()) {
       nifty       = await fetchKotakIndexLTP('NIFTY')     || parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
       banknifty   = await fetchKotakIndexLTP('BANKNIFTY') || parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-      sensexFinal = await fetchKotakIndexLTP('SENSEX')    || sensex                               || await fetchYahooIndex('SENSEX');
+      sensexFinal = await fetchKotakIndexLTP('SENSEX')    || await fetchYahooIndex('SENSEX')        || sensex;
     } else {
       nifty       = parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
       banknifty   = parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-      sensexFinal = sensex                               || await fetchYahooIndex('SENSEX');
+      sensexFinal = await fetchYahooIndex('SENSEX')      || sensex;
     }
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     // Kotak-derived breadth (change ≥ 0 = advancing) takes priority over NSE API counts
@@ -4791,6 +4791,28 @@ loadHolidayState();
 loadPushSent();
 loadNifty50Cache();
 server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`));
+
+// Periodic GitHub poll — refreshes _latestMarketData when Python scraper (market_scraper.py) is
+// pushing to GitHub. Never overwrites with older/equal data; preserves in-memory option chain fields.
+setInterval(async () => {
+  try {
+    const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
+    if (!r.ok) return;
+    const fresh = await r.json();
+    const freshTs = fresh.lastUpdated || '';
+    const memTs   = _latestMarketData?.lastUpdated || '';
+    if (freshTs > memTs) {
+      _latestMarketData = {
+        ...fresh,
+        optionLTPs:         _latestMarketData?.optionLTPs         || {},
+        optionHighs:        _latestMarketData?.optionHighs        || {},
+        optionHighsPostIds: _latestMarketData?.optionHighsPostIds || {},
+        expiry:             _latestMarketData?.expiry
+      };
+      console.log('[market-poll] _latestMarketData updated from GitHub:', freshTs);
+    }
+  } catch { /* non-fatal */ }
+}, 10_000);
 
 // On startup: populate _latestMarketData from GitHub so /market works immediately
 setTimeout(async () => {
