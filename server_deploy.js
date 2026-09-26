@@ -3554,6 +3554,23 @@ const server = http.createServer(async (req, res) => {
 
   // HTTP update trigger — GET /http-update?key=T2SMonitor2026
   // Deploys latest server_deploy.js from GitHub without needing Telegram webhook
+  if (req.method === 'GET' && urlPath === '/market-force') {
+    const key = new URL('https://x' + req.url).searchParams.get('key');
+    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end('Unauthorized'); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    try {
+      await runMarketScraper(true);
+      const snap = _latestMarketData ? {
+        lastUpdated: _latestMarketData.lastUpdated,
+        NIFTY: _latestMarketData.indices?.NIFTY?.price,
+        SENSEX: _latestMarketData.indices?.SENSEX?.price,
+        BANKNIFTY: _latestMarketData.indices?.BANKNIFTY?.price
+      } : null;
+      res.end(JSON.stringify({ ok: true, data: snap }));
+    } catch(e) { res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
   if (req.method === 'GET' && urlPath === '/http-update') {
     const key = new URL('https://x' + req.url).searchParams.get('key');
     if (key !== 'T2SMonitor2026') {
