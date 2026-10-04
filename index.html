@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20261004-001 | PROD: Markets tab "Yet to trigger" fix — _buildMqpCard() active branch: checks getTradeState() before computing P&L; if yet_to_trigger, sets pnlHtml to "⏳ Yet to trigger" pill (no P&L figure, no colored border). _updateMqpActivePnl() forEach: skips posts still in yet_to_trigger state on each tick so pill is never overwritten. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: revert _mqpState block in _buildMqpCard to bare liveKey/liveCmp lines; remove replies + getTradeState guard in _updateMqpActivePnl. -->
 <!-- T2S-PROD-20260910-001 | PROD: Trigger state latch — _triggeredPostIds Set + sessionStorage (today-only, key t2s_triggered) added. getTradeState() checks Set before CMP auto-detect; on first CMP-based trigger, latches postId so state never reverts to Yet to Trigger on LTP dip. Promoted from T2S-UAT-20260828-001. Rollback: remove _triggeredPostIds Set+IIFE; remove Set check + latch block from getTradeState(). -->
 <!-- T2S-PROD-20260826-001 | PROD: SL parser — added new pattern to parseFollowUpContent slPats for "SL [modifier] to [number]" word order (e.g. "SL modified to 24285", "SL revised to 24285"). Pattern 1 already handled the reverse order "[modifier] SL to N" — this adds the complement. Zero touch to all other code, logic, calculations, or any other feature. Rollback: remove the one added slPats line. -->
 <!-- T2S-PROD-20260823-002 | PROD: Advance/Decline panel auto-refresh with scroll preservation and directional flash — (1) _advDecRender(which): extracted HTML-building logic from toggleAdvDec into standalone function; rows now stamped with data-symbol attribute for post-rebuild targeting. (2) _advDecRefresh(oldPrices): on every 5s /market poll, if panel is open — saves scrollTop, rebuilds via _advDecRender, restores scrollTop (no scroll jump); compares old vs new prices and flashes changed rows green (#dcfce7) if price went up or red (#fee2e2) if price went down for 2.5s. (3) toggleAdvDec: replaced 25-line inline HTML block with single _advDecRender(which) call — behaviour identical. (4) renderMarketUI breadth block: snapshots current prices before _advDecStocks update, then passes snapshot to _advDecRefresh so comparison is old-vs-new not new-vs-new. Zero touch to _advDecCollapse, outside-click listener, chip counts, chevron logic, all other tabs, server.js, Supabase. Rollback: revert toggleAdvDec to inline HTML block; remove _advDecRender/_advDecRefresh functions; revert renderMarketUI line to plain _advDecStocks assignment. -->
@@ -1688,10 +1689,15 @@
                     const _stored = window._mqpPnlStore && window._mqpPnlStore[post.id];
                     if (_stored !== undefined) pnlPts = _stored.pts;
                 } else {
-                    // Active trade: mirror live badge — same _lastOptionLTPs as updateTradeCMPs
-                    const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
-                    const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
-                    if (liveCmp != null && f.entry) pnlPts = Math.round((liveCmp - f.entry) * _pnlDir);
+                    // Active trade: show pill for yet_to_trigger; live P&L once triggered
+                    const _mqpState = getTradeState(post, replies);
+                    if (_mqpState === 'yet_to_trigger') {
+                        pnlHtml = `<div class="mqp-pnl" style="color:#6366f1;font-weight:700;font-size:0.72rem;text-align:right;">⏳ Yet to<br>trigger</div>`;
+                    } else {
+                        const liveKey = (f.instrument && f.optType && f.strike) ? `${f.instrument}-${f.strike}-${f.optType}` : null;
+                        const liveCmp = liveKey && _lastOptionLTPs ? _lastOptionLTPs[liveKey] : null;
+                        if (liveCmp != null && f.entry) pnlPts = Math.round((liveCmp - f.entry) * _pnlDir);
+                    }
                 }
                 if (pnlPts !== null && f.instrument) {
                     const lotSize = getLotSize(f.instrument);
@@ -1727,6 +1733,8 @@
     function _updateMqpActivePnl(activeSlice, replyMap, canSeePremium) {
         if (!canSeePremium || !activeSlice.length) return;
         activeSlice.forEach(post => {
+            const replies = replyMap[post.id] || [];
+            if (getTradeState(post, replies) === 'yet_to_trigger') return;
             const card = document.querySelector(`#mqp-body-trades .mqp-card[data-post-id="${post.id}"]`);
             if (!card) return;
             const f = extractTradeAlertFields(post.content || '');
