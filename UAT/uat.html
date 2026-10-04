@@ -3629,7 +3629,7 @@
                 if (_f.instrument && _f.strike && _f.optType) {
                     const _ltp = _lastOptionLTPs[`${_f.instrument}-${_f.strike}-${_f.optType}`];
                     const _isSell = (_f.action || '').toUpperCase() === 'SELL';
-                    if (_ltp != null && _ltp > 0 && (_isSell ? _ltp > _slNum : _ltp < _slNum)) {
+                    if (_ltp != null && _ltp > 0 && (_isSell ? _ltp >= _slNum : _ltp <= _slNum)) {
                         if (post.id) {
                             _sblAutoClosedPostIds.add(post.id);
                             try {
