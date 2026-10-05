@@ -556,7 +556,7 @@ async function verifyPin(){
     const hash=await hashPin(pinBuffer);const did=getDeviceId();
     // Fresh member fetch to get latest pin_hash and confirm account still active
     const members=await sbFetch(`members?id=eq.${currentMember.id}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!members||members.length===0){showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @T2Sview.';setTimeout(()=>{localStorage.clear();location.reload();},2500);return;}
+    if(!members||members.length===0){showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @T2Sview.';setTimeout(()=>{['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_locked_mid','t2s_uat_unlock_req_at','t2s_uat_device_id','t2s_uat_request_pending','t2s_uat_pin_reset_at','t2s_uat_disclaimer_date','t2s_uat_logout_reason'].forEach(k=>localStorage.removeItem(k));location.reload();},2500);return;}
     currentMember=members[0];
     if(currentMember.pin_hash===hash){
       failedAttempts=0;localStorage.removeItem('t2s_uat_lock_until');
