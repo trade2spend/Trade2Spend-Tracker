@@ -2061,7 +2061,7 @@ async function handlePinReset(memberId, auditId) {
 async function handleUnlock(memberId, auditId) {
   if (!confirm('Unlock this member\'s account?')) return;
   try {
-    await sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ locked_until: null, failed_attempts_today: 0 }), headers: { 'Prefer': 'return=minimal' } });
+    await sbFetch(`sessions?member_id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ locked_until: null, failed_attempts_today: 0 }), headers: { 'Prefer': 'return=minimal' } });
     await sbDelete(`audit_log?id=eq.${auditId}`);
     showToast('✅ Account unlocked');
     loadPinUnlockRequests();
