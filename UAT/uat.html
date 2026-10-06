@@ -1208,12 +1208,12 @@
         const hasConsent = !!document.getElementById('fa-consent-check')?.checked;
         const mobileInput = document.getElementById('fa-mobile-input');
         const hasMobile = !mobileInput || mobileInput.value.length === 10;
-        const isBlocked = !!(mobileInput && mobileInput._blocked);
+        const isBlocked = _faMobileBlocked;
         const ok = hasName && hasConsent && hasMobile && !isBlocked;
         if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; }
     }
 
-    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0, _faPinMode = 'verify', _faPinSetupFirst = '', _faPhase = 'mobile', _faRegBackCount = 0;
+    var _faPendingMember = null, _faPinBuffer = '', _faPinAttempts = 0, _faPinMode = 'verify', _faPinSetupFirst = '', _faPhase = 'mobile', _faRegBackCount = 0, _faMobileBlocked = false;
     // Single source of truth for modal visibility. Calling this is the ONLY way to change what's shown.
     function _faRenderPhase(phase) {
         _faPhase = phase;
@@ -1233,7 +1233,7 @@
                 <div style="display:flex;align-items:center;gap:6px;">
                     <span style="padding:8px 10px;background:#f3f0f8;border:1.5px solid #e5e0f0;border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--primary);white-space:nowrap;">+91</span>
                     <input id="fa-mobile-input" type="tel" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric"
-                        oninput="this.value=this.value.replace(/\\D/g,'');this._blocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable()"
+                        oninput="this.value=this.value.replace(/\\D/g,'');_faMobileBlocked=false;var _h=document.getElementById('fa-mobile-hint');if(_h){_h.innerHTML='';};_faCheckEnable()"
                         onblur="_faMobileBlur()"
                         style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem;font-family:inherit;background:var(--card);color:var(--text);outline:none;" />
                 </div>
@@ -1455,28 +1455,28 @@
             if (members && members[0]) {
                 const { status, id: _faMid } = members[0];
                 // Disabled account — block immediately
-                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; input._blocked=true; _faCheckEnable(); return; }
+                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
                 // Registered member — fetch pin_hash and show inline PIN entry
                 const _faFull = await sbFetch(`members?id=eq.${_faMid}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
                 const _faMember = (_faFull && _faFull[0]) ? _faFull[0] : members[0];
                 // Lock check — localStorage first (handles mini-form locks where DB may have no active sessions)
                 const _faReqActive=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')&&Date.now()-parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')<2*60*60*1000;
-                function _faSetLockHint(mins){if(hint){hint.style.color='#dc2626';hint.innerHTML=_faReqActive?`Unlock request submitted — waiting for admin. ${mins} min remaining.`:`Account locked — ${mins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.`;}input._blocked=true;_faCheckEnable();}
+                function _faSetLockHint(mins){if(hint){hint.style.color='#dc2626';hint.innerHTML=_faReqActive?`Unlock request submitted — waiting for admin. ${mins} min remaining.`:`Account locked — ${mins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.`;}_faMobileBlocked=true;_faCheckEnable();}
                 const _faLockLs=localStorage.getItem('t2s_uat_lock_until');const _faLockedMidLs=localStorage.getItem('t2s_uat_locked_mid');
                 if(_faLockLs&&new Date()<new Date(_faLockLs)&&_faLockedMidLs===_faMid){const _faMinsLs=Math.max(1,Math.ceil((new Date(_faLockLs)-new Date())/60000));_faSetLockHint(_faMinsLs);return;}
                 const _faNowLock=new Date().toISOString();
                 const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
                 if(_faLockRow&&_faLockRow.length>0){const _faLuDb=new Date(_faLockRow[0].locked_until);const _faMinsDb=Math.max(1,Math.ceil((_faLuDb-new Date())/60000));localStorage.setItem('t2s_uat_lock_until',_faLockRow[0].locked_until);localStorage.setItem('t2s_uat_locked_mid',_faMid);_faSetLockHint(_faMinsDb);return;}
                 if (hint) { hint.style.color = '#4a2a78'; hint.textContent = _faMember.pin_hash ? 'Registered member — enter your PIN below.' : 'Registered member — set up your PIN below.'; }
-                input._blocked = true;
+                _faMobileBlocked = true;
                 _faMember.pin_hash ? _faShowPinSection(_faMember, 'Enter your PIN to continue') : _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
             } else {
                 // Not in DB — show registration form so they can submit a request
                 if (hint) { hint.style.color = '#9ca3af'; hint.textContent = ''; }
-                input._blocked = false;
+                _faMobileBlocked = false;
                 _faRenderPhase('form');
             }
-        } catch(e) { if (hint) hint.textContent = ''; input._blocked = false; }
+        } catch(e) { if (hint) hint.textContent = ''; _faMobileBlocked = false; }
         _faCheckEnable();
     }
 
@@ -1484,7 +1484,7 @@
         const _bbUntil = parseInt(localStorage.getItem('t2s_uat_back_block_until') || '0');
         if (Date.now() < _bbUntil) { _faShowBlocked(_bbUntil); return; }
         closeGoldenScreen();
-        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify'; _faPinSetupFirst = '';
+        _faPendingMember = null; _faPinBuffer = ''; _faPinAttempts = 0; _faPinMode = 'verify'; _faPinSetupFirst = ''; _faMobileBlocked = false;
         _faUpdateDots('');
         const nameInput = document.getElementById('fa-name-input');
         if (nameInput) { nameInput.value = ''; nameInput.oninput = _faCheckEnable; }
@@ -1512,7 +1512,7 @@
         if (!name || !consent) return;
         // Guard: block submission if mobile field detected a registered/pending number
         const _mobileInputEl = document.getElementById('fa-mobile-input');
-        if (_mobileInputEl && _mobileInputEl._blocked) return;
+        if (_faMobileBlocked) return;
         if (!resolvedMemberId) {
             // Anonymous user — look up member by entered mobile number only (name not used for dedup)
             const mobileInput = document.getElementById('fa-mobile-input');
