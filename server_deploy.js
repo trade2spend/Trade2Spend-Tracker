@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261011-002 | server.js: Trigger memory survives VM restart (checkpoint trigger_restart_persist) — (1) new _trigMapsDate (IST date of the market-hours check that last reset the trigger maps), kept separate from _sbTrigAlertDate. (2) checkSupabaseTriggers(): daily reset split — alert bookkeeping line unchanged; trigger maps reset on their own `_trigMapsDate !== today` line. (3) saveState(): also saves trigMaxPerPost/trigMinPerPost/trigDate=_trigMapsDate; write is now atomic (state.json.tmp + rename) and write errors are logged (were silently swallowed). (4) loadState(): restores trigger maps only when trigDate === today IST (pre-open ticks and previous days never restored). (5) fetchKotakOptionLTPs(): one saveState per 5s cycle when a per-post max/min changed. Rollback: restore server.js.bak_20261011_prerestart (T2S-PROD-20261011-001), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by the old code.
 // DEPLOY: T2S-PROD-20261011-001 | server.js: Trigger race fix (checkpoint trigger_race_fix) — (1) _trigMaxPerPost{} / _trigMinPerPost{} globals added, keyed by postId (mirrors _slMinPerPost, T2S-PROD-20260917-001). (2) fetchKotakOptionLTPs(): each LTP tick updates per-postId max/min. (3) checkSupabaseTriggers(): trigger uses effectiveCmp = max(cmp, per-post max) for BUY / min(cmp, per-post min) for SELL — a touch of entry that reverts within the 30s check window now triggers. (4) Daily reset of both maps alongside _sbTrigAlertedToday. Also ships /market-force (staged 26 Sep, never loaded on VM). Root cause: 9 Oct NIFTY 22450 PE hit 118.05 > entry 117 but 30s check saw 109.65 → no '✅ triggered' post. Rollback: remove the two globals, the 6-line tracking block in fetchKotakOptionLTPs, the two resets, and restore `const triggered = isSell ? (cmp <= entry) : (cmp >= entry);`.
 // DEPLOY: T2S-PROD-20260917-001 | server.js: Per-postId session minimum LTP for reliable SL breach detection — (1) _slMinPerPost{} global added: keyed by postId (not instrument-strike), never reset when new trade posted for same instrument. (2) fetchKotakOptionLTPs(): on each LTP tick, updates _slMinPerPost[c.postId] = Math.min(existing, ltp). (3) checkSupabaseSLs(): for BUY trades, uses Math.min(currentCMP, _slMinPerPost[post.id]) as effectiveCmp — breach detected if CMP was EVER below SL this session, not just right now. SELL trades unchanged. (4) Daily reset: _slMinPerPost cleared alongside _sbSlAlertedToday. Root cause: CMP briefly dipped below SL, recovered before 30s check ran; new trade posting reset _optionLows[key].low=undefined; checkSupabaseSLs saw currentCMP=172>SL=155, posted nothing; trade re-evaluated as ACTIVE. Rollback: remove _slMinPerPost var; remove 5-line update block in fetchKotakOptionLTPs; revert checkSupabaseSLs breach block to original 4 lines; revert daily reset line.
 // DEPLOY: T2S-PROD-20260904-002 | server.js: Prod deploy gate. (1) import { createHmac } from 'crypto' added. (2) TOTP_DEPLOY_SEC constant from env. (3) verifyTOTP() — RFC 6238 TOTP in pure Node.js, checks ±1 window for clock drift, anti-replay via _usedTOTP Map. (4) POST /deploy-auth — verifies TOTP, returns {ok:true} on success, 401 on wrong/reused code, 503 if secret not configured. push_pwa.py calls this before any prod push. Rollback: remove createHmac import; remove TOTP_DEPLOY_SEC + _usedTOTP + verifyTOTP block; remove POST /deploy-auth block.
@@ -576,6 +577,7 @@ let _slMinPerPost        = {}; // postId → min LTP seen this session — SL br
 let _slLevelPerPost      = {}; // postId → SL level last seen — companion to _slMinPerPost for SL-change awareness
 let _trigMaxPerPost      = {}; // postId → max LTP seen this session — BUY trigger persists past a revert
 let _trigMinPerPost      = {}; // postId → min LTP seen this session — SELL trigger persists past a revert
+let _trigMapsDate        = null; // IST date of the market-hours check that last reset the trigger maps — persisted so restarts keep same-day values
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
@@ -661,6 +663,16 @@ function loadState() {
           console.log(`Restored ${Object.keys(_optionLows).length} option lows from state`);
         }
       }
+      // Restore per-post trigger extremes — only if saved after today's first market-hours check (trigger_restart_persist)
+      if (data.trigDate) {
+        const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+        if (data.trigDate === todayIST) {
+          _trigMaxPerPost = data.trigMaxPerPost || {};
+          _trigMinPerPost = data.trigMinPerPost || {};
+          _trigMapsDate   = data.trigDate;
+          console.log(`Restored trigger extremes for ${Object.keys(_trigMaxPerPost).length} posts from state`);
+        }
+      }
       console.log(`State loaded: ${Object.keys(state.trades).length} trades`);
     }
   } catch (e) { console.error('loadState error:', e.message); }
@@ -671,7 +683,9 @@ async function saveState() {
     const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
     const highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, { high: v.high, last: v.last || 0, postId: v.postId || null }])); // RC-4 FIX: persist postId for new-trade detection after VM restart
     const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action, postId: v.postId || null }])); // RC-4 FIX: persist postId
-    try { fs.writeFileSync(STATE_FILE, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST }, null, 2)); } catch {}
+    // Atomic write (tmp + rename) so a crash mid-write never leaves state.json unreadable. Trigger maps saved with
+    // _trigMapsDate (set only by a market-hours check) so pre-open ticks are never restored — trigger_restart_persist.
+    try { const _tmp = STATE_FILE + '.tmp'; fs.writeFileSync(_tmp, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST, trigMaxPerPost: _trigMaxPerPost, trigMinPerPost: _trigMinPerPost, trigDate: _trigMapsDate }, null, 2)); fs.renameSync(_tmp, STATE_FILE); } catch (e) { console.error('saveState write error:', e.message); }
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -1606,6 +1620,7 @@ function buildTradingSymbol(instrument, strike, type, expiry) {
 // Uses numeric token from scrip master if available; falls back to trading symbol string
 async function fetchKotakOptionLTPs() {
   if (!session.token || !session.baseUrl || !_activeContracts.length) return;
+  let _trigChanged = false; // persist trigger extremes once per cycle when any changed
   for (const c of _activeContracts) {
     const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
     // Numeric token (from scrip master) works on both mis and gw-napi; trading symbol is fallback
@@ -1667,10 +1682,12 @@ async function fetchKotakOptionLTPs() {
         // starts a fresh postId with no history, immune to the key-level reset timing
         // of refreshActiveContracts(). Mirrors _slMinPerPost exactly (T2S-PROD-20260917-001).
         if (c.postId) {
+          const _pMax = _trigMaxPerPost[c.postId], _pMin = _trigMinPerPost[c.postId];
           _trigMaxPerPost[c.postId] = (_trigMaxPerPost[c.postId] !== undefined)
             ? Math.max(_trigMaxPerPost[c.postId], ltp) : ltp;
           _trigMinPerPost[c.postId] = (_trigMinPerPost[c.postId] !== undefined)
             ? Math.min(_trigMinPerPost[c.postId], ltp) : ltp;
+          if (_trigMaxPerPost[c.postId] !== _pMax || _trigMinPerPost[c.postId] !== _pMin) _trigChanged = true;
         }
         _ltpConsecFailures = 0; // successful fetch — current URL is working, reset failure counter
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
@@ -1692,6 +1709,7 @@ async function fetchKotakOptionLTPs() {
       }
     }
   }
+  if (_trigChanged) saveState().catch(() => {}); // persist trigger extremes so a restart keeps them (trigger_restart_persist)
   // Snapshot after all contracts processed — never mid-loop (prevents partial poisoned state
   // from being served to member PWA during the fetch cycle).
   if (_latestMarketData) {
@@ -5021,7 +5039,8 @@ async function checkSupabaseTriggers() {
   if (!isMarketHours() || !session.token) return;
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const today = ist.toDateString();
-  if (_sbTrigAlertDate !== today) { _sbTrigAlertedToday.clear(); _sbTrigAlertDate = today; _trigMaxPerPost = {}; _trigMinPerPost = {}; }
+  if (_sbTrigAlertDate !== today) { _sbTrigAlertedToday.clear(); _sbTrigAlertDate = today; }
+  if (_trigMapsDate !== today) { _trigMaxPerPost = {}; _trigMinPerPost = {}; _trigMapsDate = today; }
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
     const posts = await sbFetch(
