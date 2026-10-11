@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261011-005 | server.js: Overnight/positional trades get the automatic SL check on day 2+ (checkpoint overnight_sl) — (1) new sbOvernightOpenPosts(todayStartIso): trade_alert posts from the 7 days BEFORE today's `since` boundary (sent_at gte/lt, contiguous with today's query), kept only if sbContractStillActive() — the same rule refreshActiveContracts uses for live-price tracking; never throws (error → []). (2) checkSupabaseSLs(): posts = today's posts (query unchanged) + carried-over open posts; reply select unchanged (no sent_at, so today's 'not holding overnight' handling is unchanged). R1/R2/S2/SELL logic and messages unchanged; gap-down opens post the SL level (R2, Tushar decision). checkSupabaseTriggers and checkResolveAlert stay today-only. Rollback: restore server.js.bak_20261011_preovernight (T2S-PROD-20261011-004), push_pwa.py, wait 5 min, /http-update.
 // DEPLOY: T2S-PROD-20261011-004 | server.js: SL memory survives VM restart (checkpoint sl_restart_persist) — (1) new _slMapsDate (IST date of the market-hours check that last reset the SL maps), separate from _sbAlertDate. (2) checkSupabaseSLs(): daily reset split — alert bookkeeping line unchanged; _slMinPerPost/_slLevelPerPost reset on their own `_slMapsDate !== today` line. (3) saveState(): also saves slMinPerPost/slLevelPerPost/slDate=_slMapsDate (same atomic write). (4) loadState(): restores BOTH SL maps only when slDate === today IST (both needed — restoring the min alone would be wiped by S2's first-appearance reset). (5) Saves: once per 5s LTP cycle when an SL min changed; once per SL check when a level changed or a min was reset. R1/R2/S2 logic, SELL logic and messages unchanged. Rollback: restore server.js.bak_20261011_presl (T2S-PROD-20261011-003), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by old code.
 // DEPLOY: T2S-PROD-20261011-003 | server.js: market.json stale fix (checkpoint market_json_stale) — Root cause: VM GitHub pushes of market.json silently failing since 14 Aug (PUT response never checked) + startup trusted the GitHub file → every restart served weeks-old prices outside market hours. (A) pushMarketToGitHub(): checks GET/PUT responses; failures recorded in _ghMarketPushStatus (HTTP status/message only, never the token) + one tgAlert per IST day. (B) market_snapshot.json: VM's own copy of the latest REAL snapshot, atomic write, never overwritten by older data; saved in runMarketScraper (real prices only) and the two movers-correction paths. (C) Startup loads the local snapshot first; GitHub copy used only if newer; _lastRealPriceTs seeded from the loaded snapshot so all-sources-down never relabels old prices as 'now'. (D) /debug: ghMarketPush + marketSnapshotLocal fields. (E) Startup outside market hours runs runMarketScraper(true) once to fetch closing prices. Rollback: restore server.js.bak_20261011_premarket (T2S-PROD-20261011-002), push_pwa.py, wait 5 min, /http-update; market_snapshot.json is ignored by old code.
 // DEPLOY: T2S-PROD-20261011-002 | server.js: Trigger memory survives VM restart (checkpoint trigger_restart_persist) — (1) new _trigMapsDate (IST date of the market-hours check that last reset the trigger maps), kept separate from _sbTrigAlertDate. (2) checkSupabaseTriggers(): daily reset split — alert bookkeeping line unchanged; trigger maps reset on their own `_trigMapsDate !== today` line. (3) saveState(): also saves trigMaxPerPost/trigMinPerPost/trigDate=_trigMapsDate; write is now atomic (state.json.tmp + rename) and write errors are logged (were silently swallowed). (4) loadState(): restores trigger maps only when trigDate === today IST (pre-open ticks and previous days never restored). (5) fetchKotakOptionLTPs(): one saveState per 5s cycle when a per-post max/min changed. Rollback: restore server.js.bak_20261011_prerestart (T2S-PROD-20261011-001), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by the old code.
@@ -1495,6 +1496,28 @@ function sbContractStillActive(post, replies) {
     if (postIST.toDateString() !== ist.toDateString()) return false; // posted on a previous day
   }
   return true;
+}
+
+// Trades posted BEFORE today that are still open (same rule refreshActiveContracts uses for live-price
+// tracking) — so overnight/positional trades get the automatic SL check on day 2+ (overnight_sl).
+// Never throws: any error → [] so today's SL checks always run.
+async function sbOvernightOpenPosts(todayStartIso) {
+  try {
+    const from = new Date(Date.parse(todayStartIso) - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const old = await sbFetch(
+      `posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(from)}&sent_at=lt.${encodeURIComponent(todayStartIso)}&select=id,content,sent_at`,
+      { method: 'GET' }
+    );
+    if (!Array.isArray(old) || !old.length) return [];
+    const reps = await sbFetch(
+      `posts?is_deleted=eq.false&parent_id=in.(${old.map(p => `"${p.id}"`).join(',')})&order=sent_at.desc&select=id,parent_id,content,sent_at`,
+      { method: 'GET' }
+    );
+    if (!Array.isArray(reps)) return [];
+    const map = {};
+    reps.forEach(r => { (map[r.parent_id] = map[r.parent_id] || []).push(r); });
+    return old.filter(p => sbContractStillActive(p, map[p.id] || [])).map(p => ({ id: p.id, content: p.content }));
+  } catch (e) { console.error('[sb-sl] overnight lookup failed:', e.message); return []; }
 }
 
 // Parse active option contracts from recent Supabase trade_alert posts
@@ -5031,10 +5054,12 @@ async function checkSupabaseSLs() {
   let _slStateChanged = false; // persist SL level / min reset once per check (sl_restart_persist)
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
-    const posts = await sbFetch(
+    const _todayPosts = await sbFetch(
       `posts?post_type=eq.trade_alert&is_deleted=eq.false&parent_id=is.null&sent_at=gte.${encodeURIComponent(since.toISOString())}&select=id,content`,
       { method: 'GET' }
     );
+    // + still-open trades from previous days (overnight/positional) — today's query above is unchanged (overnight_sl)
+    const posts = [...(Array.isArray(_todayPosts) ? _todayPosts : []), ...await sbOvernightOpenPosts(since.toISOString())];
     if (!posts.length) return;
     const reps = await sbFetch(
       `posts?is_deleted=eq.false&parent_id=in.(${posts.map(p => `"${p.id}"`).join(',')})&order=sent_at.desc&select=id,parent_id,content`,
