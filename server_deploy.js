@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261011-003 | server.js: market.json stale fix (checkpoint market_json_stale) — Root cause: VM GitHub pushes of market.json silently failing since 14 Aug (PUT response never checked) + startup trusted the GitHub file → every restart served weeks-old prices outside market hours. (A) pushMarketToGitHub(): checks GET/PUT responses; failures recorded in _ghMarketPushStatus (HTTP status/message only, never the token) + one tgAlert per IST day. (B) market_snapshot.json: VM's own copy of the latest REAL snapshot, atomic write, never overwritten by older data; saved in runMarketScraper (real prices only) and the two movers-correction paths. (C) Startup loads the local snapshot first; GitHub copy used only if newer; _lastRealPriceTs seeded from the loaded snapshot so all-sources-down never relabels old prices as 'now'. (D) /debug: ghMarketPush + marketSnapshotLocal fields. (E) Startup outside market hours runs runMarketScraper(true) once to fetch closing prices. Rollback: restore server.js.bak_20261011_premarket (T2S-PROD-20261011-002), push_pwa.py, wait 5 min, /http-update; market_snapshot.json is ignored by old code.
 // DEPLOY: T2S-PROD-20261011-002 | server.js: Trigger memory survives VM restart (checkpoint trigger_restart_persist) — (1) new _trigMapsDate (IST date of the market-hours check that last reset the trigger maps), kept separate from _sbTrigAlertDate. (2) checkSupabaseTriggers(): daily reset split — alert bookkeeping line unchanged; trigger maps reset on their own `_trigMapsDate !== today` line. (3) saveState(): also saves trigMaxPerPost/trigMinPerPost/trigDate=_trigMapsDate; write is now atomic (state.json.tmp + rename) and write errors are logged (were silently swallowed). (4) loadState(): restores trigger maps only when trigDate === today IST (pre-open ticks and previous days never restored). (5) fetchKotakOptionLTPs(): one saveState per 5s cycle when a per-post max/min changed. Rollback: restore server.js.bak_20261011_prerestart (T2S-PROD-20261011-001), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by the old code.
 // DEPLOY: T2S-PROD-20261011-001 | server.js: Trigger race fix (checkpoint trigger_race_fix) — (1) _trigMaxPerPost{} / _trigMinPerPost{} globals added, keyed by postId (mirrors _slMinPerPost, T2S-PROD-20260917-001). (2) fetchKotakOptionLTPs(): each LTP tick updates per-postId max/min. (3) checkSupabaseTriggers(): trigger uses effectiveCmp = max(cmp, per-post max) for BUY / min(cmp, per-post min) for SELL — a touch of entry that reverts within the 30s check window now triggers. (4) Daily reset of both maps alongside _sbTrigAlertedToday. Also ships /market-force (staged 26 Sep, never loaded on VM). Root cause: 9 Oct NIFTY 22450 PE hit 118.05 > entry 117 but 30s check saw 109.65 → no '✅ triggered' post. Rollback: remove the two globals, the 6-line tracking block in fetchKotakOptionLTPs, the two resets, and restore `const triggered = isSell ? (cmp <= entry) : (cmp >= entry);`.
 // DEPLOY: T2S-PROD-20260917-001 | server.js: Per-postId session minimum LTP for reliable SL breach detection — (1) _slMinPerPost{} global added: keyed by postId (not instrument-strike), never reset when new trade posted for same instrument. (2) fetchKotakOptionLTPs(): on each LTP tick, updates _slMinPerPost[c.postId] = Math.min(existing, ltp). (3) checkSupabaseSLs(): for BUY trades, uses Math.min(currentCMP, _slMinPerPost[post.id]) as effectiveCmp — breach detected if CMP was EVER below SL this session, not just right now. SELL trades unchanged. (4) Daily reset: _slMinPerPost cleared alongside _sbSlAlertedToday. Root cause: CMP briefly dipped below SL, recovered before 30s check ran; new trade posting reset _optionLows[key].low=undefined; checkSupabaseSLs saw currentCMP=172>SL=155, posted nothing; trade re-evaluated as ACTIVE. Rollback: remove _slMinPerPost var; remove 5-line update block in fetchKotakOptionLTPs; revert checkSupabaseSLs breach block to original 4 lines; revert daily reset line.
@@ -1007,6 +1008,7 @@ async function loginKotak(totp) {
             _latestMarketData.losers  = movers.losers?.length  ? movers.losers  : _latestMarketData.losers;
             const snapshot = { ..._latestMarketData };
             delete snapshot.optionLTPs; delete snapshot.expiry;
+            saveMarketSnapshotLocal(snapshot);
             await pushMarketToGitHub(snapshot);
             tgSend(`📊 Closing breadth corrected: ${movers.breadth.advancing}↑ ${movers.breadth.declining}↓ (${movers.count} stocks)`).catch(()=>{});
             console.log(`[login] breadth corrected: ${movers.breadth.advancing}↑ ${movers.breadth.declining}↓`);
@@ -2065,25 +2067,78 @@ async function fetchYahooIndex(instrument) {
   } catch(e) { console.error(`[Yahoo] ${instrument} error: ${e.message}`); return null; }
 }
 
+// ── LOCAL MARKET SNAPSHOT (market_json_stale) ────────────────────────────────
+// The VM's own copy of the latest real market snapshot. Restarts load it first, so /market never
+// depends on the GitHub copy being current. Never overwritten with an older lastUpdated.
+const MARKET_SNAPSHOT_FILE = path.join(__dirname, 'market_snapshot.json');
+let _marketSnapshotSavedAt = null; // ISO time of last successful local save (for /debug)
+let _marketSnapshotSavedTs = 0;    // lastUpdated (ms) of the snapshot on disk
+function saveMarketSnapshotLocal(snapshot) {
+  try {
+    const ts = Date.parse(snapshot?.lastUpdated || '') || 0;
+    if (!ts || ts < _marketSnapshotSavedTs) return false;
+    const tmp = MARKET_SNAPSHOT_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(snapshot));
+    fs.renameSync(tmp, MARKET_SNAPSHOT_FILE); // atomic replace — crash mid-write keeps the previous file
+    _marketSnapshotSavedTs = ts;
+    _marketSnapshotSavedAt = new Date().toISOString();
+    return true;
+  } catch (e) { console.error('saveMarketSnapshotLocal error:', e.message); return false; }
+}
+function loadMarketSnapshotLocal() {
+  try {
+    if (!fs.existsSync(MARKET_SNAPSHOT_FILE)) return null;
+    const d = JSON.parse(fs.readFileSync(MARKET_SNAPSHOT_FILE, 'utf8'));
+    const ts = Date.parse(d?.lastUpdated || '') || 0;
+    if (!ts || !d.indices) return null;
+    _marketSnapshotSavedTs = ts;
+    return d;
+  } catch (e) { console.error('loadMarketSnapshotLocal error:', e.message); return null; }
+}
+
 let _lastGhMarketPush = 0;
+// Non-secret push status for /debug — timestamps and HTTP status text only, never the token
+let _ghMarketPushStatus = { lastOkAt: null, lastFailAt: null, lastError: null, failStreak: 0 };
+let _ghPushAlertDate = null; // IST date of last push-failure Telegram alert (max one per day)
+function _ghPushFailed(msg) {
+  _ghMarketPushStatus.lastFailAt = new Date().toISOString();
+  _ghMarketPushStatus.lastError  = msg;
+  _ghMarketPushStatus.failStreak++;
+  console.error('pushMarketToGitHub failed:', msg);
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+  if (_ghPushAlertDate !== today) {
+    _ghPushAlertDate = today;
+    tgAlert(`⚠️ <b>market.json GitHub push failing</b>\n${msg}\nCheck GH_TOKEN in VM .env. Local snapshot keeps restarts current.`).catch(() => {});
+  }
+  return false;
+}
+async function _ghErrText(res) {
+  try { const t = await res.text(); try { return String(JSON.parse(t).message || '').slice(0, 120); } catch { return t.slice(0, 120); } }
+  catch { return ''; }
+}
 async function pushMarketToGitHub(marketData) {
   // Rate-limit to once per 15 min — frequent pushes flood GitHub Pages build queue
   const now = Date.now();
   if (now - _lastGhMarketPush < 15 * 60 * 1000) return false;
   _lastGhMarketPush = now;
-  if (!GH_TOKEN) { console.error('GH_TOKEN not set — cannot push market.json'); return false; }
+  if (!GH_TOKEN) return _ghPushFailed('GH_TOKEN not set');
   const api = `https://api.github.com/repos/${GH_REPO}/contents/market.json`;
   const headers = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
   try {
-    const r   = await ft(api, { headers }, 8000);
-    const cur = await r.json();
+    const r = await ft(api, { headers }, 8000);
+    // 404 = file absent → create it with sha '' (unchanged behaviour); any other non-2xx is a failure
+    if (!r.ok && r.status !== 404) return _ghPushFailed(`GET HTTP ${r.status} ${await _ghErrText(r)}`.trim());
+    const cur = r.ok ? await r.json() : {};
     const sha = cur.sha || '';
-    await ft(api, {
+    const p = await ft(api, {
       method: 'PUT', headers,
       body: JSON.stringify({ message: 'market data update', content: Buffer.from(JSON.stringify(marketData, null, 2)).toString('base64'), sha, branch: 'main' })
     }, 12000);
+    if (!p.ok) return _ghPushFailed(`PUT HTTP ${p.status} ${await _ghErrText(p)}`.trim());
+    _ghMarketPushStatus.lastOkAt   = new Date().toISOString();
+    _ghMarketPushStatus.failStreak = 0;
     return true;
-  } catch (e) { console.error('pushMarketToGitHub error:', e.message); return false; }
+  } catch (e) { return _ghPushFailed(`network: ${e.message}`); }
 }
 
 // Save the intraday high (BUY) or low (SELL) for each active contract to Supabase.
@@ -2253,6 +2308,7 @@ async function runMarketScraper(force = false) {
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
     _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, optionHighs: _highsSnap, expiry: _expiryDates };
+    if (_gotRealPrice) saveMarketSnapshotLocal(marketData); // only real prices reach the local copy (market_json_stale)
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}${_gotRealPrice ? '' : ' [STALE — all sources failed, using cached values]'}`);
   } catch (e) { console.error('runMarketScraper error:', e.message); }
@@ -3888,7 +3944,9 @@ const server = http.createServer(async (req, res) => {
       ltpTest,
       ltpProbe,
       yahooMoversStatus: _yahooMoversStatus,
-      khMemberRateSize: _khMemberRate.size
+      khMemberRateSize: _khMemberRate.size,
+      ghMarketPush: _ghMarketPushStatus,
+      marketSnapshotLocal: { lastSavedAt: _marketSnapshotSavedAt, lastUpdated: _marketSnapshotSavedTs ? new Date(_marketSnapshotSavedTs).toISOString() : null }
     }));
     return;
   }
@@ -4835,6 +4893,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 loadState();
+// Local market snapshot first — /market serves the VM's own latest copy from the first request (market_json_stale)
+// _lastRealPriceTs seeded from the snapshot so a restart with every price source down keeps the true date (not "now")
+{ const _snap = loadMarketSnapshotLocal(); if (_snap) { _latestMarketData = _snap; _lastRealPriceTs = Date.parse(_snap.lastUpdated) || 0; } }
 loadHolidayState();
 loadPushSent();
 loadNifty50Cache();
@@ -4866,7 +4927,13 @@ setInterval(async () => {
 setTimeout(async () => {
   try {
     const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 8000);
-    if (r.ok) _latestMarketData = await r.json();
+    if (r.ok) {
+      // Newest wins — never replace the local snapshot with an older GitHub copy (market_json_stale)
+      const gh = await r.json();
+      const ghTs  = Date.parse(gh?.lastUpdated || '') || 0;
+      const memTs = Date.parse(_latestMarketData?.lastUpdated || '') || 0;
+      if (!_latestMarketData || ghTs > memTs) { _latestMarketData = gh; if (ghTs > _lastRealPriceTs) _lastRealPriceTs = ghTs; }
+    }
   } catch(e) { console.log('Startup market.json fetch failed:', e.message); }
   // If session was restored from state.json, re-download scrip master (it's in-memory only)
   if (session.token && session.baseUrl) {
@@ -4889,9 +4956,12 @@ setTimeout(async () => {
         console.log('[startup] Yahoo closing movers applied:', movers.gainers.length, 'gainers');
         const snapshot = { ..._latestMarketData };
         delete snapshot.optionLTPs; delete snapshot.expiry;
+        saveMarketSnapshotLocal(snapshot);
         pushMarketToGitHub(snapshot).catch(e => console.error('[startup] push movers failed:', e.message));
       }
     }).catch(() => {});
+    // Self-heal: refresh closing prices once at startup so a restart never keeps serving an old snapshot (market_json_stale)
+    runMarketScraper(true).catch(e => console.error('[startup] snapshot refresh failed:', e.message));
   }
 }, 5000);
 
