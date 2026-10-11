@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261011-004 | server.js: SL memory survives VM restart (checkpoint sl_restart_persist) — (1) new _slMapsDate (IST date of the market-hours check that last reset the SL maps), separate from _sbAlertDate. (2) checkSupabaseSLs(): daily reset split — alert bookkeeping line unchanged; _slMinPerPost/_slLevelPerPost reset on their own `_slMapsDate !== today` line. (3) saveState(): also saves slMinPerPost/slLevelPerPost/slDate=_slMapsDate (same atomic write). (4) loadState(): restores BOTH SL maps only when slDate === today IST (both needed — restoring the min alone would be wiped by S2's first-appearance reset). (5) Saves: once per 5s LTP cycle when an SL min changed; once per SL check when a level changed or a min was reset. R1/R2/S2 logic, SELL logic and messages unchanged. Rollback: restore server.js.bak_20261011_presl (T2S-PROD-20261011-003), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by old code.
 // DEPLOY: T2S-PROD-20261011-003 | server.js: market.json stale fix (checkpoint market_json_stale) — Root cause: VM GitHub pushes of market.json silently failing since 14 Aug (PUT response never checked) + startup trusted the GitHub file → every restart served weeks-old prices outside market hours. (A) pushMarketToGitHub(): checks GET/PUT responses; failures recorded in _ghMarketPushStatus (HTTP status/message only, never the token) + one tgAlert per IST day. (B) market_snapshot.json: VM's own copy of the latest REAL snapshot, atomic write, never overwritten by older data; saved in runMarketScraper (real prices only) and the two movers-correction paths. (C) Startup loads the local snapshot first; GitHub copy used only if newer; _lastRealPriceTs seeded from the loaded snapshot so all-sources-down never relabels old prices as 'now'. (D) /debug: ghMarketPush + marketSnapshotLocal fields. (E) Startup outside market hours runs runMarketScraper(true) once to fetch closing prices. Rollback: restore server.js.bak_20261011_premarket (T2S-PROD-20261011-002), push_pwa.py, wait 5 min, /http-update; market_snapshot.json is ignored by old code.
 // DEPLOY: T2S-PROD-20261011-002 | server.js: Trigger memory survives VM restart (checkpoint trigger_restart_persist) — (1) new _trigMapsDate (IST date of the market-hours check that last reset the trigger maps), kept separate from _sbTrigAlertDate. (2) checkSupabaseTriggers(): daily reset split — alert bookkeeping line unchanged; trigger maps reset on their own `_trigMapsDate !== today` line. (3) saveState(): also saves trigMaxPerPost/trigMinPerPost/trigDate=_trigMapsDate; write is now atomic (state.json.tmp + rename) and write errors are logged (were silently swallowed). (4) loadState(): restores trigger maps only when trigDate === today IST (pre-open ticks and previous days never restored). (5) fetchKotakOptionLTPs(): one saveState per 5s cycle when a per-post max/min changed. Rollback: restore server.js.bak_20261011_prerestart (T2S-PROD-20261011-001), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by the old code.
 // DEPLOY: T2S-PROD-20261011-001 | server.js: Trigger race fix (checkpoint trigger_race_fix) — (1) _trigMaxPerPost{} / _trigMinPerPost{} globals added, keyed by postId (mirrors _slMinPerPost, T2S-PROD-20260917-001). (2) fetchKotakOptionLTPs(): each LTP tick updates per-postId max/min. (3) checkSupabaseTriggers(): trigger uses effectiveCmp = max(cmp, per-post max) for BUY / min(cmp, per-post min) for SELL — a touch of entry that reverts within the 30s check window now triggers. (4) Daily reset of both maps alongside _sbTrigAlertedToday. Also ships /market-force (staged 26 Sep, never loaded on VM). Root cause: 9 Oct NIFTY 22450 PE hit 118.05 > entry 117 but 30s check saw 109.65 → no '✅ triggered' post. Rollback: remove the two globals, the 6-line tracking block in fetchKotakOptionLTPs, the two resets, and restore `const triggered = isSell ? (cmp <= entry) : (cmp >= entry);`.
@@ -576,6 +577,7 @@ let _optionHighs         = {}; // key → { high: number, postId: string } — m
 let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
 let _slMinPerPost        = {}; // postId → min LTP seen this session — SL breach persists even after CMP recovery
 let _slLevelPerPost      = {}; // postId → SL level last seen — companion to _slMinPerPost for SL-change awareness
+let _slMapsDate          = null; // IST date of the market-hours check that last reset the SL maps — persisted so restarts keep same-day values
 let _trigMaxPerPost      = {}; // postId → max LTP seen this session — BUY trigger persists past a revert
 let _trigMinPerPost      = {}; // postId → min LTP seen this session — SELL trigger persists past a revert
 let _trigMapsDate        = null; // IST date of the market-hours check that last reset the trigger maps — persisted so restarts keep same-day values
@@ -674,6 +676,16 @@ function loadState() {
           console.log(`Restored trigger extremes for ${Object.keys(_trigMaxPerPost).length} posts from state`);
         }
       }
+      // Restore per-post SL memory (min LTP + SL level, together) — only if saved after today's first market-hours check (sl_restart_persist)
+      if (data.slDate) {
+        const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+        if (data.slDate === todayIST) {
+          _slMinPerPost   = data.slMinPerPost   || {};
+          _slLevelPerPost = data.slLevelPerPost || {};
+          _slMapsDate     = data.slDate;
+          console.log(`Restored SL memory for ${Object.keys(_slLevelPerPost).length} posts from state`);
+        }
+      }
       console.log(`State loaded: ${Object.keys(state.trades).length} trades`);
     }
   } catch (e) { console.error('loadState error:', e.message); }
@@ -686,7 +698,7 @@ async function saveState() {
     const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action, postId: v.postId || null }])); // RC-4 FIX: persist postId
     // Atomic write (tmp + rename) so a crash mid-write never leaves state.json unreadable. Trigger maps saved with
     // _trigMapsDate (set only by a market-hours check) so pre-open ticks are never restored — trigger_restart_persist.
-    try { const _tmp = STATE_FILE + '.tmp'; fs.writeFileSync(_tmp, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST, trigMaxPerPost: _trigMaxPerPost, trigMinPerPost: _trigMinPerPost, trigDate: _trigMapsDate }, null, 2)); fs.renameSync(_tmp, STATE_FILE); } catch (e) { console.error('saveState write error:', e.message); }
+    try { const _tmp = STATE_FILE + '.tmp'; fs.writeFileSync(_tmp, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST, trigMaxPerPost: _trigMaxPerPost, trigMinPerPost: _trigMinPerPost, trigDate: _trigMapsDate, slMinPerPost: _slMinPerPost, slLevelPerPost: _slLevelPerPost, slDate: _slMapsDate }, null, 2)); fs.renameSync(_tmp, STATE_FILE); } catch (e) { console.error('saveState write error:', e.message); }
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -1623,6 +1635,7 @@ function buildTradingSymbol(instrument, strike, type, expiry) {
 async function fetchKotakOptionLTPs() {
   if (!session.token || !session.baseUrl || !_activeContracts.length) return;
   let _trigChanged = false; // persist trigger extremes once per cycle when any changed
+  let _slChanged = false;   // persist SL minimum once per cycle when any changed (sl_restart_persist)
   for (const c of _activeContracts) {
     const numToken = getOptionToken(c.instrument, c.strike, c.type, c.expiry);
     // Numeric token (from scrip master) works on both mis and gw-napi; trading symbol is fallback
@@ -1675,9 +1688,11 @@ async function fetchKotakOptionLTPs() {
         // Track session minimum per postId for SL breach persistence — keyed by postId not instrument
         // so posting a new trade for the same strike does NOT reset the old trade's minimum
         if (c.postId) {
+          const _pSlMin = _slMinPerPost[c.postId];
           _slMinPerPost[c.postId] = (_slMinPerPost[c.postId] !== undefined)
             ? Math.min(_slMinPerPost[c.postId], ltp)
             : ltp;
+          if (_slMinPerPost[c.postId] !== _pSlMin) _slChanged = true;
         }
         // Track session max/min per postId for trigger-detection persistence — keyed by
         // postId (not instrument-strike), so posting a new trade for the same strike
@@ -1711,7 +1726,7 @@ async function fetchKotakOptionLTPs() {
       }
     }
   }
-  if (_trigChanged) saveState().catch(() => {}); // persist trigger extremes so a restart keeps them (trigger_restart_persist)
+  if (_trigChanged || _slChanged) saveState().catch(() => {}); // persist trigger extremes + SL minimum so a restart keeps them (trigger_restart_persist, sl_restart_persist)
   // Snapshot after all contracts processed — never mid-loop (prevents partial poisoned state
   // from being served to member PWA during the fetch cycle).
   if (_latestMarketData) {
@@ -5011,7 +5026,9 @@ async function checkSupabaseSLs() {
   if (!isMarketHours() || !session.token) return;
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const today = ist.toDateString();
-  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; _slMinPerPost = {}; _slLevelPerPost = {}; }
+  if (_sbAlertDate !== today) { _sbSlAlertedToday.clear(); _sbAlertDate = today; }
+  if (_slMapsDate !== today) { _slMinPerPost = {}; _slLevelPerPost = {}; _slMapsDate = today; }
+  let _slStateChanged = false; // persist SL level / min reset once per check (sl_restart_persist)
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
     const posts = await sbFetch(
@@ -5073,7 +5090,9 @@ async function checkSupabaseSLs() {
           // SL changed or first appearance — reset min so pre-SL LTP dips don't retroactively breach
           // Guard: only store a valid positive finite CMP; undefined/null/NaN/0 would be unsafe via Math.min
           _slMinPerPost[post.id] = (cmp > 0 && isFinite(cmp)) ? cmp : undefined;
+          _slStateChanged = true;
         }
+        if (_slLevelPerPost[post.id] !== sl) _slStateChanged = true;
         _slLevelPerPost[post.id] = sl;
       }
       // For BUY: use lowest CMP seen this session (persists even if CMP recovered above SL)
@@ -5101,6 +5120,7 @@ async function checkSupabaseSLs() {
         await tgSend(`🔴 <b>SL HIT (auto)</b>\n<b>${key}</b>\nCMP ₹${cmp} ${_dir} SL ₹${sl}\nFollow-up posted to PWA.`);
       }
     }
+    if (_slStateChanged) saveState().catch(() => {}); // persist SL memory (sl_restart_persist)
   } catch(e) { console.error('[sb-sl]', e.message); }
 }
 
