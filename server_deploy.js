@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261011-001 | server.js: Trigger race fix (checkpoint trigger_race_fix) — (1) _trigMaxPerPost{} / _trigMinPerPost{} globals added, keyed by postId (mirrors _slMinPerPost, T2S-PROD-20260917-001). (2) fetchKotakOptionLTPs(): each LTP tick updates per-postId max/min. (3) checkSupabaseTriggers(): trigger uses effectiveCmp = max(cmp, per-post max) for BUY / min(cmp, per-post min) for SELL — a touch of entry that reverts within the 30s check window now triggers. (4) Daily reset of both maps alongside _sbTrigAlertedToday. Also ships /market-force (staged 26 Sep, never loaded on VM). Root cause: 9 Oct NIFTY 22450 PE hit 118.05 > entry 117 but 30s check saw 109.65 → no '✅ triggered' post. Rollback: remove the two globals, the 6-line tracking block in fetchKotakOptionLTPs, the two resets, and restore `const triggered = isSell ? (cmp <= entry) : (cmp >= entry);`.
 // DEPLOY: T2S-PROD-20260917-001 | server.js: Per-postId session minimum LTP for reliable SL breach detection — (1) _slMinPerPost{} global added: keyed by postId (not instrument-strike), never reset when new trade posted for same instrument. (2) fetchKotakOptionLTPs(): on each LTP tick, updates _slMinPerPost[c.postId] = Math.min(existing, ltp). (3) checkSupabaseSLs(): for BUY trades, uses Math.min(currentCMP, _slMinPerPost[post.id]) as effectiveCmp — breach detected if CMP was EVER below SL this session, not just right now. SELL trades unchanged. (4) Daily reset: _slMinPerPost cleared alongside _sbSlAlertedToday. Root cause: CMP briefly dipped below SL, recovered before 30s check ran; new trade posting reset _optionLows[key].low=undefined; checkSupabaseSLs saw currentCMP=172>SL=155, posted nothing; trade re-evaluated as ACTIVE. Rollback: remove _slMinPerPost var; remove 5-line update block in fetchKotakOptionLTPs; revert checkSupabaseSLs breach block to original 4 lines; revert daily reset line.
 // DEPLOY: T2S-PROD-20260904-002 | server.js: Prod deploy gate. (1) import { createHmac } from 'crypto' added. (2) TOTP_DEPLOY_SEC constant from env. (3) verifyTOTP() — RFC 6238 TOTP in pure Node.js, checks ±1 window for clock drift, anti-replay via _usedTOTP Map. (4) POST /deploy-auth — verifies TOTP, returns {ok:true} on success, 401 on wrong/reused code, 503 if secret not configured. push_pwa.py calls this before any prod push. Rollback: remove createHmac import; remove TOTP_DEPLOY_SEC + _usedTOTP + verifyTOTP block; remove POST /deploy-auth block.
 // DEPLOY: T2S-PROD-20260904-001 | server.js + login.html + index.html: Prod Supabase key moved server-side via /prod-sb proxy. server.js: PROD_PROXY_SEC constant added; POST /prod-sb endpoint added (mirrors /uat-sb — auth via x-t2s-prod header, forwards to SB_URL/SB_KEY). login.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb. index.html: SUPABASE_URL/KEY removed; sbFetch() rewired to POST /prod-sb; Realtime WebSocket keeps hardcoded _RT_WSS/_RT_KEY (WS can't be HTTP-proxied — read-only subscribe). Also add PROD_PROXY_SECRET set via .env to VM .env (optional — default is hardcoded). Rollback: restore SUPABASE_URL/KEY in both HTML files; revert sbFetch() to direct Supabase fetch; remove /prod-sb block from server.js; remove PROD_PROXY_SEC constant.
@@ -573,6 +574,8 @@ let _optionHighs         = {}; // key → { high: number, postId: string } — m
 let _optionLows          = {}; // key → { low: number, postId: string, action: string } — min LTP since session start (for SELL trades)
 let _slMinPerPost        = {}; // postId → min LTP seen this session — SL breach persists even after CMP recovery
 let _slLevelPerPost      = {}; // postId → SL level last seen — companion to _slMinPerPost for SL-change awareness
+let _trigMaxPerPost      = {}; // postId → max LTP seen this session — BUY trigger persists past a revert
+let _trigMinPerPost      = {}; // postId → min LTP seen this session — SELL trigger persists past a revert
 let _highPostedToday     = false; // guard: post [HIGH:X] follow-up only once per close
 let _kotakLtpInterval    = null; // 5-second Kotak LTP fetch interval
 let _sbAlertDate         = null; // date string of last daily reset for SL alerts
@@ -1658,6 +1661,16 @@ async function fetchKotakOptionLTPs() {
           _slMinPerPost[c.postId] = (_slMinPerPost[c.postId] !== undefined)
             ? Math.min(_slMinPerPost[c.postId], ltp)
             : ltp;
+        }
+        // Track session max/min per postId for trigger-detection persistence — keyed by
+        // postId (not instrument-strike), so posting a new trade for the same strike
+        // starts a fresh postId with no history, immune to the key-level reset timing
+        // of refreshActiveContracts(). Mirrors _slMinPerPost exactly (T2S-PROD-20260917-001).
+        if (c.postId) {
+          _trigMaxPerPost[c.postId] = (_trigMaxPerPost[c.postId] !== undefined)
+            ? Math.max(_trigMaxPerPost[c.postId], ltp) : ltp;
+          _trigMinPerPost[c.postId] = (_trigMinPerPost[c.postId] !== undefined)
+            ? Math.min(_trigMinPerPost[c.postId], ltp) : ltp;
         }
         _ltpConsecFailures = 0; // successful fetch — current URL is working, reset failure counter
         if (tradeSym) console.log(`[ltp] ${key}=${ltp} via trading symbol ${tradeSym}`);
@@ -5008,7 +5021,7 @@ async function checkSupabaseTriggers() {
   if (!isMarketHours() || !session.token) return;
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const today = ist.toDateString();
-  if (_sbTrigAlertDate !== today) { _sbTrigAlertedToday.clear(); _sbTrigAlertDate = today; }
+  if (_sbTrigAlertDate !== today) { _sbTrigAlertedToday.clear(); _sbTrigAlertDate = today; _trigMaxPerPost = {}; _trigMinPerPost = {}; }
   try {
     const since = new Date(ist); since.setHours(0, 0, 0, 0);
     const posts = await sbFetch(
@@ -5045,7 +5058,13 @@ async function checkSupabaseTriggers() {
       const cmp = _optionChain[key];
       if (!cmp) continue;
       const isSell = /\bsell(?:ing)?\b/i.test(post.content||'');
-      const triggered = isSell ? (cmp <= entry) : (cmp >= entry);
+      // Per-postId session extremum — immune to the key-level refreshActiveContracts()
+      // reset race (Finding-001). Mirrors _slMinPerPost (T2S-PROD-20260917-001).
+      const _extreme = isSell ? _trigMinPerPost[post.id] : _trigMaxPerPost[post.id];
+      const effectiveCmp = (_extreme !== undefined)
+        ? (isSell ? Math.min(cmp, _extreme) : Math.max(cmp, _extreme))
+        : cmp;
+      const triggered = isSell ? (effectiveCmp <= entry) : (effectiveCmp >= entry);
       if (triggered) {
         _sbTrigAlertedToday.add(post.id);
         const ep = Math.round(cmp * 100) / 100;
