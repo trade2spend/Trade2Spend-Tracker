@@ -1570,11 +1570,7 @@ async function fetchMemberStats(){
     const monthIST  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET);
     const nowMinus15 = new Date(Date.now() - 15 * 60 * 1000);
     async function querySessions(since){
-      const res = await fetch(`${SB_URL}/rest/v1/sessions?is_active=eq.true&last_active=gte.${since.toISOString()}&select=member_id,members(tier,status)`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-      });
-      const text = await res.text();
-      return (text ? JSON.parse(text) : []);
+      return sbProxy(`sessions?is_active=eq.true&last_active=gte.${since.toISOString()}&select=member_id,members(tier,status)`, 'GET');
     }
     function countByTier(rows){
       const seen = new Set(); let paid = 0, free = 0;
@@ -1615,19 +1611,10 @@ async function fetchMemberStats(){
 let allMembers = [];
 
 async function sbGet(path){
-  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    method: 'GET',
-    headers: {'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
-  });
-  const text = await res.text(); return text ? JSON.parse(text) : [];
+  return sbProxy(path, 'GET');
 }
 async function sbPatch(path, body){
-  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    method:'PATCH',
-    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-    body: JSON.stringify(body)
-  });
-  if (!res.ok){ const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
+  await sbProxy(path, 'PATCH', body);
 }
 
 async function loadMembers(){
@@ -1940,13 +1927,7 @@ async function sendFollowUp() {
             sent_at:       new Date().toISOString(),
             ...(parentId ? { parent_id: parentId } : {})
         };
-        const res = await fetch(`${SB_URL}/rest/v1/posts`, {
-            method:'POST',
-            headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-            body: JSON.stringify(postBody)
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const _fuData = await res.json().catch(() => []);
+        const _fuData = await sbProxy('posts', 'POST', postBody);
         const _fuPost = Array.isArray(_fuData) ? _fuData[0] : _fuData;
         if (_fuPost) writeBackup(_fuPost).catch(() => {});
 
@@ -2004,11 +1985,7 @@ async function resetMemberPin(memberId){
   const label = m ? (m.name||m.mobile) : 'this member';
   if(!confirm(`Reset PIN for ${label}?\n\nThey will be asked to set a new PIN on next login.`)) return;
   try {
-    const res = await fetch(`${SB_URL}/rest/v1/sessions?member_id=eq.${memberId}`, {
-      method:'DELETE',
-      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
-    });
-    if(!res.ok) throw new Error(await res.text());
+    await sbProxy(`sessions?member_id=eq.${memberId}`, 'DELETE');
     showToast(`✓ PIN reset for ${label}`);
   } catch(e){ alert('Failed: '+e.message); }
 }
@@ -2062,12 +2039,7 @@ async function addMember(){
       tour_completed: false,
       ...(subend ? {subscription_end: subend} : {})
     };
-    const res = await fetch(`${SB_URL}/rest/v1/members`, {
-      method:'POST',
-      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-      body: JSON.stringify(body)
-    });
-    if(!res.ok){ const t=await res.text(); throw new Error(t); }
+    await sbProxy('members', 'POST', body);
     msgEl.style.color='var(--green)'; msgEl.textContent=`✓ ${name} added as ${tier} member!`;
     document.getElementById('mgmt-mobile').value='';
     document.getElementById('mgmt-name').value='';
@@ -2126,12 +2098,8 @@ async function handleMagicLink() {
   const params = new URLSearchParams(hash.slice(1));
   if (params.get('type') !== 'magiclink') return false;
   try {
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
+    await sbProxy('keep_alive_log?source=eq.admin_pwa_locked', 'DELETE');
+    await sbProxy('keep_alive_log?source=like.admin_session_%25', 'DELETE');
   } catch(e) {}
   // Clear PIN so user can set a new one after email verification
   localStorage.removeItem('t2s_pin');
@@ -2160,23 +2128,15 @@ async function registerAdminSession() {
     const rows = await sbGet('keep_alive_log?source=like.admin_session_%25&order=pinged_at.asc');
     const existing = rows.find(r => r.source === mySource);
     if (existing) {
-      await fetch(`${SB_URL}/rest/v1/keep_alive_log?id=eq.${existing.id}`, {
-        method:'PATCH', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
-        body: JSON.stringify({ pinged_at: new Date().toISOString() })
-      });
+      await sbProxy(`keep_alive_log?id=eq.${existing.id}`, 'PATCH', { pinged_at: new Date().toISOString() });
       return;
     }
     // Remove oldest if at 2
     const others = rows.filter(r => r.source !== mySource);
     if (others.length >= 2) {
-      await fetch(`${SB_URL}/rest/v1/keep_alive_log?id=eq.${others[0].id}`, {
-        method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
-      });
+      await sbProxy(`keep_alive_log?id=eq.${others[0].id}`, 'DELETE');
     }
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
-      method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-      body: JSON.stringify({ source: mySource, pinged_at: new Date().toISOString() })
-    });
+    await sbProxy('keep_alive_log', 'POST', { source: mySource, pinged_at: new Date().toISOString() });
   } catch(e) {}
 }
 
@@ -2216,12 +2176,8 @@ async function pinInit() {
   ]);
 
   if (pinReset && pinReset.length > 0) {
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pin_reset`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
-    await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-      method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
+    await sbProxy('keep_alive_log?source=eq.admin_pin_reset', 'DELETE');
+    await sbProxy('keep_alive_log?source=eq.admin_pwa_locked', 'DELETE');
     localStorage.removeItem('t2s_pin');
     localStorage.removeItem('t2s_admin_lock_until');
     document.getElementById('pin-overlay').classList.add('hidden');
@@ -2386,10 +2342,7 @@ async function checkPin() {
       const lockUntilISO = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       localStorage.setItem('t2s_admin_lock_until', lockUntilISO);
       try {
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
-          method:'POST', headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
-          body: JSON.stringify({ source:'admin_pwa_locked', pinged_at: new Date().toISOString() })
-        });
+        await sbProxy('keep_alive_log', 'POST', { source:'admin_pwa_locked', pinged_at: new Date().toISOString() });
       } catch(e) {}
       fetch('https://api.trade2spend.com/admin-alert', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -5063,24 +5016,20 @@ function cap2dec(input){
   }
 }
 
-// ── SUPABASE (Push to Members) ──
-const SB_URL = 'https://keuzqxoxtlozlqjjjqvr.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
-
-async function sbPost(path, body){
-  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
+// ── SUPABASE (via VM proxy — service key stays server-side, never shipped to this page) ──
+const _PROD_PROXY = 'https://api.trade2spend.com/prod-sb';
+async function sbProxy(path, method='GET', body=null){
+  const res = await fetch(_PROD_PROXY, {
     method: 'POST',
-    headers: {
-      'apikey': SB_KEY,
-      'Authorization': `Bearer ${SB_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    },
-    body: JSON.stringify(body)
+    headers: {'Content-Type':'application/json','x-t2s-prod':'240fafab6202751db308729ca1aac35023c5531dde428b58'},
+    body: JSON.stringify({ path, method, body: body ? JSON.stringify(body) : null })
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Save failed (${res.status}): ${text.slice(0, 120)}`);
   return text ? JSON.parse(text) : [];
+}
+async function sbPost(path, body){
+  return sbProxy(path, 'POST', body);
 }
 
 // ── GITHUB BACKUP (via VM — token stored securely in server .env) ──
