@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20261014-002 | uat.html: Exit-price parsing fix — mirrors T2S-PROD-20261014-002 applied to index.html. parseFollowUpContent: widened the exit-price fallback regex to match past-tense "exited" + filler words ("remaining", "another 25%", etc.), and moved the "went to X" fallback to run after it so an explicit stated exit price always wins over a vaguer earlier reference in the same message. Regression-verified against all 654 real follow_up posts ever sent — only the reported bug case changes, zero other differences. Codex-reviewed. Rollback: revert to original order/regex, same as T2S-PROD-20261014-002. -->
+<!-- T2S-UAT-20261014-001 | uat.html: Stored XSS fix — Special Comment chip. _cmtHtmlUAT (~line 4050) now wraps _specialComment in sanitizeHtml() before interpolation, matching every other post-content field in this file. Mirrors T2S-PROD-20261014-001 applied to index.html. Extraction regex, isFreeViewer gating, chip styling, and the 2 insertion sites untouched. Rollback: remove the sanitizeHtml() wrapper around _specialComment at line 4050, restoring raw interpolation. -->
 <!-- T2S-UAT-20260924-C | uat.html: Stage C client fixes — C1: getLastSLNumeric stops at first slRevised (cost→null); C2: runningSL updated in standalone-SL-revision continue branch + post-exit branch for Sep 15 rule; Exemption: isVmSLAutoPost helper skips runningSL floor for VM auto-posts (server.js L4924). No breach operator change, no prod files touched. Rollback: revert getLastSLNumeric to skip-cost version; revert getWeightedExitPrice/getExitLegs to static opts.sl floor; remove isVmSLAutoPost. -->
 <!-- T2S-UAT-20260918-002 | uat.html: disabled-account logout reason flag — init() auth check: when members[0].status==='disabled', sets localStorage t2s_uat_logout_reason='disabled' before the existing window.location.href='login.html' redirect. One line added inside existing if-block; no logic change. Companion: login_uat.html init() reads and displays the message. Rollback: remove the single localStorage.setItem line from inside the init() auth check if-block. -->
 <!-- T2S-UAT-20260913-004 | uat.html: permanent mini-form lock persistence fix — (A) _faVerifyPin() lock block now sets localStorage t2s_uat_lock_until and t2s_uat_locked_mid so login.html detects the lock even when no active DB session existed to patch; (B) _faMobileBlur() lock check: checks localStorage first (using t2s_uat_locked_mid === _faMid), then DB; both paths show request-submitted message when t2s_uat_unlock_req_at is active; DB check syncs result to localStorage. Rollback: revert _faVerifyPin lock block to single-line try/catch, revert _faMobileBlur lock check to single DB query line. -->
@@ -3235,11 +3237,6 @@
             const _hasSLSuffix = /\d+\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss)\b/.test(lo);
             if (!_hasSLSuffix) { r.isFullExit=true; r.type='exit'; }
         }
-        // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+")
-        if (!r.price) {
-            const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
-            if (wm) { const n=parseFloat(wm[1]); if(n>5&&n<9999) r.price=n; }
-        }
         // Exit %
         const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
         if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
@@ -3262,10 +3259,20 @@
                 }
             }
         }
-        // When SL hit is detected (e.g. "SL gone") but price still null, extract from "exiting with/at N"
+        // When SL hit is detected (e.g. "SL gone") or already classified a full exit (e.g. via
+        // "exiting remaining") but price still null, extract from "exit(ed/ing) ... at/with N" —
+        // allows up to 3 filler words between the verb and the preposition (e.g. "Exited remaining at 280",
+        // "Exited another 25% at 230") so an explicit stated exit price is captured BEFORE the vaguer
+        // "went to X" fallback below runs, in case both appear in the same message.
         if (r.isFullExit && !r.price && !r.exitPct) {
-            const slHitExitM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
+            const slHitExitM = lo.match(/\bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
             if (slHitExitM) r.price = parseFloat(slHitExitM[1]);
+        }
+        // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+") — fallback only,
+        // runs after the explicit-exit-price checks above so a stated exit price always wins.
+        if (!r.price) {
+            const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
+            if (wm) { const n=parseFloat(wm[1]); if(n>5&&n<9999) r.price=n; }
         }
         // Leading option price
         const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\+?\s*(?:[,\n\r\s]|$)/);
@@ -4047,7 +4054,7 @@
         const _specialComment = _specialCommentMatch ? _specialCommentMatch[1].trim() : '';
         // UAT: show all 3 style options so Tushar can pick one before production
         const _cmtHtmlUAT = (!isFreeViewer && _specialComment)
-            ? `<div style="margin:0 12px 8px;"><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${_specialComment}</span></div>`
+            ? `<div style="margin:0 12px 8px;"><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${sanitizeHtml(_specialComment)}</span></div>`
             : '';
 
         const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;font-size:0.9rem;">🔒</span>`;
