@@ -1896,6 +1896,9 @@ async function fetchKotakIndexLTP(instrument) {
     const change    = prevClose ? parseFloat((price - prevClose).toFixed(2)) : parseFloat((item?.netChng || item?.change || 0));
     const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : parseFloat((item?.pChange || item?.pctChng || 0));
     console.log(`[KotakIdx] ${instrument}: ₹${price} (${changePct}%)`);
+    // TEMP diagnostic for checkpoint sensex_change_wrong (2026-10-15) — remove once root cause found.
+    // Logs only, no new endpoint/exposure — pull via VM logs (pm2 logs t2s-webhook).
+    console.log(`[KotakIdx-RAW] ${instrument}: ${JSON.stringify(item)}`);
     return { price, change, changePct };
   } catch(e) { console.error(`[KotakIdx] ${instrument}: ${e.message}`); return null; }
 }
