@@ -1,3 +1,5 @@
+<!-- T2S-PROD-20261014-002 | PROD: Exit-price parsing fix — parseFollowUpContent (~line 2561). Bug: "went to X" fallback ran before the exit-specific price extraction, so a follow-up like "Went to 306 / Exited remaining at 280" recorded 306 instead of the explicitly stated 280. Fix: (a) widened the exit-price-fallback regex (~line 2610) from \bexiting?\s+(?:with|at|@) to \bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@) — now matches past-tense "exited" and tolerates filler words like "remaining"/"another 25%"; (b) moved the "went to X" block to run after it, so an explicit stated exit price always wins, with "went to X" only as a last-resort fallback. Regression-verified against all 654 real follow_up posts ever sent (100% of history): only the reported message's output changes (306→280); all 653 others byte-identical before/after. Codex-reviewed, independently re-ran the regression harness and confirmed. No other file/function touched (server.js has no copy of this parser). Rollback: revert the 2 blocks at ~line 2604-2617 to original order/regex (move "went to X" back above "Exit %", revert \bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@) to \bexiting?\s+(?:with|at|@)). -->
+<!-- T2S-PROD-20261014-001 | PROD: Stored XSS fix — Special Comment chip. _cmtHtmlUAT (~line 3394) now wraps _specialComment in sanitizeHtml() before interpolation, matching every other post-content field in this file (mainContent, reply.content, why-section already did this; this one field was missed). Extraction regex, isFreeViewer gating, chip styling, and the 2 insertion sites (~4089, ~4180) untouched. Zero touch to any other feature. Rollback: remove the sanitizeHtml() wrapper around _specialComment at line 3394, restoring raw interpolation. -->
 <!-- T2S-PROD-20261004-001 | PROD: Markets tab "Yet to trigger" fix — _buildMqpCard() active branch: checks getTradeState() before computing P&L; if yet_to_trigger, sets pnlHtml to "⏳ Yet to trigger" pill (no P&L figure, no colored border). _updateMqpActivePnl() forEach: skips posts still in yet_to_trigger state on each tick so pill is never overwritten. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: revert _mqpState block in _buildMqpCard to bare liveKey/liveCmp lines; remove replies + getTradeState guard in _updateMqpActivePnl. -->
 <!-- T2S-PROD-20260910-001 | PROD: Trigger state latch — _triggeredPostIds Set + sessionStorage (today-only, key t2s_triggered) added. getTradeState() checks Set before CMP auto-detect; on first CMP-based trigger, latches postId so state never reverts to Yet to Trigger on LTP dip. Promoted from T2S-UAT-20260828-001. Rollback: remove _triggeredPostIds Set+IIFE; remove Set check + latch block from getTradeState(). -->
 <!-- T2S-PROD-20260826-001 | PROD: SL parser — added new pattern to parseFollowUpContent slPats for "SL [modifier] to [number]" word order (e.g. "SL modified to 24285", "SL revised to 24285"). Pattern 1 already handled the reverse order "[modifier] SL to N" — this adds the complement. Zero touch to all other code, logic, calculations, or any other feature. Rollback: remove the one added slPats line. -->
@@ -2578,11 +2580,6 @@
             const _hasSLSuffix = /\d+\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss)\b/.test(lo);
             if (!_hasSLSuffix) { r.isFullExit=true; r.type='exit'; }
         }
-        // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+")
-        if (!r.price) {
-            const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
-            if (wm) { const n=parseFloat(wm[1]); if(n>5&&n<9999) r.price=n; }
-        }
         // Exit %
         const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
         if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
@@ -2605,10 +2602,20 @@
                 }
             }
         }
-        // When SL hit is detected (e.g. "SL gone") but price still null, extract from "exiting with/at N"
+        // When SL hit is detected (e.g. "SL gone") or already classified a full exit (e.g. via
+        // "exiting remaining") but price still null, extract from "exit(ed/ing) ... at/with N" —
+        // allows up to 3 filler words between the verb and the preposition (e.g. "Exited remaining at 280",
+        // "Exited another 25% at 230") so an explicit stated exit price is captured BEFORE the vaguer
+        // "went to X" fallback below runs, in case both appear in the same message.
         if (r.isFullExit && !r.price && !r.exitPct) {
-            const slHitExitM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
+            const slHitExitM = lo.match(/\bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
             if (slHitExitM) r.price = parseFloat(slHitExitM[1]);
+        }
+        // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+") — fallback only,
+        // runs after the explicit-exit-price checks above so a stated exit price always wins.
+        if (!r.price) {
+            const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
+            if (wm) { const n=parseFloat(wm[1]); if(n>5&&n<9999) r.price=n; }
         }
         // Leading option price
         const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\+?\s*(?:[,\n\r\s]|$)/);
@@ -3391,7 +3398,7 @@
         const _specialComment = _specialCommentMatch ? _specialCommentMatch[1].trim() : '';
         // UAT: show all 3 style options so Tushar can pick one before production
         const _cmtHtmlUAT = (!isFreeViewer && _specialComment)
-            ? `<div style="margin:0 12px 8px;"><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${_specialComment}</span></div>`
+            ? `<div style="margin:0 12px 8px;"><span style="font-size:0.7rem;background:#f3f0f8;color:#4a2a78;padding:3px 8px;border-radius:10px;font-weight:600;">💬 ${sanitizeHtml(_specialComment)}</span></div>`
             : '';
 
         const lockBtn = `<span onclick="showPopup()" style="cursor:pointer;font-size:0.9rem;">🔒</span>`;
