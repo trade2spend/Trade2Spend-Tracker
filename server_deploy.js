@@ -2154,10 +2154,11 @@ async function _ghErrText(res) {
   try { const t = await res.text(); try { return String(JSON.parse(t).message || '').slice(0, 120); } catch { return t.slice(0, 120); } }
   catch { return ''; }
 }
-async function pushMarketToGitHub(marketData) {
-  // Rate-limit to once per 15 min — frequent pushes flood GitHub Pages build queue
+async function pushMarketToGitHub(marketData, force = false) {
+  // Rate-limit to once per 15 min — frequent pushes flood GitHub Pages build queue.
+  // force=true bypasses this for the once-daily closing commit only (checkpoint sensex_close_stale).
   const now = Date.now();
-  if (now - _lastGhMarketPush < 15 * 60 * 1000) return false;
+  if (!force && now - _lastGhMarketPush < 15 * 60 * 1000) return false;
   _lastGhMarketPush = now;
   if (!GH_TOKEN) return _ghPushFailed('GH_TOKEN not set');
   const api = `https://api.github.com/repos/${GH_REPO}/contents/market.json`;
@@ -2259,10 +2260,23 @@ async function runMarketScraper(force = false) {
     stopMarketScraper();
     // Save intraday highs to Supabase so member PWA can show "Max possible" on closed cards
     saveOptionHighsToSupabase().catch(e => console.error('[high]', e.message));
-    // Push final closing snapshot — fetch Yahoo Nifty50 for closing gainers/losers
+    // Push final closing snapshot — sourced from the server's own in-memory last-live
+    // price (never a GitHub re-read), which can lag behind due to the 15-min push
+    // rate limit and would otherwise bake a stale index price in as "final" (checkpoint
+    // sensex_close_stale, 2026-10-14). Fetch Yahoo Nifty50 for closing gainers/losers.
     try {
-      const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
-      const existing = await r.json();
+      const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+      const memIST    = _latestMarketData?.lastUpdated
+        ? new Date(new Date(_latestMarketData.lastUpdated).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString()
+        : null;
+      let existing;
+      if (_latestMarketData && _latestMarketData.indices && memIST === todayIST) {
+        existing = { ..._latestMarketData };
+        delete existing.optionLTPs; delete existing.expiry;
+      } else {
+        const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
+        existing = await r.json();
+      }
       existing.marketOpen = false;
       existing.lastUpdated = new Date().toISOString();
       // Closing snapshot — Kotak session is still alive at 3:35 PM; LTP at this moment = close price.
@@ -2279,7 +2293,7 @@ async function runMarketScraper(force = false) {
           console.log('[close] Yahoo closing movers fetched (no breadth):', closingMovers.gainers?.length, 'gainers');
         }
       }
-      await pushMarketToGitHub(existing);
+      await pushMarketToGitHub(existing, true); // force=true — once-daily closing commit must not be silently rate-limited away
     } catch {}
     await tgAlert('🔴 <b>Market scraper auto-stopped</b> (3:45 PM IST). market.json marked closed.').catch(()=>{});
     return;
