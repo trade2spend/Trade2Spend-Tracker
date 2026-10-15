@@ -1379,6 +1379,10 @@ async function downloadScripMaster() {
         const allPaths = d1?.data?.filesPaths || [];
         const bseCandidates = allPaths.filter(p => typeof p === 'string' && p.toLowerCase().includes('bse'));
         bseLog(`file-paths(${authHdr.slice(0,10)}) HTTP ${status1}: ${allPaths.length} paths, bse candidates: ${JSON.stringify(bseCandidates)}`);
+        // TEMP diagnostic for checkpoint sensex_change_wrong (2026-10-15) — remove once root cause found.
+        // allPaths already holds every file Kotak publishes here (not just BSE) — log it all, once,
+        // to find the real NSE cash-market/index file name instead of guessing symbol strings.
+        bseLog(`[ALL-PATHS] ${allPaths.length} total: ${JSON.stringify(allPaths)}`);
         const bfoPaths = bseCandidates.filter(p => p.toLowerCase().includes('bse_fo'));
         for (const url of [...bfoPaths].reverse()) {
           try {
