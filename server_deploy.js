@@ -1880,7 +1880,11 @@ async function fetchKotakIndexLTP(instrument) {
     const r = await ftKotak(url, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 5000);
-    if (!r.ok) { console.log(`[KotakIdx] ${instrument} HTTP ${r.status}`); return null; }
+    if (!r.ok) {
+      const errBody = await r.text().catch(() => '');
+      console.log(`[KotakIdx] ${instrument} HTTP ${r.status}: ${errBody.slice(0, 300)}`);
+      return null;
+    }
     const d = await r.json();
     // gw-napi returns data as array [{ltp,...}] for options but sometimes as object {ltp,...} for spot indices — handle both
     const _dataRaw = d?.data;
