@@ -568,6 +568,7 @@ let _kotakLotSizes       = {};    // lot sizes extracted from Kotak scrip master
 let _optionChain         = {}; // key: "NIFTY-23900-PE" → LTP (Kotak primary, NSE fallback)
 let _bseDownloadLog      = []; // last BSE scrip master download attempt results
 let _scripMaster         = {}; // key: "NIFTY-23900-PE-19JUN2025" → numeric token string
+let _scripMasterCM       = {}; // NSE cash-market EQ stocks only: SYMBOLNAME → numeric pSymbol token (checkpoint realtime_price_sourcing). Rebuilt every scrip master refresh — self-heals if Kotak ever changes a token.
 let _scripMasterTs       = 0;  // last successful scrip master download (with current data)
 let _scripMasterAttemptTs = 0; // last attempt — rate-limits retries to 10 min when stale
 let _expiryDates         = {}; // { NIFTY:{current,next,monthly}, BANKNIFTY:{...}, ... } from scrip master
@@ -1178,6 +1179,30 @@ function _findCol(hdrs, ...candidates) {
   return -1;
 }
 
+// Builds SYMBOLNAME → numeric token map from Kotak's cash-market scrip master CSV.
+// EQ-only filter avoids mis-mapping to an ETF/bond sharing the same base name
+// (checkpoint realtime_price_sourcing, 2026-10-15 — confirmed zero duplicate pSymbolName
+// values among EQ rows across the full downloaded universe before shipping this).
+function _buildCmTokenMap(csv) {
+  const lines = csv.split('\n');
+  const hdrs  = lines[0].split(',').map(h => h.trim().replace(/[";]/g,''));
+  const iTok  = _findCol(hdrs, 'pSymbol', 'token', 'pToken');
+  const iGrp  = _findCol(hdrs, 'pGroup');
+  const iName = _findCol(hdrs, 'pSymbolName', 'symbolName');
+  if ([iTok, iGrp, iName].some(i => i < 0)) return {};
+  const map = {};
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split(',');
+    if (c.length <= Math.max(iTok, iGrp, iName)) continue;
+    if (c[iGrp]?.replace(/"/g,'').trim().toUpperCase() !== 'EQ') continue;
+    const name  = c[iName]?.replace(/"/g,'').trim().toUpperCase();
+    const token = c[iTok]?.replace(/"/g,'').trim();
+    if (!name || !token) continue;
+    map[name] = token;
+  }
+  return map;
+}
+
 async function downloadScripMaster() {
   if (!session.token || !session.baseUrl) return;
   // 22h cache if we have current data; 10-min retry rate-limit if stale/failed
@@ -1379,10 +1404,31 @@ async function downloadScripMaster() {
         const allPaths = d1?.data?.filesPaths || [];
         const bseCandidates = allPaths.filter(p => typeof p === 'string' && p.toLowerCase().includes('bse'));
         bseLog(`file-paths(${authHdr.slice(0,10)}) HTTP ${status1}: ${allPaths.length} paths, bse candidates: ${JSON.stringify(bseCandidates)}`);
-        // TEMP diagnostic for checkpoint sensex_change_wrong (2026-10-15) — remove once root cause found.
-        // allPaths already holds every file Kotak publishes here (not just BSE) — log it all, once,
-        // to find the real NSE cash-market/index file name instead of guessing symbol strings.
-        bseLog(`[ALL-PATHS] ${allPaths.length} total: ${JSON.stringify(allPaths)}`);
+        // Cash-market scrip master (NSE stocks) — resolves real numeric tokens for the Nifty 50
+        // movers lookup instead of guessing ticker strings (checkpoint realtime_price_sourcing,
+        // 2026-10-15). Reuses this same already-made file-paths call; self-heals on every
+        // refresh if Kotak ever reassigns a token — no hardcoded values.
+        const cmUrl = allPaths.find(p => typeof p === 'string' && p.toLowerCase().endsWith('nse_cm-v1.csv'));
+        if (cmUrl) {
+          try {
+            const rcm = await ftKotak(cmUrl, {}, 60000);
+            if (rcm.ok) {
+              const cmText = await rcm.text();
+              const built = _buildCmTokenMap(cmText);
+              const builtCount = Object.keys(built).length;
+              if (builtCount > 100) {
+                _scripMasterCM = built;
+                bseLog(`nse_cm token map built: ${builtCount} EQ symbols`);
+              } else {
+                bseLog(`nse_cm token map rejected: only ${builtCount} symbols parsed (kept previous map) — ${cmText.slice(0,120)}`);
+              }
+            } else {
+              bseLog(`nse_cm download HTTP ${rcm.status} (kept previous map)`);
+            }
+          } catch (e) { bseLog(`nse_cm download error: ${e.message} (kept previous map)`); }
+        } else {
+          bseLog('nse_cm file not found in file-paths list (kept previous map)');
+        }
         const bfoPaths = bseCandidates.filter(p => p.toLowerCase().includes('bse_fo'));
         for (const url of [...bfoPaths].reverse()) {
           try {
@@ -1875,14 +1921,6 @@ const INDEX_TOKENS = {
   BANKNIFTY: { exchange: 'nse_cm', token: '26009' },
   SENSEX:    { exchange: 'bse_cm', token: '1' }
 };
-// TEMP diagnostic for checkpoint sensex_change_wrong (2026-10-15) — remove once root cause found.
-// Kotak rejects the numeric token above with "Invalid neosymbol values" for the cash-market/index
-// segment. Trying alternate symbol-name formats here (same exchange) to find the one Kotak accepts.
-const _INDEX_SYMBOL_CANDIDATES = {
-  NIFTY:     ['Nifty 50', 'NIFTY 50', 'NIFTY50', 'NIFTY'],
-  BANKNIFTY: ['Nifty Bank', 'NIFTY BANK', 'BANKNIFTY'],
-  SENSEX:    ['Sensex', 'SENSEX', 'BSE SENSEX', 'S&P BSE SENSEX']
-};
 async function fetchKotakIndexLTP(instrument) {
   if (!session.token) return null;
   const cfg = INDEX_TOKENS[instrument.toUpperCase()];
@@ -1895,17 +1933,6 @@ async function fetchKotakIndexLTP(instrument) {
     if (!r.ok) {
       const errBody = await r.text().catch(() => '');
       console.log(`[KotakIdx] ${instrument} HTTP ${r.status}: ${errBody.slice(0, 300)}`);
-      if (errBody.includes('Invalid neosymbol')) {
-        const cands = _INDEX_SYMBOL_CANDIDATES[instrument.toUpperCase()] || [];
-        for (const cand of cands) {
-          try {
-            const curl = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${encodeURIComponent(cand)}/ltp`;
-            const cr = await ftKotak(curl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 5000);
-            const ctxt = await cr.text().catch(() => '');
-            console.log(`[KotakIdx-TRY] ${instrument} "${cand}": HTTP ${cr.status}: ${ctxt.slice(0, 250)}`);
-          } catch (e) { console.log(`[KotakIdx-TRY] ${instrument} "${cand}": error ${e.message}`); }
-        }
-      }
       return null;
     }
     const d = await r.json();
@@ -2072,10 +2099,15 @@ async function fetchKotakNifty50LTPs() {
   if (_kotakMoversCache && Date.now() - _kotakMoversCacheTs < 2 * 60 * 1000) return _kotakMoversCache;
   const symbols = await getNifty50Symbols();
   if (!symbols.length) return null;
+  // Resolve each symbol's real Kotak numeric token (checkpoint realtime_price_sourcing,
+  // 2026-10-15) — ticker-string lookups were silently failing. Log any that don't resolve so a
+  // stale/incomplete map is visible, not silent.
+  const unresolved = symbols.filter(s => !_scripMasterCM[s.toUpperCase()]);
+  if (unresolved.length) console.log(`[kotak50] ${unresolved.length} symbols unresolved in CM map: ${unresolved.join(',')}`);
   const results = await Promise.all(
     symbols.map(sym => {
-      const symUrl = sym.replace('&', '%26'); // M&M → M%26M in URL
-      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${symUrl}/ltp`;
+      const resolved = _scripMasterCM[sym.toUpperCase()] || sym.replace('&', '%26'); // fall back to raw ticker (prior behaviour) if not in map
+      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/ltp`;
       return ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 4000)
@@ -2348,14 +2380,31 @@ async function runMarketScraper(force = false) {
     // Kotak session active → Kotak primary for index prices, NSE fallback
     // Kotak session not active → NSE public website primary, Yahoo last resort
     let nifty, banknifty, sensexFinal;
+    // Tracks which source actually resolved each index this cycle — internal/backend only,
+    // never surfaced on the PWA (checkpoint realtime_price_sourcing, 2026-10-15). Stays null
+    // only if every attempted source failed this cycle.
+    const _idxSrc = { NIFTY: null, BANKNIFTY: null, SENSEX: null };
     if (isSessionValid()) {
-      nifty       = await fetchKotakIndexLTP('NIFTY')     || parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
-      banknifty   = await fetchKotakIndexLTP('BANKNIFTY') || parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-      sensexFinal = await fetchKotakIndexLTP('SENSEX')    || await fetchYahooIndex('SENSEX')        || sensex;
+      nifty = await fetchKotakIndexLTP('NIFTY'); if (nifty) _idxSrc.NIFTY = 'kotak';
+      if (!nifty) { nifty = parseNSEIndex(nseData, 'NIFTY'); if (nifty) _idxSrc.NIFTY = 'nse'; }
+      if (!nifty) { nifty = await fetchYahooIndex('NIFTY'); if (nifty) _idxSrc.NIFTY = 'yahoo'; }
+
+      banknifty = await fetchKotakIndexLTP('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'kotak';
+      if (!banknifty) { banknifty = parseNSEIndex(nseData, 'BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'nse'; }
+      if (!banknifty) { banknifty = await fetchYahooIndex('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'yahoo'; }
+
+      sensexFinal = await fetchKotakIndexLTP('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'kotak';
+      if (!sensexFinal) { sensexFinal = await fetchYahooIndex('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'yahoo'; }
+      if (!sensexFinal) { sensexFinal = sensex; if (sensexFinal) _idxSrc.SENSEX = 'bse'; }
     } else {
-      nifty       = parseNSEIndex(nseData, 'NIFTY')     || await fetchYahooIndex('NIFTY');
-      banknifty   = parseNSEIndex(nseData, 'BANKNIFTY') || await fetchYahooIndex('BANKNIFTY');
-      sensexFinal = await fetchYahooIndex('SENSEX')      || sensex;
+      nifty = parseNSEIndex(nseData, 'NIFTY'); if (nifty) _idxSrc.NIFTY = 'nse';
+      if (!nifty) { nifty = await fetchYahooIndex('NIFTY'); if (nifty) _idxSrc.NIFTY = 'yahoo'; }
+
+      banknifty = parseNSEIndex(nseData, 'BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'nse';
+      if (!banknifty) { banknifty = await fetchYahooIndex('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'yahoo'; }
+
+      sensexFinal = await fetchYahooIndex('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'yahoo';
+      if (!sensexFinal) { sensexFinal = sensex; if (sensexFinal) _idxSrc.SENSEX = 'bse'; }
     }
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     // Kotak-derived breadth (change ≥ 0 = advancing) takes priority over NSE API counts
@@ -2382,6 +2431,9 @@ async function runMarketScraper(force = false) {
         SENSEX:    sensexFinal || existing.indices?.SENSEX    || { price: 0, change: 0, changePct: 0 },
         BANKNIFTY: banknifty || existing.indices?.BANKNIFTY || { price: 0, change: 0, changePct: 0 }
       },
+      // Internal/backend-only diagnostic — never displayed on the PWA. Not a replacement for
+      // `dataSource`, which stays as-is; this is per-index detail for ops visibility only.
+      indexSources: { NIFTY: _idxSrc.NIFTY || existing.indexSources?.NIFTY || null, BANKNIFTY: _idxSrc.BANKNIFTY || existing.indexSources?.BANKNIFTY || null, SENSEX: _idxSrc.SENSEX || existing.indexSources?.SENSEX || null },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
       // Prefer whichever source has more stocks — Kotak beats NSE fallback (which caps at ~20)
       gainers: (_kotakMoversCache?.gainers?.length > (movers?.gainers?.length || 0) ? _kotakMoversCache.gainers : movers?.gainers) || _kotakMoversCache?.gainers || existing.gainers || [],
