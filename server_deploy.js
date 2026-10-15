@@ -2108,7 +2108,10 @@ async function fetchKotakNifty50LTPs() {
   const results = await Promise.all(
     symbols.map(sym => {
       const resolved = _scripMasterCM[sym.toUpperCase()] || sym.replace('&', '%26'); // fall back to raw ticker (prior behaviour) if not in map
-      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/ltp`;
+      // quote_type=ohlc (not ltp) — confirmed live (2026-10-15) that /ltp returns price only,
+      // no previous-close field, so change% could never be computed. /ohlc is a documented
+      // Kotak quote type on this same endpoint that includes the close field needed here.
+      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/ohlc`;
       return ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 4000)
