@@ -2108,10 +2108,11 @@ async function fetchKotakNifty50LTPs() {
   const results = await Promise.all(
     symbols.map(sym => {
       const resolved = _scripMasterCM[sym.toUpperCase()] || sym.replace('&', '%26'); // fall back to raw ticker (prior behaviour) if not in map
-      // quote_type=ohlc (not ltp) — confirmed live (2026-10-15) that /ltp returns price only,
-      // no previous-close field, so change% could never be computed. /ohlc is a documented
-      // Kotak quote type on this same endpoint that includes the close field needed here.
-      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/ohlc`;
+      // quote_type=all — confirmed live (2026-10-15): /ltp returns price only (no close);
+      // /ohlc returns open/high/low/close only (no current price). Neither alone has both
+      // fields this calculation needs. Kotak's own documented example uses quote_type="all"
+      // specifically to get the complete combined data — using that here.
+      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/all`;
       return ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 4000)
@@ -2127,7 +2128,7 @@ async function fetchKotakNifty50LTPs() {
           const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d?.data || d);
           const price = parseFloat(item?.ltp || 0);
           if (!price) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no price: ${JSON.stringify(d).slice(0,200)}`); } return null; }
-          const prev = parseFloat(item?.close || item?.prevClose || item?.prev_close || 0);
+          const prev = parseFloat(item?.close || item?.prevClose || item?.prev_close || item?.ohlc?.close || 0);
           if (!prev) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no prevClose: ${JSON.stringify(item).slice(0,200)}`); } return null; }
           const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
           return { symbol: sym, price, change };
