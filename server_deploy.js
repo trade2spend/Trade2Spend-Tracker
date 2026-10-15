@@ -1871,6 +1871,14 @@ const INDEX_TOKENS = {
   BANKNIFTY: { exchange: 'nse_cm', token: '26009' },
   SENSEX:    { exchange: 'bse_cm', token: '1' }
 };
+// TEMP diagnostic for checkpoint sensex_change_wrong (2026-10-15) — remove once root cause found.
+// Kotak rejects the numeric token above with "Invalid neosymbol values" for the cash-market/index
+// segment. Trying alternate symbol-name formats here (same exchange) to find the one Kotak accepts.
+const _INDEX_SYMBOL_CANDIDATES = {
+  NIFTY:     ['Nifty 50', 'NIFTY 50', 'NIFTY50', 'NIFTY'],
+  BANKNIFTY: ['Nifty Bank', 'NIFTY BANK', 'BANKNIFTY'],
+  SENSEX:    ['Sensex', 'SENSEX', 'BSE SENSEX', 'S&P BSE SENSEX']
+};
 async function fetchKotakIndexLTP(instrument) {
   if (!session.token) return null;
   const cfg = INDEX_TOKENS[instrument.toUpperCase()];
@@ -1883,6 +1891,17 @@ async function fetchKotakIndexLTP(instrument) {
     if (!r.ok) {
       const errBody = await r.text().catch(() => '');
       console.log(`[KotakIdx] ${instrument} HTTP ${r.status}: ${errBody.slice(0, 300)}`);
+      if (errBody.includes('Invalid neosymbol')) {
+        const cands = _INDEX_SYMBOL_CANDIDATES[instrument.toUpperCase()] || [];
+        for (const cand of cands) {
+          try {
+            const curl = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${encodeURIComponent(cand)}/ltp`;
+            const cr = await ftKotak(curl, { headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' } }, 5000);
+            const ctxt = await cr.text().catch(() => '');
+            console.log(`[KotakIdx-TRY] ${instrument} "${cand}": HTTP ${cr.status}: ${ctxt.slice(0, 250)}`);
+          } catch (e) { console.log(`[KotakIdx-TRY] ${instrument} "${cand}": error ${e.message}`); }
+        }
+      }
       return null;
     }
     const d = await r.json();
