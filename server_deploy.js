@@ -638,6 +638,10 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       if (data.session) session = { ...session, ...data.session };
+      // Nifty 50 last-known-good values — restored unconditionally, NOT date-gated (unlike
+      // optionHighs/trigger/SL maps below), since a pre-restart value is explicitly required
+      // to keep showing until that stock succeeds again (checkpoint kotak50_persist, 2026-10-16).
+      if (data.kotak50LastGood) { _kotak50LastGood = data.kotak50LastGood; console.log(`Restored ${Object.keys(_kotak50LastGood).length} kotak50 last-known values from state`); }
       // Override dead/missing baseUrl — gw-napi decommissioned Sep 2026; mnapi unreachable from VM DNS
       if (!session.baseUrl || session.baseUrl === 'https://gw-napi.kotaksecurities.com' || session.baseUrl === 'https://mnapi.kotaksecurities.com') {
         session.baseUrl = 'https://mis.kotaksecurities.com';
@@ -700,7 +704,7 @@ async function saveState() {
     const lowsSnap  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, { low: v.low, action: v.action, postId: v.postId || null }])); // RC-4 FIX: persist postId
     // Atomic write (tmp + rename) so a crash mid-write never leaves state.json unreadable. Trigger maps saved with
     // _trigMapsDate (set only by a market-hours check) so pre-open ticks are never restored — trigger_restart_persist.
-    try { const _tmp = STATE_FILE + '.tmp'; fs.writeFileSync(_tmp, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST, trigMaxPerPost: _trigMaxPerPost, trigMinPerPost: _trigMinPerPost, trigDate: _trigMapsDate, slMinPerPost: _slMinPerPost, slLevelPerPost: _slLevelPerPost, slDate: _slMapsDate }, null, 2)); fs.renameSync(_tmp, STATE_FILE); } catch (e) { console.error('saveState write error:', e.message); }
+    try { const _tmp = STATE_FILE + '.tmp'; fs.writeFileSync(_tmp, JSON.stringify({ session, state, optionHighs: highsSnap, optionHighsDate: todayIST, optionLows: lowsSnap, optionLowsDate: todayIST, trigMaxPerPost: _trigMaxPerPost, trigMinPerPost: _trigMinPerPost, trigDate: _trigMapsDate, slMinPerPost: _slMinPerPost, slLevelPerPost: _slLevelPerPost, slDate: _slMapsDate, kotak50LastGood: _kotak50LastGood }, null, 2)); fs.renameSync(_tmp, STATE_FILE); } catch (e) { console.error('saveState write error:', e.message); }
   } catch (e) {
     console.error('saveState error:', e.message);
     tgAlert(`⚠️ State save failed: ${e.message}`).catch(() => {});
@@ -1926,7 +1930,11 @@ async function fetchKotakIndexLTP(instrument) {
   const cfg = INDEX_TOKENS[instrument.toUpperCase()];
   if (!cfg) return null;
   try {
-    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${cfg.token}/ltp`;
+    // quote_type=all — checkpoint realtime_price_sourcing_phase2 (2026-10-15/16). Previously
+    // used /ltp, which Kotak rejected for all three indices with "Invalid neosymbol values"
+    // even on confirmed-correct tokens; the same switch (ltp → all) fixed the identical-shaped
+    // problem for Nifty 50 stocks, so trying it here too before any further escalation.
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${cfg.token}/all`;
     const r = await ftKotak(url, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 5000);
@@ -1946,7 +1954,7 @@ async function fetchKotakIndexLTP(instrument) {
       console.log(`[KotakIdx] ${instrument}: no price — raw: ${JSON.stringify(d).slice(0, 300)}`);
       return null;
     }
-    const prevClose = parseFloat(item?.close || item?.prevClose || item?.prev_close || 0);
+    const prevClose = parseFloat(item?.close || item?.prevClose || item?.prev_close || item?.ohlc?.close || 0);
     const change    = prevClose ? parseFloat((price - prevClose).toFixed(2)) : parseFloat((item?.netChng || item?.change || 0));
     const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : parseFloat((item?.pChange || item?.pctChng || 0));
     console.log(`[KotakIdx] ${instrument}: ₹${price} (${changePct}%)`);
@@ -2094,73 +2102,106 @@ async function fetchYahooNifty50Movers() {
 // Kotak Nifty50 equity LTPs — used during market hours when NSE movers are blocked
 // Symbol list is fetched dynamically from NSE (see getNifty50Symbols above).
 let _kotakMoversCache = null, _kotakMoversCacheTs = 0;
+let _kotak50LastGood  = {};   // SYMBOL → { data:{symbol,price,change}, ts } — persisted across restarts (checkpoint kotak50_persist, 2026-10-16)
+let _kotak50InFlight  = false; // overlap guard — prevents two concurrent runs if retries ever run long
 async function fetchKotakNifty50LTPs() {
   if (!session.token) return null;
   if (_kotakMoversCache && Date.now() - _kotakMoversCacheTs < 2 * 60 * 1000) return _kotakMoversCache;
+  if (_kotak50InFlight) return _kotakMoversCache; // overlap guard (checkpoint kotak50_persist, 2026-10-16) — never run two cycles at once
   const symbols = await getNifty50Symbols();
   if (!symbols.length) return null;
-  // Resolve each symbol's real Kotak numeric token (checkpoint realtime_price_sourcing,
-  // 2026-10-15) — ticker-string lookups were silently failing. Log any that don't resolve so a
-  // stale/incomplete map is visible, not silent.
-  const unresolved = symbols.filter(s => !_scripMasterCM[s.toUpperCase()]);
-  if (unresolved.length) console.log(`[kotak50] ${unresolved.length} symbols unresolved in CM map: ${unresolved.join(',')}`);
-  let _loggedFailures = 0; // TEMP diagnostic cap (checkpoint realtime_price_sourcing, 2026-10-15) — remove once root cause confirmed
-  const _fetchOne = sym => {
-    const resolved = _scripMasterCM[sym.toUpperCase()] || sym.replace('&', '%26'); // fall back to raw ticker (prior behaviour) if not in map
-    // quote_type=all — confirmed live (2026-10-15): /ltp returns price only (no close);
-    // /ohlc returns open/high/low/close only (no current price). Neither alone has both
-    // fields this calculation needs. Kotak's own documented example uses quote_type="all"
-    // specifically to get the complete combined data — using that here.
-    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/all`;
-    return ftKotak(url, {
-      headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
-    }, 4000)
-      .then(async r => {
-        if (!r.ok) {
-          if (_loggedFailures < 3) { _loggedFailures++; const b = await r.text().catch(()=>''); console.log(`[kotak50-TRY] ${sym} (token ${resolved}) HTTP ${r.status}: ${b.slice(0,200)}`); }
-          return null;
-        }
-        return r.json();
-      })
-      .then(d => {
-        if (!d) return null;
-        const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d?.data || d);
-        const price = parseFloat(item?.ltp || 0);
-        if (!price) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no price: ${JSON.stringify(d).slice(0,200)}`); } return null; }
-        const prev = parseFloat(item?.close || item?.prevClose || item?.prev_close || item?.ohlc?.close || 0);
-        if (!prev) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no prevClose: ${JSON.stringify(item).slice(0,200)}`); } return null; }
-        const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
-        return { symbol: sym, price, change };
-      })
-      .catch(e => { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) error: ${e.message}`); } return null; });
-  };
-  // Batches of 5 with a 300ms gap — same proven pattern already used for the Yahoo fallback
-  // a few lines above, to avoid Kotak's rate limit (confirmed live, 2026-10-15: firing all
-  // ~50 requests at once triggered "HTTP 429 too many requests" on most of them).
-  const stocks = [];
-  const KOTAK50_BATCH = 5;
-  for (let i = 0; i < symbols.length; i += KOTAK50_BATCH) {
-    const slice = symbols.slice(i, i + KOTAK50_BATCH);
-    const batch = await Promise.all(slice.map(_fetchOne));
-    stocks.push(...batch.filter(Boolean));
-    if (i + KOTAK50_BATCH < symbols.length) await new Promise(r => setTimeout(r, 300));
+  _kotak50InFlight = true;
+  try {
+    // Resolve each symbol's real Kotak numeric token (checkpoint realtime_price_sourcing,
+    // 2026-10-15) — ticker-string lookups were silently failing. Log any that don't resolve so a
+    // stale/incomplete map is visible, not silent.
+    const unresolved = symbols.filter(s => !_scripMasterCM[s.toUpperCase()]);
+    if (unresolved.length) console.log(`[kotak50] ${unresolved.length} symbols unresolved in CM map: ${unresolved.join(',')}`);
+    let _loggedFailures = 0; // diagnostic cap — avoid log spam, not a behavioural limit
+    const _fetchOne = sym => {
+      const resolved = _scripMasterCM[sym.toUpperCase()] || sym.replace('&', '%26'); // fall back to raw ticker (prior behaviour) if not in map
+      // quote_type=all — confirmed live (2026-10-15): /ltp returns price only (no close);
+      // /ohlc returns open/high/low/close only (no current price). Neither alone has both
+      // fields this calculation needs. Kotak's own documented example uses quote_type="all"
+      // specifically to get the complete combined data — using that here.
+      const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/all`;
+      return ftKotak(url, {
+        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+      }, 4000)
+        .then(async r => {
+          if (!r.ok) {
+            if (_loggedFailures < 3) { _loggedFailures++; const b = await r.text().catch(()=>''); console.log(`[kotak50-TRY] ${sym} (token ${resolved}) HTTP ${r.status}: ${b.slice(0,200)}`); }
+            return null;
+          }
+          return r.json();
+        })
+        .then(d => {
+          if (!d) return null;
+          const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d?.data || d);
+          const price = parseFloat(item?.ltp || 0);
+          if (!price) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no price: ${JSON.stringify(d).slice(0,200)}`); } return null; }
+          const prev = parseFloat(item?.close || item?.prevClose || item?.prev_close || item?.ohlc?.close || 0);
+          if (!prev) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no prevClose: ${JSON.stringify(item).slice(0,200)}`); } return null; }
+          const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
+          return { symbol: sym, price, change };
+        })
+        .catch(e => { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) error: ${e.message}`); } return null; });
+    };
+    // Up to 3 total passes (1 initial + 2 retries) — only retrying symbols still missing after
+    // each pass. Batches of 5 with a 300ms gap throughout, same proven rate-limit-safe pattern
+    // already used for the Yahoo fallback (confirmed live, 2026-10-15: firing all ~50 at once
+    // triggers Kotak's "too many requests" error) — (checkpoint realtime_price_sourcing_phase2).
+    const KOTAK50_BATCH = 5;
+    const bySymbol = {};
+    let pending = symbols.slice();
+    for (let attempt = 0; attempt < 3 && pending.length; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt === 1 ? 500 : 1000));
+      const next = [];
+      for (let i = 0; i < pending.length; i += KOTAK50_BATCH) {
+        const slice = pending.slice(i, i + KOTAK50_BATCH);
+        const results = await Promise.all(slice.map(_fetchOne));
+        slice.forEach((sym, idx) => {
+          const r = results[idx];
+          if (r) { bySymbol[sym] = r; _kotak50LastGood[sym] = { data: r, ts: Date.now() }; }
+          else next.push(sym);
+        });
+        if (i + KOTAK50_BATCH < pending.length) await new Promise(r => setTimeout(r, 300));
+      }
+      pending = next;
+    }
+    // Residual failures after all retries: carry forward last-known value (Option A, approved
+    // by Tushar 2026-10-15/16) — persisted across restarts via saveState()/loadState(), so even
+    // a stock that fails on its very first post-restart attempt still shows its pre-restart value.
+    let staleCount = 0;
+    for (const sym of pending) {
+      const prevGood = _kotak50LastGood[sym];
+      if (prevGood) { bySymbol[sym] = prevGood.data; staleCount++; }
+    }
+    if (pending.length) {
+      const stillMissing = pending.filter(s => !_kotak50LastGood[s]);
+      console.log(`[kotak50] ${pending.length} symbols failed after retries; ${staleCount} covered by last-known value, ${stillMissing.length} missing entirely: ${stillMissing.join(',')}`);
+    }
+    const stocks = symbols.map(s => bySymbol[s]).filter(Boolean);
+    if (stocks.length < 5) {
+      console.log(`[kotak50] only ${stocks.length} stocks returned — symbol-based nse_cm lookup may not work`);
+      return null;
+    }
+    // change >= 0 counts as advancing (flat = advance per product rule)
+    const advancing = stocks.filter(s => s.change >= 0).length;
+    const declining = stocks.filter(s => s.change < 0).length;
+    _kotakMoversCache = {
+      gainers: stocks.filter(s => s.change >= 0).sort((a,b) => b.change - a.change),
+      losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change),
+      breadth: { advancing, declining, unchanged: stocks.filter(s => s.change === 0).length },
+      count: stocks.length
+    };
+    _kotakMoversCacheTs = Date.now();
+    saveState().catch(() => {}); // persist _kotak50LastGood so a restart doesn't lose it
+    console.log(`[kotak50] ${stocks.length} stocks — ${advancing}↑ ${declining}↓ — top gainer: ${_kotakMoversCache.gainers[0]?.symbol} ${_kotakMoversCache.gainers[0]?.change}%`);
+    return _kotakMoversCache;
+  } finally {
+    _kotak50InFlight = false;
   }
-  if (stocks.length < 5) {
-    console.log(`[kotak50] only ${stocks.length} stocks returned — symbol-based nse_cm lookup may not work`);
-    return null;
-  }
-  // change >= 0 counts as advancing (flat = advance per product rule)
-  const advancing = stocks.filter(s => s.change >= 0).length;
-  const declining = stocks.filter(s => s.change < 0).length;
-  _kotakMoversCache = {
-    gainers: stocks.filter(s => s.change >= 0).sort((a,b) => b.change - a.change),
-    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change),
-    breadth: { advancing, declining, unchanged: stocks.filter(s => s.change === 0).length },
-    count: stocks.length
-  };
-  _kotakMoversCacheTs = Date.now();
-  console.log(`[kotak50] ${stocks.length} stocks — ${advancing}↑ ${declining}↓ — top gainer: ${_kotakMoversCache.gainers[0]?.symbol} ${_kotakMoversCache.gainers[0]?.change}%`);
-  return _kotakMoversCache;
 }
 
 // Yahoo Finance fallback — used when NSE India API is blocked/down AND Kotak not logged in
