@@ -2104,6 +2104,7 @@ async function fetchKotakNifty50LTPs() {
   // stale/incomplete map is visible, not silent.
   const unresolved = symbols.filter(s => !_scripMasterCM[s.toUpperCase()]);
   if (unresolved.length) console.log(`[kotak50] ${unresolved.length} symbols unresolved in CM map: ${unresolved.join(',')}`);
+  let _loggedFailures = 0; // TEMP diagnostic cap (checkpoint realtime_price_sourcing, 2026-10-15) — remove once root cause confirmed
   const results = await Promise.all(
     symbols.map(sym => {
       const resolved = _scripMasterCM[sym.toUpperCase()] || sym.replace('&', '%26'); // fall back to raw ticker (prior behaviour) if not in map
@@ -2111,17 +2112,24 @@ async function fetchKotakNifty50LTPs() {
       return ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 4000)
-        .then(r => r.ok ? r.json() : null)
+        .then(async r => {
+          if (!r.ok) {
+            if (_loggedFailures < 3) { _loggedFailures++; const b = await r.text().catch(()=>''); console.log(`[kotak50-TRY] ${sym} (token ${resolved}) HTTP ${r.status}: ${b.slice(0,200)}`); }
+            return null;
+          }
+          return r.json();
+        })
         .then(d => {
+          if (!d) return null;
           const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d?.data || d);
           const price = parseFloat(item?.ltp || 0);
-          if (!price) return null;
+          if (!price) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no price: ${JSON.stringify(d).slice(0,200)}`); } return null; }
           const prev = parseFloat(item?.close || item?.prevClose || item?.prev_close || 0);
-          if (!prev) return null;
+          if (!prev) { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) no prevClose: ${JSON.stringify(item).slice(0,200)}`); } return null; }
           const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
           return { symbol: sym, price, change };
         })
-        .catch(() => null);
+        .catch(e => { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) error: ${e.message}`); } return null; });
     })
   );
   const stocks = results.filter(Boolean);
