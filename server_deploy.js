@@ -4123,6 +4123,21 @@ const server = http.createServer(async (req, res) => {
         }
       }
     }
+    // TEMP diagnostic for checkpoint kotak_index_combo_probe (2026-10-17) — tests Kotak's
+    // documented combined comma-separated index query format. Read-only; does not touch
+    // fetchKotakIndexLTP, runMarketScraper, or any live Markets-tab code path. Remove once
+    // the index REST format question is resolved.
+    let idxComboProbe = null;
+    if (session.token) {
+      try {
+        const comboUrl = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|Nifty 50,nse_cm|Nifty Bank,bse_cm|SENSEX/all`;
+        const r = await ftKotak(comboUrl, {
+          headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+        }, 5000);
+        const txt = await r.text().catch(() => '');
+        idxComboProbe = { url: comboUrl, status: r.status, body: txt.slice(0, 500) };
+      } catch (e) { idxComboProbe = { error: e.message }; }
+    }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const smSensexSample = Object.keys(_scripMaster).filter(k => k.startsWith('SENSEX-')).slice(0, 3);
     const debugVars = { tokenOk: !!session.token, sidOk: !!session.sid, authOk: !!session.auth, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
@@ -4145,6 +4160,7 @@ const server = http.createServer(async (req, res) => {
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
       ltpProbe,
+      idxComboProbe,
       yahooMoversStatus: _yahooMoversStatus,
       khMemberRateSize: _khMemberRate.size,
       ghMarketPush: _ghMarketPushStatus,
