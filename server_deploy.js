@@ -1932,44 +1932,41 @@ const INDEX_TOKENS = {
   BANKNIFTY: { exchange: 'nse_cm', name: 'Nifty Bank' },
   SENSEX:    { exchange: 'bse_cm', name: 'SENSEX' }
 };
-async function fetchKotakIndexLTP(instrument) {
+async function fetchKotakIndicesCombined() {
+  // checkpoint kotak_index_combined_fetch 2026-10-17 — replaces the old one-call-per-index
+  // fetchKotakIndexLTP(). Confirmed live via /debug idxComboProbe: Kotak's REST getQuote
+  // rejects a lone single index symbol but accepts all three combined in one comma-separated
+  // call. Reviewed with Codex (no findings) before this change.
   if (!session.token) return null;
-  const cfg = INDEX_TOKENS[instrument.toUpperCase()];
-  if (!cfg) return null;
   try {
-    // quote_type=all — checkpoint realtime_price_sourcing_phase2 (2026-10-15/16). Previously
-    // used /ltp, which Kotak rejected for all three indices with "Invalid neosymbol values"
-    // even on confirmed-correct tokens; the same switch (ltp → all) fixed the identical-shaped
-    // problem for Nifty 50 stocks, so trying it here too before any further escalation.
-    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${encodeURIComponent(cfg.name)}/all`;
+    const parts = Object.entries(INDEX_TOKENS)
+      .map(([, cfg]) => `${cfg.exchange}|${encodeURIComponent(cfg.name)}`)
+      .join(',');
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${parts}/all`;
     const r = await ftKotak(url, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 5000);
     if (!r.ok) {
       const errBody = await r.text().catch(() => '');
-      console.log(`[KotakIdx] ${instrument} HTTP ${r.status}: ${errBody.slice(0, 300)}`);
+      console.log(`[KotakIdx] combined HTTP ${r.status}: ${errBody.slice(0, 300)}`);
       return null;
     }
     const d = await r.json();
-    // gw-napi returns data as array [{ltp,...}] for options but sometimes as object {ltp,...} for spot indices — handle both
-    const _dataRaw = d?.data;
-    const item = Array.isArray(_dataRaw) ? _dataRaw[0]
-               : (_dataRaw && typeof _dataRaw === 'object') ? _dataRaw
-               : Array.isArray(d) ? d[0] : d;
-    const price = parseFloat(item?.ltp || 0);
-    if (!price) {
-      console.log(`[KotakIdx] ${instrument}: no price — raw: ${JSON.stringify(d).slice(0, 300)}`);
-      return null;
+    const items = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+    const out = {};
+    for (const [instrument, cfg] of Object.entries(INDEX_TOKENS)) {
+      const item = items.find(it => it?.exchange_token === cfg.name);
+      if (!item) { out[instrument] = null; continue; }
+      const price = parseFloat(item?.ltp || 0);
+      if (!price) { out[instrument] = null; continue; }
+      const prevClose = parseFloat(item?.ohlc?.close || item?.close || item?.prevClose || item?.prev_close || 0);
+      const change    = prevClose ? parseFloat((price - prevClose).toFixed(2)) : parseFloat((item?.change || item?.netChng || 0));
+      const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : parseFloat((item?.per_change || item?.pChange || 0));
+      console.log(`[KotakIdx] ${instrument}: ₹${price} (${changePct}%)`);
+      out[instrument] = { price, change, changePct };
     }
-    const prevClose = parseFloat(item?.close || item?.prevClose || item?.prev_close || item?.ohlc?.close || 0);
-    const change    = prevClose ? parseFloat((price - prevClose).toFixed(2)) : parseFloat((item?.netChng || item?.change || 0));
-    const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : parseFloat((item?.pChange || item?.pctChng || 0));
-    console.log(`[KotakIdx] ${instrument}: ₹${price} (${changePct}%)`);
-    // TEMP diagnostic for checkpoint sensex_change_wrong (2026-10-15) — remove once root cause found.
-    // Logs only, no new endpoint/exposure — pull via VM logs (pm2 logs t2s-webhook).
-    console.log(`[KotakIdx-RAW] ${instrument}: ${JSON.stringify(item)}`);
-    return { price, change, changePct };
-  } catch(e) { console.error(`[KotakIdx] ${instrument}: ${e.message}`); return null; }
+    return out;
+  } catch (e) { console.error(`[KotakIdx] combined: ${e.message}`); return null; }
 }
 
 // ── NIFTY 50 SYMBOL REGISTRY (dynamic — refreshed from NSE, no hardcoded list) ──
@@ -2453,15 +2450,16 @@ async function runMarketScraper(force = false) {
     // only if every attempted source failed this cycle.
     const _idxSrc = { NIFTY: null, BANKNIFTY: null, SENSEX: null };
     if (isSessionValid()) {
-      nifty = await fetchKotakIndexLTP('NIFTY'); if (nifty) _idxSrc.NIFTY = 'kotak';
+      const kotakIdx = await fetchKotakIndicesCombined();
+      nifty = kotakIdx?.NIFTY || null; if (nifty) _idxSrc.NIFTY = 'kotak';
       if (!nifty) { nifty = parseNSEIndex(nseData, 'NIFTY'); if (nifty) _idxSrc.NIFTY = 'nse'; }
       if (!nifty) { nifty = await fetchYahooIndex('NIFTY'); if (nifty) _idxSrc.NIFTY = 'yahoo'; }
 
-      banknifty = await fetchKotakIndexLTP('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'kotak';
+      banknifty = kotakIdx?.BANKNIFTY || null; if (banknifty) _idxSrc.BANKNIFTY = 'kotak';
       if (!banknifty) { banknifty = parseNSEIndex(nseData, 'BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'nse'; }
       if (!banknifty) { banknifty = await fetchYahooIndex('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'yahoo'; }
 
-      sensexFinal = await fetchKotakIndexLTP('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'kotak';
+      sensexFinal = kotakIdx?.SENSEX || null; if (sensexFinal) _idxSrc.SENSEX = 'kotak';
       if (!sensexFinal) { sensexFinal = await fetchYahooIndex('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'yahoo'; }
       if (!sensexFinal) { sensexFinal = sensex; if (sensexFinal) _idxSrc.SENSEX = 'bse'; }
     } else {
@@ -4123,21 +4121,6 @@ const server = http.createServer(async (req, res) => {
         }
       }
     }
-    // TEMP diagnostic for checkpoint kotak_index_combo_probe (2026-10-17) — tests Kotak's
-    // documented combined comma-separated index query format. Read-only; does not touch
-    // fetchKotakIndexLTP, runMarketScraper, or any live Markets-tab code path. Remove once
-    // the index REST format question is resolved.
-    let idxComboProbe = null;
-    if (session.token) {
-      try {
-        const comboUrl = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|Nifty 50,nse_cm|Nifty Bank,bse_cm|SENSEX/all`;
-        const r = await ftKotak(comboUrl, {
-          headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
-        }, 5000);
-        const txt = await r.text().catch(() => '');
-        idxComboProbe = { url: comboUrl, status: r.status, body: txt.slice(0, 500) };
-      } catch (e) { idxComboProbe = { error: e.message }; }
-    }
     const smNiftySample = Object.keys(_scripMaster).filter(k => k.startsWith('NIFTY-')).slice(0, 6);
     const smSensexSample = Object.keys(_scripMaster).filter(k => k.startsWith('SENSEX-')).slice(0, 3);
     const debugVars = { tokenOk: !!session.token, sidOk: !!session.sid, authOk: !!session.auth, baseUrl: session.baseUrl, contractsLen: _activeContracts.length, nseCookiesAge: _nseCookieTs ? Math.round((Date.now()-_nseCookieTs)/1000)+'s' : 'never' };
@@ -4160,7 +4143,6 @@ const server = http.createServer(async (req, res) => {
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
       ltpProbe,
-      idxComboProbe,
       yahooMoversStatus: _yahooMoversStatus,
       khMemberRateSize: _khMemberRate.size,
       ghMarketPush: _ghMarketPushStatus,
