@@ -1,7 +1,7 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-10-16T19:14:12.146Z",
-  "dataSource": "nse",
+  "lastUpdated": "2026-10-16T19:27:20.538Z",
+  "dataSource": "broker",
   "indices": {
     "NIFTY": {
       "price": 23146.15,
@@ -10,8 +10,8 @@
     },
     "SENSEX": {
       "price": 74729.27,
-      "change": 1947.37,
-      "changePct": 2.68
+      "change": 413.66,
+      "changePct": 0.56
     },
     "BANKNIFTY": {
       "price": 55844,
@@ -20,9 +20,9 @@
     }
   },
   "indexSources": {
-    "NIFTY": "nse",
-    "BANKNIFTY": "nse",
-    "SENSEX": "yahoo"
+    "NIFTY": "kotak",
+    "BANKNIFTY": "kotak",
+    "SENSEX": "kotak"
   },
   "breadth": {
     "nifty50": {
