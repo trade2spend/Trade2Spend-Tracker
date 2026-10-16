@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261016-001 | server.js: SENSEX Kotak token fix — INDEX_TOKENS.SENSEX and SPOT_TOKENS.SENSEX changed from instrument_token '1' to '51' (correct Sensex token per Kotak reference table). NIFTY/BANKNIFTY unchanged. Rollback: restore server.js.bak_20261016_presensex, push_pwa.py, wait 5 min or /http-update.
 // DEPLOY: T2S-PROD-20261011-005 | server.js: Overnight/positional trades get the automatic SL check on day 2+ (checkpoint overnight_sl) — (1) new sbOvernightOpenPosts(todayStartIso): trade_alert posts from the 7 days BEFORE today's `since` boundary (sent_at gte/lt, contiguous with today's query), kept only if sbContractStillActive() — the same rule refreshActiveContracts uses for live-price tracking; never throws (error → []). (2) checkSupabaseSLs(): posts = today's posts (query unchanged) + carried-over open posts; reply select unchanged (no sent_at, so today's 'not holding overnight' handling is unchanged). R1/R2/S2/SELL logic and messages unchanged; gap-down opens post the SL level (R2, Tushar decision). checkSupabaseTriggers and checkResolveAlert stay today-only. Rollback: restore server.js.bak_20261011_preovernight (T2S-PROD-20261011-004), push_pwa.py, wait 5 min, /http-update.
 // DEPLOY: T2S-PROD-20261011-004 | server.js: SL memory survives VM restart (checkpoint sl_restart_persist) — (1) new _slMapsDate (IST date of the market-hours check that last reset the SL maps), separate from _sbAlertDate. (2) checkSupabaseSLs(): daily reset split — alert bookkeeping line unchanged; _slMinPerPost/_slLevelPerPost reset on their own `_slMapsDate !== today` line. (3) saveState(): also saves slMinPerPost/slLevelPerPost/slDate=_slMapsDate (same atomic write). (4) loadState(): restores BOTH SL maps only when slDate === today IST (both needed — restoring the min alone would be wiped by S2's first-appearance reset). (5) Saves: once per 5s LTP cycle when an SL min changed; once per SL check when a level changed or a min was reset. R1/R2/S2 logic, SELL logic and messages unchanged. Rollback: restore server.js.bak_20261011_presl (T2S-PROD-20261011-003), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by old code.
 // DEPLOY: T2S-PROD-20261011-003 | server.js: market.json stale fix (checkpoint market_json_stale) — Root cause: VM GitHub pushes of market.json silently failing since 14 Aug (PUT response never checked) + startup trusted the GitHub file → every restart served weeks-old prices outside market hours. (A) pushMarketToGitHub(): checks GET/PUT responses; failures recorded in _ghMarketPushStatus (HTTP status/message only, never the token) + one tgAlert per IST day. (B) market_snapshot.json: VM's own copy of the latest REAL snapshot, atomic write, never overwritten by older data; saved in runMarketScraper (real prices only) and the two movers-correction paths. (C) Startup loads the local snapshot first; GitHub copy used only if newer; _lastRealPriceTs seeded from the loaded snapshot so all-sources-down never relabels old prices as 'now'. (D) /debug: ghMarketPush + marketSnapshotLocal fields. (E) Startup outside market hours runs runMarketScraper(true) once to fetch closing prices. Rollback: restore server.js.bak_20261011_premarket (T2S-PROD-20261011-002), push_pwa.py, wait 5 min, /http-update; market_snapshot.json is ignored by old code.
@@ -544,7 +545,7 @@ const VALID_EXPIRIES     = ['weekly','next weekly','monthly'];
 const SPOT_TOKENS = {
   NIFTY:     { exchange_segment: 'nse_cm', instrument_token: '26000' },
   BANKNIFTY: { exchange_segment: 'nse_cm', instrument_token: '26009' },
-  SENSEX:    { exchange_segment: 'bse_cm', instrument_token: '1'     }
+  SENSEX:    { exchange_segment: 'bse_cm', instrument_token: '51'    }
 };
 
 // ── IN-MEMORY STATE ───────────────────────────────────────────────────────────
@@ -1923,7 +1924,7 @@ async function fetchSensexBSE() {
 const INDEX_TOKENS = {
   NIFTY:     { exchange: 'nse_cm', token: '26000' },
   BANKNIFTY: { exchange: 'nse_cm', token: '26009' },
-  SENSEX:    { exchange: 'bse_cm', token: '1' }
+  SENSEX:    { exchange: 'bse_cm', token: '51' } // checkpoint sensex_token_fix 2026-10-16 — was '1', corrected per Tushar's Kotak token table
 };
 async function fetchKotakIndexLTP(instrument) {
   if (!session.token) return null;
