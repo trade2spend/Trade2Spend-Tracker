@@ -543,9 +543,11 @@ async function sendPushToMember(memberId, { title, body, url = 'https://app.trad
 
 const VALID_EXPIRIES     = ['weekly','next weekly','monthly'];
 const SPOT_TOKENS = {
-  NIFTY:     { exchange_segment: 'nse_cm', instrument_token: '26000' },
-  BANKNIFTY: { exchange_segment: 'nse_cm', instrument_token: '26009' },
-  SENSEX:    { exchange_segment: 'bse_cm', instrument_token: '51'    }
+  // checkpoint kotak_index_string_name 2026-10-16 — same fix as INDEX_TOKENS: indices need
+  // the string name, not a numeric token.
+  NIFTY:     { exchange_segment: 'nse_cm', name: 'Nifty 50' },
+  BANKNIFTY: { exchange_segment: 'nse_cm', name: 'Nifty Bank' },
+  SENSEX:    { exchange_segment: 'bse_cm', name: 'SENSEX' }
 };
 
 // ── IN-MEMORY STATE ───────────────────────────────────────────────────────────
@@ -1053,7 +1055,7 @@ async function fetchSpot(instrument = 'NIFTY') {
   if (!session.token || !session.baseUrl) return null;
   const tok = SPOT_TOKENS[instrument.toUpperCase()] || SPOT_TOKENS.NIFTY;
   try {
-    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${tok.instrument_token}/ltp`;
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${encodeURIComponent(tok.name)}/ltp`;
     const r = await ftKotak(url, {
       method: 'GET',
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
@@ -1922,9 +1924,13 @@ async function fetchSensexBSE() {
 
 // Kotak Neo index LTP — primary source for NIFTY/BANKNIFTY/SENSEX spot prices
 const INDEX_TOKENS = {
-  NIFTY:     { exchange: 'nse_cm', token: '26000' },
-  BANKNIFTY: { exchange: 'nse_cm', token: '26009' },
-  SENSEX:    { exchange: 'bse_cm', token: '51' } // checkpoint sensex_token_fix 2026-10-16 — was '1', corrected per Tushar's Kotak token table
+  // checkpoint kotak_index_string_name 2026-10-16 — numeric tokens rejected by Kotak for
+  // indices ("Invalid neosymbol values"); indices require the case-sensitive string name,
+  // confirmed via Kotak docs + live WS capture of Kotak's own app. Reviewed with Codex
+  // (2 rounds, no blockers) before this change.
+  NIFTY:     { exchange: 'nse_cm', name: 'Nifty 50' },
+  BANKNIFTY: { exchange: 'nse_cm', name: 'Nifty Bank' },
+  SENSEX:    { exchange: 'bse_cm', name: 'SENSEX' }
 };
 async function fetchKotakIndexLTP(instrument) {
   if (!session.token) return null;
@@ -1935,7 +1941,7 @@ async function fetchKotakIndexLTP(instrument) {
     // used /ltp, which Kotak rejected for all three indices with "Invalid neosymbol values"
     // even on confirmed-correct tokens; the same switch (ltp → all) fixed the identical-shaped
     // problem for Nifty 50 stocks, so trying it here too before any further escalation.
-    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${cfg.token}/all`;
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${cfg.exchange}|${encodeURIComponent(cfg.name)}/all`;
     const r = await ftKotak(url, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 5000);
