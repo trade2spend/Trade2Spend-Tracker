@@ -1,7 +1,7 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-10-16T10:16:01.589Z",
-  "dataSource": "broker",
+  "lastUpdated": "2026-10-16T18:19:55.201Z",
+  "dataSource": "nse",
   "indices": {
     "NIFTY": {
       "price": 23146.15,
@@ -26,8 +26,8 @@
   },
   "breadth": {
     "nifty50": {
-      "advancing": 27,
-      "declining": 23,
+      "advancing": 26,
+      "declining": 24,
       "unchanged": 0
     }
   },
@@ -36,11 +36,6 @@
       "symbol": "TECHM",
       "price": 1790,
       "change": 8.48
-    },
-    {
-      "symbol": "WIPRO",
-      "price": 184.4,
-      "change": 5.95
     },
     {
       "symbol": "TCS",
@@ -136,36 +131,6 @@
       "symbol": "HDFCBANK",
       "price": 728.85,
       "change": 0.28
-    },
-    {
-      "symbol": "SBIN",
-      "price": 962.6,
-      "change": 0.27
-    },
-    {
-      "symbol": "POWERGRID",
-      "price": 250.45,
-      "change": 0.24
-    },
-    {
-      "symbol": "BAJAJ-AUTO",
-      "price": 10405,
-      "change": 0.19
-    },
-    {
-      "symbol": "AXISBANK",
-      "price": 1290,
-      "change": 0.16
-    },
-    {
-      "symbol": "NTPC",
-      "price": 315.15,
-      "change": 0.16
-    },
-    {
-      "symbol": "APOLLOHOSP",
-      "price": 7890,
-      "change": 0.01
     }
   ],
   "losers": [
@@ -173,6 +138,11 @@
       "symbol": "INDIGO",
       "price": 4686.9,
       "change": -1.91
+    },
+    {
+      "symbol": "BSE",
+      "price": 3363,
+      "change": -1.9
     },
     {
       "symbol": "MAXHEALTH",
@@ -225,13 +195,13 @@
       "change": -0.31
     },
     {
-      "symbol": "ADANIENT",
-      "price": 2692,
+      "symbol": "SBILIFE",
+      "price": 1656.8,
       "change": -0.3
     },
     {
-      "symbol": "SBILIFE",
-      "price": 1656.8,
+      "symbol": "ADANIENT",
+      "price": 2692,
       "change": -0.3
     },
     {
@@ -263,27 +233,6 @@
       "symbol": "BAJAJFINSV",
       "price": 1729,
       "change": -0.17
-    },
-    {
-      "symbol": "ITC",
-      "price": 263.5,
-      "change": -0.15
-    },
-    {
-      "symbol": "LT",
-      "price": 3627.1,
-      "change": -0.13
-    },
-    {
-      "symbol": "KOTAKBANK",
-      "price": 447.4,
-      "change": -0.12
-    },
-    {
-      "symbol": "TMPV",
-      "price": 286.85,
-      "change": -0.07
     }
-  ],
-  "optionHighs": {}
+  ]
 }
