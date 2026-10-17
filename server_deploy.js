@@ -763,6 +763,65 @@ function ftKotak(url, options = {}, ms = FETCH_TIMEOUT) {
   });
 }
 
+// ── KOTAK SHARED RATE PACER (checkpoint kotak_shared_pacer, 2026-10-17) ──────
+// Kotak's documented limit is 10 req/sec shared across ALL APIs on the account.
+// Every Kotak-calling feature used to fire independently with zero coordination,
+// which caused real recurring HTTP 429s (confirmed in VM logs) hitting the index
+// feed and the Nifty 50 list in the same window. This gate makes every one of
+// them check in before sending, so the combined rate across all of them stays
+// under the limit by design.
+//
+// Sliding 1000ms window, not a fixed ticker — counts by *send* time only, so a
+// slow/delayed response never lets extra requests slip out. The check-and-reserve
+// step is synchronous (no await between reading the count and pushing the new
+// send), so concurrent callers (e.g. Nifty 50's 5-at-a-time batches) can never
+// race past the ceiling — Node's single-threaded event loop runs that step for
+// one caller fully before the next caller's turn.
+// priority=true (index / option LTP / legacy SL check) is capped at 2 of the 8
+// slots/sec; priority=false (Nifty 50 bulk list) can use the rest — guaranteeing
+// it at least 6/sec even if priority traffic spikes, since priority never exceeds 2.
+const KOTAK_PACER_WINDOW_MS    = 1000;
+const KOTAK_PACER_CEILING      = 8; // 2 below Kotak's documented 10/sec, as headroom
+// Bulk (Nifty 50) is guaranteed CEILING - PRIORITY_CAP = 6 slots/sec minimum at all times,
+// since priority can never exceed this cap regardless of how its traffic is timed/staggered.
+const KOTAK_PACER_PRIORITY_CAP = 2;
+let _kotakPacerSends = []; // [{ t, priority }] — send timestamps in the trailing window
+let _kotakPacerPausedUntil = 0;
+let _kotakPacerBackoffMs = 2000;
+let _kotakPacerLastPauseAt = 0;
+
+function _kotakPacerPrune(now) {
+  while (_kotakPacerSends.length && now - _kotakPacerSends[0].t >= KOTAK_PACER_WINDOW_MS) _kotakPacerSends.shift();
+}
+
+async function kotakPacerAcquire(priority) {
+  for (;;) {
+    const now = Date.now();
+    if (now < _kotakPacerPausedUntil) {
+      await new Promise(r => setTimeout(r, _kotakPacerPausedUntil - now));
+      continue;
+    }
+    _kotakPacerPrune(now);
+    const total = _kotakPacerSends.length;
+    const canSend = priority
+      ? (total < KOTAK_PACER_CEILING && _kotakPacerSends.filter(s => s.priority).length < KOTAK_PACER_PRIORITY_CAP)
+      : (total < KOTAK_PACER_CEILING);
+    if (canSend) { _kotakPacerSends.push({ t: now, priority }); return; }
+    await new Promise(r => setTimeout(r, 15)); // short recheck, not a fixed release interval
+  }
+}
+
+// Call whenever any Kotak response comes back HTTP 429 — pauses the ENTIRE shared
+// queue (account-wide budget was exceeded a moment ago, not just this one request's
+// fault), with exponential backoff if it keeps happening (2s → 4s → 8s, capped 10s).
+function kotakPacerOn429() {
+  const now = Date.now();
+  _kotakPacerBackoffMs = (now - _kotakPacerLastPauseAt < 10000) ? Math.min(_kotakPacerBackoffMs * 2, 10000) : 2000;
+  _kotakPacerPausedUntil = now + _kotakPacerBackoffMs;
+  _kotakPacerLastPauseAt = now;
+  console.log(`[KotakPacer] 429 received — pausing shared queue for ${_kotakPacerBackoffMs}ms`);
+}
+
 // ── TELEGRAM ──────────────────────────────────────────────────────────────────
 async function tgSend(text, keyboard = null) {
   if (!BOT_TOKEN || !CHAT_ID) return null;
@@ -1056,10 +1115,12 @@ async function fetchSpot(instrument = 'NIFTY') {
   const tok = SPOT_TOKENS[instrument.toUpperCase()] || SPOT_TOKENS.NIFTY;
   try {
     const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${tok.exchange_segment}|${encodeURIComponent(tok.name)}/ltp`;
+    await kotakPacerAcquire(true); // checkpoint kotak_shared_pacer
     const r = await ftKotak(url, {
       method: 'GET',
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     });
+    if (r.status === 429) kotakPacerOn429();
     const d   = await r.json();
     const ltp = parseFloat(d?.data?.[0]?.ltp || (Array.isArray(d) ? d[0]?.ltp : null) || d?.ltp);
     return ltp > 0 ? ltp : null;
@@ -1728,9 +1789,11 @@ async function fetchKotakOptionLTPs() {
     try {
       const _exchSeg = c.instrument === 'SENSEX' ? 'bse_fo' : 'nse_fo';
       const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${_exchSeg}|${identifier}/ltp`;
+      await kotakPacerAcquire(true); // checkpoint kotak_shared_pacer
       const r = await ftKotak(url, {
         headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
       }, 3000);
+      if (r.status === 429) kotakPacerOn429();
       if (!r.ok) {
         const errBody = await r.text().catch(() => '');
         console.error(`[ltp] HTTP ${r.status} for ${identifier} (${_exchSeg}): ${errBody.slice(0,200)}`);
@@ -1881,22 +1944,42 @@ async function fetchNSEOptionChainFallback(symbol) {
   } catch(e) { console.error(`[options-nse] ${symbol}:`, e.message); }
 }
 
-let _kotakEquityInterval = null;
+let _kotakEquityLoopRunning = false;
+// checkpoint kotak_shared_pacer, 2026-10-17 — replaces the old fixed 2-min setInterval. Loops
+// continuously: refetches immediately after each full lap completes (short cool-down between
+// laps). Safe to run fast because every individual Kotak send inside fetchKotakNifty50LTPs()
+// already goes through the shared pacer (kotakPacerAcquire) — this loop needs no own throttling.
+// Uses a generation counter (not just the boolean) so a stop immediately followed by a restart
+// can never leave two loop instances running: each loop only keeps going while its own captured
+// generation still matches the current one — stop (or a second start) bumps the generation, which
+// the old instance notices on its very next check, even if that start happened while the old
+// instance's fetch was still in flight (checkpoint kotak50_continuous_loop, Codex round 1 fix).
+let _kotakEquityLoopGen = 0;
+async function runKotakEquityLoop(gen) {
+  while (_kotakEquityLoopRunning && _kotakEquityLoopGen === gen) {
+    await fetchKotakNifty50LTPs().catch(() => {});
+    if (!_kotakEquityLoopRunning || _kotakEquityLoopGen !== gen) break;
+    await new Promise(r => setTimeout(r, 1500)); // brief cool-down between laps, not a fixed wait
+  }
+}
+
 function startKotakLtpInterval() {
   if (_kotakLtpInterval) return;
   _kotakLtpInterval = setInterval(fetchKotakOptionLTPs, 5000);
   fetchKotakOptionLTPs(); // immediate first run
-  // Equity LTP for Nifty50 gainers/losers — every 2 minutes
-  if (!_kotakEquityInterval) {
-    _kotakEquityInterval = setInterval(() => fetchKotakNifty50LTPs().catch(() => {}), 2 * 60 * 1000);
-    fetchKotakNifty50LTPs().catch(() => {}); // immediate first run
+  // Equity LTP for Nifty50 gainers/losers — continuous loop (checkpoint kotak_shared_pacer)
+  if (!_kotakEquityLoopRunning) {
+    _kotakEquityLoopRunning = true;
+    _kotakEquityLoopGen++;
+    runKotakEquityLoop(_kotakEquityLoopGen);
   }
-  console.log('[ltp] Kotak option LTP interval started (5s), equity movers (2min)');
+  console.log('[ltp] Kotak option LTP interval started (5s), equity movers (continuous loop)');
 }
 
 function stopKotakLtpInterval() {
   if (_kotakLtpInterval) { clearInterval(_kotakLtpInterval); _kotakLtpInterval = null; }
-  if (_kotakEquityInterval) { clearInterval(_kotakEquityInterval); _kotakEquityInterval = null; }
+  _kotakEquityLoopRunning = false;
+  _kotakEquityLoopGen++; // invalidates any loop instance currently mid-fetch, even if restarted immediately after
 }
 
 // SENSEX via BSE India public API — no login needed, works independently of TOTP
@@ -1943,9 +2026,11 @@ async function fetchKotakIndicesCombined() {
       .map(([, cfg]) => `${cfg.exchange}|${encodeURIComponent(cfg.name)}`)
       .join(',');
     const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/${parts}/all`;
+    await kotakPacerAcquire(true); // checkpoint kotak_shared_pacer
     const r = await ftKotak(url, {
       headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
     }, 5000);
+    if (r.status === 429) kotakPacerOn429();
     if (!r.ok) {
       const errBody = await r.text().catch(() => '');
       console.log(`[KotakIdx] combined HTTP ${r.status}: ${errBody.slice(0, 300)}`);
@@ -2110,12 +2195,19 @@ let _kotak50LastGood  = {};   // SYMBOL → { data:{symbol,price,change}, ts } �
 let _kotak50InFlight  = false; // overlap guard — prevents two concurrent runs if retries ever run long
 async function fetchKotakNifty50LTPs() {
   if (!session.token) return null;
-  if (_kotakMoversCache && Date.now() - _kotakMoversCacheTs < 2 * 60 * 1000) return _kotakMoversCache;
+  // checkpoint kotak_shared_pacer, 2026-10-17 — the old "return cached result if <2min old" gate
+  // is removed: the caller is now a continuous loop (runKotakEquityLoop) that wants a fresh fetch
+  // every lap, not a stale-cache short-circuit. The overlap guard below still fully applies.
   if (_kotak50InFlight) return _kotakMoversCache; // overlap guard (checkpoint kotak50_persist, 2026-10-16) — never run two cycles at once
-  const symbols = await getNifty50Symbols();
-  if (!symbols.length) return null;
+  // Flag set synchronously here, BEFORE the first await below — closes a pre-existing race where
+  // two near-simultaneous calls could both pass the check above before either set this flag (the
+  // old code set it only after `await getNifty50Symbols()`, leaving a real gap). Not reachable
+  // in practice under the old fixed 2-min interval, but became a real path once the continuous
+  // loop + restart could call this close together (checkpoint kotak50_continuous_loop, Codex r2).
   _kotak50InFlight = true;
   try {
+    const symbols = await getNifty50Symbols();
+    if (!symbols.length) return null;
     // Resolve each symbol's real Kotak numeric token (checkpoint realtime_price_sourcing,
     // 2026-10-15) — ticker-string lookups were silently failing. Log any that don't resolve so a
     // stale/incomplete map is visible, not silent.
@@ -2129,10 +2221,12 @@ async function fetchKotakNifty50LTPs() {
       // fields this calculation needs. Kotak's own documented example uses quote_type="all"
       // specifically to get the complete combined data — using that here.
       const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/all`;
-      return ftKotak(url, {
-        headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
-      }, 4000)
+      return kotakPacerAcquire(false) // checkpoint kotak_shared_pacer — Nifty 50 is the bulk/non-priority class
+        .then(() => ftKotak(url, {
+          headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+        }, 4000))
         .then(async r => {
+          if (r.status === 429) kotakPacerOn429();
           if (!r.ok) {
             if (_loggedFailures < 3) { _loggedFailures++; const b = await r.text().catch(()=>''); console.log(`[kotak50-TRY] ${sym} (token ${resolved}) HTTP ${r.status}: ${b.slice(0,200)}`); }
             return null;
