@@ -1,3 +1,4 @@
+// DEPLOY: T2S-UAT-20261018-001 | server.js: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — UAT scope only. (1) bcryptjs dependency added (package.json). (2) sbFetchUat()/sendPushToMemberUat() — UAT-Supabase variants of the existing sbFetch/sendPushToMember helpers. (3) Two new endpoints: POST /uat-verify-pin and POST /uat-setup-pin — bcrypt compare/hash + lazy legacy-SHA256 migration happen entirely server-side; pin_hash is never included in any response body. Lockout (3 wrong/30min) is now DB-enforced via compare-and-swap counter updates, not client-trusted; a never-registered device locks only itself (Tushar's explicit decision, 2026-10-18 — never let a stranger who merely knows a mobile number lock out the real member), while a previously-registered device locks the whole account and triggers a push notification to the member's other active devices. PIN setup uses an atomic conditional UPDATE (`pin_hash IS NULL`) so exactly one caller can win a given setup. No static-key gate (rate-limited 20/5min per IP instead, same as /knowledge-ask's pattern) — matches governance that a login/setup endpoint can't require a credential that doesn't exist yet. (4) Daily (4:30 AM IST) cleanup of never-successfully-logged-in locked session rows after 15 days; audit_log kept permanent, untouched. Companion: UAT/login_uat.html, UAT/uat.html. Rollback: remove the /uat-verify-pin+/uat-setup-pin block, sbFetchUat/sendPushToMemberUat, the _pinRate/PIN_WEAK_LIST/_pin* helpers, the cleanupStalePinLocks block, and the bcryptjs import; revert package.json.
 // DEPLOY: T2S-PROD-20261016-001 | server.js: SENSEX Kotak token fix — INDEX_TOKENS.SENSEX and SPOT_TOKENS.SENSEX changed from instrument_token '1' to '51' (correct Sensex token per Kotak reference table). NIFTY/BANKNIFTY unchanged. Rollback: restore server.js.bak_20261016_presensex, push_pwa.py, wait 5 min or /http-update.
 // DEPLOY: T2S-PROD-20261011-005 | server.js: Overnight/positional trades get the automatic SL check on day 2+ (checkpoint overnight_sl) — (1) new sbOvernightOpenPosts(todayStartIso): trade_alert posts from the 7 days BEFORE today's `since` boundary (sent_at gte/lt, contiguous with today's query), kept only if sbContractStillActive() — the same rule refreshActiveContracts uses for live-price tracking; never throws (error → []). (2) checkSupabaseSLs(): posts = today's posts (query unchanged) + carried-over open posts; reply select unchanged (no sent_at, so today's 'not holding overnight' handling is unchanged). R1/R2/S2/SELL logic and messages unchanged; gap-down opens post the SL level (R2, Tushar decision). checkSupabaseTriggers and checkResolveAlert stay today-only. Rollback: restore server.js.bak_20261011_preovernight (T2S-PROD-20261011-004), push_pwa.py, wait 5 min, /http-update.
 // DEPLOY: T2S-PROD-20261011-004 | server.js: SL memory survives VM restart (checkpoint sl_restart_persist) — (1) new _slMapsDate (IST date of the market-hours check that last reset the SL maps), separate from _sbAlertDate. (2) checkSupabaseSLs(): daily reset split — alert bookkeeping line unchanged; _slMinPerPost/_slLevelPerPost reset on their own `_slMapsDate !== today` line. (3) saveState(): also saves slMinPerPost/slLevelPerPost/slDate=_slMapsDate (same atomic write). (4) loadState(): restores BOTH SL maps only when slDate === today IST (both needed — restoring the min alone would be wiped by S2's first-appearance reset). (5) Saves: once per 5s LTP cycle when an SL min changed; once per SL check when a level changed or a min was reset. R1/R2/S2 logic, SELL logic and messages unchanged. Rollback: restore server.js.bak_20261011_presl (T2S-PROD-20261011-003), push_pwa.py, wait 5 min, /http-update; extra state.json fields are ignored by old code.
@@ -50,6 +51,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import { createHmac } from 'crypto';
+import bcrypt from 'bcryptjs';
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE   = path.join(__dirname, 'state.json');
 const HOLIDAY_FILE = path.join(__dirname, '.holiday_state.json');
@@ -142,6 +144,19 @@ if (!BOT_TOKEN || !CHAT_ID) {
 const _khRate = new Map();       // IP → { count, reset }
 const _khMemberRate  = new Map(); // memberId → { count, windowStart }
 const _khMemberTiers = new Map(); // memberId → { tier, ts } (1-hour cache)
+
+// ── UAT PIN HASHING (checkpoint pin_hash_consolidated, 2026-10-18) ───────────
+// /uat-verify-pin and /uat-setup-pin share this IP bucket: 20 requests / 5 minutes,
+// a supplementary guard alongside the real control (server-side per-device and
+// per-account lockout, enforced inside the routes themselves).
+const _pinRate = new Map(); // IP → { count, reset }
+const PIN_WEAK_LIST = ['2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212']; // mirrors UAT/login_uat.html WEAK_PINS exactly
+const MAX_ATTEMPTS_PIN = 3;  // mirrors client MAX_ATTEMPTS
+const LOCK_MINUTES_PIN = 30; // mirrors client LOCK_MINUTES
+
+function _pinIsBcrypt(h) { return typeof h === 'string' && /^\$2[aby]\$/.test(h); }
+function _pinIsLegacySha256(h) { return typeof h === 'string' && /^[a-f0-9]{64}$/i.test(h); }
+function _pinLegacyHash(pin) { return crypto.createHash('sha256').update(pin + 'T2S_SALT').digest('hex'); }
 
 async function khGetMemberTier(memberId) {
   const CACHE_MS = 60 * 60 * 1000;
@@ -459,6 +474,18 @@ async function sbFetch(path, opts = {}) {
   return text ? JSON.parse(text) : [];
 }
 
+// checkpoint pin_hash_consolidated (2026-10-18) — UAT Supabase variant of sbFetch, used
+// server-side by /uat-verify-pin, /uat-setup-pin, and the stale-lock cleanup job.
+async function sbFetchUat(path, opts = {}) {
+  const { headers: extraHdrs, ...rest } = opts;
+  const r = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, {
+    ...rest,
+    headers: { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...(extraHdrs || {}) }
+  });
+  const text = await r.text();
+  return text ? JSON.parse(text) : [];
+}
+
 // ── WEB PUSH — native implementation (RFC 8291 + RFC 8292, no npm dep) ───────
 import crypto from 'crypto';
 const { subtle } = crypto.webcrypto;
@@ -539,6 +566,28 @@ async function sendPushToMember(memberId, { title, body, url = 'https://app.trad
     }
     return sent;
   } catch (e) { console.error('[sendPushToMember]', e.message); return 0; }
+}
+
+// checkpoint pin_hash_consolidated (2026-10-18) — UAT variant of sendPushToMember.
+// excludeDeviceId lets the caller skip the device that triggered the alert (e.g. the
+// device that just got PIN-locked) so the notification only reaches the member's OTHER
+// registered devices. Failures are swallowed — this must never block or delay a lockout.
+async function sendPushToMemberUat(memberId, { title, body, url = 'https://app.trade2spend.com/UAT/uat.html' }, excludeDeviceId = null) {
+  try {
+    let q = `push_subscriptions?member_id=eq.${memberId}&select=id,device_id,subscription_json&order=last_used.desc`;
+    const subs = await sbFetchUat(q);
+    if (!subs || !subs.length) return 0;
+    let sent = 0;
+    for (const sub of subs) {
+      if (excludeDeviceId && sub.device_id === excludeDeviceId) continue;
+      try {
+        const sc = await sendWebPush(sub.subscription_json, JSON.stringify({ title, body, tag: `t2s-uat-pin-${memberId.slice(0,8)}`, url }));
+        if (sc === 410 || sc === 404) sbFetchUat(`push_subscriptions?id=eq.${sub.id}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }).catch(() => {});
+        else sent++;
+      } catch {}
+    }
+    return sent;
+  } catch (e) { console.error('[sendPushToMemberUat]', e.message); return 0; }
 }
 
 const VALID_EXPIRIES     = ['weekly','next weekly','monthly'];
@@ -5014,6 +5063,195 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     return;
   }
 
+  // ── UAT PIN VERIFY/SETUP (checkpoint pin_hash_consolidated, 2026-10-18) ──────
+  // Finding O fix, UAT scope only. Replaces client-side SHA-256+static-salt
+  // compute-and-compare (login_uat.html hashPin / uat.html _faHashPin) with a
+  // server-side bcrypt check — the stored pin_hash value never appears in any
+  // response body. Ships to production automatically whenever Tushar's planned
+  // UAT→production release happens (per checkpoint pin_hash_final_scope).
+  if (req.method === 'OPTIONS' && (urlPath === '/uat-verify-pin' || urlPath === '/uat-setup-pin')) {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+
+  if (req.method === 'POST' && (urlPath === '/uat-verify-pin' || urlPath === '/uat-setup-pin')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    // No static-key gate here by design — a login/setup endpoint has to be reachable
+    // before any credential exists. Real protection is the per-device + per-account
+    // lockout enforced below (DB-side, can't be reset by the caller) plus this
+    // per-IP rate limit as a supplementary guard (checkpoint pin_hash_endpoints).
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const nowMs = Date.now();
+    if (!_pinRate.has(ip)) _pinRate.set(ip, { count: 0, reset: nowMs + 5 * 60 * 1000 });
+    const rl = _pinRate.get(ip);
+    if (nowMs > rl.reset) { rl.count = 0; rl.reset = nowMs + 5 * 60 * 1000; }
+    rl.count++;
+    if (rl.count > 20) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' }));
+      return;
+    }
+
+    if (!UAT_SB_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT_SUPABASE_KEY not set on server' })); return;
+    }
+
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); // soft-fail pattern — body carries success/failure, matches /knowledge-ask convention
+      try {
+        const parsed = JSON.parse(rawBody || '{}');
+        const pin = String(parsed.pin || '');
+        const deviceId = String(parsed.device_id || '');
+        if (!/^\d{4}$/.test(pin) || !deviceId) { res.end(JSON.stringify({ success: false })); return; }
+        const deviceType = /Mobi|Android/i.test(req.headers['user-agent'] || '') ? 'mobile' : 'desktop';
+        const nowIso = new Date().toISOString();
+
+        // ── POST /uat-setup-pin ───────────────────────────────────────────────
+        if (urlPath === '/uat-setup-pin') {
+          const mobile = String(parsed.mobile || '');
+          if (!/^\+91\d{10}$/.test(mobile) || PIN_WEAK_LIST.includes(pin)) { res.end(JSON.stringify({ success: false })); return; }
+          const members = await sbFetchUat(`members?mobile=eq.${encodeURIComponent(mobile)}&status=eq.enabled&select=id`);
+          if (!members || !members.length) { res.end(JSON.stringify({ success: false })); return; }
+          const memberId = members[0].id;
+          const newHash = bcrypt.hashSync(pin, 10);
+          // Atomic conditional write — exactly one caller can ever win this transition.
+          // A 0-row response means pin_hash was already non-null (lost the race, or
+          // nothing to set) — checkpoint pin_hash_setup_identity's agreed mitigation.
+          const written = await sbFetchUat(`members?id=eq.${memberId}&pin_hash=is.null`, { method: 'PATCH', body: JSON.stringify({ pin_hash: newHash }) });
+          if (!written || !written.length) { res.end(JSON.stringify({ success: false, alreadySet: true })); return; }
+          // Concurrent-session-limit handling — mirrors existing client logic exactly
+          // (login_uat.html processSetupPin / uat.html _faSetupPin2), just server-side.
+          const allActive = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+          if (allActive && allActive.length >= 2) { res.end(JSON.stringify({ success: false, limitReached: true })); return; }
+          // Reactivate a pre-existing (e.g. previously-locked, is_active:false) row for this
+          // exact device instead of inserting a second one for the same (member,device) pair.
+          const priorRow = await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&select=id`);
+          if (priorRow && priorRow.length) {
+            await sbFetchUat(`sessions?id=eq.${priorRow[0].id}`, { method: 'PATCH', body: JSON.stringify({ is_active: true, last_active: nowIso, failed_attempts_today: 0, locked_until: null }) });
+          } else {
+            await sbFetchUat('sessions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, device_type: deviceType, device_name: 'Unknown', is_active: true, last_active: nowIso }) });
+          }
+          const recheck = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+          if (recheck && recheck.length > 2) {
+            await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
+            res.end(JSON.stringify({ success: false, limitReached: true })); return;
+          }
+          res.end(JSON.stringify({ success: true })); return;
+        }
+
+        // ── POST /uat-verify-pin ──────────────────────────────────────────────
+        const memberId = String(parsed.member_id || '');
+        if (!memberId) { res.end(JSON.stringify({ success: false })); return; }
+        const members = await sbFetchUat(`members?id=eq.${memberId}&select=id,status,pin_hash,tier,free_access`);
+        // "disabled" is safe to reveal here — the caller already passed the earlier mobile-number
+        // lookup to obtain this member_id, and the client already showed this exact message
+        // before this fix (preserving existing behaviour, not a new disclosure).
+        if (!members || !members.length || members[0].status === 'disabled') { res.end(JSON.stringify({ success: false, disabled: true })); return; }
+        const member = members[0];
+
+        // Account-wide lock check (any session row for this member, not just this device).
+        const acctLock = await sbFetchUat(`sessions?member_id=eq.${memberId}&locked_until=gt.${encodeURIComponent(nowIso)}&select=locked_until&limit=1`);
+        if (acctLock && acctLock.length) { res.end(JSON.stringify({ success: false, locked: true, locked_until: acctLock[0].locked_until })); return; }
+
+        if (!member.pin_hash) { res.end(JSON.stringify({ success: false })); return; }
+
+        let isMatch = false;
+        if (_pinIsBcrypt(member.pin_hash)) isMatch = bcrypt.compareSync(pin, member.pin_hash);
+        else if (_pinIsLegacySha256(member.pin_hash)) isMatch = (_pinLegacyHash(pin) === member.pin_hash);
+        // Any other stored format: isMatch stays false — fail closed, never silently authenticate.
+
+        const existingSession = await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&select=id,is_active,failed_attempts_today`);
+        const registeredRow = existingSession && existingSession.length ? existingSession[0] : null;
+        const isRegisteredDevice = !!(registeredRow && registeredRow.is_active);
+
+        if (isMatch) {
+          if (_pinIsLegacySha256(member.pin_hash)) {
+            sbFetchUat(`members?id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ pin_hash: bcrypt.hashSync(pin, 10) }) }).catch(() => {});
+          }
+          if (isRegisteredDevice) {
+            await sbFetchUat(`sessions?id=eq.${registeredRow.id}`, { method: 'PATCH', body: JSON.stringify({ last_active: nowIso, failed_attempts_today: 0, locked_until: null }) });
+          } else {
+            const allActive = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+            if (allActive && allActive.length >= 2) { res.end(JSON.stringify({ success: false, limitReached: true })); return; }
+            // registeredRow here, if present, is a dead (is_active:false) row for this exact
+            // device — e.g. one that was previously locked as an unregistered device and has
+            // now proven it knows the PIN. Reactivate it rather than inserting a duplicate.
+            if (registeredRow) {
+              await sbFetchUat(`sessions?id=eq.${registeredRow.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: true, last_active: nowIso, failed_attempts_today: 0, locked_until: null }) });
+            } else {
+              await sbFetchUat('sessions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, device_type: deviceType, device_name: 'Unknown', is_active: true, last_active: nowIso }) });
+            }
+            const recheck = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+            if (recheck && recheck.length > 2) {
+              await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
+              res.end(JSON.stringify({ success: false, limitReached: true })); return;
+            }
+          }
+          sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_success', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { tier: member.tier } }) }).catch(() => {});
+          res.end(JSON.stringify({ success: true })); return;
+        }
+
+        // ── Wrong PIN — atomic (compare-and-swap) attempt counting, no client-trusted state ──
+        if (isRegisteredDevice) {
+          const oldCount = registeredRow.failed_attempts_today || 0;
+          const newCount = oldCount + 1;
+          let casOk = await sbFetchUat(`sessions?id=eq.${registeredRow.id}&failed_attempts_today=eq.${oldCount}`, { method: 'PATCH', body: JSON.stringify({ failed_attempts_today: newCount }) });
+          if (!casOk || !casOk.length) { // lost the race once — one retry against the fresh value, no loop
+            const fresh = await sbFetchUat(`sessions?id=eq.${registeredRow.id}&select=failed_attempts_today`);
+            const freshCount = (fresh && fresh[0] ? (fresh[0].failed_attempts_today || 0) : oldCount) + 1;
+            await sbFetchUat(`sessions?id=eq.${registeredRow.id}`, { method: 'PATCH', body: JSON.stringify({ failed_attempts_today: freshCount }) }).catch(() => {});
+          }
+          const finalCount = Math.max(newCount, oldCount + 1);
+          if (finalCount >= MAX_ATTEMPTS_PIN) {
+            const lu = new Date(Date.now() + LOCK_MINUTES_PIN * 60000).toISOString();
+            await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ locked_until: lu, failed_attempts_today: finalCount }) }).catch(() => {});
+            sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'account_locked', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { locked_until: lu, attempts: finalCount } }) }).catch(() => {});
+            // Notify the member's OTHER registered devices — this device is the one that just failed.
+            sendPushToMemberUat(memberId, { title: '⚠️ Incorrect PIN attempts', body: `Your account was locked after repeated incorrect PIN entries on a registered device (${deviceType}). If this wasn't you, contact @T2Sview.` }, deviceId).catch(() => {});
+            res.end(JSON.stringify({ success: false, locked: true, locked_until: lu })); return;
+          }
+          sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_fail', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { attempts: finalCount } }) }).catch(() => {});
+          res.end(JSON.stringify({ success: false, attemptsRemaining: MAX_ATTEMPTS_PIN - finalCount })); return;
+        } else {
+          // Brand-new/never-logged-in device — deliberately locks only THIS device, never the
+          // account (Tushar's explicit decision, 2026-10-18: a stranger who only knows the
+          // mobile number must never be able to lock out the real member). Every attempt is
+          // persisted immediately (not just the 3rd) — closes the "refresh resets my tries" gap.
+          const anyRow = registeredRow; // same row, just is_active:false (never completed a login)
+          let finalCount;
+          if (anyRow) {
+            const oldCount = anyRow.failed_attempts_today || 0;
+            finalCount = oldCount + 1;
+            const casOk = await sbFetchUat(`sessions?id=eq.${anyRow.id}&failed_attempts_today=eq.${oldCount}`, { method: 'PATCH', body: JSON.stringify({ failed_attempts_today: finalCount }) });
+            if (!casOk || !casOk.length) {
+              const fresh = await sbFetchUat(`sessions?id=eq.${anyRow.id}&select=failed_attempts_today`);
+              finalCount = (fresh && fresh[0] ? (fresh[0].failed_attempts_today || 0) : oldCount) + 1;
+              await sbFetchUat(`sessions?id=eq.${anyRow.id}`, { method: 'PATCH', body: JSON.stringify({ failed_attempts_today: finalCount }) }).catch(() => {});
+            }
+            if (finalCount >= MAX_ATTEMPTS_PIN) {
+              const lu = new Date(Date.now() + LOCK_MINUTES_PIN * 60000).toISOString();
+              await sbFetchUat(`sessions?id=eq.${anyRow.id}`, { method: 'PATCH', body: JSON.stringify({ locked_until: lu }) }).catch(() => {});
+              sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'device_locked', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { locked_until: lu, attempts: finalCount } }) }).catch(() => {});
+              res.end(JSON.stringify({ success: false, locked: true, locked_until: lu })); return;
+            }
+          } else {
+            finalCount = 1;
+            await sbFetchUat('sessions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, device_type: deviceType, device_name: 'Unknown', is_active: false, failed_attempts_today: finalCount, last_active: nowIso }) }).catch(() => {});
+          }
+          sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_fail', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { attempts: finalCount } }) }).catch(() => {});
+          res.end(JSON.stringify({ success: false, attemptsRemaining: MAX_ATTEMPTS_PIN - finalCount })); return;
+        }
+      } catch (e) {
+        console.error('[uat-pin]', e.message);
+        try { res.end(JSON.stringify({ success: false })); } catch {}
+      }
+    });
+    return;
+  }
+
   // ── UAT SUPABASE PROXY — POST /uat-sb ────────────────────────────────────────
   if (req.method === 'OPTIONS' && urlPath === '/uat-sb') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-uat' });
@@ -5734,5 +5972,29 @@ function scheduleAnalyticsArchival() {
   setTimeout(() => { archiveOldAnalytics().catch(() => {}); setInterval(archiveOldAnalytics, 24 * 60 * 60 * 1000); }, target.getTime() - now.getTime());
 }
 scheduleAnalyticsArchival();
+
+// ── UAT STALE PIN-LOCK CLEANUP (checkpoint pin_hash_consolidated, 2026-10-18) ─
+// Daily, 4:30 AM IST. Deletes `sessions` rows for devices that got locked while
+// trying (and failing) to guess a PIN but never once logged in successfully
+// (is_active stays false for such rows for their whole life — see /uat-verify-pin
+// above), once their lock is more than 15 days old. The real audit trail
+// (audit_log: login_fail / account_locked / device_locked) is never touched and
+// has no expiry — only this bookkeeping row is pruned. A row that ever logs in
+// successfully flips is_active:true first and can never match this condition
+// (Tushar's decision, 2026-10-18: 15 days, audit_log kept permanently).
+async function cleanupStalePinLocks() {
+  try {
+    const cutoff = new Date(Date.now() - 15 * 24 * 3_600_000).toISOString();
+    await sbFetchUat(`sessions?is_active=eq.false&locked_until=lt.${encodeURIComponent(cutoff)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+  } catch (e) { console.error('[uat-pin-cleanup] error:', e.message); }
+}
+function scheduleStalePinLockCleanup() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const target = new Date(now);
+  if (now.getHours() >= 4 && now.getMinutes() >= 30) target.setDate(target.getDate() + 1);
+  target.setHours(4, 30, 0, 0);
+  setTimeout(() => { cleanupStalePinLocks().catch(() => {}); setInterval(cleanupStalePinLocks, 24 * 60 * 60 * 1000); }, target.getTime() - now.getTime());
+}
+scheduleStalePinLockCleanup();
 
 tgAlert(`🟢 <b>Trade2Spend Bot v5.0 started</b>\nServer: api.trade2spend.com\nLoaded: ${Object.keys(state.trades).length} trades`).catch(() => {});
