@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261018-002 | server.js: Finding F fix — removed the unauthenticated GET /access-requests route (leaked up to 200 members' mobile/name/tier/free-access-block status to anyone, no auth). Also removed its now-unused _DISABLE_ACCESS_REQUESTS_GET flag constant. Zero client callers anywhere in the project (member PWA, admin PWA, UAT files) — confirmed by exhaustive search; admin review reads/writes access_requests directly via Supabase, not through this route. Sibling PATCH /access-requests/:id (used only by trading_bot_v8.py, localhost-only call) is untouched, as is the shared _send503 helper (still used by ~10 other routes). Codex-reviewed (1 round, clean, FINDING-NONE). Affects prod and UAT both (shared server.js) — this route never had a UAT-only variant. Rollback: re-add `const _DISABLE_ACCESS_REQUESTS_GET = !!process.env.DISABLE_ACCESS_REQUESTS_GET;` near the other _DISABLE_* constants, and re-add a `GET /access-requests` block (query: `access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200`, optional `&status=eq.<filter>`) before the `/storage-status` route — no separate backup file was made for this specific change; this comment is the full rollback spec.
 // DEPLOY: T2S-UAT-20261018-001 | server.js: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — UAT scope only. (1) bcryptjs dependency added (package.json). (2) sbFetchUat()/sendPushToMemberUat() — UAT-Supabase variants of the existing sbFetch/sendPushToMember helpers. (3) Two new endpoints: POST /uat-verify-pin and POST /uat-setup-pin — bcrypt compare/hash + lazy legacy-SHA256 migration happen entirely server-side; pin_hash is never included in any response body. Lockout (3 wrong/30min) is now DB-enforced via compare-and-swap counter updates, not client-trusted; a never-registered device locks only itself (Tushar's explicit decision, 2026-10-18 — never let a stranger who merely knows a mobile number lock out the real member), while a previously-registered device locks the whole account and triggers a push notification to the member's other active devices. PIN setup uses an atomic conditional UPDATE (`pin_hash IS NULL`) so exactly one caller can win a given setup. No static-key gate (rate-limited 20/5min per IP instead, same as /knowledge-ask's pattern) — matches governance that a login/setup endpoint can't require a credential that doesn't exist yet. (4) Daily (4:30 AM IST) cleanup of never-successfully-logged-in locked session rows after 15 days; audit_log kept permanent, untouched. Companion: UAT/login_uat.html, UAT/uat.html. Rollback: remove the /uat-verify-pin+/uat-setup-pin block, sbFetchUat/sendPushToMemberUat, the _pinRate/PIN_WEAK_LIST/_pin* helpers, the cleanupStalePinLocks block, and the bcryptjs import; revert package.json.
 // DEPLOY: T2S-PROD-20261016-001 | server.js: SENSEX Kotak token fix — INDEX_TOKENS.SENSEX and SPOT_TOKENS.SENSEX changed from instrument_token '1' to '51' (correct Sensex token per Kotak reference table). NIFTY/BANKNIFTY unchanged. Rollback: restore server.js.bak_20261016_presensex, push_pwa.py, wait 5 min or /http-update.
 // DEPLOY: T2S-PROD-20261011-005 | server.js: Overnight/positional trades get the automatic SL check on day 2+ (checkpoint overnight_sl) — (1) new sbOvernightOpenPosts(todayStartIso): trade_alert posts from the 7 days BEFORE today's `since` boundary (sent_at gte/lt, contiguous with today's query), kept only if sbContractStillActive() — the same rule refreshActiveContracts uses for live-price tracking; never throws (error → []). (2) checkSupabaseSLs(): posts = today's posts (query unchanged) + carried-over open posts; reply select unchanged (no sent_at, so today's 'not holding overnight' handling is unchanged). R1/R2/S2/SELL logic and messages unchanged; gap-down opens post the SL level (R2, Tushar decision). checkSupabaseTriggers and checkResolveAlert stay today-only. Rollback: restore server.js.bak_20261011_preovernight (T2S-PROD-20261011-004), push_pwa.py, wait 5 min, /http-update.
@@ -97,7 +98,6 @@ const _DISABLE_TEST_NSE_CHAIN      = !!process.env.DISABLE_TEST_NSE_CHAIN;
 const _DISABLE_DEBUG_SCRIP         = !!process.env.DISABLE_DEBUG_SCRIP;
 const _DISABLE_RELOAD_SCRIP        = !!process.env.DISABLE_RELOAD_SCRIP;
 const _DISABLE_SET_HIGH            = !!process.env.DISABLE_SET_HIGH;
-const _DISABLE_ACCESS_REQUESTS_GET = !!process.env.DISABLE_ACCESS_REQUESTS_GET;
 const _DISABLE_STORAGE_STATUS      = !!process.env.DISABLE_STORAGE_STATUS;
 const _DISABLE_APPLY_FIX           = !!process.env.DISABLE_APPLY_FIX;
 const _DISABLE_PROMOTE_UAT         = !!process.env.DISABLE_PROMOTE_UAT;
@@ -4294,23 +4294,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Get access requests (admin) — GET /access-requests?status=pending
-  if (req.method === 'GET' && urlPath === '/access-requests') {
-    if (_DISABLE_ACCESS_REQUESTS_GET) { _send503('/access-requests', res); return; }
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json');
-    try {
-      const params = new URL('https://x' + req.url).searchParams;
-      const statusFilter = params.get('status');
-      let query = 'access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200';
-      if (statusFilter) query += `&status=eq.${statusFilter}`;
-      const rows = await sbFetch(query, { method: 'GET' });
-      res.writeHead(200); res.end(JSON.stringify({ ok: true, requests: rows || [] }));
-    } catch (e) {
-      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
-    return;
-  }
+  // checkpoint access_requests_delete (2026-10-18, Finding F) — the unauthenticated
+  // GET /access-requests route (leaked up to 200 members' mobile/name/tier/block
+  // status with zero auth) was removed here. Zero client callers anywhere in the
+  // project (confirmed by exhaustive grep); the admin review UI reads/writes
+  // access_requests directly via Supabase, not through this route. The sibling
+  // PATCH /access-requests/:id route (used only by trading_bot_v8.py, localhost-only)
+  // is untouched. Rollback: restore the GET block (see server.js.bak before this
+  // checkpoint) and the _DISABLE_ACCESS_REQUESTS_GET constant.
 
   // Storage status — GET /storage-status
   if (req.method === 'GET' && urlPath === '/storage-status') {
