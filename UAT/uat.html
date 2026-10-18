@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261018-001 | uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed _faHashPin() (SHA-256+static-salt). _faVerifyPin() and _faSetupPin2() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin (reuses existing _VM constant) — pin_hash is never fetched to or computed in this page again. Also fixes a pre-existing inconsistency: this in-app PIN modal previously locked ALL of a member's active sessions on 3 wrong attempts regardless of whether the device had logged in before; it now matches login_uat.html's deliberate per-device-only lockout for never-registered devices (server-enforced). Rollback: restore _faHashPin(), revert _faVerifyPin()/_faSetupPin2() to the pre-20261018 direct-Supabase compare. -->
 <!-- T2S-UAT-20261014-002 | uat.html: Exit-price parsing fix — mirrors T2S-PROD-20261014-002 applied to index.html. parseFollowUpContent: widened the exit-price fallback regex to match past-tense "exited" + filler words ("remaining", "another 25%", etc.), and moved the "went to X" fallback to run after it so an explicit stated exit price always wins over a vaguer earlier reference in the same message. Regression-verified against all 654 real follow_up posts ever sent — only the reported bug case changes, zero other differences. Codex-reviewed. Rollback: revert to original order/regex, same as T2S-PROD-20261014-002. -->
 <!-- T2S-UAT-20261014-001 | uat.html: Stored XSS fix — Special Comment chip. _cmtHtmlUAT (~line 4050) now wraps _specialComment in sanitizeHtml() before interpolation, matching every other post-content field in this file. Mirrors T2S-PROD-20261014-001 applied to index.html. Extraction regex, isFreeViewer gating, chip styling, and the 2 insertion sites untouched. Rollback: remove the sanitizeHtml() wrapper around _specialComment at line 4050, restoring raw interpolation. -->
 <!-- T2S-UAT-20260924-C | uat.html: Stage C client fixes — C1: getLastSLNumeric stops at first slRevised (cost→null); C2: runningSL updated in standalone-SL-revision continue branch + post-exit branch for Sep 15 rule; Exemption: isVmSLAutoPost helper skips runningSL floor for VM auto-posts (server.js L4924). No breach operator change, no prod files touched. Rollback: revert getLastSLNumeric to skip-cost version; revert getWeightedExitPrice/getExitLegs to static opts.sl floor; remove isVmSLAutoPost. -->
@@ -1246,10 +1247,6 @@
             ms.style.display = ''; // keep the input that's already there from mobile phase
         }
     }
-    async function _faHashPin(pin) {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin + 'T2S_SALT'));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-    }
     function _faGetDeviceId() {
         let id = localStorage.getItem('t2s_uat_device_id');
         if (!id) { const b = crypto.getRandomValues(new Uint8Array(12)); id = 'dev_' + Array.from(b, x => x.toString(16).padStart(2,'0')).join(''); localStorage.setItem('t2s_uat_device_id', id); }
@@ -1268,55 +1265,43 @@
         }
     }
     function _faPinDel() { _faPinBuffer = _faPinBuffer.slice(0,-1); _faUpdateDots(_faPinBuffer); document.getElementById('fa-pin-err').textContent = ''; }
+    // checkpoint pin_hash_consolidated (2026-10-18) — PIN check now happens entirely
+    // server-side (bcrypt, atomic lockout counters). No hash is computed or compared
+    // here, and the stored pin_hash is never fetched to this page.
     async function _faVerifyPin() {
         if (!_faPendingMember) return;
-        const hash = await _faHashPin(_faPinBuffer);
-        if (_faPendingMember.pin_hash === hash) {
-            // Defence-in-depth: enforce lock even if correct PIN entered (race condition guard)
-            const _faVNow=new Date().toISOString();
-            const _faVLock=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&locked_until=gt.${encodeURIComponent(_faVNow)}&select=locked_until&limit=1`,{method:'GET'});
-            if(_faVLock&&_faVLock.length>0){const _faVLu=new Date(_faVLock[0].locked_until);const _faVMins=Math.max(1,Math.ceil((_faVLu-new Date())/60000));document.getElementById('fa-pin-err').innerHTML=`Account locked — ${_faVMins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.`;_faPinBuffer='';_faUpdateDots('');return;}
-            const did = _faGetDeviceId();
-            try {
-                const ex = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`, { method:'GET' });
-                if (ex && ex.length > 0) {
-                    await sbFetch(`sessions?id=eq.${ex[0].id}`, { method:'PATCH', body: JSON.stringify({ last_active: new Date().toISOString(), failed_attempts_today: 0, locked_until: null }) });
-                } else {
-                    const all = await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true&select=id`, { method:'GET' });
-                    if (all && all.length >= 2) { document.getElementById('fa-pin-err').textContent = 'Maximum concurrent login limit reached. Log out from another device first.'; _faPinBuffer = ''; _faUpdateDots(''); return; }
-                    await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
-                    const _rcFa=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true&select=id`,{method:'GET'});
-                    if(_rcFa&&_rcFa.length>2){await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});document.getElementById('fa-pin-err').textContent='Maximum concurrent login limit reached. Log out from another device first.';_faPinBuffer='';_faUpdateDots('');return;}
-                }
-            } catch(e) {}
-            localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
-            localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
-            localStorage.setItem('t2s_uat_last_login', Date.now().toString());
-            if (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) localStorage.removeItem('t2s_uat_request_pending');
-            closeRequestModal();
-            window.location.reload();
-        } else {
-            const _faDid = _faGetDeviceId();
-            try{const _faS=await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${_faDid}&is_active=eq.true&select=failed_attempts_today`,{method:'GET'});if(_faS&&_faS.length>0&&(_faS[0].failed_attempts_today||0)>_faPinAttempts)_faPinAttempts=_faS[0].failed_attempts_today;}catch(e){}
-            _faPinAttempts++;
+        const did = _faGetDeviceId();
+        try {
+            const res = await fetch(`${_VM}/uat-verify-pin`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, pin: _faPinBuffer }) });
+            const d = await res.json();
+            if (d.success) {
+                localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
+                localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
+                localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+                if (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) localStorage.removeItem('t2s_uat_request_pending');
+                closeRequestModal();
+                window.location.reload();
+                return;
+            }
             _faPinBuffer = ''; _faUpdateDots('');
-            const rem = 3 - _faPinAttempts;
-            if (rem <= 0) {
-                document.getElementById('fa-pin-err').innerHTML = 'Too many attempts. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.';
+            if (d.locked) {
+                const lu = new Date(d.locked_until); const mins = Math.max(1, Math.ceil((lu - new Date()) / 60000));
+                document.getElementById('fa-pin-err').innerHTML = `Account locked — ${mins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.`;
                 document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
-                // Show Request Unlock button
                 let _faUBtn=document.getElementById('fa-pin-unlock-btn');
                 if(!_faUBtn){_faUBtn=document.createElement('button');_faUBtn.id='fa-pin-unlock-btn';_faUBtn.style.cssText='margin-top:8px;padding:8px 18px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;width:100%;';_faUBtn.textContent='🔓 Request Unlock';_faUBtn.onclick=_faRequestUnlock;document.getElementById('fa-pin-section').appendChild(_faUBtn);}
                 _faUBtn.style.display='block';_faUBtn.disabled=false;_faUBtn.style.opacity='1';_faUBtn.textContent='🔓 Request Unlock';_faUBtn.onclick=_faRequestUnlock;
-                const _faLuTs=new Date(Date.now()+30*60000).toISOString();
-                try{await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({locked_until:_faLuTs,failed_attempts_today:_faPinAttempts}),headers:{'Prefer':'return=minimal'}});}catch(e){}
-                // Always persist lock to localStorage so login.html detects it even when no active DB session exists
-                localStorage.setItem('t2s_uat_lock_until',_faLuTs);
-                if(_faPendingMember)localStorage.setItem('t2s_uat_locked_mid',_faPendingMember.id);
+                localStorage.setItem('t2s_uat_lock_until', d.locked_until);
+                localStorage.setItem('t2s_uat_locked_mid', _faPendingMember.id);
+            } else if (d.limitReached) {
+                document.getElementById('fa-pin-err').textContent = 'Maximum concurrent login limit reached. Log out from another device first.';
             } else {
+                const rem = typeof d.attemptsRemaining === 'number' ? d.attemptsRemaining : 0;
                 document.getElementById('fa-pin-err').textContent = `Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;
-                try{await sbFetch(`sessions?member_id=eq.${_faPendingMember.id}&device_id=eq.${_faDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:_faPinAttempts}),headers:{'Prefer':'return=minimal'}});}catch(e){}
             }
+        } catch(e) {
+            _faPinBuffer = ''; _faUpdateDots('');
+            document.getElementById('fa-pin-err').textContent = 'Verification failed. Check connection.';
         }
     }
     function _faShowPinSection(member, label) {
@@ -1370,11 +1355,18 @@
             const lbl = document.getElementById('fa-pin-label'); if (lbl) lbl.textContent = 'Create a 4-digit PIN';
             _faPinMode = 'setup_1'; return;
         }
-        const hash = await _faHashPin(_faPinBuffer);
+        // checkpoint pin_hash_consolidated (2026-10-18) — PIN is hashed (bcrypt) and
+        // written entirely server-side; the raw PIN is sent once over HTTPS.
         try {
-            await sbFetch(`members?id=eq.${_faPendingMember.id}`, { method:'PATCH', body: JSON.stringify({ pin_hash: hash }) });
             const did = _faGetDeviceId();
-            await sbFetch('sessions', { method:'POST', body: JSON.stringify({ member_id: _faPendingMember.id, device_id: did, device_type: /Mobi/.test(navigator.userAgent)?'mobile':'desktop', device_name: navigator.platform||'Unknown', is_active: true, last_active: new Date().toISOString() }) });
+            const mob = '+91' + (document.getElementById('fa-mobile-input')?.value || '');
+            const res = await fetch(`${_VM}/uat-setup-pin`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mobile: mob, device_id: did, pin: _faPinBuffer }) });
+            const d = await res.json();
+            if (!d.success) {
+                document.getElementById('fa-pin-err').textContent = d.limitReached ? 'Maximum concurrent login limit reached. Log out from another device first.' : 'Error saving PIN. Try again.';
+                _faPinBuffer = ''; _faUpdateDots('');
+                return;
+            }
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
             localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
             localStorage.setItem('t2s_uat_last_login', Date.now().toString());
