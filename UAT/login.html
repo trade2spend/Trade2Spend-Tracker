@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261018-001 | login_uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed client-side hashPin() (SHA-256+static-salt, compared in-browser against a fetched pin_hash). verifyPin() and processSetupPin() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin — pin_hash is never fetched to or computed in this page again; bcrypt + atomic server-side lockout counters live entirely server-side (see server.js same-date tag). Device-registered-vs-new lockout behavior, concurrent-session-limit logic, and all other screens unchanged. Companion: uat.html (_faVerifyPin/_faSetupPin2), server.js. Rollback: restore hashPin(), revert verifyPin()/processSetupPin() to the pre-20261018 direct-Supabase compare, remove the _VM constant. -->
 <!-- T2S-UAT-20260918-002 | login_uat.html: disabled-account message on redirect — init() fallthrough to screen-mobile now reads localStorage t2s_uat_logout_reason; if 'disabled', clears the key and shows "Your account has been disabled. You have been logged out. Please reach out to @T2Sview for more details." in existing #mobile-err element using existing .err-msg/.show pattern. Flag is set by uat.html init() (T2S-UAT-20260918-002 companion). Rollback: remove the 2-line flag-check block from init() fallthrough. -->
 <!-- T2S-UAT-20260913-005 | login_uat.html: permanent lock+request state fix — (A) checkLock() now DB-first authoritative; if DB not locked but localStorage lock exists for same member_id, uses localStorage; both paths call _applyWaitingState() when request is pending (disables PIN pad, hides Forgot PIN, shows Request Submitted); (B) new _applyWaitingState() function; (C) requestUnlock() success calls _applyWaitingState() immediately; (D) checkMobile() adds localStorage lock check after DB check using t2s_uat_locked_mid. Rollback: revert checkLock() to original, remove _applyWaitingState(), remove _applyWaitingState() call in requestUnlock(), remove localStorage lock block in checkMobile(). -->
 <!-- T2S-UAT-20260913-004 | login_uat.html: @T2Sview links in lock/unlock messages — changed three textContent references to innerHTML with clickable t.me/T2Sview links: (1) checkMobile already-sent lock message; (2) requestUnlockFromMobile rate-limit message; (3) requestUnlockFromMobile success message. Rollback: revert three innerHTML lines back to textContent. -->
@@ -395,6 +396,8 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 // UAT Supabase — direct connection (anon key is public, identical pattern to prod)
 const UAT_SB_URL='https://ivjyadnspyobzgbdoajj.supabase.co';
 const UAT_SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
+// checkpoint pin_hash_consolidated (2026-10-18) — VM backend, used only for /uat-verify-pin and /uat-setup-pin (PIN check now happens server-side, never client-side).
+const _VM='https://api.trade2spend.com';
 // MAIN_APP_URL: relative path from /UAT/ directory → resolves to /UAT/uat.html
 const MAIN_APP_URL='uat.html';
 const SESSION_24H=24*60*60*1000;
@@ -406,7 +409,6 @@ function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classL
 function showLoading(v){document.getElementById('loading').classList.toggle('show',v);}
 function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
 function getDeviceId(){let id=localStorage.getItem('t2s_uat_device_id');if(!id){const b=crypto.getRandomValues(new Uint8Array(12));id='dev_'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem('t2s_uat_device_id',id);}return id;}
-async function hashPin(pin){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pin+'T2S_SALT'));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
 async function sbFetch(path,opts={}){
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),10000);
   const{headers:xh,...rest}=opts;
@@ -550,59 +552,41 @@ function updateDots(buf,pfx='d'){for(let i=0;i<4;i++){const d=document.getElemen
 function pinKey(k){if(pinBuffer.length>=4)return;const lk=localStorage.getItem('t2s_uat_lock_until');if(lk&&new Date()<new Date(lk))return;pinBuffer+=k;updateDots(pinBuffer);if(pinBuffer.length===4)setTimeout(verifyPin,120);}
 function pinDel(){pinBuffer=pinBuffer.slice(0,-1);updateDots(pinBuffer);document.getElementById('pin-err').textContent='';}
 
+// checkpoint pin_hash_consolidated (2026-10-18) — PIN check now happens entirely
+// server-side (bcrypt, atomic lockout counters). No hash is computed or compared
+// here, and the stored pin_hash is never fetched to this page.
 async function verifyPin(){
   if(!currentMember)return;showLoading(true);
+  const did=getDeviceId();
   try{
-    const hash=await hashPin(pinBuffer);const did=getDeviceId();
-    // Fresh member fetch to get latest pin_hash and confirm account still active
-    const members=await sbFetch(`members?id=eq.${currentMember.id}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!members||members.length===0){showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @T2Sview.';setTimeout(()=>{['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_locked_mid','t2s_uat_unlock_req_at','t2s_uat_device_id','t2s_uat_request_pending','t2s_uat_pin_reset_at','t2s_uat_disclaimer_date','t2s_uat_logout_reason'].forEach(k=>localStorage.removeItem(k));location.reload();},2500);return;}
-    currentMember=members[0];
-    if(currentMember.pin_hash===hash){
-      failedAttempts=0;localStorage.removeItem('t2s_uat_lock_until');
+    const res=await fetch(`${_VM}/uat-verify-pin`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({member_id:currentMember.id,device_id:did,pin:pinBuffer})});
+    const d=await res.json();
+    if(d.success){
+      localStorage.removeItem('t2s_uat_lock_until');
       localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember.tier==='paid'?'paid':'free');
-      // Create session if new device, otherwise update last_active
-      const sessions=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'GET',headers:{'Accept':'application/json'}});
-      if(sessions&&sessions.length>0){
-        await sbFetch(`sessions?id=eq.${sessions[0].id}`,{method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString(),failed_attempts_today:0,locked_until:null}),headers:{'Accept':'application/json'}});
-      }else{
-        const _aaCutoff=new Date(Date.now()-2*60*60*1000).toISOString();
-        const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&last_active=gte.${encodeURIComponent(_aaCutoff)}&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
-        if(allActive&&allActive.length>=2){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
-        await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
-        const _rc=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&last_active=gte.${encodeURIComponent(_aaCutoff)}&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
-        if(_rc&&_rc.length>2){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';return;}
-      }
-      try{await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'login_success',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{tier:currentMember.tier}})});}catch(e){}
       showLoading(false);window.location.href=MAIN_APP_URL;
+      return;
+    }
+    if(d.disabled){
+      showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @T2Sview.';
+      setTimeout(()=>{['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_locked_mid','t2s_uat_unlock_req_at','t2s_uat_device_id','t2s_uat_request_pending','t2s_uat_pin_reset_at','t2s_uat_disclaimer_date','t2s_uat_logout_reason'].forEach(k=>localStorage.removeItem(k));location.reload();},2500);
+      return;
+    }
+    showLoading(false);pinBuffer='';
+    for(let i=0;i<4;i++){const dd=document.getElementById(`d${i}`);dd.classList.add('error','shake');}
+    setTimeout(()=>updateDots(''),500);
+    if(d.locked){
+      const lu=new Date(d.locked_until);const m=Math.max(1,Math.ceil((lu-new Date())/60000));
+      localStorage.setItem('t2s_uat_lock_until',d.locked_until);
+      document.getElementById('pin-err').textContent='';
+      document.getElementById('pin-lock').style.display='block';
+      document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${m} minute${m>1?'s':''}.`;
+      document.getElementById('request-unlock-btn').style.display='inline-block';
+    }else if(d.limitReached){
+      document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';
     }else{
-      showLoading(false);
-      try{const _fa=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=failed_attempts_today`,{method:'GET',headers:{'Accept':'application/json'}});if(_fa&&_fa.length>0&&(_fa[0].failed_attempts_today||0)>failedAttempts)failedAttempts=_fa[0].failed_attempts_today;}catch(e){}
-      failedAttempts++;pinBuffer='';
-      sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'login_fail',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{attempts:failedAttempts}})}).catch(()=>{});
-      for(let i=0;i<4;i++){const d=document.getElementById(`d${i}`);d.classList.add('error','shake');}
-      setTimeout(()=>updateDots(''),500);
-      const rem=MAX_ATTEMPTS-failedAttempts;
-      if(rem<=0){
-        const lu=new Date(Date.now()+LOCK_MINUTES*60000).toISOString();
-        localStorage.setItem('t2s_uat_lock_until',lu);
-        document.getElementById('pin-err').textContent='';
-        document.getElementById('pin-lock').style.display='block';
-        document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${LOCK_MINUTES} minutes.`;
-        document.getElementById('request-unlock-btn').style.display='inline-block';
-        try{
-          const regSess=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
-          if(regSess&&regSess.length>0){
-            // Registered device — lock ALL active sessions for this member (account-wide)
-            await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});
-          }else{
-            // Non-registered device — insert a locked session row so DB persists the block
-            await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:false,locked_until:lu,failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json'}});
-          }
-        }catch(e){}
-        sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'account_locked',member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',event_data:{locked_until:lu,attempts:failedAttempts}})}).catch(()=>{});
-      }
-      else{document.getElementById('pin-err').textContent=`Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;try{const regS=await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});if(regS&&regS.length>0){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({failed_attempts_today:failedAttempts}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});}}catch(e){}}
+      const rem=typeof d.attemptsRemaining==='number'?d.attemptsRemaining:0;
+      document.getElementById('pin-err').textContent=`Incorrect PIN. ${rem} attempt${rem>1?'s':''} remaining.`;
     }
   }catch(e){showLoading(false);pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='Verification failed. Check connection.';}
 }
@@ -726,17 +710,19 @@ async function processSetupPin(){
   }else{
     if(setupBuffer!==setupFirstPin){document.getElementById('setup-err').textContent='PINs do not match. Start over.';for(let i=0;i<4;i++)document.getElementById(`sd${i}`).classList.add('error','shake');setTimeout(()=>{setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');document.getElementById('setup-step-label').textContent='Step 1 of 2 — Create PIN';document.getElementById('setup-pin-label').textContent='CHOOSE YOUR PIN';},600);return;}
     showLoading(true);
+    // checkpoint pin_hash_consolidated (2026-10-18) — PIN is hashed (bcrypt) and
+    // written entirely server-side; the raw PIN is sent once over HTTPS, nothing
+    // is hashed or stored from this page.
     try{
-      const hash=await hashPin(setupBuffer);const did=getDeviceId();
-      // Save PIN to members table (universal — works across all devices)
-      await sbFetch(`members?id=eq.${currentMember.id}`,{method:'PATCH',body:JSON.stringify({pin_hash:hash}),headers:{'Accept':'application/json'}});
-      // Check concurrent session limit (max 2) before registering new device
-      const allActive=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
-      if(allActive&&allActive.length>=2){showLoading(false);document.getElementById('setup-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');return;}
-      // Register this device in sessions (no pin_hash stored here)
-      await sbFetch('sessions',{method:'POST',body:JSON.stringify({member_id:currentMember.id,device_id:did,device_type:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop',device_name:navigator.platform||'Unknown',is_active:true,last_active:new Date().toISOString()}),headers:{'Accept':'application/json'}});
-      const _rcSetup=await sbFetch(`sessions?member_id=eq.${currentMember.id}&is_active=eq.true&select=id`,{method:'GET',headers:{'Accept':'application/json'}});
-      if(_rcSetup&&_rcSetup.length>2){await sbFetch(`sessions?member_id=eq.${currentMember.id}&device_id=eq.${did}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Accept':'application/json','Prefer':'return=minimal'}});showLoading(false);document.getElementById('setup-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');return;}
+      const did=getDeviceId();
+      const res=await fetch(`${_VM}/uat-setup-pin`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mobile:currentMobile,device_id:did,pin:setupBuffer})});
+      const d=await res.json();
+      if(!d.success){
+        showLoading(false);
+        document.getElementById('setup-err').textContent=d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.';
+        setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');
+        return;
+      }
       localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember&&currentMember.tier==='paid'?'paid':'free');localStorage.removeItem('t2s_uat_pin_reset_at');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
     }catch(e){showLoading(false);document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');}
   }
