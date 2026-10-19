@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20261018-003 | PROD: admin.html — Finding K fix. disconnectKotak() now sends x-t2s-secret: localStorage t2s_execute_secret with its POST /logout-kotak call (previously sent no headers at all). Companion server.js change adds an EXECUTE_SECRET-only guard to that route (was zero-auth — anyone could kill the live Kotak session for all members). No other change to disconnectKotak() or any other function. Codex-reviewed (2 rounds, clean). Rollback: revert the fetch call back to no headers object. -->
 <!-- T2S-PROD-20260816-002 | PROD: Admin PWA — 2 UAT changes promoted to production: (1) Live Banner toggle in Push to Members modal (General tab only — checkbox posts as post_type=banner); (2) Active Banners panel at top of Posts tab (loadActiveBanners fetches on tab open, deactivateBannerPanel soft-deletes, count badge, audience + preview per row). Source: T2S-UAT-20260816-001 and T2S-UAT-20260816-002. Rollback: revert Trading_Bot/index.html to T2S-PROD-20260815-003 state. -->
 <!-- T2S-UAT-20260816-002 | admin_uat: Active Banners panel at top of Posts tab — loadActiveBanners() fetches post_type=banner at Posts tab open; deactivateBannerPanel() soft-deletes; panel shows count badge + audience + preview + Deactivate per row; synced with uat.html admin compose. -->
 <!-- T2S-UAT-20260816-001 | admin_uat: Live Banner support — Push modal banner toggle (gen only), banner post_type routing, Deactivate button in Posts tab, banner visible in General feed filter. -->
@@ -3408,7 +3409,7 @@ async function connectKotak() {
 }
 
 async function disconnectKotak() {
-  try { await fetch('https://api.trade2spend.com/logout-kotak', { method: 'POST' }); } catch(e) {}
+  try { await fetch('https://api.trade2spend.com/logout-kotak', { method: 'POST', headers: { 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' } }); } catch(e) {}
   _kotakConnected = false;
   const hdrDot   = document.getElementById('kotak-hdr-dot');
   const algoDot  = document.getElementById('kotak-dot');
