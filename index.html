@@ -1,3 +1,5 @@
+<!-- T2S-PROD-20261019-001 | PROD: Finding B fix — public control key (T2SMonitor2026) removed. sendReply()'s two /send-push calls now send x-t2s-secret from localStorage t2s_execute_secret (same key already used by admin.html, shared origin) instead of the hardcoded public string. postNewAlert()'s /refresh-contracts call now sends no key at all (server-side check removed for this route — Tushar's explicit decision, the route does nothing destructive). Companion changes: server.js (all 18 T2SMonitor2026 checks migrated to EXECUTE_SECRET-only or dropped), Trading_Bot/index.html, UAT/admin_uat.html, UAT/uat.html. /prod-sb's own separate key (Finding C) is explicitly NOT part of this fix — parked, bigger separate task. Codex-reviewed (2 rounds, clean). Rollback: revert both x-t2s-secret values back to the literal string 'T2SMonitor2026'; restore ?key=T2SMonitor2026 on the refresh-contracts call (cosmetic only — server no longer checks it either way, so restoring it there alone does not restore the key gate; see server.js rollback for that).
+-->
 <!-- T2S-PROD-20261014-002 | PROD: Exit-price parsing fix — parseFollowUpContent (~line 2561). Bug: "went to X" fallback ran before the exit-specific price extraction, so a follow-up like "Went to 306 / Exited remaining at 280" recorded 306 instead of the explicitly stated 280. Fix: (a) widened the exit-price-fallback regex (~line 2610) from \bexiting?\s+(?:with|at|@) to \bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@) — now matches past-tense "exited" and tolerates filler words like "remaining"/"another 25%"; (b) moved the "went to X" block to run after it, so an explicit stated exit price always wins, with "went to X" only as a last-resort fallback. Regression-verified against all 654 real follow_up posts ever sent (100% of history): only the reported message's output changes (306→280); all 653 others byte-identical before/after. Codex-reviewed, independently re-ran the regression harness and confirmed. No other file/function touched (server.js has no copy of this parser). Rollback: revert the 2 blocks at ~line 2604-2617 to original order/regex (move "went to X" back above "Exit %", revert \bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@) to \bexiting?\s+(?:with|at|@)). -->
 <!-- T2S-PROD-20261014-001 | PROD: Stored XSS fix — Special Comment chip. _cmtHtmlUAT (~line 3394) now wraps _specialComment in sanitizeHtml() before interpolation, matching every other post-content field in this file (mainContent, reply.content, why-section already did this; this one field was missed). Extraction regex, isFreeViewer gating, chip styling, and the 2 insertion sites (~4089, ~4180) untouched. Zero touch to any other feature. Rollback: remove the sanitizeHtml() wrapper around _specialComment at line 3394, restoring raw interpolation. -->
 <!-- T2S-PROD-20261004-001 | PROD: Markets tab "Yet to trigger" fix — _buildMqpCard() active branch: checks getTradeState() before computing P&L; if yet_to_trigger, sets pnlHtml to "⏳ Yet to trigger" pill (no P&L figure, no colored border). _updateMqpActivePnl() forEach: skips posts still in yet_to_trigger state on each tick so pill is never overwritten. Zero touch to Trade Alert tab, Performance tab, Updates tab, P&L calculations, SL logic, FSM, session high/low, or any other feature. Rollback: revert _mqpState block in _buildMqpCard to bare liveKey/liveCmp lines; remove replies + getTradeState guard in _updateMqpActivePnl. -->
@@ -4699,7 +4701,7 @@
             btn.disabled = false; btn.textContent = 'Post Alert →';
             fetchTradeAlerts();
             checkAndPromptTotp();
-            fetch(`${VM_BASE}/refresh-contracts?key=T2SMonitor2026`, { method: 'POST' }).catch(() => {});
+            fetch(`${VM_BASE}/refresh-contracts`, { method: 'POST' }).catch(() => {});
         } catch(e) {
             alert('Failed to post. Check connection.');
             btn.disabled = false; btn.textContent = 'Post Alert →';
@@ -4763,13 +4765,13 @@
             if (fromTab === 'trades') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
                     body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades', postId: _replyPostId, post_type: 'follow_up' })
                 }).catch(() => {});
             } else if (fromTab === 'updates') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
                     body: JSON.stringify({ title: '📢 Trade2Spend Update', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _replyPostId, post_type: 'follow_up' })
                 }).catch(() => {});
             }
