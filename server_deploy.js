@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261019-003 | server.js: Finding B fix — public control key (T2SMonitor2026, hardcoded in page source, guarding 18 endpoints) removed. All 18 checks migrated to EXECUTE_SECRET-only via x-t2s-secret header (no public fallback) — same pattern already used by /execute: chart-analyse, market-holiday (was a JSON body field, now header), debug-scrip, reload-scrip, push-uat-to-prod, market-force, http-update (incl. the server's own self-call in applyBugFix), set-high, schedule-dummy-likes, active-contracts-for-ltp, test-nse-chain, test-cmp, test-ltp, report-issue, send-push, access-requests PATCH. The 12 that used a URL query string (?key=) now use a header instead (query strings can end up in infrastructure logs; headers typically don't). Both /refresh-contracts handlers (GET+POST) have the key check REMOVED ENTIRELY (Tushar's explicit decision) — non-destructive route, also called from the member-facing app which has no access to the admin secret. Finding C (/prod-sb, /uat-sb proxy headers) is explicitly NOT part of this fix — parked as its own separate, larger task (needs a real request allowlist inside the proxy, not a key swap). Companion client changes: Trading_Bot/index.html, UAT/admin_uat.html, index.html, UAT/uat.html — all updated to send the new header; Tushar's own /http-update and /market-force terminal commands also need `-H "x-t2s-secret: $EXECUTE_SECRET"` instead of `?key=...` going forward. Codex-reviewed (2 rounds, clean, no unresolved blockers). Rollback: revert each check back to `!== 'T2SMonitor2026'` (or the OR-fallback for chart-analyse/send-push/access-requests), restore the two /refresh-contracts key checks, revert the applyBugFix self-call, revert the 7 renamed comment lines back to their `?key=T2SMonitor2026` wording.
 // DEPLOY: T2S-PROD-20261018-003 | server.js: Finding K fix — POST /logout-kotak was zero-auth (anyone could kill the live Kotak session/price feed for all members, no credential needed). Added the same EXECUTE_SECRET-only guard already used by /execute, /push-trades, etc. (`!secret || secret !== process.env.EXECUTE_SECRET` → 401) before the existing session-clearing logic, which is otherwise unchanged. Companion client change: disconnectKotak() in admin.html (T2S-PROD-20261018-003) and admin_uat.html (T2S-UAT-20261018-002) now sends x-t2s-secret from the already-existing localStorage t2s_execute_secret. Codex-reviewed (2 rounds, clean). Rollback: remove the 5-line guard block from /logout-kotak; revert both disconnectKotak() calls to no headers object.
 // DEPLOY: T2S-PROD-20261018-002 | server.js: Finding F fix — removed the unauthenticated GET /access-requests route (leaked up to 200 members' mobile/name/tier/free-access-block status to anyone, no auth). Also removed its now-unused _DISABLE_ACCESS_REQUESTS_GET flag constant. Zero client callers anywhere in the project (member PWA, admin PWA, UAT files) — confirmed by exhaustive search; admin review reads/writes access_requests directly via Supabase, not through this route. Sibling PATCH /access-requests/:id (used only by trading_bot_v8.py, localhost-only call) is untouched, as is the shared _send503 helper (still used by ~10 other routes). Codex-reviewed (1 round, clean, FINDING-NONE). Affects prod and UAT both (shared server.js) — this route never had a UAT-only variant. Rollback: re-add `const _DISABLE_ACCESS_REQUESTS_GET = !!process.env.DISABLE_ACCESS_REQUESTS_GET;` near the other _DISABLE_* constants, and re-add a `GET /access-requests` block (query: `access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200`, optional `&status=eq.<filter>`) before the `/storage-status` route — no separate backup file was made for this specific change; this comment is the full rollback spec.
 // DEPLOY: T2S-UAT-20261018-001 | server.js: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — UAT scope only. (1) bcryptjs dependency added (package.json). (2) sbFetchUat()/sendPushToMemberUat() — UAT-Supabase variants of the existing sbFetch/sendPushToMember helpers. (3) Two new endpoints: POST /uat-verify-pin and POST /uat-setup-pin — bcrypt compare/hash + lazy legacy-SHA256 migration happen entirely server-side; pin_hash is never included in any response body. Lockout (3 wrong/30min) is now DB-enforced via compare-and-swap counter updates, not client-trusted; a never-registered device locks only itself (Tushar's explicit decision, 2026-10-18 — never let a stranger who merely knows a mobile number lock out the real member), while a previously-registered device locks the whole account and triggers a push notification to the member's other active devices. PIN setup uses an atomic conditional UPDATE (`pin_hash IS NULL`) so exactly one caller can win a given setup. No static-key gate (rate-limited 20/5min per IP instead, same as /knowledge-ask's pattern) — matches governance that a login/setup endpoint can't require a credential that doesn't exist yet. (4) Daily (4:30 AM IST) cleanup of never-successfully-logged-in locked session rows after 15 days; audit_log kept permanent, untouched. Companion: UAT/login_uat.html, UAT/uat.html. Rollback: remove the /uat-verify-pin+/uat-setup-pin block, sbFetchUat/sendPushToMemberUat, the _pinRate/PIN_WEAK_LIST/_pin* helpers, the cleanupStalePinLocks block, and the bcryptjs import; revert package.json.
@@ -2929,7 +2930,7 @@ async function applyBugFix(uuid, cbMsgId) {
     delete _pendingBugFixes[uuid];
     if (fix.file === 'server.js') {
       await tgSend(`✅ <b>Fix applied to server.js</b>\n\n${fix.summary || ''}\n\nVM restarting in 5s...`);
-      setTimeout(() => ft(`https://api.trade2spend.com/http-update?key=T2SMonitor2026`, {}, 10000).catch(() => {}), 5000);
+      setTimeout(() => ft(`https://api.trade2spend.com/http-update`, { method: 'GET', headers: { 'x-t2s-secret': process.env.EXECUTE_SECRET || '' } }, 10000).catch(() => {}), 5000);
     } else {
       await tgSend(`✅ <b>Fix applied to ${fix.file}</b>\n\n${fix.summary || ''}\n\n<i>Live at app.trade2spend.com in ~60s (GitHub Pages)</i>`);
     }
@@ -3732,7 +3733,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-t2s-secret');
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || (secret !== process.env.EXECUTE_SECRET && secret !== 'T2SMonitor2026')) {
+    if (!secret || secret !== process.env.EXECUTE_SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
@@ -3777,12 +3778,13 @@ const server = http.createServer(async (req, res) => {
 
   // Market holiday override — POST /market-holiday
   if (req.method === 'POST' && urlPath === '/market-holiday') {
+    const _mhSecret = req.headers['x-t2s-secret'];
+    if (!_mhSecret || _mhSecret !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end('{"ok":false}'); return; }
     let body = '';
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        const { holiday, key } = JSON.parse(body || '{}');
-        if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end('{"ok":false}'); return; }
+        const { holiday } = JSON.parse(body || '{}');
         _marketHoliday = !!holiday;
         saveHolidayState();
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -3842,12 +3844,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // HTTP debug endpoint — GET /debug-scrip?key=T2SMonitor2026
+  // HTTP debug endpoint — GET /debug-scrip (header x-t2s-secret: EXECUTE_SECRET)
   // Runs scrip master debug without needing Telegram webhook
   if (req.method === 'GET' && urlPath === '/debug-scrip') {
     if (_DISABLE_DEBUG_SCRIP) { _send503('/debug-scrip', res); return; }
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') {
+    const _dsKey = req.headers['x-t2s-secret'];
+    if (!_dsKey || _dsKey !== process.env.EXECUTE_SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -3916,11 +3918,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Force scrip master re-download — GET /reload-scrip?key=T2SMonitor2026
+  // Force scrip master re-download — GET /reload-scrip (header x-t2s-secret: EXECUTE_SECRET)
   if (req.method === 'GET' && urlPath === '/reload-scrip') {
     if (_DISABLE_RELOAD_SCRIP) { _send503('/reload-scrip', res); return; }
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    const _rsKey = req.headers['x-t2s-secret'];
+    if (!_rsKey || _rsKey !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     await downloadScripMaster();
     const count = Object.keys(_scripMaster).length;
@@ -3930,9 +3932,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   // T2S-CUG-20260716-001: Force-refresh active contracts — bypasses 60s throttle so new trade CMP tracking starts immediately
+  // checkpoint public_control_keys (2026-10-19): key check removed (Tushar's decision) — this
+  // route does nothing destructive (re-reads contracts, no write), and it's called from the
+  // member-facing app, which has no access to the admin secret.
   if (req.method === 'GET' && urlPath === '/refresh-contracts') {
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     _activeContractsTs = 0; // reset throttle timestamp so refreshActiveContracts runs immediately
     await refreshActiveContracts();
     const contracts = _activeContracts.map(c => `${c.instrument}-${c.strike}-${c.type}`);
@@ -3944,8 +3947,8 @@ const server = http.createServer(async (req, res) => {
   // T2S-CUG-20260716-003: Push UAT to Prod — fetches uat.html from GitHub, strips UAT elements, pushes as index.html
   if (req.method === 'GET' && urlPath === '/push-uat-to-prod') {
     if (_DISABLE_PROMOTE_UAT) { _send503('/push-uat-to-prod', res); return; }
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    const _puKey = req.headers['x-t2s-secret'];
+    if (!_puKey || _puKey !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     if (!GH_TOKEN) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on VM' })); return; }
     try {
       // 1. Fetch the current UAT file from GitHub
@@ -3983,11 +3986,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // HTTP update trigger — GET /http-update?key=T2SMonitor2026
+  // HTTP update trigger — GET /http-update (header x-t2s-secret: EXECUTE_SECRET)
   // Deploys latest server_deploy.js from GitHub without needing Telegram webhook
   if (req.method === 'GET' && urlPath === '/market-force') {
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') { res.writeHead(401); res.end('Unauthorized'); return; }
+    const _mfKey = req.headers['x-t2s-secret'];
+    if (!_mfKey || _mfKey !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end('Unauthorized'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     try {
       await runMarketScraper(true);
@@ -4003,8 +4006,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && urlPath === '/http-update') {
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') {
+    const _huKey = req.headers['x-t2s-secret'];
+    if (!_huKey || _huKey !== process.env.EXECUTE_SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -4026,12 +4029,12 @@ const server = http.createServer(async (req, res) => {
 
   // Browser LTP relay — GET /active-contracts-for-ltp?key=...
   // Returns active contracts + session headers so Admin PWA browser can fetch LTPs directly
-  // Manual session-high override — POST /set-high?key=T2SMonitor2026
+  // Manual session-high override — POST /set-high (header x-t2s-secret: EXECUTE_SECRET)
   // Body: { "NIFTY-24200-CE": 127, "NIFTY-24250-PE": 145 }
   if (req.method === 'POST' && urlPath === '/set-high') {
     if (_DISABLE_SET_HIGH) { _send503('/set-high', res); return; }
-    const _shKey = new URL('https://x' + req.url).searchParams.get('key');
-    if (_shKey !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
+    const _shKey = req.headers['x-t2s-secret'];
+    if (!_shKey || _shKey !== process.env.EXECUTE_SECRET) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     let _shBody = '';
     req.on('data', c => _shBody += c);
     req.on('end', async () => {
@@ -4054,12 +4057,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Dummy like drip — POST /schedule-dummy-likes?key=T2SMonitor2026
+  // Dummy like drip — POST /schedule-dummy-likes (header x-t2s-secret: EXECUTE_SECRET)
   // Body: { "postId": "<uuid>" }
   // 25% chance: 0 likes. Otherwise 1–6 likes (skewed low). First: 1–20 min, each next: 1–15 min apart.
   if (req.method === 'POST' && urlPath === '/schedule-dummy-likes') {
-    const _dlKey = new URL('https://x' + req.url).searchParams.get('key');
-    if (_dlKey !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false })); return; }
+    const _dlKey = req.headers['x-t2s-secret'];
+    if (!_dlKey || _dlKey !== process.env.EXECUTE_SECRET) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false })); return; }
     let _dlBody = '';
     req.on('data', c => _dlBody += c);
     req.on('end', () => {
@@ -4094,8 +4097,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && urlPath === '/active-contracts-for-ltp') {
     if (_DISABLE_ACTIVE_CONTRACTS) { _send503('/active-contracts-for-ltp', res); return; }
-    const k = new URL('https://x' + req.url).searchParams.get('key');
-    if (k !== 'T2SMonitor2026') { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
+    const k = req.headers['x-t2s-secret'];
+    if (!k || k !== process.env.EXECUTE_SECRET) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     if (!session.token || !_activeContracts.length) {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ contracts: [], reason: session.token ? 'no_contracts' : 'not_logged_in' }));
@@ -4116,12 +4119,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Test CMP — GET /test-cmp?key=T2SMonitor2026
+  // Test CMP — GET /test-cmp (header x-t2s-secret: EXECUTE_SECRET)
   // Returns dummy optionLTPs so UAT can verify the CMP display path without needing Kotak login
   if (req.method === 'GET' && urlPath === '/test-nse-chain') {
     if (_DISABLE_TEST_NSE_CHAIN) { _send503('/test-nse-chain', res); return; }
-    const parsedUrl2 = new URL('https://x' + req.url);
-    if (parsedUrl2.searchParams.get('key') !== 'T2SMonitor2026') {
+    const _tncKey = req.headers['x-t2s-secret'];
+    if (!_tncKey || _tncKey !== process.env.EXECUTE_SECRET) {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
@@ -4147,8 +4150,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && urlPath === '/test-cmp') {
     if (_DISABLE_TEST_CMP) { _send503('/test-cmp', res); return; }
-    const parsedUrl = new URL('https://x' + req.url);
-    if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
+    const _tcKey = req.headers['x-t2s-secret'];
+    if (!_tcKey || _tcKey !== process.env.EXECUTE_SECRET) {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
@@ -4164,12 +4167,13 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
-  // Test LTP — GET /test-ltp?key=T2SMonitor2026&symbol=NIFTY-24250-PE
+  // Test LTP — GET /test-ltp (header x-t2s-secret: EXECUTE_SECRET) + ?symbol=NIFTY-24250-PE
   // Runs a real Kotak LTP fetch for one contract and returns full diagnostics
   if (req.method === 'GET' && urlPath === '/test-ltp') {
     if (_DISABLE_TEST_LTP) { _send503('/test-ltp', res); return; }
     const parsedUrl = new URL('https://x' + req.url);
-    if (parsedUrl.searchParams.get('key') !== 'T2SMonitor2026') {
+    const _tlKey = req.headers['x-t2s-secret'];
+    if (!_tlKey || _tlKey !== process.env.EXECUTE_SECRET) {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
@@ -4552,7 +4556,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
-    if (secret !== 'T2SMonitor2026') {
+    if (!secret || secret !== process.env.EXECUTE_SECRET) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     let body = '';
@@ -4749,7 +4753,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
   // Send push notifications — POST /send-push
   if (req.method === 'POST' && urlPath === '/send-push') {
     const secret = req.headers['x-t2s-secret'];
-    if (secret !== 'T2SMonitor2026' && secret !== process.env.EXECUTE_SECRET) {
+    if (!secret || secret !== process.env.EXECUTE_SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -4872,13 +4876,10 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
   }
 
   // Immediate contract refresh — called by admin PWA after posting a new trade alert
+  // checkpoint public_control_keys (2026-10-19): key check removed (Tushar's decision) — same
+  // reasoning as the GET variant above: no destructive action, also called from the
+  // member-facing app which has no access to the admin secret.
   if (req.method === 'POST' && urlPath === '/refresh-contracts') {
-    const key = new URL('https://x' + req.url).searchParams.get('key');
-    if (key !== 'T2SMonitor2026') {
-      res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
-      return;
-    }
     _activeContractsTs = 0; // bypass 60s cache so new contract is picked up immediately
     await refreshActiveContracts().catch(() => {});
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -4979,7 +4980,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
-    if (secret !== 'T2SMonitor2026' && secret !== process.env.EXECUTE_SECRET) {
+    if (!secret || secret !== process.env.EXECUTE_SECRET) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     const requestId = urlPath.slice('/access-requests/'.length);
