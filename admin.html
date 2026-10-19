@@ -1,3 +1,5 @@
+<!-- T2S-PROD-20261019-002 | PROD: admin.html — Finding B fix. All 7 T2SMonitor2026 call sites (push-uat-to-prod, market-holiday, schedule-dummy-likes, send-push, report-issue, refresh-contracts, chart-analyse's fallback) now send x-t2s-secret from localStorage t2s_execute_secret (chart-analyse already partly did; the rest are new). refresh-contracts' key removed entirely to match server.js (Tushar's decision — route is non-destructive). Companion: server.js (all 18 checks migrated), UAT/admin_uat.html, index.html, UAT/uat.html. Codex-reviewed (2 rounds, clean). Rollback: revert each x-t2s-secret value back to the literal string 'T2SMonitor2026'; restore the ?key=/body key= query/body params (cosmetic only, see server.js rollback for the actual gate).
+-->
 <!-- T2S-PROD-20261018-003 | PROD: admin.html — Finding K fix. disconnectKotak() now sends x-t2s-secret: localStorage t2s_execute_secret with its POST /logout-kotak call (previously sent no headers at all). Companion server.js change adds an EXECUTE_SECRET-only guard to that route (was zero-auth — anyone could kill the live Kotak session for all members). No other change to disconnectKotak() or any other function. Codex-reviewed (2 rounds, clean). Rollback: revert the fetch call back to no headers object. -->
 <!-- T2S-PROD-20260816-002 | PROD: Admin PWA — 2 UAT changes promoted to production: (1) Live Banner toggle in Push to Members modal (General tab only — checkbox posts as post_type=banner); (2) Active Banners panel at top of Posts tab (loadActiveBanners fetches on tab open, deactivateBannerPanel soft-deletes, count badge, audience + preview per row). Source: T2S-UAT-20260816-001 and T2S-UAT-20260816-002. Rollback: revert Trading_Bot/index.html to T2S-PROD-20260815-003 state. -->
 <!-- T2S-UAT-20260816-002 | admin_uat: Active Banners panel at top of Posts tab — loadActiveBanners() fetches post_type=banner at Posts tab open; deactivateBannerPanel() soft-deletes; panel shows count badge + audience + preview + Deactivate per row; synced with uat.html admin compose. -->
@@ -3101,7 +3103,7 @@ async function pushUatToProd() {
   btn.textContent = 'Pushing...';
   if (status) { status.style.display = 'block'; status.textContent = 'Contacting server...'; status.style.color = 'var(--muted)'; }
   try {
-    const r = await fetch('https://api.trade2spend.com/push-uat-to-prod?key=T2SMonitor2026', { signal: AbortSignal.timeout(30000) });
+    const r = await fetch('https://api.trade2spend.com/push-uat-to-prod', { headers: { 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' }, signal: AbortSignal.timeout(30000) });
     const d = await r.json();
     if (d.ok) {
       if (status) { status.textContent = 'Done! Live at app.trade2spend.com in ~60s.'; status.style.color = 'var(--green)'; }
@@ -3217,8 +3219,8 @@ async function toggleMarketHoliday() {
   try {
     const r = await fetch('https://api.trade2spend.com/market-holiday', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ holiday: newState, key: 'T2SMonitor2026' })
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
+      body: JSON.stringify({ holiday: newState })
     });
     if (!r.ok) throw new Error('Server error');
     _marketHolidayActive = newState;
@@ -5109,9 +5111,9 @@ function setPushAud(val){
 }
 
 function scheduleDummyLikes(postId) {
-  fetch('https://api.trade2spend.com/schedule-dummy-likes?key=T2SMonitor2026', {
+  fetch('https://api.trade2spend.com/schedule-dummy-likes', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
     body: JSON.stringify({ postId })
   }).catch(() => {});
 }
@@ -5152,11 +5154,11 @@ async function confirmPushToMembers(){
     const _pushBody  = msg.replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi, '').split('\n').find(l => l.trim() && !/^only for|^educational/i.test(l.trim()))?.trim().slice(0, 100) || 'New update';
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
       body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', postId: _savedPost?.id, post_type: _postType })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
-      fetch('https://api.trade2spend.com/refresh-contracts?key=T2SMonitor2026', { method: 'POST' }).catch(() => {});
+      fetch('https://api.trade2spend.com/refresh-contracts', { method: 'POST' }).catch(() => {});
     }
   } catch(e){
     showToast('Failed: ' + (e.message || 'Check connection'));
@@ -5487,7 +5489,7 @@ function clearChartUpload() {
 }
 
 async function analyseChart() {
-  const secret = localStorage.getItem('t2s_execute_secret') || 'T2SMonitor2026';
+  const secret = localStorage.getItem('t2s_execute_secret') || '';
   if (!_chartImageBase64) { showToast('Please upload a chart screenshot first'); return; }
   const btn = document.getElementById('chart-analyse-btn');
   const loading = document.getElementById('chart-loading');
@@ -5632,7 +5634,7 @@ async function submitBugReport() {
   try {
     const res = await fetch('https://api.trade2spend.com/report-issue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
       body: JSON.stringify({ tab, description: desc, screenshot: _bugB64 || null, screenshotType: _bugMime, reportedAt: new Date().toISOString() })
     });
     const data = await res.json();
