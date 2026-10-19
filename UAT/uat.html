@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261019-001 | uat.html: Finding B fix — public control key (T2SMonitor2026) removed. Mirrors T2S-PROD-20261019-001 applied to index.html. sendReply()'s two /send-push calls now send x-t2s-secret from localStorage t2s_execute_secret instead of the hardcoded public string; /refresh-contracts call sends no key (server-side check removed, Tushar's decision). Codex-reviewed (2 rounds, clean). Rollback: revert both x-t2s-secret values back to the literal string 'T2SMonitor2026'. -->
 <!-- T2S-UAT-20261018-001 | uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed _faHashPin() (SHA-256+static-salt). _faVerifyPin() and _faSetupPin2() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin (reuses existing _VM constant) — pin_hash is never fetched to or computed in this page again. Also fixes a pre-existing inconsistency: this in-app PIN modal previously locked ALL of a member's active sessions on 3 wrong attempts regardless of whether the device had logged in before; it now matches login_uat.html's deliberate per-device-only lockout for never-registered devices (server-enforced). Rollback: restore _faHashPin(), revert _faVerifyPin()/_faSetupPin2() to the pre-20261018 direct-Supabase compare. -->
 <!-- T2S-UAT-20261014-002 | uat.html: Exit-price parsing fix — mirrors T2S-PROD-20261014-002 applied to index.html. parseFollowUpContent: widened the exit-price fallback regex to match past-tense "exited" + filler words ("remaining", "another 25%", etc.), and moved the "went to X" fallback to run after it so an explicit stated exit price always wins over a vaguer earlier reference in the same message. Regression-verified against all 654 real follow_up posts ever sent — only the reported bug case changes, zero other differences. Codex-reviewed. Rollback: revert to original order/regex, same as T2S-PROD-20261014-002. -->
 <!-- T2S-UAT-20261014-001 | uat.html: Stored XSS fix — Special Comment chip. _cmtHtmlUAT (~line 4050) now wraps _specialComment in sanitizeHtml() before interpolation, matching every other post-content field in this file. Mirrors T2S-PROD-20261014-001 applied to index.html. Extraction regex, isFreeViewer gating, chip styling, and the 2 insertion sites untouched. Rollback: remove the sanitizeHtml() wrapper around _specialComment at line 4050, restoring raw interpolation. -->
@@ -5339,7 +5340,7 @@
             btn.disabled = false; btn.textContent = 'Post Alert →';
             fetchTradeAlerts();
             checkAndPromptTotp();
-            fetch(`${VM_BASE}/refresh-contracts?key=T2SMonitor2026`, { method: 'POST' }).catch(() => {});
+            fetch(`${VM_BASE}/refresh-contracts`, { method: 'POST' }).catch(() => {});
         } catch(e) {
             alert('Failed to post. Check connection.');
             btn.disabled = false; btn.textContent = 'Post Alert →';
@@ -5403,13 +5404,13 @@
             if (fromTab === 'trades') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
                     body: JSON.stringify({ title: '📊 Trade Update — Trade2Spend', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#trades', postId: _replyPostId, post_type: 'follow_up' })
                 }).catch(() => {});
             } else if (fromTab === 'updates') {
                 fetch('https://api.trade2spend.com/send-push', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': 'T2SMonitor2026' },
+                    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
                     body: JSON.stringify({ title: '📢 Trade2Spend Update', body: text.slice(0, 100), tag: 't2s-followup', url: 'https://app.trade2spend.com/#updates', postId: _replyPostId, post_type: 'follow_up' })
                 }).catch(() => {});
             }
