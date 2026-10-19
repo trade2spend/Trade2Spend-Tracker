@@ -1,7 +1,7 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-10-19T10:16:03.296Z",
-  "dataSource": "broker",
+  "lastUpdated": "2026-10-19T17:58:04.468Z",
+  "dataSource": "nse",
   "indices": {
     "NIFTY": {
       "price": 22888.95,
@@ -20,9 +20,9 @@
     }
   },
   "indexSources": {
-    "NIFTY": "kotak",
-    "BANKNIFTY": "kotak",
-    "SENSEX": "kotak"
+    "NIFTY": "nse",
+    "BANKNIFTY": "nse",
+    "SENSEX": "yahoo"
   },
   "breadth": {
     "nifty50": {
@@ -178,112 +178,6 @@
       "symbol": "ADANIENT",
       "price": 2657.5,
       "change": -1.28
-    },
-    {
-      "symbol": "TATACONSUM",
-      "price": 966.5,
-      "change": -1.27
-    },
-    {
-      "symbol": "WIPRO",
-      "price": 182.14,
-      "change": -1.23
-    },
-    {
-      "symbol": "ICICIBANK",
-      "price": 1381,
-      "change": -1.15
-    },
-    {
-      "symbol": "KOTAKBANK",
-      "price": 442.3,
-      "change": -1.14
-    },
-    {
-      "symbol": "BAJAJ-AUTO",
-      "price": 10287,
-      "change": -1.13
-    },
-    {
-      "symbol": "JIOFIN",
-      "price": 214,
-      "change": -1.04
-    },
-    {
-      "symbol": "ITC",
-      "price": 260.8,
-      "change": -1.02
-    },
-    {
-      "symbol": "SUNPHARMA",
-      "price": 1743,
-      "change": -0.9
-    },
-    {
-      "symbol": "TATASTEEL",
-      "price": 174.04,
-      "change": -0.83
-    },
-    {
-      "symbol": "HINDALCO",
-      "price": 900.45,
-      "change": -0.83
-    },
-    {
-      "symbol": "RELIANCE",
-      "price": 1202,
-      "change": -0.76
-    },
-    {
-      "symbol": "TECHM",
-      "price": 1779.1,
-      "change": -0.61
-    },
-    {
-      "symbol": "SBILIFE",
-      "price": 1647.8,
-      "change": -0.54
-    },
-    {
-      "symbol": "M&M",
-      "price": 2907,
-      "change": -0.48
-    },
-    {
-      "symbol": "TITAN",
-      "price": 4424.2,
-      "change": -0.46
-    },
-    {
-      "symbol": "TCS",
-      "price": 2460.9,
-      "change": -0.17
-    },
-    {
-      "symbol": "MARUTI",
-      "price": 11475,
-      "change": -0.12
-    },
-    {
-      "symbol": "CIPLA",
-      "price": 1324.1,
-      "change": -0.08
-    },
-    {
-      "symbol": "ASIANPAINT",
-      "price": 2330.7,
-      "change": -0.05
-    },
-    {
-      "symbol": "POWERGRID",
-      "price": 250.35,
-      "change": -0.04
-    },
-    {
-      "symbol": "HCLTECH",
-      "price": 1379.9,
-      "change": -0.01
     }
-  ],
-  "optionHighs": {}
+  ]
 }
