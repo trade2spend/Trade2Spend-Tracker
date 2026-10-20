@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261020-001 | server.js: Finding C fix — /prod-sb and /uat-sb no longer forward ANY {table,method} to Supabase using the service-role key (which bypasses every RLS rule already built this project). Added PROD_SB_RULES/UAT_SB_RULES table+method allowlists (6 tables for /prod-sb: members/sessions/posts/post_shares/push_subscriptions/read_receipts; 5 for /uat-sb: members/sessions/posts/access_requests/keep_alive_log — UAT's member-facing files bypass /uat-sb entirely via a separate anon-key path, not part of this fix), built from an exhaustive grep of every real sbFetch/sbGet/sbPatch/sbPost call site across login.html, index.html, Trading_Bot/index.html, UAT/admin_uat.html. Field-level restriction is a BLOCKLIST (is_admin only, the one field with zero legitimate call site anywhere and the single most severe possible abuse) rather than a full allowlist — investigation surfaced 3 previously-missed legitimate fields across 3 passes (tour_completed, acquisition_source, sessions.pin_hash on POST — prod's PIN setup flow still writes this directly), proving an exact field allowlist was too fragile to build safely. Any request for an unlisted table, an unsupported method on a listed table, or an is_admin write → 403. Verified: replayed all ~45 real call-site shapes found during investigation against the actual extracted functions — 100% allowed; separately verified unknown-table/wrong-method/is_admin-write attack shapes are all rejected. Codex-reviewed (2 rounds on checkpoint prodsb_allowlist, no unresolved blockers — one round caught that the original investigation had missed admin.html's own use of /prod-sb entirely). Does NOT solve the deeper residual (anyone who knows a specific mobile number can still look it up via the now-narrower members GET — no auth/token system exists to close that; tracked separately). Rollback: remove the _sbProxyAllowed/_sbProxyBlocksIsAdmin calls from both /uat-sb and /prod-sb handlers (2 call sites) and the PROD_SB_RULES/UAT_SB_RULES/_sbProxyTable/_sbProxyAllowed/_sbProxyBlocksIsAdmin block.
 // DEPLOY: T2S-PROD-20261019-003 | server.js: Finding B fix — public control key (T2SMonitor2026, hardcoded in page source, guarding 18 endpoints) removed. All 18 checks migrated to EXECUTE_SECRET-only via x-t2s-secret header (no public fallback) — same pattern already used by /execute: chart-analyse, market-holiday (was a JSON body field, now header), debug-scrip, reload-scrip, push-uat-to-prod, market-force, http-update (incl. the server's own self-call in applyBugFix), set-high, schedule-dummy-likes, active-contracts-for-ltp, test-nse-chain, test-cmp, test-ltp, report-issue, send-push, access-requests PATCH. The 12 that used a URL query string (?key=) now use a header instead (query strings can end up in infrastructure logs; headers typically don't). Both /refresh-contracts handlers (GET+POST) have the key check REMOVED ENTIRELY (Tushar's explicit decision) — non-destructive route, also called from the member-facing app which has no access to the admin secret. Finding C (/prod-sb, /uat-sb proxy headers) is explicitly NOT part of this fix — parked as its own separate, larger task (needs a real request allowlist inside the proxy, not a key swap). Companion client changes: Trading_Bot/index.html, UAT/admin_uat.html, index.html, UAT/uat.html — all updated to send the new header; Tushar's own /http-update and /market-force terminal commands also need `-H "x-t2s-secret: $EXECUTE_SECRET"` instead of `?key=...` going forward. Codex-reviewed (2 rounds, clean, no unresolved blockers). Rollback: revert each check back to `!== 'T2SMonitor2026'` (or the OR-fallback for chart-analyse/send-push/access-requests), restore the two /refresh-contracts key checks, revert the applyBugFix self-call, revert the 7 renamed comment lines back to their `?key=T2SMonitor2026` wording.
 // DEPLOY: T2S-PROD-20261018-003 | server.js: Finding K fix — POST /logout-kotak was zero-auth (anyone could kill the live Kotak session/price feed for all members, no credential needed). Added the same EXECUTE_SECRET-only guard already used by /execute, /push-trades, etc. (`!secret || secret !== process.env.EXECUTE_SECRET` → 401) before the existing session-clearing logic, which is otherwise unchanged. Companion client change: disconnectKotak() in admin.html (T2S-PROD-20261018-003) and admin_uat.html (T2S-UAT-20261018-002) now sends x-t2s-secret from the already-existing localStorage t2s_execute_secret. Codex-reviewed (2 rounds, clean). Rollback: remove the 5-line guard block from /logout-kotak; revert both disconnectKotak() calls to no headers object.
 // DEPLOY: T2S-PROD-20261018-002 | server.js: Finding F fix — removed the unauthenticated GET /access-requests route (leaked up to 200 members' mobile/name/tier/free-access-block status to anyone, no auth). Also removed its now-unused _DISABLE_ACCESS_REQUESTS_GET flag constant. Zero client callers anywhere in the project (member PWA, admin PWA, UAT files) — confirmed by exhaustive search; admin review reads/writes access_requests directly via Supabase, not through this route. Sibling PATCH /access-requests/:id (used only by trading_bot_v8.py, localhost-only call) is untouched, as is the shared _send503 helper (still used by ~10 other routes). Codex-reviewed (1 round, clean, FINDING-NONE). Affects prod and UAT both (shared server.js) — this route never had a UAT-only variant. Rollback: re-add `const _DISABLE_ACCESS_REQUESTS_GET = !!process.env.DISABLE_ACCESS_REQUESTS_GET;` near the other _DISABLE_* constants, and re-add a `GET /access-requests` block (query: `access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200`, optional `&status=eq.<filter>`) before the `/storage-status` route — no separate backup file was made for this specific change; this comment is the full rollback spec.
@@ -474,6 +475,50 @@ async function sbFetch(path, opts = {}) {
   });
   const text = await r.text();
   return text ? JSON.parse(text) : [];
+}
+
+// ── /prod-sb + /uat-sb ALLOWLIST (checkpoint prodsb_allowlist, 2026-10-20, Finding C) ──
+// Both proxies used to forward ANY {table, method} to Supabase using the service-role
+// key (bypasses every RLS rule already built this project). This allowlist restricts
+// each proxy to exactly the tables + HTTP methods its real callers actually use —
+// built from an exhaustive grep of every sbFetch/sbGet/sbPatch/sbPost call site in
+// login.html, index.html, Trading_Bot/index.html (prod) and UAT/admin_uat.html (UAT;
+// UAT's own member-facing files bypass this proxy entirely via a separate, already-
+// tracked anon-key path, so they are NOT part of this allowlist).
+//
+// Field-level restriction is deliberately a BLOCKLIST (is_admin only), not a full
+// allowlist, after investigation surfaced three previously-missed legitimate fields
+// across three separate passes (tour_completed, acquisition_source, sessions.pin_hash
+// on POST — prod's PIN setup flow still writes this directly). An exact field
+// allowlist proved too fragile to build safely without real risk of breaking live
+// functionality; table+method scoping alone already closes "any table, any action"
+// down to exactly what the app does today. is_admin is blocked because granting
+// admin privilege is the single most severe possible abuse of this proxy and has
+// zero legitimate call site anywhere in the project.
+const PROD_SB_RULES = {
+  members:            ['GET', 'PATCH'],
+  sessions:           ['GET', 'PATCH', 'POST'],
+  posts:              ['GET', 'PATCH'],
+  post_shares:        ['GET', 'POST', 'DELETE'],
+  push_subscriptions: ['GET', 'POST', 'DELETE'],
+  read_receipts:      ['GET', 'POST'],
+};
+const UAT_SB_RULES = {
+  members:          ['GET', 'PATCH'],
+  sessions:         ['GET', 'PATCH'],
+  posts:            ['GET', 'PATCH'],
+  access_requests:  ['GET', 'PATCH'],
+  keep_alive_log:   ['GET', 'PATCH', 'POST', 'DELETE'],
+};
+function _sbProxyTable(path) { return String(path || '').split('?')[0]; }
+function _sbProxyAllowed(rules, path, method) {
+  const allowedMethods = rules[_sbProxyTable(path)];
+  return !!(allowedMethods && allowedMethods.includes(String(method || 'GET').toUpperCase()));
+}
+function _sbProxyBlocksIsAdmin(path, bodyStr) {
+  if (_sbProxyTable(path) !== 'members' || !bodyStr) return false;
+  try { return Object.prototype.hasOwnProperty.call(JSON.parse(bodyStr), 'is_admin'); }
+  catch { return false; }
 }
 
 // checkpoint pin_hash_consolidated (2026-10-18) — UAT Supabase variant of sbFetch, used
@@ -5276,6 +5321,9 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       try {
         const { path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(body || '{}');
         if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
+        if (!_sbProxyAllowed(UAT_SB_RULES, path, method) || _sbProxyBlocksIsAdmin(path, reqBody)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
+        }
         const fwdHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
         const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
         const text = await sbRes.text();
@@ -5311,6 +5359,9 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       try {
         const { path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(body || '{}');
         if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
+        if (!_sbProxyAllowed(PROD_SB_RULES, path, method) || _sbProxyBlocksIsAdmin(path, reqBody)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
+        }
         const fwdHeaders = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
         const sbRes = await fetch(`${SB_URL}/rest/v1/${path}`, { method, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
         const text = await sbRes.text();
