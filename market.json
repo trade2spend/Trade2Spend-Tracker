@@ -1,28 +1,28 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-10-20T10:02:46.540Z",
-  "dataSource": "broker",
+  "lastUpdated": "2026-10-20T10:16:14.871Z",
+  "dataSource": "nse",
   "indices": {
     "NIFTY": {
       "price": 22888.95,
-      "change": 0,
-      "changePct": 0
+      "change": -257.2,
+      "changePct": -1.11
     },
     "SENSEX": {
       "price": 73852.9,
-      "change": 0,
-      "changePct": 0
+      "change": -876.4,
+      "changePct": -1.17
     },
     "BANKNIFTY": {
       "price": 55488.1,
-      "change": 0,
-      "changePct": 0
+      "change": -355.9,
+      "changePct": -0.64
     }
   },
   "indexSources": {
-    "NIFTY": "kotak",
-    "BANKNIFTY": "kotak",
-    "SENSEX": "kotak"
+    "NIFTY": "nse",
+    "BANKNIFTY": "nse",
+    "SENSEX": "yahoo"
   },
   "breadth": {
     "nifty50": {
@@ -283,106 +283,6 @@
       "change": 0
     }
   ],
-  "losers": [
-    {
-      "symbol": "AXISBANK",
-      "price": 1236,
-      "change": -4.19
-    },
-    {
-      "symbol": "TMPV",
-      "price": 278,
-      "change": -3.09
-    },
-    {
-      "symbol": "INFY",
-      "price": 1130.7,
-      "change": -2.63
-    },
-    {
-      "symbol": "BAJFINANCE",
-      "price": 957.35,
-      "change": -2.52
-    },
-    {
-      "symbol": "APOLLOHOSP",
-      "price": 7700,
-      "change": -2.41
-    },
-    {
-      "symbol": "ULTRACEMCO",
-      "price": 10650,
-      "change": -2.36
-    },
-    {
-      "symbol": "HDFCBANK",
-      "price": 712,
-      "change": -2.31
-    },
-    {
-      "symbol": "TRENT",
-      "price": 2891.6,
-      "change": -2.27
-    },
-    {
-      "symbol": "HINDUNILVR",
-      "price": 1853.2,
-      "change": -2.14
-    },
-    {
-      "symbol": "NTPC",
-      "price": 309,
-      "change": -1.95
-    },
-    {
-      "symbol": "MAXHEALTH",
-      "price": 830,
-      "change": -1.89
-    },
-    {
-      "symbol": "NESTLEIND",
-      "price": 1242.7,
-      "change": -1.8
-    },
-    {
-      "symbol": "BAJAJFINSV",
-      "price": 1700,
-      "change": -1.68
-    },
-    {
-      "symbol": "ETERNAL",
-      "price": 320.2,
-      "change": -1.57
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "price": 1875.2,
-      "change": -1.56
-    },
-    {
-      "symbol": "SHRIRAMFIN",
-      "price": 926.5,
-      "change": -1.43
-    },
-    {
-      "symbol": "GRASIM",
-      "price": 2879,
-      "change": -1.4
-    },
-    {
-      "symbol": "HDFCLIFE",
-      "price": 545.5,
-      "change": -1.36
-    },
-    {
-      "symbol": "COALINDIA",
-      "price": 411.7,
-      "change": -1.32
-    },
-    {
-      "symbol": "ADANIENT",
-      "price": 2657.5,
-      "change": -1.28
-    }
-  ]
+  "losers": [],
+  "optionHighs": {}
 }
