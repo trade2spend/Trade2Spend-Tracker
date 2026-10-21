@@ -1128,6 +1128,13 @@ html,body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',san
   <div class="setup-card">
     <div class="setup-label">🔐 App PIN Lock</div>
     <div class="info-text" style="margin-bottom:8px;">Set a 4-digit PIN — asked every time you reopen the app within your 8-hour TOTP session.</div>
+    <!-- checkpoint admin_pin_multi_identity (2026-10-21) — shown only on a device
+         that hasn't picked which admin identity it belongs to yet (no localStorage
+         t2s_admin_id saved). Asked once; never shown again on this device after. -->
+    <div id="admin-mobile-row" style="display:none;margin-bottom:8px;">
+      <div class="field-label" style="margin-bottom:4px;">Your mobile number (first time only)</div>
+      <input type="tel" inputmode="numeric" maxlength="10" class="setup-input" id="admin-mobile-input" placeholder="10-digit number" style="width:100%;">
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
       <div>
         <div class="field-label" style="margin-bottom:4px;">New PIN</div>
@@ -2100,12 +2107,20 @@ async function handleMagicLink() {
   if (!hash.includes('access_token')) return false;
   const params = new URLSearchParams(hash.slice(1));
   if (params.get('type') !== 'magiclink') return false;
+  // checkpoint admin_pin_multi_identity (2026-10-21) — scoped to this device's
+  // own remembered admin identity (lockout doesn't clear it, so it's still
+  // here); treat email unlock as a full reset for that one admin, same as the
+  // Telegram/URL-escape-hatch paths.
+  const magicAdminId = localStorage.getItem('t2s_admin_id');
   try {
-    await sbProxy('keep_alive_log?source=eq.admin_pwa_locked', 'DELETE');
-    await sbProxy('keep_alive_log?source=like.admin_session_%25', 'DELETE');
+    if (magicAdminId) {
+      await sbProxy(`keep_alive_log?source=eq.admin_pwa_locked_${magicAdminId}`, 'DELETE');
+      await sbProxy(`keep_alive_log?source=like.admin_session_${magicAdminId}_%25`, 'DELETE');
+    }
   } catch(e) {}
-  // Clear PIN so user can set a new one after email verification
-  localStorage.removeItem('t2s_pin');
+  // Clear this device's remembered identity so it re-enters its mobile number
+  // and sets a fresh PIN after email verification.
+  localStorage.removeItem('t2s_admin_id');
   // Flag: skip PIN overlay once and land on Setup tab
   sessionStorage.setItem('t2s_post_unlock', '1');
   window.location.replace('https://app.trade2spend.com/admin.html');
@@ -2144,6 +2159,16 @@ async function registerAdminSession() {
 }
 
 // ── PIN INIT ──────────────────────────────────────────────────────────────────
+// checkpoint admin_pin_multi_identity (2026-10-21) — 3 real is_admin=true rows
+// exist, each with their own PIN. A device permanently remembers which one it
+// belongs to via localStorage.t2s_admin_id, set once at setup (mobile-number
+// entry) and never asked again on that device afterward. Any unlock/reset path
+// (Telegram, URL escape hatch, email magic link) clears this marker and routes
+// back to a fresh mobile+PIN setup, rather than assuming the same identity.
+function showAdminMobileRow() {
+  const row = document.getElementById('admin-mobile-row');
+  if (row) row.style.display = 'block';
+}
 async function pinInit() {
   // If PIN was already verified this browser session, skip overlay
   if (sessionStorage.getItem('t2s_admin_authed')) {
@@ -2152,11 +2177,12 @@ async function pinInit() {
   }
   // URL escape hatch — open admin.html?reset=1 in Safari to bypass any lockout
   if (new URLSearchParams(window.location.search).get('reset') === '1') {
-    localStorage.removeItem('t2s_pin');
+    localStorage.removeItem('t2s_admin_id');
     localStorage.removeItem('t2s_admin_lock_until');
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
-    showToast('Reset via URL — set a new PIN below.');
+    showAdminMobileRow();
+    showToast('Reset via URL — enter your mobile number and set a new PIN below.');
     window.history.replaceState({}, '', window.location.pathname);
     return;
   }
@@ -2166,43 +2192,45 @@ async function pinInit() {
   // If arriving from email unlock (sessionStorage flag set by handleMagicLink)
   if (sessionStorage.getItem('t2s_post_unlock')) {
     sessionStorage.removeItem('t2s_post_unlock');
+    localStorage.removeItem('t2s_admin_id');
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
-    showToast('Email verified — please set a new PIN below.');
+    showAdminMobileRow();
+    showToast('Email verified — enter your mobile number and set a new PIN below.');
     return;
   }
 
-  // Check pin_reset + pwa_locked in parallel (saves one network round-trip)
+  // No remembered identity on this device yet — nothing to check (no PIN exists
+  // for an identity we don't know), go straight to Setup with the mobile step.
+  const adminId = localStorage.getItem('t2s_admin_id');
+  if (!adminId) {
+    document.getElementById('pin-overlay').classList.add('hidden');
+    showTab('setup');
+    showAdminMobileRow();
+    showToast('No PIN set — enter your mobile number and create one below.');
+    return;
+  }
+
+  // Check this admin's own pin_reset + pwa_locked signals in parallel (scoped
+  // per-admin now — was a single shared pair of keys before this checkpoint).
   const [pinReset, locks] = await Promise.all([
-    sbGet('keep_alive_log?source=eq.admin_pin_reset&limit=1').catch(() => []),
-    sbGet('keep_alive_log?source=eq.admin_pwa_locked&limit=1').catch(() => [])
+    sbGet(`keep_alive_log?source=eq.admin_pin_reset_${adminId}&limit=1`).catch(() => []),
+    sbGet(`keep_alive_log?source=eq.admin_pwa_locked_${adminId}&limit=1`).catch(() => [])
   ]);
 
   if (pinReset && pinReset.length > 0) {
-    await sbProxy('keep_alive_log?source=eq.admin_pin_reset', 'DELETE');
-    await sbProxy('keep_alive_log?source=eq.admin_pwa_locked', 'DELETE');
-    localStorage.removeItem('t2s_pin');
+    await sbProxy(`keep_alive_log?source=eq.admin_pin_reset_${adminId}`, 'DELETE');
+    await sbProxy(`keep_alive_log?source=eq.admin_pwa_locked_${adminId}`, 'DELETE');
+    localStorage.removeItem('t2s_admin_id');
     localStorage.removeItem('t2s_admin_lock_until');
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
-    showToast('PIN reset by Telegram. Set a new PIN below.');
+    showAdminMobileRow();
+    showToast('PIN reset by Telegram. Enter your mobile number and set a new PIN below.');
     return;
   }
 
-  const savedPin = localStorage.getItem('t2s_pin');
-  if (!savedPin) {
-    document.getElementById('pin-overlay').classList.add('hidden');
-    showTab('setup');
-    showToast('No PIN set — create one below to secure the app.');
-    return;
-  }
-  if (sessionStorage.getItem('t2s_admin_authed')) {
-    document.getElementById('pin-overlay').classList.add('hidden');
-    return;
-  }
   document.getElementById('pin-overlay').classList.remove('hidden');
-  const lockUntil = localStorage.getItem('t2s_admin_lock_until');
-  if (lockUntil && new Date() < new Date(lockUntil)) { showAdminLocked('pin'); return; }
   if (sessionStorage.getItem('t2s_admin_authed')) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
   if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
   await checkSessionSlot();
@@ -2263,8 +2291,14 @@ async function submitAdminTotp() {
       if (discBtn) discBtn.style.display = '';
       showToast('✓ Kotak connected — live CMP active');
       registerAdminSession().catch(() => {});
-      if (!localStorage.getItem('t2s_pin')) {
+      // checkpoint admin_pin_multi_identity (2026-10-21) — with 3 real
+      // is_admin=true rows, "does any admin have a PIN" no longer means "does
+      // THIS device have one" (that's the exact ambiguity bug this checkpoint
+      // fixed elsewhere). This device's own identity marker is the only thing
+      // that matters for this nudge.
+      if (!localStorage.getItem('t2s_admin_id')) {
         showTab('setup');
+        showAdminMobileRow();
         setTimeout(() => showToast('Set a PIN below — asked every time you reopen the app.'), 500);
       }
     } else {
@@ -2307,60 +2341,61 @@ function updatePinDots() {
   }
 }
 
-async function hashAdminPin(pin) {
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(pin), { name: 'PBKDF2' }, false, ['deriveBits']
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: new TextEncoder().encode('T2S_ADMIN_SALT_2026'), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial, 256
-  );
-  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
+// checkpoint admin_pin_server (2026-10-21) — PIN is now verified server-side
+// (POST /admin-verify-pin, bcrypt against members.admin_pin_hash). hashAdminPin()
+// removed — no local hash comparison happens in this file anymore.
 async function checkPin() {
-  // Check localStorage lockout first (survives page refresh)
-  const lockUntil = localStorage.getItem('t2s_admin_lock_until');
-  if (lockUntil && new Date() < new Date(lockUntil)) { showAdminLocked('pin'); return; }
-
-  const savedPin = localStorage.getItem('t2s_pin');
-  const inputHash = await hashAdminPin(pinBuffer);
-  if (inputHash === savedPin) {
-    pinAttempts = 0;
-    localStorage.removeItem('t2s_admin_lock_until');
+  const pin = pinBuffer;
+  let d;
+  try {
+    const r = await fetch('https://api.trade2spend.com/admin-verify-pin', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // checkpoint admin_pin_multi_identity — admin_id is this device's
+      // permanently remembered identity (set once at setup); the server uses
+      // it for a deterministic by-id lookup instead of an ambiguous scan.
+      body: JSON.stringify({ pin, device_id: getAdminDeviceId(), admin_id: localStorage.getItem('t2s_admin_id'), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } })
+    });
+    d = await r.json();
+  } catch (e) {
+    document.getElementById('pin-err').textContent = 'Server unreachable — check internet and retry.';
+    return;
+  }
+  if (d.success) {
     pinBuffer = '';
     updatePinDots();
     document.getElementById('pin-overlay').classList.add('hidden');
     sessionStorage.setItem('t2s_admin_authed', '1');
-    registerAdminSession().catch(() => {});
-  } else {
-    pinAttempts++;
-    pinBuffer = '';
-    pinAnimating = true;
-    const grid = document.querySelector('.pin-grid');
-    if (grid) grid.classList.add('locked');
-    for (let i = 0; i < 4; i++) document.getElementById('pd' + i).classList.add('error');
-    if (pinAttempts >= 3) {
-      // Persist lockout so page refresh cannot bypass it
-      const lockUntilISO = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-      localStorage.setItem('t2s_admin_lock_until', lockUntilISO);
-      try {
-        await sbProxy('keep_alive_log', 'POST', { source:'admin_pwa_locked', pinged_at: new Date().toISOString() });
-      } catch(e) {}
-      fetch('https://api.trade2spend.com/admin-alert', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } })
-      }).catch(()=>{});
-      showAdminLocked('pin');
-    } else {
-      document.getElementById('pin-err').textContent = `Wrong PIN. ${3 - pinAttempts} attempt${3 - pinAttempts !== 1 ? 's' : ''} remaining.`;
-    }
-    setTimeout(() => {
-      pinAnimating = false;
-      if (grid) grid.classList.remove('locked');
-      updatePinDots();
-    }, 600);
+    // Server issues a short-lived (8h), revocable token in place of the real
+    // EXECUTE_SECRET — saved to the same key every existing admin-action call
+    // site already reads, so no other code needs to change.
+    if (d.sessionToken) localStorage.setItem('t2s_execute_secret', d.sessionToken);
+    return;
   }
+  if (d.serverBusy) {
+    // Correct PIN, but the server couldn't start a session (e.g. a transient
+    // DB hiccup registering the device slot) — not a wrong PIN, so skip the
+    // wrong-PIN shake/lock animation and don't touch the attempt count.
+    pinBuffer = '';
+    updatePinDots();
+    document.getElementById('pin-err').textContent = 'Server busy — please try again.';
+    return;
+  }
+  pinBuffer = '';
+  pinAnimating = true;
+  const grid = document.querySelector('.pin-grid');
+  if (grid) grid.classList.add('locked');
+  for (let i = 0; i < 4; i++) document.getElementById('pd' + i).classList.add('error');
+  if (d.locked) {
+    showAdminLocked('pin');
+  } else {
+    const remaining = typeof d.attemptsRemaining === 'number' ? d.attemptsRemaining : 2;
+    document.getElementById('pin-err').textContent = `Wrong PIN. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`;
+  }
+  setTimeout(() => {
+    pinAnimating = false;
+    if (grid) grid.classList.remove('locked');
+    updatePinDots();
+  }, 600);
 }
 
 
@@ -2378,8 +2413,53 @@ async function saveNewPin() {
     return;
   }
 
-  const hash = await hashAdminPin(newPin);
-  localStorage.setItem('t2s_pin', hash);
+  // checkpoint admin_pin_multi_identity (2026-10-21) — this device doesn't
+  // have a remembered admin identity yet; ask for the mobile number once so
+  // the server can target the right one of the 3 real admin rows.
+  const needsMobile = !localStorage.getItem('t2s_admin_id');
+  let mobile = '';
+  if (needsMobile) {
+    const mobileDigits = (document.getElementById('admin-mobile-input')?.value || '').replace(/\D/g, '');
+    if (mobileDigits.length !== 10) {
+      errEl.textContent = 'Enter your 10-digit mobile number above.';
+      return;
+    }
+    mobile = '+91' + mobileDigits;
+  }
+
+  try {
+    const r = await fetch('https://api.trade2spend.com/admin-setup-pin', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: newPin, device_id: getAdminDeviceId(), mobile })
+    });
+    const d = await r.json();
+    if (!d.success) {
+      if (d.pinSaved) {
+        // PIN write succeeded; only the automatic session-start failed (e.g. a
+        // transient DB hiccup). Don't claim the whole setup failed — guide to
+        // the normal unlock path instead of inviting a re-submit that would
+        // now correctly fail the atomic "already set" check.
+        errEl.textContent = '';
+        document.getElementById('new-pin-input').value = '';
+        document.getElementById('confirm-pin-input').value = '';
+        showToast('✓ PIN saved — reload the app and enter it to continue.');
+        return;
+      }
+      // Generic message — server no longer distinguishes "number not found"
+      // from "already has a PIN" (checkpoint admin_pin_multi_identity pre r1
+      // FINDING-002, to avoid letting a failed guess enumerate admin numbers).
+      errEl.textContent = 'Could not save PIN — check your mobile number, or use Telegram Reset PIN if one is already set.';
+      return;
+    }
+    if (d.sessionToken) localStorage.setItem('t2s_execute_secret', d.sessionToken);
+    // adminId is this device's permanent identity marker — saved once, never
+    // asked for again via the mobile-number step on this device.
+    if (d.adminId) localStorage.setItem('t2s_admin_id', d.adminId);
+  } catch (e) {
+    errEl.textContent = 'Server unreachable — check internet and retry.';
+    return;
+  }
+
   errEl.textContent = '';
   document.getElementById('new-pin-input').value = '';
   document.getElementById('confirm-pin-input').value = '';
