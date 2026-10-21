@@ -1,3 +1,4 @@
+// DEPLOY: T2S-PROD-20261021-001 | server.js: Finding C REGRESSION FIX — the 2026-10-20 allowlist (T2S-PROD-20261020-001) broke "Send to Members" within a day because its investigation only matched backtick-quoted sbFetch calls and missed every single-quoted sbPost('posts',...) call site (the actual way every create/POST action in this codebase is written). Re-investigated with a quote-agnostic search across all 4 consumer files. Fixes: PROD_SB_RULES.posts and UAT_SB_RULES.members/posts now include POST; UAT_SB_RULES gained 3 entire tables missed in the first pass (feature_flags, audit_log, device_blocks). Also fixed a new near-miss found while correcting this: _sbProxyBlocksIsAdmin now checks `is_admin === true` instead of mere key presence — the real "add member" feature explicitly sends `is_admin:false` as a safe default, which the original presence-check would have wrongly blocked too, once POST was allowed. Verified: 32 checks replayed against the actual extracted functions — the exact call that broke prod now succeeds, is_admin:false now succeeds, is_admin:true (any context) still correctly blocked, every previously-verified real call site and every attack shape re-confirmed. Codex not re-reviewed for this hotfix (same checkpoint's methodology already approved twice; this is a correction to the investigation's completeness, not a new design). Rollback: revert PROD_SB_RULES.posts to ['GET','PATCH'], UAT_SB_RULES to its 2026-10-20 shape (drop feature_flags/audit_log/device_blocks, drop POST from members/posts), revert _sbProxyBlocksIsAdmin to the hasOwnProperty check — note this restores the regression.
 // DEPLOY: T2S-PROD-20261020-001 | server.js: Finding C fix — /prod-sb and /uat-sb no longer forward ANY {table,method} to Supabase using the service-role key (which bypasses every RLS rule already built this project). Added PROD_SB_RULES/UAT_SB_RULES table+method allowlists (6 tables for /prod-sb: members/sessions/posts/post_shares/push_subscriptions/read_receipts; 5 for /uat-sb: members/sessions/posts/access_requests/keep_alive_log — UAT's member-facing files bypass /uat-sb entirely via a separate anon-key path, not part of this fix), built from an exhaustive grep of every real sbFetch/sbGet/sbPatch/sbPost call site across login.html, index.html, Trading_Bot/index.html, UAT/admin_uat.html. Field-level restriction is a BLOCKLIST (is_admin only, the one field with zero legitimate call site anywhere and the single most severe possible abuse) rather than a full allowlist — investigation surfaced 3 previously-missed legitimate fields across 3 passes (tour_completed, acquisition_source, sessions.pin_hash on POST — prod's PIN setup flow still writes this directly), proving an exact field allowlist was too fragile to build safely. Any request for an unlisted table, an unsupported method on a listed table, or an is_admin write → 403. Verified: replayed all ~45 real call-site shapes found during investigation against the actual extracted functions — 100% allowed; separately verified unknown-table/wrong-method/is_admin-write attack shapes are all rejected. Codex-reviewed (2 rounds on checkpoint prodsb_allowlist, no unresolved blockers — one round caught that the original investigation had missed admin.html's own use of /prod-sb entirely). Does NOT solve the deeper residual (anyone who knows a specific mobile number can still look it up via the now-narrower members GET — no auth/token system exists to close that; tracked separately). Rollback: remove the _sbProxyAllowed/_sbProxyBlocksIsAdmin calls from both /uat-sb and /prod-sb handlers (2 call sites) and the PROD_SB_RULES/UAT_SB_RULES/_sbProxyTable/_sbProxyAllowed/_sbProxyBlocksIsAdmin block.
 // DEPLOY: T2S-PROD-20261019-003 | server.js: Finding B fix — public control key (T2SMonitor2026, hardcoded in page source, guarding 18 endpoints) removed. All 18 checks migrated to EXECUTE_SECRET-only via x-t2s-secret header (no public fallback) — same pattern already used by /execute: chart-analyse, market-holiday (was a JSON body field, now header), debug-scrip, reload-scrip, push-uat-to-prod, market-force, http-update (incl. the server's own self-call in applyBugFix), set-high, schedule-dummy-likes, active-contracts-for-ltp, test-nse-chain, test-cmp, test-ltp, report-issue, send-push, access-requests PATCH. The 12 that used a URL query string (?key=) now use a header instead (query strings can end up in infrastructure logs; headers typically don't). Both /refresh-contracts handlers (GET+POST) have the key check REMOVED ENTIRELY (Tushar's explicit decision) — non-destructive route, also called from the member-facing app which has no access to the admin secret. Finding C (/prod-sb, /uat-sb proxy headers) is explicitly NOT part of this fix — parked as its own separate, larger task (needs a real request allowlist inside the proxy, not a key swap). Companion client changes: Trading_Bot/index.html, UAT/admin_uat.html, index.html, UAT/uat.html — all updated to send the new header; Tushar's own /http-update and /market-force terminal commands also need `-H "x-t2s-secret: $EXECUTE_SECRET"` instead of `?key=...` going forward. Codex-reviewed (2 rounds, clean, no unresolved blockers). Rollback: revert each check back to `!== 'T2SMonitor2026'` (or the OR-fallback for chart-analyse/send-push/access-requests), restore the two /refresh-contracts key checks, revert the applyBugFix self-call, revert the 7 renamed comment lines back to their `?key=T2SMonitor2026` wording.
 // DEPLOY: T2S-PROD-20261018-003 | server.js: Finding K fix — POST /logout-kotak was zero-auth (anyone could kill the live Kotak session/price feed for all members, no credential needed). Added the same EXECUTE_SECRET-only guard already used by /execute, /push-trades, etc. (`!secret || secret !== process.env.EXECUTE_SECRET` → 401) before the existing session-clearing logic, which is otherwise unchanged. Companion client change: disconnectKotak() in admin.html (T2S-PROD-20261018-003) and admin_uat.html (T2S-UAT-20261018-002) now sends x-t2s-secret from the already-existing localStorage t2s_execute_secret. Codex-reviewed (2 rounds, clean). Rollback: remove the 5-line guard block from /logout-kotak; revert both disconnectKotak() calls to no headers object.
@@ -480,45 +481,80 @@ async function sbFetch(path, opts = {}) {
 // ── /prod-sb + /uat-sb ALLOWLIST (checkpoint prodsb_allowlist, 2026-10-20, Finding C) ──
 // Both proxies used to forward ANY {table, method} to Supabase using the service-role
 // key (bypasses every RLS rule already built this project). This allowlist restricts
-// each proxy to exactly the tables + HTTP methods its real callers actually use —
-// built from an exhaustive grep of every sbFetch/sbGet/sbPatch/sbPost call site in
-// login.html, index.html, Trading_Bot/index.html (prod) and UAT/admin_uat.html (UAT;
-// UAT's own member-facing files bypass this proxy entirely via a separate, already-
-// tracked anon-key path, so they are NOT part of this allowlist).
+// each proxy to exactly the tables + HTTP methods its real callers actually use.
+//
+// CORRECTED 2026-10-21 — the original 2026-10-20 investigation's grep pattern only
+// matched backtick-quoted table names (`` sbFetch(`posts...` ``) and MISSED every
+// call written with single-quotes (`sbFetch('posts', ...)`), which is how every POST
+// (create) call in this codebase is written. That gap broke "Send to Members" in
+// production within a day of deploying the original rules (confirmed: sbPost('posts')
+// → sbProxy(path,'POST',body) → POST on `posts`, which the original PROD_SB_RULES
+// did not allow). Re-investigated with a quote-agnostic search across all 4 consumer
+// files (login.html, index.html, Trading_Bot/index.html, UAT/admin_uat.html) —
+// corrected rules below. Three more legitimate UAT tables surfaced in the same pass
+// (feature_flags, audit_log, device_blocks) that the first pass also missed entirely.
 //
 // Field-level restriction is deliberately a BLOCKLIST (is_admin only), not a full
-// allowlist, after investigation surfaced three previously-missed legitimate fields
-// across three separate passes (tour_completed, acquisition_source, sessions.pin_hash
-// on POST — prod's PIN setup flow still writes this directly). An exact field
-// allowlist proved too fragile to build safely without real risk of breaking live
-// functionality; table+method scoping alone already closes "any table, any action"
-// down to exactly what the app does today. is_admin is blocked because granting
-// admin privilege is the single most severe possible abuse of this proxy and has
-// zero legitimate call site anywhere in the project.
+// allowlist — an exact field allowlist already proved too fragile once (three
+// surprise fields in the original pass); table+method scoping alone already closes
+// "any table, any action" down to exactly what the app does today. is_admin is
+// blocked because granting admin privilege is the single most severe possible abuse
+// of this proxy and has zero legitimate call site anywhere in the project — EXCEPT
+// that the real "add member" feature (UAT) explicitly sends `is_admin: false` as a
+// normal, safe field (new members are never admin by default). The block below
+// checks the VALUE is `true`, not merely that the key is present, specifically so
+// that safe call doesn't get wrongly blocked too.
 const PROD_SB_RULES = {
   members:            ['GET', 'PATCH'],
   sessions:           ['GET', 'PATCH', 'POST'],
-  posts:              ['GET', 'PATCH'],
+  posts:              ['GET', 'PATCH', 'POST'],
   post_shares:        ['GET', 'POST', 'DELETE'],
   push_subscriptions: ['GET', 'POST', 'DELETE'],
   read_receipts:      ['GET', 'POST'],
 };
 const UAT_SB_RULES = {
-  members:          ['GET', 'PATCH'],
+  members:          ['GET', 'PATCH', 'POST'],
   sessions:         ['GET', 'PATCH'],
-  posts:            ['GET', 'PATCH'],
+  posts:            ['GET', 'PATCH', 'POST'],
   access_requests:  ['GET', 'PATCH'],
   keep_alive_log:   ['GET', 'PATCH', 'POST', 'DELETE'],
+  feature_flags:    ['GET', 'PATCH'],
+  audit_log:        ['GET', 'POST', 'DELETE'],
+  device_blocks:    ['GET', 'POST', 'DELETE'],
 };
 function _sbProxyTable(path) { return String(path || '').split('?')[0]; }
 function _sbProxyAllowed(rules, path, method) {
   const allowedMethods = rules[_sbProxyTable(path)];
   return !!(allowedMethods && allowedMethods.includes(String(method || 'GET').toUpperCase()));
 }
-function _sbProxyBlocksIsAdmin(path, bodyStr) {
+// checkpoint prodsb_allowlist_hardening (2026-10-21) — renamed from
+// _sbProxyBlocksIsAdmin and extended to two more fields found during a Codex-prompted
+// re-check: `mobile` (changing an EXISTING member's number via PATCH is an account-
+// hijack primitive — confirmed zero legitimate call anywhere ever does this) and
+// `pin_hash` (confirmed every real call only ever sets it to exactly `null`, the
+// admin-reset case — any other value lets a caller plant a PIN of their own choosing
+// on someone else's account, a full account takeover). `mobile` is only blocked on
+// PATCH, since creating a brand-new member via POST legitimately must set it.
+function _sbProxyBlocksSensitiveFields(path, method, bodyStr) {
   if (_sbProxyTable(path) !== 'members' || !bodyStr) return false;
-  try { return Object.prototype.hasOwnProperty.call(JSON.parse(bodyStr), 'is_admin'); }
-  catch { return false; }
+  try {
+    const parsed = JSON.parse(bodyStr);
+    // PostgREST accepts a single object OR an array of objects (bulk insert) for POST —
+    // checking only the top-level object would miss a dangerous value hidden inside an
+    // array-wrapped body. Check every row.
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const isPatch = String(method || '').toUpperCase() === 'PATCH';
+    return rows.some(r => {
+      if (!r || typeof r !== 'object') return false;
+      // Fail-safe: anything other than exactly `false`/`null` or absent is treated as
+      // an attempt to set it (not just `=== true`), so string/number truthy variants
+      // ("true", 1, etc.) can't slip past either.
+      if ('is_admin' in r && r.is_admin !== false) return true;
+      if (isPatch && 'mobile' in r) return true;
+      if ('pin_hash' in r && r.pin_hash !== null) return true;
+      return false;
+    });
+  } catch { return false; }
 }
 
 // checkpoint pin_hash_consolidated (2026-10-18) — UAT Supabase variant of sbFetch, used
@@ -5321,7 +5357,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       try {
         const { path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(body || '{}');
         if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
-        if (!_sbProxyAllowed(UAT_SB_RULES, path, method) || _sbProxyBlocksIsAdmin(path, reqBody)) {
+        if (!_sbProxyAllowed(UAT_SB_RULES, path, method) || _sbProxyBlocksSensitiveFields(path, method, reqBody)) {
           res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
         }
         const fwdHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
@@ -5359,7 +5395,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       try {
         const { path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(body || '{}');
         if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
-        if (!_sbProxyAllowed(PROD_SB_RULES, path, method) || _sbProxyBlocksIsAdmin(path, reqBody)) {
+        if (!_sbProxyAllowed(PROD_SB_RULES, path, method) || _sbProxyBlocksSensitiveFields(path, method, reqBody)) {
           res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
         }
         const fwdHeaders = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
