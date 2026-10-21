@@ -1,7 +1,8 @@
+// DEPLOY: T2S-PROD-20261021-002 | server.js: Admin PIN server-side (checkpoint admin_pin_server / admin_pin_server_shipdecision, Codex-reviewed 2+2 rounds, both clean/withdrawn). The admin app's own unlock PIN (admin.html/admin_uat.html) moves from pure client-side PBKDF2 compare against localStorage.t2s_pin to server-verified bcrypt against a new members.admin_pin_hash column (scoped to is_admin=true; Tushar added the column manually — not a schema change made by this session). New endpoints POST /admin-setup-pin (atomic conditional admin_pin_hash IS NULL, same pattern as /uat-setup-pin) and POST /admin-verify-pin (bcrypt compare; in-memory CAS wrong-attempt counter via _adminPinAttempts; 3 wrong → writes the existing keep_alive_log admin_pwa_locked row + fires the existing Telegram Reset-PIN alert via the new shared sendAdminLockAlert() helper, which /admin-alert now also calls instead of duplicating the message). On success, issues a random 8-hour session token (_issueAdminToken, crypto.randomBytes) instead of the real EXECUTE_SECRET — the master secret is never transmitted by this flow. All 20 existing EXECUTE_SECRET-only inbound gates now call the new _executeSecretValid(secret) helper (secret === process.env.EXECUTE_SECRET || isValidAdminSessionToken(secret)) instead of a direct !== comparison — additive only, nothing removed. Device-slot registration (_registerAdminDeviceSlot) mirrors admin.html's registerAdminSession() exactly (same keep_alive_log admin_session_<deviceId> rows, same 2-device evict-oldest rule) so the token map can never exceed 2 live entries; evicting a slot also revokes that device's token. Both existing Telegram reset paths (admin_pin_reset_confirm callback, /unlock_admin command) now also call _adminPinFullReset() — nulls admin_pin_hash AND wipes every outstanding token, so a PIN reset can't leave an old token still working. Client changes (Trading_Bot/index.html, UAT/admin_uat.html — both ship together, same local-PIN code in both): checkPin()/saveNewPin() call the new endpoints instead of local PBKDF2; on success, the returned sessionToken is saved to the SAME localStorage key (t2s_execute_secret) the ~18 existing admin-action call sites already read — zero changes needed to any of them. hashAdminPin() removed from both client files (no longer called). Known, accepted limitation (Tushar's explicit decision 2026-10-21, after 2 Codex rounds each on admin_pin_server and admin_pin_server_shipdecision): these endpoints cannot verify the caller already passed the existing TOTP layer, because that layer has never had server-side session tracking either (purely browser-remembered via t2s_admin_session_exp) — same category as the already-parked "no real per-caller login/token system" item, not a new gap. Rollback: revert the 20 _executeSecretValid( calls back to their literal !secret||secret!==process.env.EXECUTE_SECRET form; remove the admin PIN block (constants through sendAdminLockAlert helper) and the /admin-verify-pin+/admin-setup-pin route block; revert /admin-alert to its inline message; revert the two Telegram reset paths to drop the _adminPinFullReset() calls; revert checkPin()/saveNewPin()/hashAdminPin() in both client files.
 // DEPLOY: T2S-PROD-20261021-001 | server.js: Finding C REGRESSION FIX — the 2026-10-20 allowlist (T2S-PROD-20261020-001) broke "Send to Members" within a day because its investigation only matched backtick-quoted sbFetch calls and missed every single-quoted sbPost('posts',...) call site (the actual way every create/POST action in this codebase is written). Re-investigated with a quote-agnostic search across all 4 consumer files. Fixes: PROD_SB_RULES.posts and UAT_SB_RULES.members/posts now include POST; UAT_SB_RULES gained 3 entire tables missed in the first pass (feature_flags, audit_log, device_blocks). Also fixed a new near-miss found while correcting this: _sbProxyBlocksIsAdmin now checks `is_admin === true` instead of mere key presence — the real "add member" feature explicitly sends `is_admin:false` as a safe default, which the original presence-check would have wrongly blocked too, once POST was allowed. Verified: 32 checks replayed against the actual extracted functions — the exact call that broke prod now succeeds, is_admin:false now succeeds, is_admin:true (any context) still correctly blocked, every previously-verified real call site and every attack shape re-confirmed. Codex not re-reviewed for this hotfix (same checkpoint's methodology already approved twice; this is a correction to the investigation's completeness, not a new design). Rollback: revert PROD_SB_RULES.posts to ['GET','PATCH'], UAT_SB_RULES to its 2026-10-20 shape (drop feature_flags/audit_log/device_blocks, drop POST from members/posts), revert _sbProxyBlocksIsAdmin to the hasOwnProperty check — note this restores the regression.
 // DEPLOY: T2S-PROD-20261020-001 | server.js: Finding C fix — /prod-sb and /uat-sb no longer forward ANY {table,method} to Supabase using the service-role key (which bypasses every RLS rule already built this project). Added PROD_SB_RULES/UAT_SB_RULES table+method allowlists (6 tables for /prod-sb: members/sessions/posts/post_shares/push_subscriptions/read_receipts; 5 for /uat-sb: members/sessions/posts/access_requests/keep_alive_log — UAT's member-facing files bypass /uat-sb entirely via a separate anon-key path, not part of this fix), built from an exhaustive grep of every real sbFetch/sbGet/sbPatch/sbPost call site across login.html, index.html, Trading_Bot/index.html, UAT/admin_uat.html. Field-level restriction is a BLOCKLIST (is_admin only, the one field with zero legitimate call site anywhere and the single most severe possible abuse) rather than a full allowlist — investigation surfaced 3 previously-missed legitimate fields across 3 passes (tour_completed, acquisition_source, sessions.pin_hash on POST — prod's PIN setup flow still writes this directly), proving an exact field allowlist was too fragile to build safely. Any request for an unlisted table, an unsupported method on a listed table, or an is_admin write → 403. Verified: replayed all ~45 real call-site shapes found during investigation against the actual extracted functions — 100% allowed; separately verified unknown-table/wrong-method/is_admin-write attack shapes are all rejected. Codex-reviewed (2 rounds on checkpoint prodsb_allowlist, no unresolved blockers — one round caught that the original investigation had missed admin.html's own use of /prod-sb entirely). Does NOT solve the deeper residual (anyone who knows a specific mobile number can still look it up via the now-narrower members GET — no auth/token system exists to close that; tracked separately). Rollback: remove the _sbProxyAllowed/_sbProxyBlocksIsAdmin calls from both /uat-sb and /prod-sb handlers (2 call sites) and the PROD_SB_RULES/UAT_SB_RULES/_sbProxyTable/_sbProxyAllowed/_sbProxyBlocksIsAdmin block.
 // DEPLOY: T2S-PROD-20261019-003 | server.js: Finding B fix — public control key (T2SMonitor2026, hardcoded in page source, guarding 18 endpoints) removed. All 18 checks migrated to EXECUTE_SECRET-only via x-t2s-secret header (no public fallback) — same pattern already used by /execute: chart-analyse, market-holiday (was a JSON body field, now header), debug-scrip, reload-scrip, push-uat-to-prod, market-force, http-update (incl. the server's own self-call in applyBugFix), set-high, schedule-dummy-likes, active-contracts-for-ltp, test-nse-chain, test-cmp, test-ltp, report-issue, send-push, access-requests PATCH. The 12 that used a URL query string (?key=) now use a header instead (query strings can end up in infrastructure logs; headers typically don't). Both /refresh-contracts handlers (GET+POST) have the key check REMOVED ENTIRELY (Tushar's explicit decision) — non-destructive route, also called from the member-facing app which has no access to the admin secret. Finding C (/prod-sb, /uat-sb proxy headers) is explicitly NOT part of this fix — parked as its own separate, larger task (needs a real request allowlist inside the proxy, not a key swap). Companion client changes: Trading_Bot/index.html, UAT/admin_uat.html, index.html, UAT/uat.html — all updated to send the new header; Tushar's own /http-update and /market-force terminal commands also need `-H "x-t2s-secret: $EXECUTE_SECRET"` instead of `?key=...` going forward. Codex-reviewed (2 rounds, clean, no unresolved blockers). Rollback: revert each check back to `!== 'T2SMonitor2026'` (or the OR-fallback for chart-analyse/send-push/access-requests), restore the two /refresh-contracts key checks, revert the applyBugFix self-call, revert the 7 renamed comment lines back to their `?key=T2SMonitor2026` wording.
-// DEPLOY: T2S-PROD-20261018-003 | server.js: Finding K fix — POST /logout-kotak was zero-auth (anyone could kill the live Kotak session/price feed for all members, no credential needed). Added the same EXECUTE_SECRET-only guard already used by /execute, /push-trades, etc. (`!secret || secret !== process.env.EXECUTE_SECRET` → 401) before the existing session-clearing logic, which is otherwise unchanged. Companion client change: disconnectKotak() in admin.html (T2S-PROD-20261018-003) and admin_uat.html (T2S-UAT-20261018-002) now sends x-t2s-secret from the already-existing localStorage t2s_execute_secret. Codex-reviewed (2 rounds, clean). Rollback: remove the 5-line guard block from /logout-kotak; revert both disconnectKotak() calls to no headers object.
+// DEPLOY: T2S-PROD-20261018-003 | server.js: Finding K fix — POST /logout-kotak was zero-auth (anyone could kill the live Kotak session/price feed for all members, no credential needed). Added the same EXECUTE_SECRET-only guard already used by /execute, /push-trades, etc. (`!_executeSecretValid(secret)` → 401) before the existing session-clearing logic, which is otherwise unchanged. Companion client change: disconnectKotak() in admin.html (T2S-PROD-20261018-003) and admin_uat.html (T2S-UAT-20261018-002) now sends x-t2s-secret from the already-existing localStorage t2s_execute_secret. Codex-reviewed (2 rounds, clean). Rollback: remove the 5-line guard block from /logout-kotak; revert both disconnectKotak() calls to no headers object.
 // DEPLOY: T2S-PROD-20261018-002 | server.js: Finding F fix — removed the unauthenticated GET /access-requests route (leaked up to 200 members' mobile/name/tier/free-access-block status to anyone, no auth). Also removed its now-unused _DISABLE_ACCESS_REQUESTS_GET flag constant. Zero client callers anywhere in the project (member PWA, admin PWA, UAT files) — confirmed by exhaustive search; admin review reads/writes access_requests directly via Supabase, not through this route. Sibling PATCH /access-requests/:id (used only by trading_bot_v8.py, localhost-only call) is untouched, as is the shared _send503 helper (still used by ~10 other routes). Codex-reviewed (1 round, clean, FINDING-NONE). Affects prod and UAT both (shared server.js) — this route never had a UAT-only variant. Rollback: re-add `const _DISABLE_ACCESS_REQUESTS_GET = !!process.env.DISABLE_ACCESS_REQUESTS_GET;` near the other _DISABLE_* constants, and re-add a `GET /access-requests` block (query: `access_requests?select=id,status,block_reason,rejection_count,last_rejected_at,created_at,reviewed_at,member_id(id,mobile,name,tier,free_access,free_access_blocked)&order=created_at.desc&limit=200`, optional `&status=eq.<filter>`) before the `/storage-status` route — no separate backup file was made for this specific change; this comment is the full rollback spec.
 // DEPLOY: T2S-UAT-20261018-001 | server.js: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — UAT scope only. (1) bcryptjs dependency added (package.json). (2) sbFetchUat()/sendPushToMemberUat() — UAT-Supabase variants of the existing sbFetch/sendPushToMember helpers. (3) Two new endpoints: POST /uat-verify-pin and POST /uat-setup-pin — bcrypt compare/hash + lazy legacy-SHA256 migration happen entirely server-side; pin_hash is never included in any response body. Lockout (3 wrong/30min) is now DB-enforced via compare-and-swap counter updates, not client-trusted; a never-registered device locks only itself (Tushar's explicit decision, 2026-10-18 — never let a stranger who merely knows a mobile number lock out the real member), while a previously-registered device locks the whole account and triggers a push notification to the member's other active devices. PIN setup uses an atomic conditional UPDATE (`pin_hash IS NULL`) so exactly one caller can win a given setup. No static-key gate (rate-limited 20/5min per IP instead, same as /knowledge-ask's pattern) — matches governance that a login/setup endpoint can't require a credential that doesn't exist yet. (4) Daily (4:30 AM IST) cleanup of never-successfully-logged-in locked session rows after 15 days; audit_log kept permanent, untouched. Companion: UAT/login_uat.html, UAT/uat.html. Rollback: remove the /uat-verify-pin+/uat-setup-pin block, sbFetchUat/sendPushToMemberUat, the _pinRate/PIN_WEAK_LIST/_pin* helpers, the cleanupStalePinLocks block, and the bcryptjs import; revert package.json.
 // DEPLOY: T2S-PROD-20261016-001 | server.js: SENSEX Kotak token fix — INDEX_TOKENS.SENSEX and SPOT_TOKENS.SENSEX changed from instrument_token '1' to '51' (correct Sensex token per Kotak reference table). NIFTY/BANKNIFTY unchanged. Rollback: restore server.js.bak_20261016_presensex, push_pwa.py, wait 5 min or /http-update.
@@ -161,6 +162,142 @@ const LOCK_MINUTES_PIN = 30; // mirrors client LOCK_MINUTES
 function _pinIsBcrypt(h) { return typeof h === 'string' && /^\$2[aby]\$/.test(h); }
 function _pinIsLegacySha256(h) { return typeof h === 'string' && /^[a-f0-9]{64}$/i.test(h); }
 function _pinLegacyHash(pin) { return crypto.createHash('sha256').update(pin + 'T2S_SALT').digest('hex'); }
+
+// ── ADMIN PIN (checkpoint admin_pin_server, 2026-10-21) ──────────────────────
+// Moves the admin app's own unlock PIN server-side (was pure client-side PBKDF2
+// compare against localStorage.t2s_pin) and replaces the manual "SSH in, copy
+// EXECUTE_SECRET, paste into localStorage" step with automatic provisioning of
+// a short-lived, revocable session token on a correct PIN. The real EXECUTE_SECRET
+// is never transmitted by this flow — see _issueAdminToken/isValidAdminSessionToken.
+const _adminPinAttempts   = new Map(); // deviceId -> wrong-attempt count (in-memory; resets on VM restart, same category as _pinRate)
+const _adminSessionTokens = new Map(); // token -> { deviceId, expiresAt }
+const _adminDeviceTokens  = new Map(); // deviceId -> token (reverse index; keeps the map bounded to the device-slot cap)
+const ADMIN_TOKEN_TTL_MS  = 8 * 60 * 60 * 1000; // matches the existing TOTP session window
+
+function _issueAdminToken(deviceId) {
+  const old = _adminDeviceTokens.get(deviceId);
+  if (old) _adminSessionTokens.delete(old);
+  const token = crypto.randomBytes(24).toString('hex');
+  _adminSessionTokens.set(token, { deviceId, expiresAt: Date.now() + ADMIN_TOKEN_TTL_MS });
+  _adminDeviceTokens.set(deviceId, token);
+  return token;
+}
+function _revokeAdminDeviceToken(deviceId) {
+  const old = _adminDeviceTokens.get(deviceId);
+  if (old) { _adminSessionTokens.delete(old); _adminDeviceTokens.delete(deviceId); }
+}
+function _revokeAllAdminTokens() { _adminSessionTokens.clear(); _adminDeviceTokens.clear(); }
+function isValidAdminSessionToken(token) {
+  if (!token) return false;
+  const entry = _adminSessionTokens.get(token);
+  if (!entry) return false;
+  if (Date.now() > entry.expiresAt) { _adminSessionTokens.delete(token); _adminDeviceTokens.delete(entry.deviceId); return false; }
+  return true;
+}
+// Every existing EXECUTE_SECRET-only check accepts this instead of a direct
+// `secret !== process.env.EXECUTE_SECRET` comparison — additive only, the
+// master secret keeps working exactly as before; a valid admin-PIN token is
+// now also accepted.
+function _executeSecretValid(secret) {
+  return !!secret && (secret === process.env.EXECUTE_SECRET || isValidAdminSessionToken(secret));
+}
+
+// Device-slot registration for the admin PIN flow — server-side equivalent of
+// admin.html's registerAdminSession(), reusing the exact same keep_alive_log
+// rows (source: admin_session_<deviceId>) so the two stay compatible. Evicting
+// the oldest slot also revokes that device's token (closes the "unbounded
+// token map" finding from checkpoint admin_pin_server_shipdecision round 1).
+// Returns true only on confirmed success — callers must NOT issue a token on
+// false (closes the "fails open on DB error" finding from checkpoint
+// admin_pin_server round admin_pin_server/post r1: a failed registration must
+// never silently skip the 2-device limit).
+// checkpoint admin_pin_multi_identity (2026-10-21) — the 2-device cap is now
+// scoped per-admin (prefix includes adminId), not one shared pool of 2 across
+// all 3 identities. UUIDs can't be prefixes of one another, so LIKE '<prefix>%'
+// can never cross-match a different admin's rows.
+async function _registerAdminDeviceSlot(adminId, deviceId) {
+  const prefix = 'admin_session_' + adminId + '_';
+  const mySource = prefix + deviceId;
+  try {
+    const rows = await sbFetch(`keep_alive_log?source=like.${prefix}%25&order=pinged_at.asc`);
+    const mine = (rows || []).find(r => r.source === mySource);
+    if (mine) {
+      await sbFetch(`keep_alive_log?id=eq.${mine.id}`, { method: 'PATCH', body: JSON.stringify({ pinged_at: new Date().toISOString() }) });
+      return true;
+    }
+    const others = (rows || []).filter(r => r.source !== mySource);
+    if (others.length >= 2) {
+      const evicted = others[0]; // oldest, rows ordered asc by pinged_at
+      await sbFetch(`keep_alive_log?id=eq.${evicted.id}`, { method: 'DELETE' });
+      _revokeAdminDeviceToken(String(evicted.source || '').slice(prefix.length));
+    }
+    await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: mySource, pinged_at: new Date().toISOString() }) });
+    return true;
+  } catch (e) { console.error('[admin-pin] slot registration failed', e.message); return false; }
+}
+
+// Full reset — called by both existing Telegram reset paths (callback
+// admin_pin_reset_confirm and the /unlock_admin command). Nulls admin_pin_hash
+// so Setup shows again, AND wipes every outstanding token immediately (closes
+// the "PIN reset doesn't revoke tokens" finding from the same round).
+// Returns true only if the DB write actually succeeded — callers must report
+// failure rather than claiming "PIN reset done" when the hash is unchanged
+// (closes the "reset can appear to complete on DB error" finding from
+// checkpoint admin_pin_server/post r1).
+// checkpoint admin_pin_multi_identity (2026-10-21) — now scoped to exactly one
+// admin, per Tushar's explicit decision (reset-all → reset just the one
+// locked-out admin). Derives "which devices belong to this admin" by querying
+// keep_alive_log live (same prefix _registerAdminDeviceSlot uses) rather than
+// a separate in-memory map — simpler, and correct even across a VM restart.
+async function _adminPinFullReset(adminId) {
+  let dbOk = false;
+  try {
+    if (SB_KEY) {
+      const written = await sbFetch(`members?id=eq.${adminId}`, { method: 'PATCH', body: JSON.stringify({ admin_pin_hash: null }) });
+      dbOk = !!(written && written.length);
+      const prefix = 'admin_session_' + adminId + '_';
+      const rows = await sbFetch(`keep_alive_log?source=like.${prefix}%25`);
+      for (const r of (rows || [])) _revokeAdminDeviceToken(String(r.source || '').slice(prefix.length));
+      await sbFetch(`keep_alive_log?source=eq.admin_pwa_locked_${adminId}`, { method: 'DELETE' });
+    }
+  } catch (e) { console.error('[admin-pin] reset failed', e.message); dbOk = false; }
+  _adminPinAttempts.delete(adminId);
+  return dbOk;
+}
+
+async function sendAdminLockAlert(adminId, deviceInfo) {
+  const who = await sbFetch(`members?id=eq.${adminId}&select=name`).catch(() => []);
+  const name = who?.[0]?.name || adminId;
+  const deviceStr = deviceInfo ? `${deviceInfo.platform || ''} · ${(deviceInfo.userAgent || '').slice(0,60)}` : 'Unknown';
+  await tgSend(
+    `🚨 <b>Admin PWA Locked</b>\n━━━━━━━━━━━━━━━━━━\n` +
+    `Admin: ${name}\n` +
+    `3 wrong PINs entered.\n` +
+    `<b>Device:</b> ${deviceStr}\n` +
+    `<b>Time:</b> ${istTime()} IST`,
+    { inline_keyboard: [[
+      { text: '🔓 Reset PIN', callback_data: `admin_pin_reset_ask_${adminId}` },
+      { text: '❌ Ignore',    callback_data: 'admin_pin_ignore'     }
+    ]]}
+  );
+}
+
+// checkpoint admin_pin_multi_identity (2026-10-21) — mitigation added during
+// Codex pre-review round 1 (FINDING-001): fires on EVERY first-time PIN setup,
+// not just lockouts, so a claim by someone other than Tushar is immediately
+// visible (with a one-tap reset) instead of silent.
+async function sendAdminPinSetupAlert(adminId, deviceInfo) {
+  const who = await sbFetch(`members?id=eq.${adminId}&select=name`).catch(() => []);
+  const name = who?.[0]?.name || adminId;
+  const deviceStr = deviceInfo ? `${deviceInfo.platform || ''} · ${(deviceInfo.userAgent || '').slice(0,60)}` : 'Unknown';
+  await tgSend(
+    `🔑 <b>Admin PIN Set</b>\n━━━━━━━━━━━━━━━━━━\n` +
+    `Admin: ${name}\n` +
+    `<b>Device:</b> ${deviceStr}\n<b>Time:</b> ${istTime()} IST\n\n` +
+    `If this wasn't you, reset it now.`,
+    { inline_keyboard: [[{ text: '🔓 Reset PIN', callback_data: `admin_pin_reset_ask_${adminId}` }]] }
+  );
+}
 
 async function khGetMemberTier(memberId) {
   const CACHE_MS = 60 * 60 * 1000;
@@ -1731,7 +1868,7 @@ function sbContractStillActive(post, replies) {
   for (const r of sorted) {
     const t = r.content || '';
     if (!_negHoldRe.test(t) && _holdRe.test(t)) hasHolding = true;
-    const pm = t.match(/exiting\s+(\d+)\s*%/i); if (pm) hasHolding = false;
+    const pm = t.match(/exit(?:ed|ing)?\s+(?:(?:another|remaining)\s+)?(\d+)\s*%/i); if (pm) hasHolding = false;
   }
   if (hasHolding) return true; // positional/swing — keep tracking until explicitly exited
   const tz = { timeZone: 'Asia/Kolkata' };
@@ -3185,35 +3322,47 @@ async function handleCallback(cb) {
   }
 
   // ── ADMIN PIN RESET FLOW ─────────────────────────────────────────────────────
-  if (action === 'admin_pin_reset_ask') {
+  // checkpoint admin_pin_multi_identity (2026-10-21) — both callbacks now carry
+  // the specific adminId they apply to (3 independent identities, not 1), same
+  // prefix-parse convention as unlock_member_<id> above.
+  if (action.startsWith('admin_pin_reset_ask_')) {
+    const askAdminId = action.slice('admin_pin_reset_ask_'.length);
     await tgAnswer(cbId, '');
     await tgEdit(msgId,
       `🔐 <b>Confirm PIN Reset</b>\n━━━━━━━━━━━━━━━━━━\n` +
-      `This will clear the existing PIN.\n` +
-      `After confirming, open admin.html — you will land on Setup to create a new PIN.\n\n` +
+      `This will clear the existing PIN for this admin only.\n` +
+      `After confirming, open admin.html on that device — it will land on Setup to create a new PIN.\n\n` +
       `⚠️ <b>Only confirm if this was you.</b>`,
       { inline_keyboard: [[
-        { text: '✅ Yes, Reset PIN', callback_data: 'admin_pin_reset_confirm' },
+        { text: '✅ Yes, Reset PIN', callback_data: `admin_pin_reset_confirm_${askAdminId}` },
         { text: '❌ Cancel',         callback_data: 'admin_pin_reset_cancel'  }
       ]]}
     );
     return;
   }
-  if (action === 'admin_pin_reset_confirm') {
+  if (action.startsWith('admin_pin_reset_confirm_')) {
+    const confirmAdminId = action.slice('admin_pin_reset_confirm_'.length);
     await tgAnswer(cbId, 'Resetting PIN...');
     try {
-      if (SB_KEY) {
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-        });
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
-          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-        });
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
-          method: 'POST',
-          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ source: 'admin_pin_reset', pinged_at: new Date().toISOString() })
-        });
+      // checkpoint admin_pin_server — nulls admin_pin_hash + wipes all session
+      // tokens for this one admin. Checked, not fire-and-forget: a DB failure
+      // here must not be reported as "done" when the stored PIN hash is
+      // actually unchanged (checkpoint admin_pin_server/post r1 finding).
+      // _adminPinFullReset itself now also clears the per-admin lock row and
+      // device-slot tokens (not the slot rows themselves) — see its definition.
+      // Signal row for the client's own pinInit() poll (scoped per-admin now —
+      // was a single shared 'admin_pin_reset' row before this checkpoint).
+      try { await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: `admin_pin_reset_${confirmAdminId}`, pinged_at: new Date().toISOString() }) }); } catch(e) {}
+      const resetOk = await _adminPinFullReset(confirmAdminId);
+      if (!resetOk) {
+        await tgEdit(msgId,
+          `⚠️ <b>PIN Reset Failed</b>\n━━━━━━━━━━━━━━━━━━\n` +
+          `Could not clear the stored PIN — database write failed.\n` +
+          `Try the Reset PIN button again in a moment.\n\n` +
+          `<i>${istTime()} IST</i>`,
+          { inline_keyboard: [[{ text: '🔓 Retry Reset PIN', callback_data: `admin_pin_reset_ask_${confirmAdminId}` }]] }
+        );
+        return;
       }
       await tgEdit(msgId,
         `✅ <b>PIN Reset Done</b>\n━━━━━━━━━━━━━━━━━━\n` +
@@ -3595,23 +3744,30 @@ async function handleMessage(text) {
     const [n, b] = await Promise.all([fetchSpot('NIFTY'), fetchSpot('BANKNIFTY')]);
     await tgSend(`📈 <b>Live Spot</b>\nNIFTY: <b>${n||'N/A'}</b>\nBANKNIFTY: <b>${b||'N/A'}</b>`); return;
   }
+  // checkpoint admin_pin_multi_identity (2026-10-21) — /unlock_admin has no
+  // button-click context to carry an adminId (unlike the Telegram callbacks
+  // above), so it can't target "the one that asked." Design choice (flagged
+  // for Codex scrutiny in the pre-implementation package, withdrawn as a
+  // reasonable interpretation in round 2): find every admin currently locked
+  // and reset only those, instead of unconditionally resetting all 3 — keeps
+  // this as a working manual escape hatch without undoing per-admin scoping.
   if (cmd === '/unlock_admin') {
     try {
-      if (SB_KEY) {
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=eq.admin_pwa_locked`, {
-          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-        });
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log?source=like.admin_session_%25`, {
-          method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-        });
-        // Signal to admin.html that PIN should be cleared and Setup shown
-        await fetch(`${SB_URL}/rest/v1/keep_alive_log`, {
-          method: 'POST',
-          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ source: 'admin_pin_reset', pinged_at: new Date().toISOString() })
-        });
+      const lockedRows = await sbFetch('keep_alive_log?source=like.admin_pwa_locked_%25&select=source');
+      const lockedIds = (lockedRows || []).map(r => String(r.source).slice('admin_pwa_locked_'.length));
+      if (!lockedIds.length) { await tgSend('ℹ️ Nobody is currently locked — nothing to unlock.'); return; }
+      let allOk = true;
+      for (const id of lockedIds) {
+        try { await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: `admin_pin_reset_${id}`, pinged_at: new Date().toISOString() }) }); } catch(e) {}
+        // checkpoint admin_pin_server — nulls admin_pin_hash + wipes all session
+        // tokens for this one admin. Checked, not fire-and-forget (checkpoint
+        // admin_pin_server/post r1 finding — a DB failure here must not be
+        // reported as "unlocked").
+        const resetOk = await _adminPinFullReset(id);
+        if (!resetOk) allOk = false;
       }
-      await tgSend('✅ <b>Admin PWA unlocked.</b>\nOpen app.trade2spend.com/admin.html — you will land on Setup tab to set a new PIN.');
+      if (!allOk) { await tgSend(`⚠️ Unlock partially failed for ${lockedIds.length === 1 ? 'the locked admin' : 'one or more locked admins'} — could not clear the stored PIN hash. Try /unlock_admin again in a moment.`); return; }
+      await tgSend(`✅ <b>${lockedIds.length} admin${lockedIds.length !== 1 ? 's' : ''} unlocked.</b>\nOpen app.trade2spend.com/admin.html on the affected device(s) — it will land on Setup tab to set a new PIN.`);
     } catch(e) { await tgSend('❌ Unlock failed: ' + e.message); }
     return;
   }
@@ -3814,7 +3970,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-t2s-secret');
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
@@ -3860,7 +4016,7 @@ const server = http.createServer(async (req, res) => {
   // Market holiday override — POST /market-holiday
   if (req.method === 'POST' && urlPath === '/market-holiday') {
     const _mhSecret = req.headers['x-t2s-secret'];
-    if (!_mhSecret || _mhSecret !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end('{"ok":false}'); return; }
+    if (!_executeSecretValid(_mhSecret)) { res.writeHead(401); res.end('{"ok":false}'); return; }
     let body = '';
     req.on('data', c => body += c);
     req.on('end', () => {
@@ -3930,7 +4086,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && urlPath === '/debug-scrip') {
     if (_DISABLE_DEBUG_SCRIP) { _send503('/debug-scrip', res); return; }
     const _dsKey = req.headers['x-t2s-secret'];
-    if (!_dsKey || _dsKey !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(_dsKey)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -4003,7 +4159,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && urlPath === '/reload-scrip') {
     if (_DISABLE_RELOAD_SCRIP) { _send503('/reload-scrip', res); return; }
     const _rsKey = req.headers['x-t2s-secret'];
-    if (!_rsKey || _rsKey !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    if (!_executeSecretValid(_rsKey)) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     await downloadScripMaster();
     const count = Object.keys(_scripMaster).length;
@@ -4029,7 +4185,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && urlPath === '/push-uat-to-prod') {
     if (_DISABLE_PROMOTE_UAT) { _send503('/push-uat-to-prod', res); return; }
     const _puKey = req.headers['x-t2s-secret'];
-    if (!_puKey || _puKey !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
+    if (!_executeSecretValid(_puKey)) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return; }
     if (!GH_TOKEN) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on VM' })); return; }
     try {
       // 1. Fetch the current UAT file from GitHub
@@ -4071,7 +4227,7 @@ const server = http.createServer(async (req, res) => {
   // Deploys latest server_deploy.js from GitHub without needing Telegram webhook
   if (req.method === 'GET' && urlPath === '/market-force') {
     const _mfKey = req.headers['x-t2s-secret'];
-    if (!_mfKey || _mfKey !== process.env.EXECUTE_SECRET) { res.writeHead(401); res.end('Unauthorized'); return; }
+    if (!_executeSecretValid(_mfKey)) { res.writeHead(401); res.end('Unauthorized'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     try {
       await runMarketScraper(true);
@@ -4088,7 +4244,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && urlPath === '/http-update') {
     const _huKey = req.headers['x-t2s-secret'];
-    if (!_huKey || _huKey !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(_huKey)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -4115,7 +4271,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && urlPath === '/set-high') {
     if (_DISABLE_SET_HIGH) { _send503('/set-high', res); return; }
     const _shKey = req.headers['x-t2s-secret'];
-    if (!_shKey || _shKey !== process.env.EXECUTE_SECRET) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
+    if (!_executeSecretValid(_shKey)) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     let _shBody = '';
     req.on('data', c => _shBody += c);
     req.on('end', async () => {
@@ -4143,7 +4299,7 @@ const server = http.createServer(async (req, res) => {
   // 25% chance: 0 likes. Otherwise 1–6 likes (skewed low). First: 1–20 min, each next: 1–15 min apart.
   if (req.method === 'POST' && urlPath === '/schedule-dummy-likes') {
     const _dlKey = req.headers['x-t2s-secret'];
-    if (!_dlKey || _dlKey !== process.env.EXECUTE_SECRET) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false })); return; }
+    if (!_executeSecretValid(_dlKey)) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ ok: false })); return; }
     let _dlBody = '';
     req.on('data', c => _dlBody += c);
     req.on('end', () => {
@@ -4179,7 +4335,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && urlPath === '/active-contracts-for-ltp') {
     if (_DISABLE_ACTIVE_CONTRACTS) { _send503('/active-contracts-for-ltp', res); return; }
     const k = req.headers['x-t2s-secret'];
-    if (!k || k !== process.env.EXECUTE_SECRET) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
+    if (!_executeSecretValid(k)) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); res.end('{}'); return; }
     if (!session.token || !_activeContracts.length) {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ contracts: [], reason: session.token ? 'no_contracts' : 'not_logged_in' }));
@@ -4205,7 +4361,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && urlPath === '/test-nse-chain') {
     if (_DISABLE_TEST_NSE_CHAIN) { _send503('/test-nse-chain', res); return; }
     const _tncKey = req.headers['x-t2s-secret'];
-    if (!_tncKey || _tncKey !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(_tncKey)) {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
@@ -4232,7 +4388,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && urlPath === '/test-cmp') {
     if (_DISABLE_TEST_CMP) { _send503('/test-cmp', res); return; }
     const _tcKey = req.headers['x-t2s-secret'];
-    if (!_tcKey || _tcKey !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(_tcKey)) {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
@@ -4254,7 +4410,7 @@ const server = http.createServer(async (req, res) => {
     if (_DISABLE_TEST_LTP) { _send503('/test-ltp', res); return; }
     const parsedUrl = new URL('https://x' + req.url);
     const _tlKey = req.headers['x-t2s-secret'];
-    if (!_tlKey || _tlKey !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(_tlKey)) {
       res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
@@ -4434,7 +4590,7 @@ const server = http.createServer(async (req, res) => {
   // Direct PWA execute — POST /execute (bypasses Telegram confirm)
   if (req.method === 'POST' && urlPath === '/execute') {
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -4502,18 +4658,141 @@ const server = http.createServer(async (req, res) => {
       if (!kvLock('admin_lock_alert', 300)) { res.writeHead(200); res.end(JSON.stringify({ ok: true })); return; }
       let data = {};
       try { data = JSON.parse(body); } catch {}
-      const deviceStr = data.deviceInfo ? `${data.deviceInfo.platform || ''} · ${(data.deviceInfo.userAgent || '').slice(0,60)}` : 'Unknown';
-      await tgSend(
-        `🚨 <b>Admin PWA Locked</b>\n━━━━━━━━━━━━━━━━━━\n` +
-        `3 wrong PINs entered.\n` +
-        `<b>Device:</b> ${deviceStr}\n` +
-        `<b>Time:</b> ${istTime()} IST`,
-        { inline_keyboard: [[
-          { text: '🔓 Reset PIN', callback_data: 'admin_pin_reset_ask' },
-          { text: '❌ Ignore',    callback_data: 'admin_pin_ignore'     }
-        ]]}
-      );
+      // checkpoint admin_pin_multi_identity: confirmed dead path — neither
+      // Trading_Bot/index.html nor UAT/admin_uat.html call /admin-alert anymore
+      // (the client-side wrong-attempt counting this served was removed when PIN
+      // checking moved server-side). Kept signature-compatible, not otherwise touched.
+      await sendAdminLockAlert(data.adminId || null, data.deviceInfo);
       res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+    });
+    return;
+  }
+
+  // ── ADMIN PIN VERIFY/SETUP (checkpoint admin_pin_server, 2026-10-21) ────────
+  // Moves admin.html's/admin_uat.html's own unlock PIN check server-side.
+  // On success, issues a short-lived (8h) session token in place of the real
+  // EXECUTE_SECRET — see _issueAdminToken. pin_hash-equivalent column is
+  // members.admin_pin_hash, scoped to the is_admin=true row (single admin).
+  if (req.method === 'OPTIONS' && (urlPath === '/admin-verify-pin' || urlPath === '/admin-setup-pin')) {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && (urlPath === '/admin-verify-pin' || urlPath === '/admin-setup-pin')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    // No static-key gate by design, same reasoning as /uat-verify-pin: a login/setup
+    // endpoint can't require a credential that doesn't exist yet for a first-time
+    // caller. Protected by the per-IP rate limit (shared _pinRate bucket) plus the
+    // PIN's own server-side lockout below.
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const nowMs = Date.now();
+    if (!_pinRate.has(ip)) _pinRate.set(ip, { count: 0, reset: nowMs + 5 * 60 * 1000 });
+    const rl = _pinRate.get(ip);
+    if (nowMs > rl.reset) { rl.count = 0; rl.reset = nowMs + 5 * 60 * 1000; }
+    rl.count++;
+    if (rl.count > 20) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' }));
+      return;
+    }
+    if (!SB_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'SUPABASE_KEY not set on server' })); return;
+    }
+
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); // soft-fail pattern, matches /uat-verify-pin
+      try {
+        const parsed = JSON.parse(rawBody || '{}');
+        const pin = String(parsed.pin || '');
+        const deviceId = String(parsed.device_id || '');
+        if (!/^\d{4}$/.test(pin) || !deviceId) { res.end(JSON.stringify({ success: false })); return; }
+
+        // ── POST /admin-setup-pin ─────────────────────────────────────────────
+        // checkpoint admin_pin_multi_identity (2026-10-21) — there are 3 real
+        // is_admin=true rows, not 1 (Tushar's explicit decision: keep all three,
+        // each with their own PIN). Setup now requires the caller's mobile number
+        // to deterministically target the right row — the old `limit=1` scan with
+        // no ORDER BY could non-deterministically return a different one of the
+        // three between calls (live-tested, confirmed, see bug_log BUG entry).
+        if (urlPath === '/admin-setup-pin') {
+          const mobile = String(parsed.mobile || '');
+          if (!/^\+91\d{10}$/.test(mobile)) { res.end(JSON.stringify({ success: false })); return; }
+          const admins = await sbFetch(`members?mobile=eq.${mobile.replace(/\+/g, '%2B')}&is_admin=eq.true&select=id,admin_pin_hash&limit=1`);
+          if (!admins || !admins.length) { res.end(JSON.stringify({ success: false })); return; }
+          const adminId = admins[0].id;
+          // Atomic conditional write — exactly one caller can ever win this transition.
+          // Closes the local-only bypass found during investigation (clearing
+          // localStorage.t2s_pin let anyone with brief device access claim a fresh PIN).
+          // Generic failure response in both the "not found" and "already set" cases
+          // (checkpoint admin_pin_multi_identity pre r1 FINDING-002) — this endpoint
+          // is only ever used by Tushar himself, who already knows his own setup
+          // history, so there's no legitimate audience for the distinction.
+          const written = await sbFetch(`members?id=eq.${adminId}&admin_pin_hash=is.null`, { method: 'PATCH', body: JSON.stringify({ admin_pin_hash: bcrypt.hashSync(pin, 10) }) });
+          if (!written || !written.length) { res.end(JSON.stringify({ success: false })); return; }
+          _adminPinAttempts.delete(adminId); // keyed by adminId now, not deviceId — see Section 4 of the package
+          // The PIN itself is already saved at this point — a slot-registration
+          // failure must NOT silently skip the 2-device limit by issuing a token
+          // anyway (checkpoint admin_pin_server/post r1 finding). Tell the client
+          // the PIN is saved but no session started, so it can prompt a retry via
+          // the normal verify flow instead of re-running setup (which would now
+          // correctly fail the atomic IS NULL check).
+          const slotOk = await _registerAdminDeviceSlot(adminId, deviceId);
+          if (!slotOk) { res.end(JSON.stringify({ success: false, pinSaved: true })); return; }
+          const sessionToken = _issueAdminToken(deviceId);
+          // checkpoint admin_pin_multi_identity FINDING-001 mitigation — notify
+          // Tushar on Telegram every time ANY of the 3 identities completes a
+          // first-time PIN setup, so a claim by someone other than him is
+          // immediately visible (with a one-tap reset) rather than silent.
+          sendAdminPinSetupAlert(adminId, parsed.deviceInfo).catch(() => {});
+          // adminId returned so the client can remember "this device = this admin"
+          // permanently (localStorage.t2s_admin_id) — no mobile number needed again.
+          res.end(JSON.stringify({ success: true, sessionToken, adminId })); return;
+        }
+
+        // ── POST /admin-verify-pin ────────────────────────────────────────────
+        // checkpoint admin_pin_multi_identity — the caller now sends back the
+        // adminId it was given at setup time, so this lookup is a deterministic
+        // by-primary-key fetch instead of an ambiguous is_admin=true scan.
+        const adminId = String(parsed.admin_id || '');
+        if (!adminId) { res.end(JSON.stringify({ success: false })); return; }
+        const admins = await sbFetch(`members?id=eq.${adminId}&is_admin=eq.true&select=admin_pin_hash&limit=1`);
+        if (!admins || !admins.length) { res.end(JSON.stringify({ success: false })); return; } // e.g. is_admin revoked since — fail closed
+
+        // Account-wide lock check first, now scoped per-admin — same keep_alive_log
+        // row the Telegram reset flow clears; this is the authoritative, persistent
+        // gate (survives VM restarts), not the in-memory attempt counter below.
+        const locks = await sbFetch(`keep_alive_log?source=eq.admin_pwa_locked_${adminId}&limit=1`);
+        if (locks && locks.length) { res.end(JSON.stringify({ success: false, locked: true })); return; }
+
+        if (!admins[0].admin_pin_hash) { res.end(JSON.stringify({ success: false })); return; }
+        const isMatch = bcrypt.compareSync(pin, admins[0].admin_pin_hash);
+
+        if (isMatch) {
+          _adminPinAttempts.delete(adminId);
+          // Correct PIN, but don't issue a token if slot registration failed —
+          // that would let a token out without actually enforcing/evicting the
+          // 2-device limit (checkpoint admin_pin_server/post r1 finding).
+          const slotOk = await _registerAdminDeviceSlot(adminId, deviceId);
+          if (!slotOk) { res.end(JSON.stringify({ success: false, serverBusy: true })); return; }
+          const sessionToken = _issueAdminToken(deviceId);
+          res.end(JSON.stringify({ success: true, sessionToken })); return;
+        }
+
+        const newCount = (_adminPinAttempts.get(adminId) || 0) + 1;
+        _adminPinAttempts.set(adminId, newCount);
+        if (newCount >= MAX_ATTEMPTS_PIN) {
+          _adminPinAttempts.delete(adminId);
+          try { await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: `admin_pwa_locked_${adminId}`, pinged_at: new Date().toISOString() }) }); } catch(e) {}
+          sendAdminLockAlert(adminId, parsed.deviceInfo).catch(() => {});
+          res.end(JSON.stringify({ success: false, locked: true })); return;
+        }
+        res.end(JSON.stringify({ success: false, attemptsRemaining: MAX_ATTEMPTS_PIN - newCount })); return;
+      } catch (e) {
+        console.error('[admin-pin]', e.message);
+        try { res.end(JSON.stringify({ success: false })); } catch {}
+      }
     });
     return;
   }
@@ -4521,7 +4800,7 @@ const server = http.createServer(async (req, res) => {
   // Push trades.json to GitHub — POST /push-trades
   if (req.method === 'POST' && urlPath === '/push-trades') {
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -4558,7 +4837,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     if (!GH_TOKEN) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on server' })); return; }
@@ -4593,7 +4872,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     if (!GH_TOKEN) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on server' })); return; }
@@ -4637,7 +4916,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     let body = '';
@@ -4834,7 +5113,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
   // Send push notifications — POST /send-push
   if (req.method === 'POST' && urlPath === '/send-push') {
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -5061,7 +5340,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     const requestId = urlPath.slice('/access-requests/'.length);
@@ -5130,7 +5409,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     // could kill the live Kotak session. Mirrors the existing EXECUTE_SECRET-only
     // guard already used by /execute, /push-trades, etc. (server.js).
     const secret = req.headers['x-t2s-secret'];
-    if (!secret || secret !== process.env.EXECUTE_SECRET) {
+    if (!_executeSecretValid(secret)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
       return;
@@ -5610,8 +5889,8 @@ function sbTradeFullyExited(replies) {
   let notHoldingDate = null;
   for (const r of [...replies].reverse()) { // oldest first
     const t = (r.content || '').toLowerCase();
-    if (/\bsl\b.{0,20}(?:hit|triggered|gone)|stop[\s-]?loss.{0,10}(?:hit|triggered)|fully\s+exit|full\s+exit|exiting\s+full|exit\s+all|\bfully\s+out\b/.test(t)) return true;
-    const pm = t.match(/exiting\s+(\d+)\s*%/); if (pm) { cum += parseInt(pm[1]); if (cum >= 100) return true; }
+    if (/\bsl\b.{0,20}(?:hit|triggered|gone)|stop[\s-]?loss.{0,10}(?:hit|triggered)|fully\s+exit|full\s+exit|exit(?:ed|ing)?\s+full|exit(?:ed|ing)?\s+all|\bfully\s+out\b/.test(t)) return true;
+    const pm = t.match(/exit(?:ed|ing)?\s+(?:(?:another|remaining)\s+)?(\d+)\s*%/); if (pm) { cum += parseInt(pm[1]); if (cum >= 100) return true; }
     // Detect explicit intraday-only intent: "Will not hold overnight" / "won't hold tomorrow" etc.
     if (!notHoldingDate && /\b(?:not|won'?t|will\s+not|wont|don'?t|dont)\b.{0,25}\bhold(?:ing)?\b.{0,20}\b(?:overnight|next\s+day|tomorrow)\b/i.test(r.content||''))
       notHoldingDate = r.sent_at || r.created_at;
@@ -5826,7 +6105,7 @@ async function checkResolveAlert() {
       const pr = rMap[post.id] || [];
       if (sbTradeFullyExited(pr)) continue;
       let cum = 0;
-      for (const r of [...pr].reverse()) { const pm = (r.content || '').match(/exiting\s+(\d+)\s*%/i); if (pm) cum += parseInt(pm[1]); }
+      for (const r of [...pr].reverse()) { const pm = (r.content || '').match(/exit(?:ed|ing)?\s+(?:(?:another|remaining)\s+)?(\d+)\s*%/i); if (pm) cum += parseInt(pm[1]); }
       let sl = null;
       for (const r of pr) { const v = extractOptSL(r.content || ''); if (v) { sl = v; break; } }
       const t = (post.content || '').toUpperCase();
@@ -5913,7 +6192,7 @@ async function checkMorning() {
       const replies = rMap[post.id] || [];
       const exited  = sbTradeFullyExited(replies);
       let cum = 0;
-      for (const r of replies) { const pm = (r.content || '').match(/exiting\s+(\d+)\s*%/i); if (pm) cum += parseInt(pm[1]); }
+      for (const r of replies) { const pm = (r.content || '').match(/exit(?:ed|ing)?\s+(?:(?:another|remaining)\s+)?(\d+)\s*%/i); if (pm) cum += parseInt(pm[1]); }
       const key = (im && sm && om) ? `${im[1]}-${sm[1]}-${om[1]}` : null;
       const cmp = key ? (_optionChain[key] || null) : null;
       const lot  = im ? ((_kotakLotSizes && _kotakLotSizes[im[1]]) || LOT_SIZES[im[1]] || 65) : 65;
