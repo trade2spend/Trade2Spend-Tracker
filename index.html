@@ -1361,6 +1361,13 @@
                 // Only update when new high is strictly greater — session high never moves down
                 const current = parseFloat((el.textContent || '').replace('₹', '')) || 0;
                 if (high > current) el.textContent = `₹${high.toFixed(2)}`;
+                // checkpoint session_high_dup_tracker (2026-10-21) — this is now the
+                // SOLE writer of _sessionOptionHighs (previously ALSO written,
+                // separately and without this guard, from raw client LTP ticks inside
+                // updateTradeCMPs — removed, see that function). Kept in sync here so
+                // the closed-LOSS-trade frozen label (_lossShLabel3) still gets a real,
+                // server-sourced peak instead of losing that lookup entirely.
+                if (cardPostId) _sessionOptionHighs[cardPostId] = Math.max(_sessionOptionHighs[cardPostId] || 0, high);
             }
         });
     }
@@ -1445,21 +1452,22 @@
                 el.textContent = `₹${_sessionOptionLows[postId].toFixed(2)}`;
             }
         });
-        // Track session highs for BUY trade cards — keyed by post.id (data-post-id on data-live-high elements) to prevent cross-trade contamination
-        document.querySelectorAll('[data-live-high]').forEach(el => {
-            const postId = el.dataset.postId;       // post.id of this trade card
-            const key    = el.dataset.liveHigh;     // liveCmpKey for LTP lookup
-            const ltp = optionLTPs[key];
-            if (ltp != null && !isNaN(ltp) && ltp > 0.10 && postId) {
-                if (_sessionOptionHighs[postId] == null) {
-                    const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0 && ltp >= entryVal) _sessionOptionHighs[postId] = entryVal;
-                }
-                if (_sessionOptionHighs[postId] == null || ltp > _sessionOptionHighs[postId])
-                    _sessionOptionHighs[postId] = ltp;
-                el.textContent = `₹${_sessionOptionHighs[postId].toFixed(2)}`;
-            }
-        });
+        // checkpoint session_high_dup_tracker (2026-10-21) — the client-local Session
+        // High WRITER that used to run here was removed. In production, every real
+        // tick this function could see, the server (updateTradeHighs, fed by
+        // GET /market's server-tracked optionHighs) already saw first and recorded
+        // correctly — this client copy could only ever match or fall behind, never
+        // legitimately exceed it, and had no "never decrease" guard, so a stale/
+        // behind-the-server local value could overwrite a correct higher one. That
+        // duplicate tracking was only ever needed in UAT (uat.html, unchanged) to
+        // move the display for fake/mock test prices, which have no real server-side
+        // tracking to fall back on. _sessionOptionHighs itself is NOT removed — it is
+        // still a real consumer (the closed-LOSS-trade frozen label, _lossShLabel3) —
+        // it is now populated exclusively from the server inside updateTradeHighs()
+        // instead of from raw client LTP ticks here. Codex-reviewed (2 rounds, clean,
+        // both findings withdrawn). Rollback: restore the removed [data-live-high]
+        // forEach block here (see checkpoint package) and remove the
+        // `_sessionOptionHighs[cardPostId] = ...` line added to updateTradeHighs().
         try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); sessionStorage.setItem('t2s_peaks',JSON.stringify({date:_d,highs:_sessionOptionHighs,lows:_sessionOptionLows})); } catch(_e){}
         // Live P&L badge on active triggered trade cards — updates every 5s with CMP
         // Badge threshold adjusts for locked profit from prior partial exits (computePlBadgeAttrs pre-computes breakeven)
