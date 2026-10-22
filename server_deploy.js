@@ -2096,6 +2096,11 @@ async function fetchKotakOptionLTPs() {
         const _prevLow = _optionLows[key]?.low;
         if (_prevLow === undefined || ltp < _prevLow) {
           _optionLows[key] = { low: ltp, postId: c.postId || _optionLows[key]?.postId, action: c.action || 'BUY' };
+          // checkpoint session_low_server_wiring (2026-10-22) — propagate new session low
+          // immediately, mirroring the highs propagation above exactly (optionLows is
+          // monotonically decreasing per contract, same no-poisoning-risk reasoning as RC-10 INE-2).
+          if (_latestMarketData && _latestMarketData.optionLows) _latestMarketData.optionLows[key] = _optionLows[key].low;
+          if (_latestMarketData && _latestMarketData.optionLowsPostIds) _latestMarketData.optionLowsPostIds[key] = _optionLows[key].postId;
         }
         // Track session minimum per postId for SL breach persistence — keyed by postId not instrument
         // so posting a new trade for the same strike does NOT reset the old trade's minimum
@@ -2145,6 +2150,9 @@ async function fetchKotakOptionLTPs() {
     _latestMarketData.optionLTPs  = { ..._optionChain };
     _latestMarketData.optionHighs        = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
     _latestMarketData.optionHighsPostIds = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.postId]));
+    // checkpoint session_low_server_wiring (2026-10-22) — mirrors the two lines above exactly.
+    _latestMarketData.optionLows         = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, v.low]));
+    _latestMarketData.optionLowsPostIds  = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, v.postId]));
   }
 
   // Staleness detection — if any active contract's LTP hasn't updated in >2 min, the token has
@@ -2870,7 +2878,11 @@ async function runMarketScraper(force = false) {
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
-    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, optionHighs: _highsSnap, expiry: _expiryDates };
+    // checkpoint session_low_server_wiring (2026-10-22) — mirrors _highsSnap exactly, including
+    // the same (pre-existing, already-true-for-highs) omission of a postId map at this specific
+    // rebuild site; the next real LTP tick re-populates it, same as it already does for highs.
+    const _lowsSnap = Object.fromEntries(Object.entries(_optionLows).map(([k,v]) => [k, v.low]));
+    _latestMarketData = { ...marketData, optionLTPs: { ..._optionChain }, optionHighs: _highsSnap, optionLows: _lowsSnap, expiry: _expiryDates };
     if (_gotRealPrice) saveMarketSnapshotLocal(marketData); // only real prices reach the local copy (market_json_stale)
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}${_gotRealPrice ? '' : ' [STALE — all sources failed, using cached values]'}`);
