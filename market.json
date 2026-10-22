@@ -1,7 +1,7 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-10-21T10:16:14.392Z",
-  "dataSource": "broker",
+  "lastUpdated": "2026-10-22T01:51:52.060Z",
+  "dataSource": "nse",
   "indices": {
     "NIFTY": {
       "price": 22811.35,
@@ -20,23 +20,18 @@
     }
   },
   "indexSources": {
-    "NIFTY": "kotak",
-    "BANKNIFTY": "kotak",
-    "SENSEX": "kotak"
+    "NIFTY": "nse",
+    "BANKNIFTY": "nse",
+    "SENSEX": "yahoo"
   },
   "breadth": {
     "nifty50": {
-      "advancing": 17,
-      "declining": 33,
+      "advancing": 16,
+      "declining": 34,
       "unchanged": 0
     }
   },
   "gainers": [
-    {
-      "symbol": "WIPRO",
-      "price": 189.17,
-      "change": 3.86
-    },
     {
       "symbol": "INFY",
       "price": 1168,
@@ -125,6 +120,11 @@
       "change": -3.27
     },
     {
+      "symbol": "BSE",
+      "price": 3248.3,
+      "change": -2.63
+    },
+    {
       "symbol": "ETERNAL",
       "price": 312.35,
       "change": -2.45
@@ -195,13 +195,13 @@
       "change": -1.24
     },
     {
-      "symbol": "MAXHEALTH",
-      "price": 819.9,
+      "symbol": "JIOFIN",
+      "price": 211.39,
       "change": -1.22
     },
     {
-      "symbol": "JIOFIN",
-      "price": 211.39,
+      "symbol": "MAXHEALTH",
+      "price": 819.9,
       "change": -1.22
     },
     {
@@ -213,79 +213,6 @@
       "symbol": "HDFCLIFE",
       "price": 539.65,
       "change": -1.07
-    },
-    {
-      "symbol": "COALINDIA",
-      "price": 407.5,
-      "change": -1.02
-    },
-    {
-      "symbol": "KOTAKBANK",
-      "price": 437.8,
-      "change": -1.02
-    },
-    {
-      "symbol": "TITAN",
-      "price": 4380.9,
-      "change": -0.98
-    },
-    {
-      "symbol": "ADANIPORTS",
-      "price": 1748.8,
-      "change": -0.97
-    },
-    {
-      "symbol": "TATASTEEL",
-      "price": 172.45,
-      "change": -0.91
-    },
-    {
-      "symbol": "HINDALCO",
-      "price": 892.85,
-      "change": -0.84
-    },
-    {
-      "symbol": "TMPV",
-      "price": 275.7,
-      "change": -0.83
-    },
-    {
-      "symbol": "CIPLA",
-      "price": 1314,
-      "change": -0.76
-    },
-    {
-      "symbol": "HDFCBANK",
-      "price": 706.95,
-      "change": -0.71
-    },
-    {
-      "symbol": "LT",
-      "price": 3636,
-      "change": -0.71
-    },
-    {
-      "symbol": "M&M",
-      "price": 2889,
-      "change": -0.62
-    },
-    {
-      "symbol": "BAJAJFINSV",
-      "price": 1690,
-      "change": -0.59
-    },
-    {
-      "symbol": "ASIANPAINT",
-      "price": 2319.4,
-      "change": -0.48
-    },
-    {
-      "symbol": "HINDUNILVR",
-      "price": 1850.2,
-      "change": -0.16
     }
-  ],
-  "optionHighs": {
-    "NIFTY-22800-PE": 244.9
-  }
+  ]
 }
