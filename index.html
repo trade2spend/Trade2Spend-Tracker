@@ -803,6 +803,8 @@
     let _lastOptionLTPs  = null; // latest option LTPs — re-applied after trade card rebuilds
     let _lastOptionHighs = null;         // latest session highs — re-applied after trade card rebuilds
     let _lastOptionHighsPostIds = null;  // postId map from VM — gates session highs per trade post
+    let _lastOptionLows = null;          // checkpoint session_low_server_wiring — mirrors _lastOptionHighs
+    let _lastOptionLowsPostIds = null;   // mirrors _lastOptionHighsPostIds
     let _sessionOptionLows = {}; // session low per post.id — for SELL trade cards (data-live-low)
     let _sessionOptionHighs = {}; // session high per post.id — for BUY trade cards (data-live-high)
     (function(){ try { const _d=new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); const _p=JSON.parse(sessionStorage.getItem('t2s_peaks')||'null'); if(_p&&_p.date===_d){_sessionOptionHighs=_p.highs||{};_sessionOptionLows=_p.lows||{};} } catch(_e){} })();
@@ -1323,6 +1325,8 @@
         // Update live option CMPs on trade cards in-place — skip on cache renders to avoid stale flicker
         if (data.optionLTPs  && !isMarketClosedNow() && !opts.skipLTPs) updateTradeCMPs(data.optionLTPs);
         if (data.optionHighs && !isMarketClosedNow() && !opts.skipLTPs) { _lastOptionHighs = data.optionHighs; _lastOptionHighsPostIds = data.optionHighsPostIds||null; updateTradeHighs(data.optionHighs, data.optionHighsPostIds); }
+        // checkpoint session_low_server_wiring (2026-10-22) — mirrors the optionHighs line above exactly.
+        if (data.optionLows  && !isMarketClosedNow() && !opts.skipLTPs) { _lastOptionLows = data.optionLows; _lastOptionLowsPostIds = data.optionLowsPostIds||null; updateTradeLows(data.optionLows, data.optionLowsPostIds); }
     }
 
     // Update CMP cells on trade cards from live option chain data (Section 3 / paid only)
@@ -1368,6 +1372,36 @@
                 // the closed-LOSS-trade frozen label (_lossShLabel3) still gets a real,
                 // server-sourced peak instead of losing that lookup entirely.
                 if (cardPostId) _sessionOptionHighs[cardPostId] = Math.max(_sessionOptionHighs[cardPostId] || 0, high);
+            }
+        });
+    }
+
+    // checkpoint session_low_server_wiring (2026-10-22) — mirrors updateTradeHighs() exactly,
+    // for SELL trade cards. Note the attribute names differ from highs by existing convention
+    // (data-live-low holds post.id, data-live-low-key holds the liveCmpKey) — not changed here,
+    // this is wiring only. This becomes the sole writer of _sessionOptionLows; the old
+    // client-local writer in updateTradeCMPs() below is removed in this same change.
+    function updateTradeLows(optionLows, optionLowsPostIds) {
+        if (!optionLows) return;
+        document.querySelectorAll('[data-live-low]').forEach(el => {
+            const cardPostId    = el.dataset.liveLow;
+            const key           = el.dataset.liveLowKey;
+            const trackedPostId = optionLowsPostIds && optionLowsPostIds[key];
+            // Skip if VM is tracking this key for a DIFFERENT trade post (cross-trade contamination guard)
+            if (trackedPostId && cardPostId && trackedPostId !== cardPostId) return;
+            const low = optionLows[key];
+            if (low != null && low > 0) {
+                // Tracked via _sessionOptionLows itself (never parsed from displayed text) —
+                // a real low under ₹0.005 would round to "₹0.00" on display and parse back as
+                // exactly 0, which a text-parsing guard would wrongly read as "nothing shown
+                // yet" (Codex post-review r1 FINDING-001). Using the tracked value as the sole
+                // source of truth for "is this the first render" avoids that ambiguity entirely.
+                const tracked = cardPostId ? _sessionOptionLows[cardPostId] : null;
+                // Only update when nothing tracked yet, or the new low is strictly lower — session low never moves up
+                if (tracked == null || low < tracked) {
+                    el.textContent = `₹${low.toFixed(2)}`;
+                    if (cardPostId) _sessionOptionLows[cardPostId] = low;
+                }
             }
         });
     }
@@ -1437,21 +1471,15 @@
                 _cmpPrevPrices[key] = ltp;
             }
         });
-        // Track session lows for SELL trade cards — keyed by post.id (data-live-low) to prevent cross-trade contamination
-        document.querySelectorAll('[data-live-low]').forEach(el => {
-            const postId = el.dataset.liveLow;      // post.id of this trade card
-            const key    = el.dataset.liveLowKey;   // liveCmpKey for LTP lookup
-            const ltp = optionLTPs[key];
-            if (ltp != null && !isNaN(ltp) && ltp > 0.10) {
-                if (_sessionOptionLows[postId] == null) {
-                    const entryVal = parseFloat(el.dataset.entry || '') || 0;
-                    if (entryVal > 0 && ltp <= entryVal) _sessionOptionLows[postId] = entryVal;
-                }
-                if (_sessionOptionLows[postId] == null || ltp < _sessionOptionLows[postId])
-                    _sessionOptionLows[postId] = ltp;
-                el.textContent = `₹${_sessionOptionLows[postId].toFixed(2)}`;
-            }
-        });
+        // checkpoint session_low_server_wiring (2026-10-22) — the client-local Session Low
+        // WRITER that used to run here (raw LTP-tick tracking, no server cross-check) was
+        // removed, now that the server sends optionLows/optionLowsPostIds via GET /market
+        // (previously it never did — this was the only source, not redundant duplication,
+        // unlike the highs case below). Same reasoning as the highs removal: every real tick
+        // this function could see, the server already saw first. _sessionOptionLows itself is
+        // NOT removed — still a real consumer (_lossShLabel3 for SELL trades) — now populated
+        // exclusively from the server inside updateTradeLows(). UAT (uat.html) keeps its own
+        // writer, unchanged — still needed there for mock test data.
         // checkpoint session_high_dup_tracker (2026-10-21) — the client-local Session
         // High WRITER that used to run here was removed. In production, every real
         // tick this function could see, the server (updateTradeHighs, fed by
@@ -3337,6 +3365,7 @@
         container.innerHTML = html;
         if (_lastOptionLTPs  && !isMarketClosedNow()) updateTradeCMPs(_lastOptionLTPs);
         if (_lastOptionHighs && !isMarketClosedNow()) updateTradeHighs(_lastOptionHighs, _lastOptionHighsPostIds);
+        if (_lastOptionLows  && !isMarketClosedNow()) updateTradeLows(_lastOptionLows, _lastOptionLowsPostIds);
 
         // WhatsApp-style scroll + highlight when navigating from Performance tab
         if (window._highlightTradeKey) {
