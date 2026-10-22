@@ -5828,6 +5828,11 @@ setInterval(async () => {
         optionLTPs:         _latestMarketData?.optionLTPs         || {},
         optionHighs:        _latestMarketData?.optionHighs        || {},
         optionHighsPostIds: _latestMarketData?.optionHighsPostIds || {},
+        // checkpoint session_low_server_wiring_followup (2026-10-22) — this site was missed
+        // in the original wiring (found live: optionLows was being wiped every ~10s by this
+        // exact poll). Mirrors the optionHighs/optionHighsPostIds preservation immediately above.
+        optionLows:         _latestMarketData?.optionLows         || {},
+        optionLowsPostIds:  _latestMarketData?.optionLowsPostIds  || {},
         expiry:             _latestMarketData?.expiry
       };
       console.log('[market-poll] _latestMarketData updated from GitHub:', freshTs);
