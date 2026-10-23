@@ -345,6 +345,11 @@ body{background:var(--bg);min-height:100vh;}
   <img src="logo.png" alt="T2S" style="width:56px;height:56px;border-radius:14px;object-fit:cover;margin-bottom:16px;" onerror="this.outerHTML='<div class=\'pin-logo\'>T2S</div>'">
   <div class="pin-title">Trade2Spend</div>
   <div class="pin-sub" id="pin-sub-text">Enter your PIN to continue</div>
+  <!-- checkpoint admin_pin_switchable_identity (2026-10-23) — shows which admin identity
+       this device will unlock as (by name, never any part of the mobile number). Tap to
+       switch to a different already-set-up identity on this same device. -->
+  <div id="pin-identity-display" onclick="editPinMobile()" style="color:rgba(255,255,255,0.55);font-size:0.82rem;margin-bottom:10px;cursor:pointer;text-decoration:underline dotted;display:none;"></div>
+  <input id="pin-mobile-input" type="tel" inputmode="numeric" maxlength="10" style="display:none;width:200px;text-align:center;padding:8px;border-radius:8px;border:1.5px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);color:#fff;margin-bottom:10px;font-size:0.95rem;" placeholder="10-digit mobile to switch">
   <div class="pin-dots" id="pin-dots">
     <div class="pin-dot" id="pd0"></div>
     <div class="pin-dot" id="pd1"></div>
@@ -1166,11 +1171,17 @@ body{background:var(--bg);min-height:100vh;}
   <div class="setup-card">
     <div class="setup-label">🔐 App PIN Lock</div>
     <div class="info-text" style="margin-bottom:8px;">Set a 4-digit PIN — asked every time you reopen the app within your 8-hour TOTP session.</div>
-    <!-- checkpoint admin_pin_multi_identity (2026-10-21) — shown only on a device
-         that hasn't picked which admin identity it belongs to yet (no localStorage
-         t2s_admin_id saved). Asked once; never shown again on this device after. -->
-    <div id="admin-mobile-row" style="display:none;margin-bottom:8px;">
-      <div class="field-label" style="margin-bottom:4px;">Your mobile number (first time only)</div>
+    <!-- checkpoint admin_pin_switchable_identity (2026-10-23) — shows which admin
+         identity this device is currently using, reusing the same localStorage
+         value the PIN screen itself shows. Empty until a PIN has been set at least
+         once on this device. -->
+    <div id="setup-current-admin" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+    <!-- checkpoint admin_pin_multi_identity (2026-10-21), updated by
+         admin_pin_switchable_identity (2026-10-23) — always visible now (was
+         hidden after first setup) so a device can also claim a 2nd/3rd already-
+         whitelisted admin identity later, not just its first one. -->
+    <div id="admin-mobile-row" style="margin-bottom:8px;">
+      <div class="field-label" style="margin-bottom:4px;">Mobile number (to claim/add this admin identity)</div>
       <input type="tel" inputmode="numeric" maxlength="10" class="setup-input" id="admin-mobile-input" placeholder="10-digit number" style="width:100%;">
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -2638,6 +2649,7 @@ async function handleMagicLink() {
   // Clear this device's remembered identity so it re-enters its mobile number
   // and sets a fresh PIN after email verification.
   localStorage.removeItem('t2s_admin_id');
+  localStorage.removeItem('t2s_admin_name');
   // Flag: skip PIN overlay once and land on Setup tab
   sessionStorage.setItem('t2s_post_unlock', '1');
   window.location.replace('https://app.trade2spend.com/admin.html');
@@ -2686,7 +2698,16 @@ function showAdminMobileRow() {
   const row = document.getElementById('admin-mobile-row');
   if (row) row.style.display = 'block';
 }
+// checkpoint admin_pin_switchable_identity (2026-10-23) — shows which admin this
+// device is currently using, inside the Setup tab (not just the lock screen).
+function updateCurrentAdminDisplay() {
+  const el = document.getElementById('setup-current-admin');
+  if (!el) return;
+  const name = localStorage.getItem('t2s_admin_name');
+  el.textContent = name ? ('Logged in as: ' + name) : '';
+}
 async function pinInit() {
+  updateCurrentAdminDisplay();
   // If PIN was already verified this browser session, skip overlay
   if (sessionStorage.getItem('t2s_admin_authed')) {
     document.getElementById('pin-overlay').classList.add('hidden');
@@ -2695,6 +2716,7 @@ async function pinInit() {
   // URL escape hatch — open admin.html?reset=1 in Safari to bypass any lockout
   if (new URLSearchParams(window.location.search).get('reset') === '1') {
     localStorage.removeItem('t2s_admin_id');
+    localStorage.removeItem('t2s_admin_name');
     localStorage.removeItem('t2s_admin_lock_until');
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
@@ -2710,6 +2732,7 @@ async function pinInit() {
   if (sessionStorage.getItem('t2s_post_unlock')) {
     sessionStorage.removeItem('t2s_post_unlock');
     localStorage.removeItem('t2s_admin_id');
+    localStorage.removeItem('t2s_admin_name');
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
     showAdminMobileRow();
@@ -2739,6 +2762,7 @@ async function pinInit() {
     await sbFetch(`keep_alive_log?source=eq.admin_pin_reset_${adminId}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
     await sbFetch(`keep_alive_log?source=eq.admin_pwa_locked_${adminId}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
     localStorage.removeItem('t2s_admin_id');
+    localStorage.removeItem('t2s_admin_name');
     localStorage.removeItem('t2s_admin_lock_until');
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
@@ -2747,10 +2771,30 @@ async function pinInit() {
     return;
   }
 
+  // checkpoint admin_pin_switchable_identity (2026-10-23) — show which identity this
+  // device will unlock as, and reset the "switch identity" input back to its closed
+  // state (in case a previous attempt left it open).
+  const identityDisplay = document.getElementById('pin-identity-display');
+  const mobileInput = document.getElementById('pin-mobile-input');
+  if (identityDisplay) {
+    identityDisplay.textContent = 'Logging in as: ' + (localStorage.getItem('t2s_admin_name') || 'Admin') + ' (tap to switch)';
+    identityDisplay.style.display = 'block';
+  }
+  if (mobileInput) { mobileInput.style.display = 'none'; mobileInput.value = ''; }
+
   document.getElementById('pin-overlay').classList.remove('hidden');
   if (sessionStorage.getItem('t2s_admin_authed')) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
   if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
   await checkSessionSlot();
+}
+
+// checkpoint admin_pin_switchable_identity (2026-10-23) — tap the identity display to
+// switch to a different, already-set-up admin on this same device.
+function editPinMobile() {
+  const identityDisplay = document.getElementById('pin-identity-display');
+  const mobileInput = document.getElementById('pin-mobile-input');
+  if (identityDisplay) identityDisplay.style.display = 'none';
+  if (mobileInput) { mobileInput.style.display = 'block'; mobileInput.value = ''; mobileInput.focus(); }
 }
 
 // ── ADMIN AUTH (TOTP + PIN TWO-LAYER) ─────────────────────────────────────
@@ -2863,14 +2907,19 @@ function updatePinDots() {
 // removed — no local hash comparison happens in this file anymore.
 async function checkPin() {
   const pin = pinBuffer;
+  // checkpoint admin_pin_switchable_identity (2026-10-23) — if the "switch identity"
+  // field is open with a number typed in, verify by mobile instead of the device's
+  // remembered admin_id.
+  const mobileInput = document.getElementById('pin-mobile-input');
+  const switching = mobileInput && mobileInput.style.display !== 'none' && mobileInput.value.replace(/\D/g, '').length === 10;
+  const body = switching
+    ? { pin, device_id: getAdminDeviceId(), mobile: '+91' + mobileInput.value.replace(/\D/g, ''), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } }
+    : { pin, device_id: getAdminDeviceId(), admin_id: localStorage.getItem('t2s_admin_id'), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } };
   let d;
   try {
     const r = await fetch('https://api.trade2spend.com/admin-verify-pin', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      // checkpoint admin_pin_multi_identity — admin_id is this device's
-      // permanently remembered identity (set once at setup); the server uses
-      // it for a deterministic by-id lookup instead of an ambiguous scan.
-      body: JSON.stringify({ pin, device_id: getAdminDeviceId(), admin_id: localStorage.getItem('t2s_admin_id'), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } })
+      body: JSON.stringify(body)
     });
     d = await r.json();
   } catch (e) {
@@ -2886,6 +2935,12 @@ async function checkPin() {
     // EXECUTE_SECRET — saved to the same key every existing admin-action call
     // site already reads, so no other code needs to change.
     if (d.sessionToken) localStorage.setItem('t2s_execute_secret', d.sessionToken);
+    // Switched to a different identity — update the device's "sticky" remembered one.
+    if (switching && d.adminId) {
+      localStorage.setItem('t2s_admin_id', d.adminId);
+      localStorage.setItem('t2s_admin_name', d.name || 'Admin');
+      updateCurrentAdminDisplay();
+    }
     return;
   }
   if (d.serverBusy) {
@@ -2904,6 +2959,11 @@ async function checkPin() {
   for (let i = 0; i < 4; i++) document.getElementById('pd' + i).classList.add('error');
   if (d.locked) {
     showAdminLocked('pin');
+  } else if (switching && typeof d.attemptsRemaining !== 'number') {
+    // Generic on purpose — number not found, a real admin with no PIN yet, and a wrong
+    // PIN for a set-up admin all look identical here (checkpoint admin_pin_switchable_identity
+    // pre r1 FINDING-001 — no signal that would let someone enumerate admin numbers).
+    document.getElementById('pin-err').textContent = 'Incorrect PIN — or this number may not be set up yet. Check Setup tab if needed.';
   } else {
     const remaining = typeof d.attemptsRemaining === 'number' ? d.attemptsRemaining : 2;
     document.getElementById('pin-err').textContent = `Wrong PIN. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`;
@@ -2930,19 +2990,17 @@ async function saveNewPin() {
     return;
   }
 
-  // checkpoint admin_pin_multi_identity (2026-10-21) — this device doesn't
-  // have a remembered admin identity yet; ask for the mobile number once so
-  // the server can target the right one of the 3 real admin rows.
-  const needsMobile = !localStorage.getItem('t2s_admin_id');
-  let mobile = '';
-  if (needsMobile) {
-    const mobileDigits = (document.getElementById('admin-mobile-input')?.value || '').replace(/\D/g, '');
-    if (mobileDigits.length !== 10) {
-      errEl.textContent = 'Enter your 10-digit mobile number above.';
-      return;
-    }
-    mobile = '+91' + mobileDigits;
+  // checkpoint admin_pin_switchable_identity (2026-10-23) — mobile is now ALWAYS
+  // required here, not just "first time on this device": "Set PIN" always means
+  // "claim/add this mobile number as an admin identity," whether it's the device's
+  // 1st, 2nd, or 3rd. (Only whitelisted is_admin=true numbers can ever succeed —
+  // enforced server-side, unchanged.)
+  const mobileDigits = (document.getElementById('admin-mobile-input')?.value || '').replace(/\D/g, '');
+  if (mobileDigits.length !== 10) {
+    errEl.textContent = 'Enter the 10-digit mobile number above.';
+    return;
   }
+  const mobile = '+91' + mobileDigits;
 
   try {
     const r = await fetch('https://api.trade2spend.com/admin-setup-pin', {
@@ -2971,7 +3029,12 @@ async function saveNewPin() {
     if (d.sessionToken) localStorage.setItem('t2s_execute_secret', d.sessionToken);
     // adminId is this device's permanent identity marker — saved once, never
     // asked for again via the mobile-number step on this device.
+    // adminId/name become this device's "sticky" active identity — the one just
+    // set up. Switching to a different already-set-up one later happens from the
+    // PIN screen itself (checkpoint admin_pin_switchable_identity).
     if (d.adminId) localStorage.setItem('t2s_admin_id', d.adminId);
+    if (d.name)    localStorage.setItem('t2s_admin_name', d.name);
+    updateCurrentAdminDisplay();
   } catch (e) {
     errEl.textContent = 'Server unreachable — check internet and retry.';
     return;
