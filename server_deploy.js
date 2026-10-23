@@ -4731,7 +4731,7 @@ const server = http.createServer(async (req, res) => {
         if (urlPath === '/admin-setup-pin') {
           const mobile = String(parsed.mobile || '');
           if (!/^\+91\d{10}$/.test(mobile)) { res.end(JSON.stringify({ success: false })); return; }
-          const admins = await sbFetch(`members?mobile=eq.${mobile.replace(/\+/g, '%2B')}&is_admin=eq.true&select=id,admin_pin_hash&limit=1`);
+          const admins = await sbFetch(`members?mobile=eq.${mobile.replace(/\+/g, '%2B')}&is_admin=eq.true&select=id,admin_pin_hash,name&limit=1`);
           if (!admins || !admins.length) { res.end(JSON.stringify({ success: false })); return; }
           const adminId = admins[0].id;
           // Atomic conditional write — exactly one caller can ever win this transition.
@@ -4758,19 +4758,36 @@ const server = http.createServer(async (req, res) => {
           // first-time PIN setup, so a claim by someone other than him is
           // immediately visible (with a one-tap reset) rather than silent.
           sendAdminPinSetupAlert(adminId, parsed.deviceInfo).catch(() => {});
-          // adminId returned so the client can remember "this device = this admin"
-          // permanently (localStorage.t2s_admin_id) — no mobile number needed again.
-          res.end(JSON.stringify({ success: true, sessionToken, adminId })); return;
+          // adminId + name returned so the client can remember "this device = this
+          // admin" permanently (localStorage.t2s_admin_id/t2s_admin_name) — no mobile
+          // number needed again. name is shown on the lock screen instead of any part
+          // of the mobile number (checkpoint admin_pin_switchable_identity, 2026-10-23).
+          res.end(JSON.stringify({ success: true, sessionToken, adminId, name: admins[0].name })); return;
         }
 
         // ── POST /admin-verify-pin ────────────────────────────────────────────
-        // checkpoint admin_pin_multi_identity — the caller now sends back the
-        // adminId it was given at setup time, so this lookup is a deterministic
-        // by-primary-key fetch instead of an ambiguous is_admin=true scan.
-        const adminId = String(parsed.admin_id || '');
-        if (!adminId) { res.end(JSON.stringify({ success: false })); return; }
-        const admins = await sbFetch(`members?id=eq.${adminId}&is_admin=eq.true&select=admin_pin_hash&limit=1`);
-        if (!admins || !admins.length) { res.end(JSON.stringify({ success: false })); return; } // e.g. is_admin revoked since — fail closed
+        // checkpoint admin_pin_multi_identity — the caller sends back the adminId it
+        // was given at setup time, so this lookup is a deterministic by-primary-key
+        // fetch instead of an ambiguous is_admin=true scan.
+        // checkpoint admin_pin_switchable_identity (2026-10-23) — a caller MAY instead
+        // send `mobile` (switching to a different, already-set-up identity on this
+        // device). Both paths converge on the same generic-failure shape — number not
+        // found, admin with no PIN yet, and a wrong PIN all look identical from the
+        // outside (closes the enumeration finding from this checkpoint's pre-review).
+        let adminId, admins;
+        const mobileIn = String(parsed.mobile || '');
+        if (mobileIn) {
+          if (!/^\+91\d{10}$/.test(mobileIn)) { res.end(JSON.stringify({ success: false })); return; }
+          admins = await sbFetch(`members?mobile=eq.${mobileIn.replace(/\+/g, '%2B')}&is_admin=eq.true&select=id,admin_pin_hash,name&limit=1`);
+          if (!admins || !admins.length) { res.end(JSON.stringify({ success: false })); return; }
+          adminId = admins[0].id;
+          if (!admins[0].admin_pin_hash) { res.end(JSON.stringify({ success: false })); return; } // same generic shape — no distinguishing signal
+        } else {
+          adminId = String(parsed.admin_id || '');
+          if (!adminId) { res.end(JSON.stringify({ success: false })); return; }
+          admins = await sbFetch(`members?id=eq.${adminId}&is_admin=eq.true&select=admin_pin_hash,name&limit=1`);
+          if (!admins || !admins.length) { res.end(JSON.stringify({ success: false })); return; } // e.g. is_admin revoked since — fail closed
+        }
 
         // Account-wide lock check first, now scoped per-admin — same keep_alive_log
         // row the Telegram reset flow clears; this is the authoritative, persistent
@@ -4789,7 +4806,10 @@ const server = http.createServer(async (req, res) => {
           const slotOk = await _registerAdminDeviceSlot(adminId, deviceId);
           if (!slotOk) { res.end(JSON.stringify({ success: false, serverBusy: true })); return; }
           const sessionToken = _issueAdminToken(deviceId);
-          res.end(JSON.stringify({ success: true, sessionToken })); return;
+          // adminId + name returned so the client can switch its "sticky" identity when
+          // verifying via mobile (checkpoint admin_pin_switchable_identity) — harmless,
+          // identical values when verifying via the existing admin_id path.
+          res.end(JSON.stringify({ success: true, sessionToken, adminId, name: admins[0].name })); return;
         }
 
         const newCount = (_adminPinAttempts.get(adminId) || 0) + 1;
