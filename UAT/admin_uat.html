@@ -1187,11 +1187,11 @@ body{background:var(--bg);min-height:100vh;}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
       <div>
         <div class="field-label" style="margin-bottom:4px;">New PIN</div>
-        <input type="password" inputmode="numeric" maxlength="4" class="setup-input" id="new-pin-input" placeholder="••••">
+        <input type="tel" inputmode="numeric" maxlength="4" class="setup-input" id="new-pin-input" placeholder="••••" autocomplete="off" style="-webkit-text-security:disc;">
       </div>
       <div>
         <div class="field-label" style="margin-bottom:4px;">Confirm PIN</div>
-        <input type="password" inputmode="numeric" maxlength="4" class="setup-input" id="confirm-pin-input" placeholder="••••">
+        <input type="tel" inputmode="numeric" maxlength="4" class="setup-input" id="confirm-pin-input" placeholder="••••" autocomplete="off" style="-webkit-text-security:disc;">
       </div>
     </div>
     <button class="setup-btn" onclick="saveNewPin()">Set PIN</button>
@@ -3358,6 +3358,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     const overlay = document.getElementById('pin-overlay');
     if (overlay.classList.contains('hidden')) return;
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return; // let a focused real input (e.g. the switch-identity mobile field) handle its own keys
     if (e.key >= '0' && e.key <= '9') { e.preventDefault(); pinKey(e.key); }
     else if (e.key === 'Backspace') { e.preventDefault(); pinDel(); }
   });
