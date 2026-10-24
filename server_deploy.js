@@ -253,6 +253,11 @@ async function _adminPinFullReset(adminId) {
   let dbOk = false;
   try {
     if (SB_KEY) {
+      // checkpoint admin_pin_bugs_abc_fix (2026-10-24, Bug B) — write the client-visible
+      // reset signal here so BOTH callers (/unlock_admin and the Telegram button) get it,
+      // instead of only the button path writing it itself. pinInit() already knows how to
+      // read this row; /unlock_admin resets were never being picked up by the client before.
+      try { await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: `admin_pin_reset_${adminId}`, pinged_at: new Date().toISOString() }) }); } catch (e) {}
       const written = await sbFetch(`members?id=eq.${adminId}`, { method: 'PATCH', body: JSON.stringify({ admin_pin_hash: null }) });
       dbOk = !!(written && written.length);
       const prefix = 'admin_session_' + adminId + '_';
@@ -3362,9 +3367,9 @@ async function handleCallback(cb) {
       // actually unchanged (checkpoint admin_pin_server/post r1 finding).
       // _adminPinFullReset itself now also clears the per-admin lock row and
       // device-slot tokens (not the slot rows themselves) — see its definition.
-      // Signal row for the client's own pinInit() poll (scoped per-admin now —
-      // was a single shared 'admin_pin_reset' row before this checkpoint).
-      try { await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: `admin_pin_reset_${confirmAdminId}`, pinged_at: new Date().toISOString() }) }); } catch(e) {}
+      // checkpoint admin_pin_bugs_abc_fix (2026-10-24, Bug B) — the client-signal row
+      // write moved INTO _adminPinFullReset() itself (so /unlock_admin gets it too);
+      // removed the duplicate write that used to happen here.
       const resetOk = await _adminPinFullReset(confirmAdminId);
       if (!resetOk) {
         await tgEdit(msgId,
@@ -3770,11 +3775,13 @@ async function handleMessage(text) {
       if (!lockedIds.length) { await tgSend('ℹ️ Nobody is currently locked — nothing to unlock.'); return; }
       let allOk = true;
       for (const id of lockedIds) {
-        try { await sbFetch('keep_alive_log', { method: 'POST', body: JSON.stringify({ source: `admin_pin_reset_${id}`, pinged_at: new Date().toISOString() }) }); } catch(e) {}
         // checkpoint admin_pin_server — nulls admin_pin_hash + wipes all session
         // tokens for this one admin. Checked, not fire-and-forget (checkpoint
         // admin_pin_server/post r1 finding — a DB failure here must not be
         // reported as "unlocked").
+        // checkpoint admin_pin_bugs_abc_fix (2026-10-24) — the client-signal-row
+        // write that used to happen here moved into _adminPinFullReset() itself,
+        // which now does it for every caller; removed the duplicate.
         const resetOk = await _adminPinFullReset(id);
         if (!resetOk) allOk = false;
       }
