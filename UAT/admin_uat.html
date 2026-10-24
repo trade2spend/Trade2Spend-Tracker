@@ -2833,13 +2833,18 @@ async function submitAdminTotp() {
     });
     const d = await r.json();
     if (d.ok) {
-      sessionStorage.setItem('t2s_admin_authed', '1');
+      // checkpoint admin_totp_pin_enforcement_fix (2026-10-23) — fixes BUG-011.
+      // t2s_admin_authed is now ONLY ever set by checkPin() on a correct PIN.
+      // TOTP success establishes the TOTP session only; pinInit() below decides
+      // Setup-vs-PIN-entry-vs-locked, exactly like adminAuthInit() already does
+      // for a still-valid TOTP session on a fresh page load. A reopened tab/app
+      // gets a fresh sessionStorage (browser-native behavior) so PIN is asked
+      // again; a plain refresh in the same session correctly stays unlocked if
+      // the PIN was already entered this session (Tushar's explicit call).
       localStorage.setItem('t2s_admin_session_exp', String(Date.now() + 8 * 60 * 60 * 1000));
       _kotakConnected = true;
       _lastKotakLoginMs = Date.now();
       document.getElementById('totp-overlay').style.display = 'none';
-      const pinOvEl = document.getElementById('pin-overlay');
-      if (pinOvEl) pinOvEl.classList.add('hidden');
       const hdrDot = document.getElementById('kotak-hdr-dot');
       const algoDot = document.getElementById('kotak-dot');
       const algoTxt = document.getElementById('kotak-status-text');
@@ -2852,16 +2857,7 @@ async function submitAdminTotp() {
       if (discBtn) discBtn.style.display = '';
       showToast('✓ Kotak connected — live CMP active');
       registerAdminSession().catch(() => {});
-      // checkpoint admin_pin_multi_identity (2026-10-21) — with 3 real
-      // is_admin=true rows, "does any admin have a PIN" no longer means "does
-      // THIS device have one" (that's the exact ambiguity bug this checkpoint
-      // fixed elsewhere). This device's own identity marker is the only thing
-      // that matters for this nudge.
-      if (!localStorage.getItem('t2s_admin_id')) {
-        showTab('setup');
-        showAdminMobileRow();
-        setTimeout(() => showToast('Set a PIN below — asked every time you reopen the app.'), 500);
-      }
+      await pinInit(); // shows Setup (no identity yet) or asks for PIN — same logic adminAuthInit() uses
     } else {
       errEl.textContent = d.error || 'Invalid code — wait for next code and retry';
       inp.value = ''; inp.focus();
