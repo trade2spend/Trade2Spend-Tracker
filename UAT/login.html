@@ -430,7 +430,7 @@ function onTypeChange(type){
   else{p.style.display='block';f.style.display='none';fb.style.display='none';document.getElementById('type-paid-label').classList.add('active');document.getElementById('type-free-label').classList.remove('active');}
 }
 function browseFree(){localStorage.setItem('t2s_uat_mode','free');['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login'].forEach(k=>localStorage.removeItem(k));window.location.href=MAIN_APP_URL;}
-function switchAccount(){['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
+function switchAccount(){['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
 
 async function checkLock(){
   function _showLockMsg(m){
@@ -564,12 +564,13 @@ async function verifyPin(){
     if(d.success){
       localStorage.removeItem('t2s_uat_lock_until');
       localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember.tier==='paid'?'paid':'free');
+      if(d.sessionToken) localStorage.setItem('t2s_uat_member_token',d.sessionToken); // checkpoint stage1_posts_gatekeeper — carried forward for uat.html after redirect
       showLoading(false);window.location.href=MAIN_APP_URL;
       return;
     }
     if(d.disabled){
       showLoading(false);document.getElementById('pin-err').textContent='Account suspended. Contact @T2Sview.';
-      setTimeout(()=>{['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_locked_mid','t2s_uat_unlock_req_at','t2s_uat_device_id','t2s_uat_request_pending','t2s_uat_pin_reset_at','t2s_uat_disclaimer_date','t2s_uat_logout_reason'].forEach(k=>localStorage.removeItem(k));location.reload();},2500);
+      setTimeout(()=>{['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_locked_mid','t2s_uat_unlock_req_at','t2s_uat_device_id','t2s_uat_request_pending','t2s_uat_pin_reset_at','t2s_uat_disclaimer_date','t2s_uat_logout_reason','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));location.reload();},2500);
       return;
     }
     showLoading(false);pinBuffer='';
@@ -723,7 +724,7 @@ async function processSetupPin(){
         setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');
         return;
       }
-      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember&&currentMember.tier==='paid'?'paid':'free');localStorage.removeItem('t2s_uat_pin_reset_at');showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember&&currentMember.tier==='paid'?'paid':'free');localStorage.removeItem('t2s_uat_pin_reset_at');if(d.sessionToken) localStorage.setItem('t2s_uat_member_token',d.sessionToken);showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
     }catch(e){showLoading(false);document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');}
   }
 }
