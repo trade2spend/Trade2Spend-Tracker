@@ -891,8 +891,15 @@
   </div>
 </div>
 
+<!-- checkpoint stage1_posts_gatekeeper (2026-10-25) — single source of truth for the
+     paid_only trade-alert unlock engine, also loaded by server.js (require()) on the VM so
+     the two can never drift apart. Do not re-add parseFollowUpContent/extractTradeAlertFields/
+     getFreeUnlockedFields inline below — they now come from this file (see destructure a few
+     lines down). -->
+<script src="trade_unlock_shared.js"></script>
 <script>
     // --- UI LOGIC ---
+    const { parseFollowUpContent, extractTradeAlertFields, getFreeUnlockedFields, getMainContent } = window.T2SUnlock;
     let _tradeRefreshTimer   = null;
     let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _updComposeAud = 'all'; // audience selection for admin Updates compose
@@ -1279,6 +1286,7 @@
                 localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
                 localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
                 localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+                if (d.sessionToken) localStorage.setItem('t2s_uat_member_token', d.sessionToken); // checkpoint stage1_posts_gatekeeper
                 if (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) localStorage.removeItem('t2s_uat_request_pending');
                 closeRequestModal();
                 window.location.reload();
@@ -1371,6 +1379,7 @@
             localStorage.setItem('t2s_uat_member_id', _faPendingMember.id);
             localStorage.setItem('t2s_uat_mode', (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) ? 'paid' : 'free');
             localStorage.setItem('t2s_uat_last_login', Date.now().toString());
+            if (d.sessionToken) localStorage.setItem('t2s_uat_member_token', d.sessionToken); // checkpoint stage1_posts_gatekeeper
             if (_faPendingMember.tier === 'paid' || _faPendingMember.free_access) localStorage.removeItem('t2s_uat_request_pending');
             closeRequestModal();
             window.location.reload();
@@ -2908,7 +2917,16 @@
       finally { _subscribing = false; }
     }
 
+    // checkpoint stage1_posts_gatekeeper (2026-10-25) — posts-table calls are routed
+    // through the new server-side gatekeeper (/uat-member-sb) instead of straight to
+    // Supabase, so paid-only content can be filtered/redacted before it ever reaches a
+    // free member's browser. Every OTHER table (members, sessions, access_requests,
+    // read_receipts, push_subscriptions, post_shares, feature_flags, device_blocks) is
+    // UNCHANGED — still the direct anon-key path, exactly as before; this stage only
+    // closes the posts leak. No call site elsewhere in this file needed to change: they
+    // all still call sbFetch(path, opts) exactly as before, with the same return shape.
     async function sbFetch(path, opts={}) {
+        if (_sbProxyTable(path) === 'posts') return sbMemberFetch(path, opts);
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 10000);
         const { headers: extraHeaders, ...restOpts } = opts;
@@ -2923,6 +2941,23 @@
             return text ? JSON.parse(text) : [];
         } finally { clearTimeout(timer); }
     }
+    function _sbProxyTable(path) { return String(path||'').split('?')[0]; }
+    async function sbMemberFetch(path, opts={}) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 10000);
+        const { headers: extraHeaders, ...restOpts } = opts;
+        try {
+            const token = localStorage.getItem('t2s_uat_member_token') || '';
+            const res = await fetch(`${_VM}/uat-member-sb`, {
+                method: 'POST', signal: ctrl.signal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, path, method: restOpts.method || 'GET', body: restOpts.body || null, headers: extraHeaders || {} })
+            });
+            if (!res.ok) throw new Error(`sb ${res.status}: ${await res.text()}`);
+            const text = await res.text();
+            return text ? JSON.parse(text) : [];
+        } finally { clearTimeout(timer); }
+    }
 
     // ── SUPABASE REALTIME ─────────────────────────────────────────────────────
     // Subscribes to postgres_changes on the posts table via WebSocket.
@@ -2931,6 +2966,21 @@
     // hits Supabase fresh. Auto-reconnects after 5s on disconnect.
     let _rtSocket = null, _rtRef = 0, _rtHeartbeatTimer = null, _rtReconnectTimer = null;
 
+    // checkpoint stage1_posts_gatekeeper (2026-10-25) — the posts-table Realtime channel
+    // pushes the RAW row straight to the browser over the websocket, bypassing the new
+    // gatekeeper's redaction entirely (there is no way to ask Supabase Realtime to filter
+    // or redact a payload per-subscriber). A free viewer subscribing to it would still
+    // receive unredacted paid_only content the instant it's posted. Real fix: free viewers
+    // don't subscribe to the posts channel at all — they already have a polling fallback
+    // for both tabs (_updatesRefreshTimer 60s, _tradeRefreshTimer 30s) which goes through
+    // sbFetch → the gatekeeper, so they still get updates, just not instantly. Paid/admin
+    // viewers are unaffected (unchanged, instant, exactly as before) — they're entitled to
+    // full content anyway, so there's nothing to protect there.
+    function _rtIsUnlockedViewer() {
+        const cm = window._cachedMember;
+        if (cm) return !!(cm.is_admin === true || cm.tier === 'paid' || cm.free_access === true);
+        return localStorage.getItem('t2s_uat_mode') === 'paid'; // best-effort fallback if cache not populated yet
+    }
     function initRealtimeSubscription() {
         if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
         clearTimeout(_rtReconnectTimer);
@@ -2940,18 +2990,20 @@
         const _RT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
         const wsUrl = _RT_WSS + '/realtime/v1/websocket?apikey=' + _RT_KEY + '&vsn=1.0.0';
         _rtSocket = new WebSocket(wsUrl);
+        const _rtUnlocked = _rtIsUnlockedViewer();
 
         _rtSocket.onopen = () => {
+            const _rtChanges = [
+                { event: '*', schema: 'public', table: 'members', filter: 'id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') }
+            ];
+            if (_rtUnlocked) _rtChanges.unshift({ event: '*', schema: 'public', table: 'posts' }); // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
             _rtSocket.send(JSON.stringify({
                 topic: 'realtime:*', event: 'phx_join',
                 payload: {
                     config: {
                         broadcast: { self: false },
                         presence: { key: '' },
-                        postgres_changes: [
-                            { event: '*', schema: 'public', table: 'posts' }, // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
-                            { event: '*', schema: 'public', table: 'members', filter: 'id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') }
-                        ]
+                        postgres_changes: _rtChanges
                     }
                 },
                 ref: String(++_rtRef)
@@ -3209,150 +3261,12 @@
     }
 
     // ── FOLLOW-UP CONTENT PARSER ─────────────────────────────────────────────
-    function parseFollowUpContent(text) {
-        const lo = (text||'').toLowerCase().trim();
-        const r = { type:'status', price:null, exitPct:null, slRevised:null, cmp:null,
-                    isHolding:false, isFullExit:false, noLossPossible:false, isAdminUnlock:false,
-                    t1Hit:false, t2Hit:false, t3Hit:false };
-        if (!text) return r;
-        if (text.includes('[T2S_UNLOCK]')) { r.isAdminUnlock = true; return r; }
-        // Overnight/swing holding — guard against negated phrases like "will not hold overnight"
-        const _negHoldRe = /\b(?:not|won'?t|will\s+not|wont|don'?t|dont|never)\b.{0,25}\bhold(?:ing)?\b.{0,20}\b(?:overnight|next\s+day|tomorrow)\b/i;
-        if (!_negHoldRe.test(text) && /hold(?:ing)?\s+(?:for\s+)?(?:next\s+day|tomorrow|overnight|long(?:\s+term)?|positional|swing|marathon|long\s+hold)|(?:positional|swing)\s+trade|overnight\s+position/i.test(text))
-            r.isHolding = true;
-        // SL hit / full exit (exclude future tense: "till SL hit", "if SL hit")
-        const loNoFuture = lo.replace(/(?:till|until|if|when)\s+(?:the\s+)?(?:sl|stop\s*loss)\s+(?:is\s+)?(?:hit|triggered)/gi,'');
-        if (/\bsl\b.{0,20}(?:hit|triggered|gone|breached)|stop[\s-]?loss.{0,15}(?:hit|triggered)/.test(loNoFuture)) { r.isFullExit=true; r.type='exit'; }
-        if (/fully\s+exit|full\s+exit|position\s+clos|clos.*position|booked?\s+full|100\s*%\s*exit|exiting\s+full|exit\s+all/.test(lo)) { r.isFullExit=true; r.type='exit'; }
-        if (/\bfully\s+out\b|trade\s+(?:is\s+)?(?:done|over|closed?)\b|exit(?:ed|ing)\s+(?:all|full(?:y)?|everything)|position\s+(?:done|over|exited?)|\ball\s+(?:closed?|out|done|exited?)/.test(lo)) { r.isFullExit=true; r.type='exit'; }
-        if (/exit(?:ed|ing)\s+remaining|remaining\s+(?:exited?|booked?|clos(?:ed|ing)?)/.test(lo)) {
-            // "Exiting remaining with 163 as SL" = trailing SL update, not an actual full exit
-            const _hasSLSuffix = /\d+\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss)\b/.test(lo);
-            if (!_hasSLSuffix) { r.isFullExit=true; r.type='exit'; }
-        }
-        // Exit %
-        const em = lo.match(/(?:exit(?:ing|ed)?|book(?:ed|ing)?|clos(?:ed|ing)?)\s+(?:another\s+)?(\d+)\s*%/);
-        if (em) { r.type='exit'; r.exitPct=parseInt(em[1]); }
-        // "Exiting with/at [price]" or "Exiting [price]" (number present, no %) = full exit
-        // SL context exceptions: "as SL" suffix, OR CMP mentioned and differs from exit price by >3 pts
-        if (!r.isFullExit && !r.exitPct) {
-            const exPriceM = lo.match(/\bexiting?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
-            if (exPriceM) {
-                const exitVal = parseFloat(exPriceM[1]);
-                const afterIdx = lo.indexOf(exPriceM[0]) + exPriceM[0].length;
-                const afterStr = lo.slice(afterIdx, afterIdx + 25);
-                const isSLPhrasing = /\bas\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/.test(afterStr);
-                const cmpM = lo.match(/\bcmp\s*[=:]?\s*(?:₹\s*)?(\d{2,6}(?:\.\d+)?)/);
-                const cmpDiffers = cmpM && Math.abs(parseFloat(cmpM[1]) - exitVal) > 0.5;
-                if (isSLPhrasing || cmpDiffers) {
-                    r.slRevised = exitVal;
-                    if (!r.exitPct) r.type = 'sl_update';
-                } else {
-                    r.isFullExit = true; r.type = 'exit'; r.price = exitVal;
-                }
-            }
-        }
-        // When SL hit is detected (e.g. "SL gone") or already classified a full exit (e.g. via
-        // "exiting remaining") but price still null, extract from "exit(ed/ing) ... at/with N" —
-        // allows up to 3 filler words between the verb and the preposition (e.g. "Exited remaining at 280",
-        // "Exited another 25% at 230") so an explicit stated exit price is captured BEFORE the vaguer
-        // "went to X" fallback below runs, in case both appear in the same message.
-        if (r.isFullExit && !r.price && !r.exitPct) {
-            const slHitExitM = lo.match(/\bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@)\s*(?:₹\s*)?(\d{2,4}(?:\.\d+)?)/);
-            if (slHitExitM) r.price = parseFloat(slHitExitM[1]);
-        }
-        // Extract price from "went to X" or "now X" patterns (e.g. "Went to 250+") — fallback only,
-        // runs after the explicit-exit-price checks above so a stated exit price always wins.
-        if (!r.price) {
-            const wm = text.match(/(?:went|goes?|now at?|currently|trading at)\s+(?:to\s+)?(\d{2,4}(?:\.\d+)?)/i);
-            if (wm) { const n=parseFloat(wm[1]); if(n>5&&n<9999) r.price=n; }
-        }
-        // Leading option price
-        const lm = (text||'').trim().match(/^(\d{2,4}(?:\.\d+)?)\+?\s*(?:[,\n\r\s]|$)/);
-        if (lm) { const n=parseFloat(lm[1]); if(n>5&&n<9999){ r.price=n; if(r.type==='status') r.type=r.exitPct?'exit':'cmp_update'; } }
-        // Also extract price from "at ₹XX" or "₹XX" patterns (covers "triggered at ₹222", "exit at ₹300")
-        if (!r.price) {
-            const pm = text.match(/(?:(?:at|@)\s*₹?\s*|₹\s*)(\d{2,4}(?:\.\d+)?)\b/i);
-            if (pm) { const n=parseFloat(pm[1]); if(n>5&&n<9999) r.price=n; }
-        }
-        // SL to cost (check before numeric SL)
-        if (/sl\s+(?:to|at|moved?\s+to|revised?\s+to|of\s+remaining\s+to)\s+cost|modif[a-z]*\s+sl[^0-9]*to\s+cost|sl\s+at\s+entry|at\s+breakeven/i.test(text)) {
-            r.slRevised='cost'; r.noLossPossible=true; if(!r.exitPct) r.type='sl_update';
-        }
-        // Numeric SL revision
-        if (!r.slRevised) {
-            const slPats = [
-                /(?:revised?|modif(?:y|ied|ying)|moved?|shifted?|new|updated?)\s+sl\s+(?:(?:of|for)\s+(?:\w+\s+){0,3})?(?:to\s+)?(\d+(?:\.\d+)?)/i,
-                /\bsl\s+(?:revised?|modif(?:y|ied|ying)|moved?|shifted?|updated?)\s+(?:to\s+)?(\d+(?:\.\d+)?)/i,  // "SL modified to 24285", "SL revised to 24285"
-                /sl\s+(?:to|of|at|now|=)\s*(\d+(?:\.\d+)?)/i,
-                /stop[\s-]?loss\s+(?:to|at|now|revised?)\s*(\d+(?:\.\d+)?)/i,
-                /moving\s+sl\s+to\s+(\d+(?:\.\d+)?)/i,
-                /trail(?:ing)?\s+sl\b[:\s]*(\d+(?:\.\d+)?)/i,           // "trail sl 160", "trailing sl: 160"
-                /sl\s+updated?\b[:\s]*(\d+(?:\.\d+)?)/i,                 // "sl updated: 160", "sl updated 160"
-                /revised?\s+sl\b[:\s]*(\d+(?:\.\d+)?)/i,                 // "revised sl: 160" colon variant
-                /(\d+(?:\.\d+)?)\s+as\s+(?:(?:my|the|a|an)\s+)?(?:sl|stop[\s-]?loss|stoploss)\b/i,  // "163 as SL" / "163 as my SL"
-                /\bsl\s+(?:₹\s*)?(\d+(?:\.\d+)?)\b/i  // bare "SL 166" or "SL ₹166"
-            ];
-            for (const p of slPats) { const m=text.match(p); if(m&&m[1]){ r.slRevised=parseFloat(m[1]); if(!r.exitPct) r.type='sl_update'; break; } }
-        }
-        // No loss explicit
-        if (/no\s+loss\s+(?:possible|now)|can.t\s+lose/i.test(text)) r.noLossPossible=true;
-        // CMP mention — allow up to 6 digits to cover option premiums and spot levels
-        const cm = text.match(/cmp\s*[=:]?\s*(?:₹\s*)?(\d{2,6}(?:\.\d+)?)/i);
-        if (cm) { const n=parseFloat(cm[1]); if(n>5) r.cmp=n; }
-        // Target hit detection — one-way latches; set true from follow-up text, never reset
-        if (/\bt1\s*(?:hit|achieved|done|booked?|reached?)|\btarget[\s-]?1\s*(?:hit|done|achieved|reached?)/i.test(text)) r.t1Hit = true;
-        if (/\bt2\s*(?:hit|achieved|done|booked?|reached?)|\btarget[\s-]?2\s*(?:hit|done|achieved|reached?)/i.test(text)) r.t2Hit = true;
-        if (/\bt3\s*(?:hit|achieved|done|booked?|reached?)|\btarget[\s-]?3\s*(?:hit|done|achieved|reached?)/i.test(text)) r.t3Hit = true;
-        return r;
-    }
-
-    // ── EXTRACT TRADE ALERT FIELDS ────────────────────────────────────────────
-    function extractTradeAlertFields(content) {
-        const f={instrument:null,strike:null,optType:null,expiry:null,entry:null,sl:null,action:null};
-        if (!content) return f;
-        const lo = content.toLowerCase();
-        if (/\bbuying\b|\bbuy\b/.test(lo)) f.action='BUY'; else if (/\bselling\b|\bsell\b/.test(lo)) f.action='SELL';
-        if (/bank\s*nifty/i.test(content)) f.instrument='BANKNIFTY';
-        else if (/\bnifty\b/i.test(content)) f.instrument='NIFTY';
-        else if (/\bsensex\b/i.test(content)) f.instrument='SENSEX';
-        else if (/\bfinnifty\b/i.test(content)) f.instrument='FINNIFTY';
-        else if (/\bbankex\b/i.test(content)) f.instrument='BANKEX';
-        const sm = content.match(/(?:nifty|banknifty|bank\s*nifty|sensex|finnifty)\s+(\d{4,6})/i);
-        if (sm) f.strike = sm[1];
-        // Fallback: stock option detection — fires only when no index instrument was matched
-        // Pattern: "RELIANCE 1280 Monthly CE" → instrument=RELIANCE, strike=1280, optType=CE
-        if (!f.instrument) {
-            const stockM = content.match(/\b([A-Z]{2,12})\s+(\d{3,7})\s+(?:Monthly|Weekly|Next\s+Weekly)?\s*(CE|PE)\b/i);
-            if (stockM) {
-                f.instrument = stockM[1].toUpperCase();
-                if (!f.strike) f.strike = stockM[2];
-                if (!f.optType) f.optType = stockM[3].toUpperCase();
-            }
-        }
-        if (/\bce\b|\bcall\b/i.test(content)) f.optType='CE'; else if (/\bpe\b|\bput\b/i.test(content)) f.optType='PE';
-        if (/next\s+weekly/i.test(lo)) f.expiry='Next Weekly';
-        else if (/monthly/i.test(lo)) f.expiry='Monthly';
-        else if (/weekly/i.test(lo)) f.expiry='Weekly';
-        else if (/today.s?\s+expiry|expiry\s+today/i.test(lo)) f.expiry="Today's Expiry";
-        // Actual date stored by sendNewAlert e.g. "24 Jun 2025 expiry"
-        if (!f.expiry) { const dm=content.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i); if(dm) f.expiry=`${dm[1]} ${dm[2].charAt(0).toUpperCase()+dm[2].slice(1).toLowerCase()} ${dm[3]}`; }
-        const em = content.match(/\bat\s+(\d+(?:\.\d+)?)/i);
-        if (em) { const n=parseFloat(em[1]); if(n>1&&n<9999) f.entry=n; }
-        const slm = content.match(/(below|above)\s+(\d{2,6}(?:\.\d+)?)/i);
-        if (slm) { f.sl = parseFloat(slm[2]); f.slDirection = slm[1].toLowerCase(); }
-        // Fallback: derive direction from action + optType if not explicit in content
-        if (!f.slDirection && f.action && f.optType) {
-            const _bullish = (f.action==='BUY'&&f.optType==='CE')||(f.action==='SELL'&&f.optType==='PE');
-            f.slDirection = _bullish ? 'below' : 'above';
-        }
-        const sustM = content.match(/for\s+(\d+)\s+min/i);
-        if (sustM) f.slSustainMinutes = parseInt(sustM[1]);
-        return f;
-    }
+    // checkpoint stage1_posts_gatekeeper (2026-10-25) — parseFollowUpContent and
+    // extractTradeAlertFields moved to trade_unlock_shared.js (loaded above, destructured
+    // at the top of this script block) so server.js uses the exact same logic. Do not
+    // redefine them here.
 
     // ── WHY SECTION HELPERS ───────────────────────────────────────────────────
-    function getMainContent(c) { return (c||'').replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi,'').trim(); }
     function getWhyContent(c) { const m=(c||'').match(/\[WHY\]([\s\S]*?)\[\/WHY\]/i); return m?m[1].trim():null; }
 
     // ── DATE + TIME FORMATTER ─────────────────────────────────────────────────
@@ -3407,38 +3321,9 @@
         return 'yet_to_trigger';
     }
 
-    // ── PROGRESSIVE FIELD UNLOCK FOR FREE MEMBERS ────────────────────────────
-    // Unlock Entry/Expiry/Call-Put/CMP only when: 50%+ exit, SL hit/gone, full exit, or admin unlock
-    // Fix 8: postSentAt added — enables 2:45 PM time-based unlock (posts created before 14:45 IST)
-    // Fix 8: SL field now also unlocks on full exit (so free members see SL after trade closes)
-    function getFreeUnlockedFields(replies, postSentAt) {
-        const u = { callPut:false, entry:false, expiry:false, cmp:false, sl:false, all:false };
-        let cumExit = 0;
-        for (const r of (replies||[])) {
-            const c = r.content||'';
-            if (c.includes('[T2S_UNLOCK]')) { u.all=true; return u; }
-            const p = parseFollowUpContent(c);
-            if (p.isFullExit) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; u.sl=true; }
-            if (p.exitPct) {
-                cumExit = Math.min(100, cumExit + p.exitPct);
-                if (cumExit >= 50) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
-            }
-            if (p.slRevised) u.sl=true;
-        }
-        if (u.sl) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
-        // Fix 7: 2:45 PM time-based unlock — paid-only posts created BEFORE 14:45 IST auto-unlock for free members after 14:45
-        // Posts created AT or AFTER 14:45 as paid_only follow normal progressive unlock rules
-        if (postSentAt && !u.all) {
-            const tz = { timeZone: 'Asia/Kolkata' };
-            const nowIST = new Date(new Date().toLocaleString('en-US', tz));
-            const nowMins = nowIST.getHours()*60 + nowIST.getMinutes();
-            const postIST = new Date(new Date(postSentAt).toLocaleString('en-US', tz));
-            const isSameDay = postIST.toDateString() === nowIST.toDateString();
-            const postMins = postIST.getHours()*60 + postIST.getMinutes();
-            if (isSameDay && postMins < 14*60+45 && nowMins >= 14*60+45) u.all = true;
-        }
-        return u;
-    }
+    // checkpoint stage1_posts_gatekeeper (2026-10-25) — getFreeUnlockedFields moved to
+    // trade_unlock_shared.js (same reasoning as parseFollowUpContent/extractTradeAlertFields
+    // above). Do not redefine it here.
 
     // ── CUMULATIVE EXIT % ─────────────────────────────────────────────────────
     function getCumulativeExit(replies) {
@@ -5471,7 +5356,7 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         const deviceId = localStorage.getItem('t2s_uat_device_id');
         // Clear session immediately before any async work so refresh cannot auto-login
-        ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active','t2s_uat_request_pending'].forEach(k=>localStorage.removeItem(k));
+        ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active','t2s_uat_request_pending','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));
         // Best-effort: mark session inactive in DB
         if (memberId && deviceId) {
             sbFetch(
