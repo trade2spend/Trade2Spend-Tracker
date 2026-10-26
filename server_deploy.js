@@ -202,6 +202,88 @@ function _executeSecretValid(secret) {
   return !!secret && (secret === process.env.EXECUTE_SECRET || isValidAdminSessionToken(secret));
 }
 
+// ── MEMBER SESSION TOKEN (checkpoint stage1_posts_gatekeeper, 2026-10-25) ────────────────
+// UAT member equivalent of _issueAdminToken/isValidAdminSessionToken above. Issued on a
+// correct /uat-verify-pin or /uat-setup-pin — the ONLY place a caller's claimed member_id
+// is actually checked against a real credential (the PIN). Everywhere else in the UAT
+// client, member_id/device_id/tier were previously just trusted values the browser sent.
+// This token lets the new /uat-member-sb gatekeeper resolve a caller's REAL member_id/tier
+// server-side instead of trusting whatever the client claims. In-memory only, same accepted
+// limitation as the admin token (resets on VM restart — client re-logs in via PIN as normal).
+const _memberSessionTokens = new Map(); // token -> { memberId, deviceId, tier, isAdmin, freeAccess, expiresAt }
+const _memberDeviceTokens  = new Map(); // deviceId -> token (reverse index, mirrors admin pattern)
+const MEMBER_TOKEN_TTL_MS  = 24 * 60 * 60 * 1000; // generous — members have no existing re-auth prompt besides idle-lock/PIN screens, unlike admin's TOTP window
+
+function _issueMemberToken(memberId, deviceId, tier, isAdmin, freeAccess) {
+  const old = _memberDeviceTokens.get(deviceId);
+  if (old) _memberSessionTokens.delete(old);
+  const token = crypto.randomBytes(24).toString('hex');
+  _memberSessionTokens.set(token, { memberId, deviceId, tier, isAdmin: !!isAdmin, freeAccess: !!freeAccess, expiresAt: Date.now() + MEMBER_TOKEN_TTL_MS });
+  _memberDeviceTokens.set(deviceId, token);
+  return token;
+}
+function _validateMemberToken(token) {
+  if (!token) return null;
+  const entry = _memberSessionTokens.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { _memberSessionTokens.delete(token); _memberDeviceTokens.delete(entry.deviceId); return null; }
+  return entry;
+}
+// A resolved caller counts as "entitled to full content" under the SAME rule the client
+// already uses everywhere (e.g. uat.html:1282-1283, 2995, login_uat.html:566-567) — tier
+// paid OR free_access OR is_admin. Never derived from anything the client claims directly.
+function _memberIsUnlockedViewer(entry) {
+  return !!(entry && (entry.isAdmin || entry.tier === 'paid' || entry.freeAccess));
+}
+
+// Applies the free-viewer redaction rules to a /uat-member-sb posts result set:
+// - general/market_update/banner marked paid_only -> dropped entirely (Part A — mirrors
+//   uat.html's existing "skip paid_only entirely" rule for the Updates tab).
+// - ANY reply (parent_id set) marked paid_only -> dropped entirely. This is NOT a new rule —
+//   it's an existing admin-controlled per-reply choice (uat.html already filters
+//   r.audience==='paid_only' out of what it shows a free viewer), just now also enforced at
+//   the network layer instead of only in the UI.
+// - trade_alert PARENT marked paid_only -> kept, but its own extracted summary fields
+//   (entry/sl/optType/expiry) are masked per getFreeUnlockedFields computed from its OWN
+//   replies — the one real gap where the UI hides something the network response doesn't.
+// Fails CLOSED: if the shared redaction engine isn't loaded yet (trade_unlock_shared.js not
+// on disk — only possible before the first /http-update after this stage ships), trade_alert
+// paid_only parents are dropped entirely rather than sent unredacted.
+async function _redactPostsForFreeViewer(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const isLockableTradeAlertParent = r => r.post_type === 'trade_alert' && !r.parent_id && r.audience === 'paid_only';
+  if (!T2SUnlock) {
+    console.error('[stage1] trade_unlock_shared.js unavailable — dropping paid_only trade_alert parents instead of risking an unredacted send.');
+    return rows.filter(r => r.audience !== 'paid_only');
+  }
+  const kept = rows.filter(r => r.audience !== 'paid_only' || isLockableTradeAlertParent(r));
+  const parentIds = kept.filter(isLockableTradeAlertParent).map(r => r.id);
+  if (!parentIds.length) return kept;
+  let repliesByParent = {};
+  try {
+    const reps = await sbFetchUat(`posts?is_deleted=eq.false&parent_id=in.(${parentIds.map(id => `"${id}"`).join(',')})&select=id,parent_id,content,audience,sent_at,created_at`);
+    for (const r of (reps || [])) { (repliesByParent[r.parent_id] = repliesByParent[r.parent_id] || []).push(r); }
+  } catch (e) {
+    console.error('[stage1] failed to fetch replies for unlock-state check — treating affected posts as fully locked.', e.message);
+  }
+  return kept.map(r => {
+    if (!isLockableTradeAlertParent(r)) return r;
+    const replies = repliesByParent[r.id] || [];
+    const unlocked = T2SUnlock.getFreeUnlockedFields(replies, r.sent_at || r.created_at);
+    if (unlocked.all) return r;
+    return Object.assign({}, r, { content: T2SUnlock.redactPostContent(r.content, unlocked) });
+  });
+}
+
+// Loaded once at startup from local disk (NOT fetched live at request time — that would be
+// the risky "eval remote code on every use" pattern explicitly rejected during planning).
+// Reaches the VM's disk via the EXISTING /http-update self-update mechanism (see that
+// handler below), which already fetches server.js itself from the same public repo via an
+// authenticated trigger + a write-then-restart cycle, not a live eval.
+let T2SUnlock;
+try { T2SUnlock = require('./trade_unlock_shared.js'); }
+catch (e) { console.error('[stage1] trade_unlock_shared.js not found on disk yet — paid_only trade_alert redaction disabled until next /http-update. Updates-tab redaction (Part A) is unaffected.', e.message); T2SUnlock = null; }
+
 // Device-slot registration for the admin PIN flow — server-side equivalent of
 // admin.html's registerAdminSession(), reusing the exact same keep_alive_log
 // rows (source: admin_session_<deviceId>) so the two stay compatible. Evicting
@@ -894,6 +976,19 @@ function savePushSent() {
 }
 let _lastRealPriceTs     = 0;    // timestamp of last cycle where ≥1 index price came from a live source (not cache fallback)
 let _scraperRanTodayIST  = null; // IST date string of first scraper start today — distinguishes normal 9:15 start from mid-session crash
+
+// checkpoint stale_index_per_index_tracking (2026-10-26) — _lastRealPriceTs above only
+// proves AT LEAST ONE of Nifty/Sensex/BankNifty was live this cycle; it does not prove
+// the OTHERS were. Each index needs its OWN last-live-fetch time so a single index that
+// keeps failing (while the other two succeed) can be detected instead of silently riding
+// along, mislabeled "fresh", under the shared timestamp. Seeded at startup the same way
+// _lastRealPriceTs already is (see loadMarketSnapshotLocal() call site) — same baseline
+// for all three initially, diverging independently from there as each index's own
+// fetches succeed or fail. Diagnostic/alerting only — never sent to the PWA (/market
+// response is untouched by this checkpoint).
+let _idxLastGoodTs   = { NIFTY: 0, SENSEX: 0, BANKNIFTY: 0 };
+let _idxStaleAlerted = { NIFTY: false, SENSEX: false, BANKNIFTY: false };
+const IDX_STALE_ALERT_MS = 15 * 60 * 1000; // 15 min — matches the figure already shared with Tushar
 
 function loadHolidayState() {
   try {
@@ -2864,6 +2959,27 @@ async function runMarketScraper(force = false) {
     const _effectiveLastUpdated = _lastRealPriceTs
       ? new Date(_lastRealPriceTs).toISOString()
       : new Date().toISOString();
+    // checkpoint stale_index_per_index_tracking (2026-10-26) — per-index freshness,
+    // checked against the LIVE fetch result variables (nifty/sensexFinal/banknifty)
+    // BEFORE the `|| existing.indices?.X` fallback a few lines below — Codex-flagged
+    // caution: indexSources (line ~2973) is NOT usable for this, since it also carries
+    // the previous source label forward on a fallback (`_idxSrc.X || existing.indexSources?.X`)
+    // and would never reveal that this cycle's own fetch actually failed.
+    // Diagnostic/alerting only — does not change marketData, indices, or anything sent
+    // to the PWA; purely informs the Telegram alert below and the /debug field added
+    // separately for this checkpoint.
+    const _nowTsIdx = Date.now();
+    const _idxLive = { NIFTY: !!nifty, SENSEX: !!sensexFinal, BANKNIFTY: !!banknifty };
+    for (const _k of ['NIFTY', 'SENSEX', 'BANKNIFTY']) {
+      if (_idxLive[_k]) {
+        _idxLastGoodTs[_k] = _nowTsIdx;
+        _idxStaleAlerted[_k] = false; // recovered — allow a fresh alert if it goes stale again later
+      } else if (isMarketOpen && _idxLastGoodTs[_k] && (_nowTsIdx - _idxLastGoodTs[_k] > IDX_STALE_ALERT_MS) && !_idxStaleAlerted[_k]) {
+        _idxStaleAlerted[_k] = true; // fire once per stale episode, not every cycle
+        const _staleMin = Math.round((_nowTsIdx - _idxLastGoodTs[_k]) / 60000);
+        tgAlert(`⚠️ <b>${_k} price stuck</b>\nNo live fetch success for ${_staleMin} min during market hours — still showing a ${_staleMin}-min-old value while other indices may look fresh.`).catch(() => {});
+      }
+    }
     const marketData = {
       marketOpen:  isMarketOpen,
       lastUpdated: _effectiveLastUpdated,
@@ -4276,6 +4392,19 @@ const server = http.createServer(async (req, res) => {
       const code = await r.text();
       if (!code || code.length < 1000) { tgAlert('❌ HTTP update: downloaded file too small').catch(()=>{}); return; }
       fs.writeFileSync(path.join(__dirname, 'server.js'), code, 'utf8');
+      // checkpoint stage1_posts_gatekeeper (2026-10-25) — also pull the shared trade-unlock
+      // engine, same already-gated/authenticated trigger, same public-repo source as
+      // server.js itself above, same write-to-disk-then-restart pattern (no live eval of
+      // fetched code). Non-fatal if this one file fails — server.js restarts regardless,
+      // and the require() at startup already fails soft (redaction just stays disabled
+      // until the next successful /http-update, logged, not a crash).
+      try {
+        const ru = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/UAT/trade_unlock_shared.js?t=${Date.now()}`, {}, 15000);
+        if (ru.ok) {
+          const uCode = await ru.text();
+          if (uCode && uCode.length > 500) fs.writeFileSync(path.join(__dirname, 'trade_unlock_shared.js'), uCode, 'utf8');
+        }
+      } catch (eu) { console.error('[http-update] trade_unlock_shared.js fetch failed (non-fatal):', eu.message); }
       _scripMasterTs = 0; _scripMasterAttemptTs = 0;
       tgAlert('✅ <b>HTTP update complete.</b> Restarting in 3s…').catch(()=>{});
       setTimeout(() => process.exit(0), 3000);
@@ -4550,7 +4679,9 @@ const server = http.createServer(async (req, res) => {
       yahooMoversStatus: _yahooMoversStatus,
       khMemberRateSize: _khMemberRate.size,
       ghMarketPush: _ghMarketPushStatus,
-      marketSnapshotLocal: { lastSavedAt: _marketSnapshotSavedAt, lastUpdated: _marketSnapshotSavedTs ? new Date(_marketSnapshotSavedTs).toISOString() : null }
+      marketSnapshotLocal: { lastSavedAt: _marketSnapshotSavedAt, lastUpdated: _marketSnapshotSavedTs ? new Date(_marketSnapshotSavedTs).toISOString() : null },
+      // checkpoint stale_index_per_index_tracking (2026-10-26) — diagnostic only, not sent to the PWA
+      idxLastGoodTs: Object.fromEntries(Object.entries(_idxLastGoodTs).map(([k, v]) => [k, v ? new Date(v).toISOString() : null]))
     }));
     return;
   }
@@ -5514,9 +5645,10 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         if (urlPath === '/uat-setup-pin') {
           const mobile = String(parsed.mobile || '');
           if (!/^\+91\d{10}$/.test(mobile) || PIN_WEAK_LIST.includes(pin)) { res.end(JSON.stringify({ success: false })); return; }
-          const members = await sbFetchUat(`members?mobile=eq.${encodeURIComponent(mobile)}&status=eq.enabled&select=id`);
+          const members = await sbFetchUat(`members?mobile=eq.${encodeURIComponent(mobile)}&status=eq.enabled&select=id,tier,is_admin,free_access`);
           if (!members || !members.length) { res.end(JSON.stringify({ success: false })); return; }
           const memberId = members[0].id;
+          const _setupMember = members[0];
           const newHash = bcrypt.hashSync(pin, 10);
           // Atomic conditional write — exactly one caller can ever win this transition.
           // A 0-row response means pin_hash was already non-null (lost the race, or
@@ -5540,13 +5672,16 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
             res.end(JSON.stringify({ success: false, limitReached: true })); return;
           }
-          res.end(JSON.stringify({ success: true })); return;
+          // checkpoint stage1_posts_gatekeeper (2026-10-25) — issue a real login-proof,
+          // additive field only, nothing existing removed/renamed.
+          const _setupToken = _issueMemberToken(memberId, deviceId, _setupMember.tier, _setupMember.is_admin, _setupMember.free_access);
+          res.end(JSON.stringify({ success: true, sessionToken: _setupToken })); return;
         }
 
         // ── POST /uat-verify-pin ──────────────────────────────────────────────
         const memberId = String(parsed.member_id || '');
         if (!memberId) { res.end(JSON.stringify({ success: false })); return; }
-        const members = await sbFetchUat(`members?id=eq.${memberId}&select=id,status,pin_hash,tier,free_access`);
+        const members = await sbFetchUat(`members?id=eq.${memberId}&select=id,status,pin_hash,tier,free_access,is_admin`);
         // "disabled" is safe to reveal here — the caller already passed the earlier mobile-number
         // lookup to obtain this member_id, and the client already showed this exact message
         // before this fix (preserving existing behaviour, not a new disclosure).
@@ -5592,7 +5727,10 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             }
           }
           sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_success', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { tier: member.tier } }) }).catch(() => {});
-          res.end(JSON.stringify({ success: true })); return;
+          // checkpoint stage1_posts_gatekeeper (2026-10-25) — issue a real login-proof,
+          // additive field only, nothing existing removed/renamed.
+          const _verifyToken = _issueMemberToken(memberId, deviceId, member.tier, member.is_admin, member.free_access);
+          res.end(JSON.stringify({ success: true, sessionToken: _verifyToken })); return;
         }
 
         // ── Wrong PIN — atomic (compare-and-swap) attempt counting, no client-trusted state ──
@@ -5648,6 +5786,65 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       } catch (e) {
         console.error('[uat-pin]', e.message);
         try { res.end(JSON.stringify({ success: false })); } catch {}
+      }
+    });
+    return;
+  }
+
+  // ── UAT MEMBER GATEKEEPER (checkpoint stage1_posts_gatekeeper, 2026-10-25) ──────────────
+  // POST /uat-member-sb. No static secret header — the member session token IS the
+  // credential (same reasoning /uat-verify-pin already uses: a correct-credential check is
+  // itself the gate, nothing additional needed). Deliberately narrow for Stage 1: only the
+  // 'posts' table, only GET/POST/PATCH — this closes the paid-content leak, it is not yet a
+  // general-purpose member proxy (members/sessions/etc. stay on their current path for now,
+  // a later stage's job). Writes (POST/PATCH) require the TOKEN's own isAdmin flag — never
+  // a client-claimed value — matching today's real behaviour (only an is_admin member
+  // composes/edits posts from inside uat.html).
+  if (req.method === 'OPTIONS' && urlPath === '/uat-member-sb') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && urlPath === '/uat-member-sb') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (!UAT_SB_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT_SUPABASE_KEY not set on server' })); return;
+    }
+    let mBody = '';
+    req.on('data', c => mBody += c);
+    req.on('end', async () => {
+      try {
+        const { token, path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(mBody || '{}');
+        if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
+        const table = _sbProxyTable(path);
+        const m = String(method || 'GET').toUpperCase();
+        if (table !== 'posts' || !['GET', 'POST', 'PATCH'].includes(m)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
+        }
+        // Writes always require a real, currently-valid admin identity from the token —
+        // never client-claimed. Reads are different: UAT has an anonymous "browse free"
+        // mode (no PIN ever entered, no token exists) — a missing/invalid token on a GET is
+        // simply treated as the most-restricted free-tier viewer below, not rejected, since
+        // that's already the correct, safe behaviour for someone with no identity at all.
+        const entry = _validateMemberToken(token);
+        if ((m === 'POST' || m === 'PATCH') && !(entry && entry.isAdmin)) {
+          res.writeHead(entry ? 403 : 401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: entry ? 'Forbidden' : 'Unauthorized' })); return;
+        }
+        const fwdHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
+        const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method: m, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
+        const text = await sbRes.text();
+        if (!sbRes.ok || m !== 'GET' || _memberIsUnlockedViewer(entry)) {
+          res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+          res.end(text || '[]');
+          return;
+        }
+        let rows; try { rows = text ? JSON.parse(text) : []; } catch { rows = []; }
+        const out = await _redactPostsForFreeViewer(rows);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
       }
     });
     return;
@@ -5834,7 +6031,7 @@ process.on('unhandledRejection', (reason) => {
 loadState();
 // Local market snapshot first — /market serves the VM's own latest copy from the first request (market_json_stale)
 // _lastRealPriceTs seeded from the snapshot so a restart with every price source down keeps the true date (not "now")
-{ const _snap = loadMarketSnapshotLocal(); if (_snap) { _latestMarketData = _snap; _lastRealPriceTs = Date.parse(_snap.lastUpdated) || 0; } }
+{ const _snap = loadMarketSnapshotLocal(); if (_snap) { _latestMarketData = _snap; _lastRealPriceTs = Date.parse(_snap.lastUpdated) || 0; _idxLastGoodTs = { NIFTY: _lastRealPriceTs, SENSEX: _lastRealPriceTs, BANKNIFTY: _lastRealPriceTs }; } }
 loadHolidayState();
 loadPushSent();
 loadNifty50Cache();
