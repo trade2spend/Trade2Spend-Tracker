@@ -2449,25 +2449,6 @@ const N50_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 let _nifty50Symbols   = null; // ['ADANIENT', 'RELIANCE', ...] — NSE trading symbols
 let _nifty50SymbolsTs = 0;    // timestamp of last confirmed-fresh list
 
-// Symbols where Yahoo Finance ticker differs from NSE trading symbol.
-// Add entries here only when Yahoo uses a different name — not for URL encoding.
-const YF_SYMBOL_OVERRIDES = {
-  // e.g. 'ETERNAL': 'ZOMATO' — only needed if Yahoo hasn't updated yet
-};
-
-function nseToYFSymbol(nseSym) {
-  const base = YF_SYMBOL_OVERRIDES[nseSym] || nseSym;
-  return base.replace('&', '%26') + '.NS'; // URL-encode & for M&M → M%26M.NS
-}
-
-function yfToNSESymbol(yfSym) {
-  const base = yfSym.replace('.NS', '').replace('%26', '&');
-  for (const [nse, yf] of Object.entries(YF_SYMBOL_OVERRIDES)) {
-    if (yf === base) return nse;
-  }
-  return base;
-}
-
 function loadNifty50Cache() {
   try {
     if (fs.existsSync(N50_CACHE_FILE)) {
@@ -2528,52 +2509,6 @@ async function getNifty50Symbols() {
   return _nifty50Symbols || []; // return stale cache; empty only on first-ever run if NSE is down
 }
 
-let _yahooMoversCache = null, _yahooMoversCacheTs = 0, _yahooMoversStatus = 'never';
-async function fetchYahooNifty50Movers() {
-  // 5-minute cache
-  if (_yahooMoversCache && Date.now() - _yahooMoversCacheTs < 5 * 60 * 1000) return _yahooMoversCache;
-  const nseSymbols = await getNifty50Symbols();
-  if (!nseSymbols.length) return null;
-  const yfSymbols = nseSymbols.map(nseToYFSymbol);
-  // Fetch in batches of 5 with 300ms gap — avoids rate-limiting 50 parallel calls
-  const YF_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' };
-  const stocks = [];
-  const BATCH = 5;
-  for (let i = 0; i < yfSymbols.length; i += BATCH) {
-    const slice = yfSymbols.slice(i, i + BATCH);
-    const batch = await Promise.all(slice.map(sym =>
-      ft(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`, { headers: YF_HEADERS }, 8000)
-        .then(r => r.ok ? r.json() : null)
-        .then(d => {
-          const meta = d?.chart?.result?.[0]?.meta;
-          if (!meta?.regularMarketPrice) return null;
-          const price = parseFloat(meta.regularMarketPrice);
-          const prev  = parseFloat(meta.chartPreviousClose || 0);
-          if (!price || !prev) return null;
-          const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
-          return { symbol: yfToNSESymbol(sym), price, change };
-        })
-        .catch(() => null)
-    ));
-    stocks.push(...batch.filter(Boolean));
-    if (i + BATCH < yfSymbols.length) await new Promise(r => setTimeout(r, 300));
-  }
-  if (stocks.length < 5) {
-    _yahooMoversStatus = `failed — only ${stocks.length} stocks returned`;
-    console.log('[Yahoo50]', _yahooMoversStatus);
-    return null;
-  }
-  const result = {
-    gainers: stocks.filter(s => s.change >= 0).sort((a,b) => b.change - a.change),
-    losers:  stocks.filter(s => s.change < 0).sort((a,b) => a.change - b.change),
-    breadth: { advancing: stocks.filter(s => s.change >= 0).length, declining: stocks.filter(s => s.change < 0).length, unchanged: stocks.filter(s => s.change === 0).length }
-  };
-  _yahooMoversCache = result; _yahooMoversCacheTs = Date.now();
-  _yahooMoversStatus = `ok — ${stocks.length} stocks, top gainer: ${result.gainers[0]?.symbol} ${result.gainers[0]?.change}%`;
-  console.log('[Yahoo50]', _yahooMoversStatus);
-  return result;
-}
-
 // Kotak Nifty50 equity LTPs — used during market hours when NSE movers are blocked
 // Symbol list is fetched dynamically from NSE (see getNifty50Symbols above).
 let _kotakMoversCache = null, _kotakMoversCacheTs = 0;
@@ -2632,9 +2567,8 @@ async function fetchKotakNifty50LTPs() {
         .catch(e => { if (_loggedFailures < 3) { _loggedFailures++; console.log(`[kotak50-TRY] ${sym} (token ${resolved}) error: ${e.message}`); } return null; });
     };
     // Up to 3 total passes (1 initial + 2 retries) — only retrying symbols still missing after
-    // each pass. Batches of 5 with a 300ms gap throughout, same proven rate-limit-safe pattern
-    // already used for the Yahoo fallback (confirmed live, 2026-10-15: firing all ~50 at once
-    // triggers Kotak's "too many requests" error) — (checkpoint realtime_price_sourcing_phase2).
+    // each pass. Batches of 5 with a 300ms gap throughout — confirmed live, 2026-10-15: firing
+    // all ~50 at once triggers Kotak's "too many requests" error (checkpoint realtime_price_sourcing_phase2).
     const KOTAK50_BATCH = 5;
     const bySymbol = {};
     let pending = symbols.slice();
@@ -2686,30 +2620,6 @@ async function fetchKotakNifty50LTPs() {
   } finally {
     _kotak50InFlight = false;
   }
-}
-
-// Yahoo Finance fallback — used when NSE India API is blocked/down AND Kotak not logged in
-const YAHOO_SYMBOLS = { NIFTY: '%5ENSEI', BANKNIFTY: '%5ENSEBANK', SENSEX: '%5EBSESN' };
-async function fetchYahooIndex(instrument) {
-  const sym = YAHOO_SYMBOLS[instrument.toUpperCase()];
-  if (!sym) return null;
-  try {
-    const r = await ft(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
-      8000
-    );
-    if (!r.ok) return null;
-    const d = await r.json();
-    const meta = d?.chart?.result?.[0]?.meta;
-    if (!meta || !meta.regularMarketPrice) return null;
-    const price = parseFloat(meta.regularMarketPrice);
-    const prev  = parseFloat(meta.chartPreviousClose || meta.previousClose || 0);
-    const change    = prev ? parseFloat((price - prev).toFixed(2)) : 0;
-    const changePct = prev ? parseFloat(((change / prev) * 100).toFixed(2)) : 0;
-    console.log(`[Yahoo] ${instrument}: ${price} (${changePct}%)`);
-    return { price, change, changePct };
-  } catch(e) { console.error(`[Yahoo] ${instrument} error: ${e.message}`); return null; }
 }
 
 // ── LOCAL MARKET SNAPSHOT (market_json_stale) ────────────────────────────────
@@ -2887,7 +2797,9 @@ async function runMarketScraper(force = false) {
     // Push final closing snapshot — sourced from the server's own in-memory last-live
     // price (never a GitHub re-read), which can lag behind due to the 15-min push
     // rate limit and would otherwise bake a stale index price in as "final" (checkpoint
-    // sensex_close_stale, 2026-10-14). Fetch Yahoo Nifty50 for closing gainers/losers.
+    // sensex_close_stale, 2026-10-14). checkpoint no_yahoo_source (2026-10-28) — Yahoo removed
+    // as a closing-gainers/losers source per Tushar's decision; Kotak is the only live source
+    // here now, existing.gainers/losers (last-known) is the fallback if it fails.
     try {
       const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
       const memIST    = _latestMarketData?.lastUpdated
@@ -2906,15 +2818,13 @@ async function runMarketScraper(force = false) {
       // Closing snapshot — Kotak session is still alive at 3:35 PM; LTP at this moment = close price.
       // change ≥ 0 → advancing, change < 0 → declining (flat counts as advance per product rule).
       _kotakMoversCacheTs = 0; // force fresh fetch, not cached intraday snapshot
-      const closingMovers = await fetchKotakNifty50LTPs().catch(() => null) || await fetchYahooNifty50Movers();
+      const closingMovers = await fetchKotakNifty50LTPs().catch(() => null);
       if (closingMovers?.gainers?.length > 0 || closingMovers?.breadth) {
         existing.gainers = closingMovers.gainers || [];
         existing.losers  = closingMovers.losers  || [];
         if (closingMovers.breadth) {
           existing.breadth = { nifty50: closingMovers.breadth };
           console.log(`[close] Kotak breadth: ${closingMovers.breadth.advancing}↑ ${closingMovers.breadth.declining}↓ (${closingMovers.count} stocks)`);
-        } else {
-          console.log('[close] Yahoo closing movers fetched (no breadth):', closingMovers.gainers?.length, 'gainers');
         }
       }
       await pushMarketToGitHub(existing, true); // force=true — once-daily closing commit must not be silently rate-limited away
@@ -2939,8 +2849,13 @@ async function runMarketScraper(force = false) {
       fetchNSEOptionChainFallback('NIFTY').catch(()=>{}),
       fetchNSEOptionChainFallback('BANKNIFTY').catch(()=>{})
     ]);
-    // Kotak session active → Kotak primary for index prices, NSE fallback
-    // Kotak session not active → NSE public website primary, Yahoo last resort
+    // Kotak session active → Kotak primary for index prices, NSE/BSE fallback
+    // Kotak session not active → NSE public website / BSE India public API only
+    // checkpoint no_yahoo_source (2026-10-28) — Yahoo removed as a fallback entirely, per
+    // Tushar's decision: it returned a correct live SENSEX price but a wrong previous-close
+    // reference, producing a badly wrong "change" value (BUG, 2026-10-28). If Kotak and
+    // NSE/BSE both fail, the index simply stays null here — the existing `|| existing.indices?.X`
+    // fallback a few lines below then serves the last-known-good value, never a 3rd-party guess.
     let nifty, banknifty, sensexFinal;
     // Tracks which source actually resolved each index this cycle — internal/backend only,
     // never surfaced on the PWA (checkpoint realtime_price_sourcing, 2026-10-15). Stays null
@@ -2950,24 +2865,18 @@ async function runMarketScraper(force = false) {
       const kotakIdx = await fetchKotakIndicesCombined();
       nifty = kotakIdx?.NIFTY || null; if (nifty) _idxSrc.NIFTY = 'kotak';
       if (!nifty) { nifty = parseNSEIndex(nseData, 'NIFTY'); if (nifty) _idxSrc.NIFTY = 'nse'; }
-      if (!nifty) { nifty = await fetchYahooIndex('NIFTY'); if (nifty) _idxSrc.NIFTY = 'yahoo'; }
 
       banknifty = kotakIdx?.BANKNIFTY || null; if (banknifty) _idxSrc.BANKNIFTY = 'kotak';
       if (!banknifty) { banknifty = parseNSEIndex(nseData, 'BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'nse'; }
-      if (!banknifty) { banknifty = await fetchYahooIndex('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'yahoo'; }
 
       sensexFinal = kotakIdx?.SENSEX || null; if (sensexFinal) _idxSrc.SENSEX = 'kotak';
-      if (!sensexFinal) { sensexFinal = await fetchYahooIndex('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'yahoo'; }
       if (!sensexFinal) { sensexFinal = sensex; if (sensexFinal) _idxSrc.SENSEX = 'bse'; }
     } else {
       nifty = parseNSEIndex(nseData, 'NIFTY'); if (nifty) _idxSrc.NIFTY = 'nse';
-      if (!nifty) { nifty = await fetchYahooIndex('NIFTY'); if (nifty) _idxSrc.NIFTY = 'yahoo'; }
 
       banknifty = parseNSEIndex(nseData, 'BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'nse';
-      if (!banknifty) { banknifty = await fetchYahooIndex('BANKNIFTY'); if (banknifty) _idxSrc.BANKNIFTY = 'yahoo'; }
 
-      sensexFinal = await fetchYahooIndex('SENSEX'); if (sensexFinal) _idxSrc.SENSEX = 'yahoo';
-      if (!sensexFinal) { sensexFinal = sensex; if (sensexFinal) _idxSrc.SENSEX = 'bse'; }
+      sensexFinal = sensex; if (sensexFinal) _idxSrc.SENSEX = 'bse';
     }
     const n50 = nseData?.data?.find(x => x.indexSymbol === 'NIFTY 50' || x.index === 'NIFTY 50');
     // Kotak-derived breadth (change ≥ 0 = advancing) takes priority over NSE API counts
@@ -3006,6 +2915,11 @@ async function runMarketScraper(force = false) {
         tgAlert(`⚠️ <b>${_k} price stuck</b>\nNo live fetch success for ${_staleMin} min during market hours — still showing a ${_staleMin}-min-old value while other indices may look fresh.`).catch(() => {});
       }
     }
+    // checkpoint no_yahoo_source (2026-10-28, Codex-flagged) — a defined-but-EMPTY array is
+    // truthy in JS, so the old `||` chain below could lock in an empty gainers/losers list
+    // instead of falling through to the last-known-good one. This picks the first array in
+    // the list that actually HAS entries, same preference order as before.
+    const _firstNonEmpty = (...arrs) => arrs.find(a => a && a.length) || [];
     const marketData = {
       marketOpen:  isMarketOpen,
       lastUpdated: _effectiveLastUpdated,
@@ -3020,8 +2934,8 @@ async function runMarketScraper(force = false) {
       indexSources: { NIFTY: _idxSrc.NIFTY || existing.indexSources?.NIFTY || null, BANKNIFTY: _idxSrc.BANKNIFTY || existing.indexSources?.BANKNIFTY || null, SENSEX: _idxSrc.SENSEX || existing.indexSources?.SENSEX || null },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
       // Prefer whichever source has more stocks — Kotak beats NSE fallback (which caps at ~20)
-      gainers: (_kotakMoversCache?.gainers?.length > (movers?.gainers?.length || 0) ? _kotakMoversCache.gainers : movers?.gainers) || _kotakMoversCache?.gainers || existing.gainers || [],
-      losers:  (_kotakMoversCache?.losers?.length  > (movers?.losers?.length  || 0) ? _kotakMoversCache.losers  : movers?.losers)  || _kotakMoversCache?.losers  || existing.losers  || []
+      gainers: _firstNonEmpty(_kotakMoversCache?.gainers?.length > (movers?.gainers?.length || 0) ? _kotakMoversCache.gainers : movers?.gainers, _kotakMoversCache?.gainers, existing.gainers),
+      losers:  _firstNonEmpty(_kotakMoversCache?.losers?.length  > (movers?.losers?.length  || 0) ? _kotakMoversCache.losers  : movers?.losers,  _kotakMoversCache?.losers,  existing.losers)
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
@@ -4702,7 +4616,6 @@ const server = http.createServer(async (req, res) => {
       kotakLtpRunning: !!_kotakLtpInterval,
       ltpTest,
       ltpProbe,
-      yahooMoversStatus: _yahooMoversStatus,
       khMemberRateSize: _khMemberRate.size,
       ghMarketPush: _ghMarketPushStatus,
       marketSnapshotLocal: { lastSavedAt: _marketSnapshotSavedAt, lastUpdated: _marketSnapshotSavedTs ? new Date(_marketSnapshotSavedTs).toISOString() : null },
@@ -6101,7 +6014,12 @@ server.listen(PORT, () => console.log(`T2S bot v5.0 listening on port ${PORT}`))
 
 // Periodic GitHub poll — refreshes _latestMarketData when Python scraper (market_scraper.py) is
 // pushing to GitHub. Never overwrites with older/equal data; preserves in-memory option chain fields.
+// checkpoint no_yahoo_source (2026-10-28) — gated to market hours: market_scraper.py has its own
+// market-hours guard and auto-stop at 3:45pm IST (confirmed in Trading_Bot/market_scraper.py), so
+// it never pushes anything new outside market hours either — nothing for this poll to find while
+// closed. Consistent with Tushar's rule: no live-data API calls while the market is closed.
 setInterval(async () => {
+  if (!isMarketHours()) return;
   try {
     const r = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/market.json?t=${Date.now()}`, {}, 5000);
     if (!r.ok) return;
@@ -6149,23 +6067,12 @@ setTimeout(async () => {
   }
   if (isMarketHours() && !marketScraperInterval) {
     startMarketScraper();
-  } else if (!isMarketHours()) {
-    // Market closed at startup — fetch Yahoo closing movers to update stale gainers/losers
-    fetchYahooNifty50Movers().then(movers => {
-      if (movers?.gainers?.length > 0 && _latestMarketData && (_latestMarketData.gainers?.length || 0) <= movers.gainers.length) {
-        _latestMarketData.gainers = movers.gainers;
-        _latestMarketData.losers  = movers.losers;
-        if (movers.breadth) _latestMarketData.breadth = { nifty50: movers.breadth };
-        console.log('[startup] Yahoo closing movers applied:', movers.gainers.length, 'gainers');
-        const snapshot = { ..._latestMarketData };
-        delete snapshot.optionLTPs; delete snapshot.expiry;
-        saveMarketSnapshotLocal(snapshot);
-        pushMarketToGitHub(snapshot).catch(e => console.error('[startup] push movers failed:', e.message));
-      }
-    }).catch(() => {});
-    // Self-heal: refresh closing prices once at startup so a restart never keeps serving an old snapshot (market_json_stale)
-    runMarketScraper(true).catch(e => console.error('[startup] snapshot refresh failed:', e.message));
   }
+  // checkpoint no_yahoo_source (2026-10-28) — removed: Yahoo closing-movers refresh, and the
+  // forced runMarketScraper(true) live-fetch that used to run here when market is closed at
+  // startup. Per Tushar's decision: no live-data API of any kind should be hit while the market
+  // is closed, including at restart — the local snapshot already loaded above (loadMarketSnapshotLocal,
+  // market_json_stale fix) already holds the correct last-fetched data, so no refetch is needed.
 }, 5000);
 
 // ── SUPABASE TRADE SL MONITOR ─────────────────────────────────────────────────
