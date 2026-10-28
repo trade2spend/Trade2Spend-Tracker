@@ -85,6 +85,15 @@ const SB_URL       = process.env.SUPABASE_URL || 'https://keuzqxoxtlozlqjjjqvr.s
 const SB_KEY       = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldXpxeG94dGxvemxxampqcXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDk3ODcsImV4cCI6MjA5NTE4NTc4N30.VAxiflefz816geWOE7Onq8SE6dXST46MNk0LBJqGNTs';
 const GH_TOKEN       = process.env.GH_TOKEN || '';
 const GH_REPO        = process.env.GH_REPO  || 'Trade2spend/Trade2Spend-Tracker';
+// checkpoint private_post_backup (2026-10-27) — posts_backup.json used to live in the same
+// PUBLIC repo as the website itself (GH_REPO above), readable by anyone, no login — closed
+// by moving it to a separate PRIVATE repo Tushar creates and owns. Same GH_TOKEN works
+// against both (GitHub's API auth isn't repo-visibility-specific) as long as the token's
+// account has access to this repo too — same account, so it does by default.
+// No fallback to the public repo if this isn't set — a backup write should fail loudly
+// (now that failures are actually checked, see /backup-post below) rather than silently
+// fall back to writing paid content into the public repo again.
+const GH_BACKUP_REPO = process.env.GH_BACKUP_REPO || '';
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
 const GEMINI_KEY     = process.env.GEMINI_KEY     || '';
 const GROQ_KEY       = process.env.GROQ_KEY       || '';
@@ -2736,6 +2745,23 @@ let _lastGhMarketPush = 0;
 // Non-secret push status for /debug — timestamps and HTTP status text only, never the token
 let _ghMarketPushStatus = { lastOkAt: null, lastFailAt: null, lastError: null, failStreak: 0 };
 let _ghPushAlertDate = null; // IST date of last push-failure Telegram alert (max one per day)
+// checkpoint private_post_backup (2026-10-27) — same pattern as _ghPushFailed below, for the
+// posts backup specifically. Root cause of the original silent failure: /backup-post never
+// checked whether its GET or PUT to GitHub actually succeeded — it always told the caller
+// "ok: true" regardless. This mirrors _ghPushFailed/_ghPushAlertDate exactly so a future
+// failure (wrong repo, token issue, etc.) is now visible — both to the admin app (via its
+// EXISTING error-toast handling, which was always correct, just never actually triggered)
+// and via a throttled Telegram alert.
+let _backupPushAlertDate = null;
+function _backupPushFailed(msg) {
+  console.error('[backup-post] failed:', msg);
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toDateString();
+  if (_backupPushAlertDate !== today) {
+    _backupPushAlertDate = today;
+    tgAlert(`⚠️ <b>Post backup failing</b>\n${msg}\nCheck GH_BACKUP_REPO/GH_TOKEN in VM .env.`).catch(() => {});
+  }
+  return false;
+}
 function _ghPushFailed(msg) {
   _ghMarketPushStatus.lastFailAt = new Date().toISOString();
   _ghMarketPushStatus.lastError  = msg;
@@ -5011,24 +5037,44 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     if (!GH_TOKEN) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on server' })); return; }
+    // checkpoint private_post_backup (2026-10-27) — fails loudly instead of silently
+    // falling back to the old public repo (see GH_BACKUP_REPO declaration for why).
+    if (!GH_BACKUP_REPO) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_BACKUP_REPO not set on server' })); return; }
     let body = '';
     req.on('data', c => { body += c; });
     req.on('end', async () => {
       let newPost;
       try { newPost = JSON.parse(body); } catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' })); return; }
       try {
-        const api = `https://api.github.com/repos/${GH_REPO}/contents/posts_backup.json`;
+        const api = `https://api.github.com/repos/${GH_BACKUP_REPO}/contents/posts_backup.json`;
         const hdrs = { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
         const r = await ft(api, { headers: hdrs }, 8000);
-        const cur = await r.json();
+        // checkpoint private_post_backup (2026-10-27) — root cause of the original silent
+        // failure: this GET's status was never checked. 404 = file doesn't exist yet in the
+        // new repo (expected on first write) → start fresh with sha ''. Any OTHER non-2xx is
+        // a real failure and must not be treated as "empty file".
+        if (!r.ok && r.status !== 404) {
+          const errText = await r.text().catch(() => '');
+          res.writeHead(502); res.end(JSON.stringify({ ok: false, error: `GitHub GET ${r.status}` }));
+          _backupPushFailed(`GET ${r.status}: ${errText.slice(0, 200)}`); return;
+        }
+        const cur = r.ok ? await r.json() : {};
         const current = cur.content ? JSON.parse(Buffer.from(cur.content.replace(/\n/g, ''), 'base64').toString()) : { posts: [] };
         const sha = cur.sha || '';
         if (!current.posts.find(p => p.id === newPost.id)) current.posts.unshift(newPost);
         current.lastUpdated = new Date().toISOString();
         const encoded = Buffer.from(JSON.stringify(current, null, 2)).toString('base64');
-        await ft(api, { method: 'PUT', headers: hdrs, body: JSON.stringify({ message: `backup: ${newPost.post_type||'post'}`, content: encoded, sha, branch: 'main' }) }, 12000);
+        const p = await ft(api, { method: 'PUT', headers: hdrs, body: JSON.stringify({ message: `backup: ${newPost.post_type||'post'}`, content: encoded, sha, branch: 'main' }) }, 12000);
+        // checkpoint private_post_backup (2026-10-27) — the other half of the original bug:
+        // this PUT's status was never checked either, so a rejected save (e.g. stale sha)
+        // was reported to the admin app as success regardless.
+        if (!p.ok) {
+          const errText = await p.text().catch(() => '');
+          res.writeHead(502); res.end(JSON.stringify({ ok: false, error: `GitHub PUT ${p.status}` }));
+          _backupPushFailed(`PUT ${p.status}: ${errText.slice(0, 200)}`); return;
+        }
         res.writeHead(200); res.end(JSON.stringify({ ok: true }));
-      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })); }
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })); _backupPushFailed(e.message); }
     });
     return;
   }
@@ -5046,12 +5092,28 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, error: 'Unauthorized' })); return;
     }
     if (!GH_TOKEN) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_TOKEN not set on server' })); return; }
+    if (!GH_BACKUP_REPO) { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'GH_BACKUP_REPO not set on server' })); return; }
     req.on('data', () => {});
     req.on('end', async () => {
       try {
-        // Fetch backup from GitHub
-        const bkR = await ft(`https://raw.githubusercontent.com/${GH_REPO}/main/posts_backup.json?t=${Date.now()}`, {}, 8000);
-        const backup = await bkR.json();
+        // checkpoint private_post_backup (2026-10-27) — was an UNAUTHENTICATED
+        // raw.githubusercontent.com fetch, which only ever worked because the repo was
+        // public. A private repo returns 404 to an unauthenticated request regardless of
+        // whether the file exists, so this must use the same authenticated GitHub API +
+        // base64-decode pattern /backup-post already uses, pointed at GH_BACKUP_REPO.
+        const bkApi = `https://api.github.com/repos/${GH_BACKUP_REPO}/contents/posts_backup.json`;
+        const bkR = await ft(bkApi, { headers: { 'Authorization': `token ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json' } }, 8000);
+        // checkpoint private_post_backup (2026-10-27, Codex round 2) — 404 means "no backup
+        // written yet" (e.g. a brand-new private repo before the first post), same as
+        // /backup-post's own GET already treats it — not a real failure. Any OTHER non-2xx
+        // still is.
+        if (!bkR.ok && bkR.status !== 404) {
+          const errText = await bkR.text().catch(() => '');
+          res.writeHead(502); res.end(JSON.stringify({ ok: false, error: `GitHub GET ${bkR.status}` }));
+          console.error('[restore] backup fetch failed:', bkR.status, errText.slice(0, 200)); return;
+        }
+        const bkJson = bkR.ok ? await bkR.json() : {};
+        const backup = bkJson.content ? JSON.parse(Buffer.from(bkJson.content.replace(/\n/g, ''), 'base64').toString()) : { posts: [] };
         const backupPosts = backup.posts || [];
         if (!backupPosts.length) { res.writeHead(200); res.end(JSON.stringify({ ok: true, restored: 0, message: 'Backup is empty' })); return; }
         // Fetch existing Supabase post IDs
