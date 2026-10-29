@@ -1,4 +1,4 @@
-<!-- T2S-UAT-20261029-001 | login_uat.html: lockout live countdown (checkpoint pin_lock_countdown, Codex-reviewed 2 rounds, no unresolved blockers). checkLock()'s lock message used to be rendered once and never updated — member had to manually refresh after the 30-min timer actually passed. Now _showLockMsg()/_startLockCountdown() count it down live (30s cadence, same pattern as the existing _startForgotPinCountdown), and at zero, RE-ASKS THE SERVER (checkLock() again) before clearing the lock UI and re-enabling the PIN pad — never trusts this device's own clock alone. Counts down identically for the plain "Account locked" message and the "waiting for admin" message — Tushar's explicit call, 2026-10-29: an unlock request does not pause or extend the 30-min timer; if admin hasn't acted by the time it naturally expires, the member can simply retry their existing PIN from the same device. New module-level `_lockIv` interval handle, cleared in switchAccount() too so a stale timer can't update the wrong screen/member. Also: processSetupPin() now shows a specific message when the server rejects a post-reset setup attempt from an unregistered device (see server.js same-date tag, checkpoint pin_reset_device_lock) instead of the generic "failed to save" text. Rollback: restore the pre-20261029 checkLock()/_showLockMsg() (single-render, no interval), remove _lockIv from the top-of-script let declaration and its clearInterval call in switchAccount(), revert processSetupPin()'s error-message line to drop the deviceNotRegistered branch. -->
+<!-- T2S-UAT-20261029-003 | login_uat.html: lockout live countdown, REVISED after live UAT test (checkpoint pin_lock_countdown). v001 only wired the countdown into checkLock() (page-load/re-entry) — Tushar tested live and found the minutes display "static at 30 minutes" until a manual refresh, because verifyPin()'s own d.locked branch (the moment a 3rd wrong PIN locks the account, mid-session) rendered its own one-off lock text and never called the countdown at all. v002: _renderLockText/_clearLockUI/_startLockCountdown/_showLockMsg moved to module scope so verifyPin()'s d.locked branch can call _showLockMsg() too, same as checkLock(); switched from whole-minute text + 30s ticks to a live mm:ss display ticking every 1 second, per Tushar's explicit request after seeing the minute-only display live. v003 (Codex-found, same-day): (a) added a window 'pagehide' listener to clear _lockIv on ANY navigation away, not just switchAccount() — several other `window.location.href=` exit points in this file didn't clear it explicitly (a real navigation kills the interval anyway, this is defensive/correctness cleanup, not a functional bug fix); (b) _showLockMsg() no longer renders directly — it only calls _startLockCountdown(), whose own first _tick() (run synchronously before setInterval) already renders correctly OR re-checks the server if targetDate is already in the past; removes a brief "0:00" flash that used to show before that recheck corrected it. At zero, RE-ASKS THE SERVER (checkLock() again) before clearing the lock UI and re-enabling the PIN pad — never trusts this device's own clock alone. Counts down identically for the plain "Account locked" message and the "waiting for admin" message. Request-unlock button's disabled/"Request Submitted" state resets on every fresh plain-lock render (Codex-found in v001). Also: processSetupPin() shows a specific message when the server rejects a post-reset setup attempt from an unregistered device (see server.js same-date tag, checkpoint pin_reset_device_lock). Rollback: restore the pre-20261029 checkLock() (single-render, no interval, whole-minute text, no module-level helpers, no pagehide listener), revert verifyPin()'s d.locked branch to its own inline text, remove _lockIv from the top-of-script let declaration and its clearInterval call in switchAccount(), revert processSetupPin()'s error-message line to drop the deviceNotRegistered branch. -->
 <!-- T2S-UAT-20261018-001 | login_uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed client-side hashPin() (SHA-256+static-salt, compared in-browser against a fetched pin_hash). verifyPin() and processSetupPin() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin — pin_hash is never fetched to or computed in this page again; bcrypt + atomic server-side lockout counters live entirely server-side (see server.js same-date tag). Device-registered-vs-new lockout behavior, concurrent-session-limit logic, and all other screens unchanged. Companion: uat.html (_faVerifyPin/_faSetupPin2), server.js. Rollback: restore hashPin(), revert verifyPin()/processSetupPin() to the pre-20261018 direct-Supabase compare, remove the _VM constant. -->
 <!-- T2S-UAT-20260918-002 | login_uat.html: disabled-account message on redirect — init() fallthrough to screen-mobile now reads localStorage t2s_uat_logout_reason; if 'disabled', clears the key and shows "Your account has been disabled. You have been logged out. Please reach out to @T2Sview for more details." in existing #mobile-err element using existing .err-msg/.show pattern. Flag is set by uat.html init() (T2S-UAT-20260918-002 companion). Rollback: remove the 2-line flag-check block from init() fallthrough. -->
 <!-- T2S-UAT-20260913-005 | login_uat.html: permanent lock+request state fix — (A) checkLock() now DB-first authoritative; if DB not locked but localStorage lock exists for same member_id, uses localStorage; both paths call _applyWaitingState() when request is pending (disables PIN pad, hides Forgot PIN, shows Request Submitted); (B) new _applyWaitingState() function; (C) requestUnlock() success calls _applyWaitingState() immediately; (D) checkMobile() adds localStorage lock check after DB check using t2s_uat_locked_mid. Rollback: revert checkLock() to original, remove _applyWaitingState(), remove _applyWaitingState() call in requestUnlock(), remove localStorage lock block in checkMobile(). -->
@@ -433,58 +433,71 @@ function onTypeChange(type){
 function browseFree(){localStorage.setItem('t2s_uat_mode','free');['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login'].forEach(k=>localStorage.removeItem(k));window.location.href=MAIN_APP_URL;}
 function switchAccount(){if(_lockIv){clearInterval(_lockIv);_lockIv=null;}['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
 
-// checkpoint pin_lock_countdown (2026-10-29) — the lock message used to be rendered once
-// and never touched again, so a member had to manually refresh after the 30-min timer
-// actually passed. Now it counts down live (same 30s cadence as _startForgotPinCountdown
-// elsewhere in this file) and, the moment it hits zero, RE-ASKS THE SERVER (DB stays
-// authoritative — never just trust this device's own clock) before re-enabling the PIN pad.
-// Counts down identically whether or not an unlock request is pending — Tushar's explicit
-// call, 2026-10-29: requesting unlock does not pause/extend the 30-min timer; if admin hasn't
-// acted by the time it naturally expires, the member can simply retry their existing PIN.
+// checkpoint pin_lock_countdown (2026-10-29, revised after live UAT test) — the lock message
+// used to be rendered once and never touched again, so a member had to manually refresh
+// after the 30-min timer actually passed. Now it counts down live, every second, as mm:ss
+// (Tushar's explicit request after testing — a per-minute tick was too coarse), and the
+// moment it hits zero, RE-ASKS THE SERVER (DB stays authoritative — never just trust this
+// device's own clock) before re-enabling the PIN pad. Counts down identically whether or not
+// an unlock request is pending — requesting unlock does not pause/extend the 30-min timer; if
+// admin hasn't acted by the time it naturally expires, the member can simply retry their
+// existing PIN. These 4 helpers are module-level (not nested inside checkLock()) specifically
+// so verifyPin()'s own d.locked branch can reuse them too — Codex-found + live-confirmed gap:
+// that branch used to render its own one-off, never-updating lock text (the exact "stuck at
+// 30 minutes" symptom Tushar saw live), since it never called into this countdown at all.
+function _fmtMmSs(msLeft){
+  const totalSec=Math.max(0,Math.ceil(msLeft/1000));
+  const mm=Math.floor(totalSec/60);const ss=totalSec%60;
+  return `${mm}:${ss.toString().padStart(2,'0')}`;
+}
+function _renderLockText(msLeft){
+  const mmss=_fmtMmSs(msLeft);
+  const req=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
+  if(req&&Date.now()-req<2*60*60*1000){
+    document.getElementById('pin-lock').textContent=`Unlock request submitted — waiting for admin. ${mmss} remaining.`;
+    _applyWaitingState();
+  }else{
+    document.getElementById('pin-lock').textContent=`Account locked. Try again in ${mmss}.`;
+    // checkpoint pin_lock_countdown (2026-10-29, Codex-found) — this button can carry stale
+    // disabled/"Request Submitted" state from an earlier lock cycle's _applyWaitingState()
+    // call; reset it explicitly every time this plain-lock branch renders.
+    const rub=document.getElementById('request-unlock-btn');
+    rub.style.display='inline-block';rub.disabled=false;rub.style.opacity='1';rub.textContent='🔓 Request Unlock';
+  }
+}
+function _clearLockUI(){
+  document.getElementById('pin-lock').style.display='none';
+  document.getElementById('pin-lock').textContent='';
+  document.getElementById('request-unlock-btn').style.display='none';
+  document.querySelectorAll('.pin-key').forEach(b=>{b.disabled=false;b.style.opacity='1';});
+  const pf=document.getElementById('pin-forgot');if(pf)pf.style.display='';
+  pinBuffer='';updateDots('');
+  localStorage.removeItem('t2s_uat_lock_until');localStorage.removeItem('t2s_uat_locked_mid');localStorage.removeItem('t2s_uat_unlock_req_at');
+}
+function _startLockCountdown(targetDate){
+  if(_lockIv){clearInterval(_lockIv);_lockIv=null;}
+  function _tick(){
+    const msLeft=targetDate-new Date();
+    if(msLeft<=0){
+      clearInterval(_lockIv);_lockIv=null;
+      checkLock().then(stillLocked=>{if(!stillLocked)_clearLockUI();});
+      return;
+    }
+    _renderLockText(msLeft);
+  }
+  _tick();
+  _lockIv=setInterval(_tick,1000);
+}
+function _showLockMsg(targetDate){
+  document.getElementById('pin-lock').style.display='block';
+  // checkpoint pin_lock_countdown (2026-10-29, Codex-found) — don't render here directly;
+  // _startLockCountdown()'s own first _tick() (called synchronously, before setInterval)
+  // already renders the correct text OR re-checks the server if targetDate is already in the
+  // past. Rendering here too briefly flashed "0:00" for an already-expired targetDate before
+  // the recheck corrected it a moment later.
+  _startLockCountdown(targetDate);
+}
 async function checkLock(){
-  function _renderLockText(msLeft){
-    const m=Math.max(1,Math.ceil(msLeft/60000));
-    const req=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
-    if(req&&Date.now()-req<2*60*60*1000){
-      document.getElementById('pin-lock').textContent=`Unlock request submitted — waiting for admin. ${m} minute${m>1?'s':''} remaining.`;
-      _applyWaitingState();
-    }else{
-      document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;
-      // checkpoint pin_lock_countdown (2026-10-29, Codex-found) — this button can carry stale
-      // disabled/"Request Submitted" state from an earlier lock cycle's _applyWaitingState()
-      // call; reset it explicitly every time this plain-lock branch renders.
-      const rub=document.getElementById('request-unlock-btn');
-      rub.style.display='inline-block';rub.disabled=false;rub.style.opacity='1';rub.textContent='🔓 Request Unlock';
-    }
-  }
-  function _clearLockUI(){
-    document.getElementById('pin-lock').style.display='none';
-    document.getElementById('pin-lock').textContent='';
-    document.getElementById('request-unlock-btn').style.display='none';
-    document.querySelectorAll('.pin-key').forEach(b=>{b.disabled=false;b.style.opacity='1';});
-    const pf=document.getElementById('pin-forgot');if(pf)pf.style.display='';
-    pinBuffer='';updateDots('');
-    localStorage.removeItem('t2s_uat_lock_until');localStorage.removeItem('t2s_uat_locked_mid');localStorage.removeItem('t2s_uat_unlock_req_at');
-  }
-  function _startLockCountdown(targetDate){
-    if(_lockIv){clearInterval(_lockIv);_lockIv=null;}
-    function _tick(){
-      const msLeft=targetDate-new Date();
-      if(msLeft<=0){
-        clearInterval(_lockIv);_lockIv=null;
-        checkLock().then(stillLocked=>{if(!stillLocked)_clearLockUI();});
-        return;
-      }
-      _renderLockText(msLeft);
-    }
-    _tick();
-    _lockIv=setInterval(_tick,30000);
-  }
-  function _showLockMsg(targetDate){
-    document.getElementById('pin-lock').style.display='block';
-    _renderLockText(targetDate-new Date());
-    _startLockCountdown(targetDate);
-  }
   // DB is authoritative — check it first
   try{
     const mid=localStorage.getItem('t2s_uat_member_id');
@@ -620,12 +633,12 @@ async function verifyPin(){
     for(let i=0;i<4;i++){const dd=document.getElementById(`d${i}`);dd.classList.add('error','shake');}
     setTimeout(()=>updateDots(''),500);
     if(d.locked){
-      const lu=new Date(d.locked_until);const m=Math.max(1,Math.ceil((lu-new Date())/60000));
+      // checkpoint pin_lock_countdown (2026-10-29, Codex-found + live-confirmed) — this used
+      // to set the lock text once and never again, which is exactly why the countdown looked
+      // "stuck at 30 minutes" live. Now reuses the same shared countdown checkLock() uses.
       localStorage.setItem('t2s_uat_lock_until',d.locked_until);
       document.getElementById('pin-err').textContent='';
-      document.getElementById('pin-lock').style.display='block';
-      document.getElementById('pin-lock').textContent=`Too many attempts. Locked for ${m} minute${m>1?'s':''}.`;
-      document.getElementById('request-unlock-btn').style.display='inline-block';
+      _showLockMsg(new Date(d.locked_until));
     }else if(d.limitReached){
       document.getElementById('pin-err').textContent='Maximum concurrent login limit reached. Please log out from another device first.';
     }else{
@@ -787,6 +800,12 @@ async function processSetupPin(){
 })();
 
 if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js').catch(()=>{});}
+// checkpoint pin_lock_countdown (2026-10-29, Codex-found) — the lock countdown's 1s interval
+// is only explicitly cleared in switchAccount(); several OTHER navigation-away paths in this
+// file (browseFree(), the setup-success redirect, etc.) didn't clear it. A real page
+// navigation already kills the interval on its own, but this guarantees cleanup regardless of
+// which path is taken, rather than patching every individual `window.location.href=` call site.
+window.addEventListener('pagehide',()=>{if(_lockIv){clearInterval(_lockIv);_lockIv=null;}});
 document.querySelectorAll('.pin-key').forEach(btn=>{
   let _t=false;
   btn.addEventListener('touchstart',function(e){e.preventDefault();if(_t)return;_t=true;btn.click();setTimeout(()=>{_t=false;},150);},{passive:false});
