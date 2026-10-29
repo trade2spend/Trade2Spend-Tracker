@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261029-001 | login_uat.html: lockout live countdown (checkpoint pin_lock_countdown, Codex-reviewed 2 rounds, no unresolved blockers). checkLock()'s lock message used to be rendered once and never updated — member had to manually refresh after the 30-min timer actually passed. Now _showLockMsg()/_startLockCountdown() count it down live (30s cadence, same pattern as the existing _startForgotPinCountdown), and at zero, RE-ASKS THE SERVER (checkLock() again) before clearing the lock UI and re-enabling the PIN pad — never trusts this device's own clock alone. Counts down identically for the plain "Account locked" message and the "waiting for admin" message — Tushar's explicit call, 2026-10-29: an unlock request does not pause or extend the 30-min timer; if admin hasn't acted by the time it naturally expires, the member can simply retry their existing PIN from the same device. New module-level `_lockIv` interval handle, cleared in switchAccount() too so a stale timer can't update the wrong screen/member. Also: processSetupPin() now shows a specific message when the server rejects a post-reset setup attempt from an unregistered device (see server.js same-date tag, checkpoint pin_reset_device_lock) instead of the generic "failed to save" text. Rollback: restore the pre-20261029 checkLock()/_showLockMsg() (single-render, no interval), remove _lockIv from the top-of-script let declaration and its clearInterval call in switchAccount(), revert processSetupPin()'s error-message line to drop the deviceNotRegistered branch. -->
 <!-- T2S-UAT-20261018-001 | login_uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed client-side hashPin() (SHA-256+static-salt, compared in-browser against a fetched pin_hash). verifyPin() and processSetupPin() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin — pin_hash is never fetched to or computed in this page again; bcrypt + atomic server-side lockout counters live entirely server-side (see server.js same-date tag). Device-registered-vs-new lockout behavior, concurrent-session-limit logic, and all other screens unchanged. Companion: uat.html (_faVerifyPin/_faSetupPin2), server.js. Rollback: restore hashPin(), revert verifyPin()/processSetupPin() to the pre-20261018 direct-Supabase compare, remove the _VM constant. -->
 <!-- T2S-UAT-20260918-002 | login_uat.html: disabled-account message on redirect — init() fallthrough to screen-mobile now reads localStorage t2s_uat_logout_reason; if 'disabled', clears the key and shows "Your account has been disabled. You have been logged out. Please reach out to @T2Sview for more details." in existing #mobile-err element using existing .err-msg/.show pattern. Flag is set by uat.html init() (T2S-UAT-20260918-002 companion). Rollback: remove the 2-line flag-check block from init() fallthrough. -->
 <!-- T2S-UAT-20260913-005 | login_uat.html: permanent lock+request state fix — (A) checkLock() now DB-first authoritative; if DB not locked but localStorage lock exists for same member_id, uses localStorage; both paths call _applyWaitingState() when request is pending (disables PIN pad, hides Forgot PIN, shows Request Submitted); (B) new _applyWaitingState() function; (C) requestUnlock() success calls _applyWaitingState() immediately; (D) checkMobile() adds localStorage lock check after DB check using t2s_uat_locked_mid. Rollback: revert checkLock() to original, remove _applyWaitingState(), remove _applyWaitingState() call in requestUnlock(), remove localStorage lock block in checkMobile(). -->
@@ -401,7 +402,7 @@ const _VM='https://api.trade2spend.com';
 // MAIN_APP_URL: relative path from /UAT/ directory → resolves to /UAT/uat.html
 const MAIN_APP_URL='uat.html';
 const SESSION_24H=24*60*60*1000;
-let currentMobile='',currentMember=null,pinBuffer='',setupBuffer='',setupFirstPin='',setupStep=1,failedAttempts=0,currentUnregisteredMobile='';
+let currentMobile='',currentMember=null,pinBuffer='',setupBuffer='',setupFirstPin='',setupStep=1,failedAttempts=0,currentUnregisteredMobile='',_lockIv=null;
 const MAX_ATTEMPTS=3,LOCK_MINUTES=30;
 const WEAK_PINS=['2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212'];
 
@@ -430,36 +431,78 @@ function onTypeChange(type){
   else{p.style.display='block';f.style.display='none';fb.style.display='none';document.getElementById('type-paid-label').classList.add('active');document.getElementById('type-free-label').classList.remove('active');}
 }
 function browseFree(){localStorage.setItem('t2s_uat_mode','free');['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login'].forEach(k=>localStorage.removeItem(k));window.location.href=MAIN_APP_URL;}
-function switchAccount(){['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
+function switchAccount(){if(_lockIv){clearInterval(_lockIv);_lockIv=null;}['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));currentMember=null;currentMobile='';pinBuffer='';updateDots('');document.getElementById('pin-err').textContent='';document.getElementById('pin-lock').style.display='none';showScreen('screen-mobile');}
 
+// checkpoint pin_lock_countdown (2026-10-29) — the lock message used to be rendered once
+// and never touched again, so a member had to manually refresh after the 30-min timer
+// actually passed. Now it counts down live (same 30s cadence as _startForgotPinCountdown
+// elsewhere in this file) and, the moment it hits zero, RE-ASKS THE SERVER (DB stays
+// authoritative — never just trust this device's own clock) before re-enabling the PIN pad.
+// Counts down identically whether or not an unlock request is pending — Tushar's explicit
+// call, 2026-10-29: requesting unlock does not pause/extend the 30-min timer; if admin hasn't
+// acted by the time it naturally expires, the member can simply retry their existing PIN.
 async function checkLock(){
-  function _showLockMsg(m){
-    document.getElementById('pin-lock').style.display='block';
+  function _renderLockText(msLeft){
+    const m=Math.max(1,Math.ceil(msLeft/60000));
     const req=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
     if(req&&Date.now()-req<2*60*60*1000){
       document.getElementById('pin-lock').textContent=`Unlock request submitted — waiting for admin. ${m} minute${m>1?'s':''} remaining.`;
       _applyWaitingState();
     }else{
       document.getElementById('pin-lock').textContent=`Account locked. Try again in ${m} minute${m>1?'s':''}.`;
-      document.getElementById('request-unlock-btn').style.display='inline-block';
+      // checkpoint pin_lock_countdown (2026-10-29, Codex-found) — this button can carry stale
+      // disabled/"Request Submitted" state from an earlier lock cycle's _applyWaitingState()
+      // call; reset it explicitly every time this plain-lock branch renders.
+      const rub=document.getElementById('request-unlock-btn');
+      rub.style.display='inline-block';rub.disabled=false;rub.style.opacity='1';rub.textContent='🔓 Request Unlock';
     }
+  }
+  function _clearLockUI(){
+    document.getElementById('pin-lock').style.display='none';
+    document.getElementById('pin-lock').textContent='';
+    document.getElementById('request-unlock-btn').style.display='none';
+    document.querySelectorAll('.pin-key').forEach(b=>{b.disabled=false;b.style.opacity='1';});
+    const pf=document.getElementById('pin-forgot');if(pf)pf.style.display='';
+    pinBuffer='';updateDots('');
+    localStorage.removeItem('t2s_uat_lock_until');localStorage.removeItem('t2s_uat_locked_mid');localStorage.removeItem('t2s_uat_unlock_req_at');
+  }
+  function _startLockCountdown(targetDate){
+    if(_lockIv){clearInterval(_lockIv);_lockIv=null;}
+    function _tick(){
+      const msLeft=targetDate-new Date();
+      if(msLeft<=0){
+        clearInterval(_lockIv);_lockIv=null;
+        checkLock().then(stillLocked=>{if(!stillLocked)_clearLockUI();});
+        return;
+      }
+      _renderLockText(msLeft);
+    }
+    _tick();
+    _lockIv=setInterval(_tick,30000);
+  }
+  function _showLockMsg(targetDate){
+    document.getElementById('pin-lock').style.display='block';
+    _renderLockText(targetDate-new Date());
+    _startLockCountdown(targetDate);
   }
   // DB is authoritative — check it first
   try{
     const mid=localStorage.getItem('t2s_uat_member_id');
     if(mid){
       const s=await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}});
-      if(s&&s.length>0&&s[0].locked_until){const sl=new Date(s[0].locked_until);if(new Date()<sl){const m=Math.ceil((sl-new Date())/60000);localStorage.setItem('t2s_uat_lock_until',sl.toISOString());_showLockMsg(m);return true;}}
+      if(s&&s.length>0&&s[0].locked_until){const sl=new Date(s[0].locked_until);if(new Date()<sl){localStorage.setItem('t2s_uat_lock_until',sl.toISOString());_showLockMsg(sl);return true;}}
       // DB says not locked for this device — check localStorage-only lock (set by mini-form when no active session existed)
       const _lsLk=localStorage.getItem('t2s_uat_lock_until');const _lsMid=localStorage.getItem('t2s_uat_locked_mid');
-      if(_lsLk&&new Date()<new Date(_lsLk)&&_lsMid===mid){const m=Math.ceil((new Date(_lsLk)-new Date())/60000);_showLockMsg(m);return true;}
+      if(_lsLk&&new Date()<new Date(_lsLk)&&_lsMid===mid){_showLockMsg(new Date(_lsLk));return true;}
+      if(_lockIv){clearInterval(_lockIv);_lockIv=null;}
       localStorage.removeItem('t2s_uat_lock_until');return false;
     }
   }catch(e){
     // DB failed — fall back to localStorage
     const loc=localStorage.getItem('t2s_uat_lock_until');
-    if(loc&&new Date()<new Date(loc)){const m=Math.ceil((new Date(loc)-new Date())/60000);_showLockMsg(m);return true;}
+    if(loc&&new Date()<new Date(loc)){_showLockMsg(new Date(loc));return true;}
   }
+  if(_lockIv){clearInterval(_lockIv);_lockIv=null;}
   localStorage.removeItem('t2s_uat_lock_until');return false;
 }
 function _applyWaitingState(){
@@ -720,7 +763,7 @@ async function processSetupPin(){
       const d=await res.json();
       if(!d.success){
         showLoading(false);
-        document.getElementById('setup-err').textContent=d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.';
+        document.getElementById('setup-err').textContent=d.deviceNotRegistered?'This PIN reset can only be completed from your previously registered device. Contact @T2Sview on Telegram if you need help.':(d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.');
         setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');
         return;
       }
