@@ -852,11 +852,39 @@ async function processSetupPin(){
   const mid=localStorage.getItem('t2s_uat_member_id'),mob=localStorage.getItem('t2s_uat_mobile');
   if(mid&&mob){
     // Always show PIN screen — visiting login.html requires authentication regardless of session age
-    try{const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash`,{method:'GET',headers:{'Accept':'application/json'}});if(members&&members.length>0){currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='📱 +91 '+mob;if(currentMember.pin_hash===null){showScreen('screen-setup');return;}if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');return;}}catch(e){}
+    try{
+      const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash,free_access_blocked`,{method:'GET',headers:{'Accept':'application/json'}});
+      if(members&&members.length>0){
+        // Blocking doesn't change status, so this fast-path would otherwise still find the
+        // member and jump straight to the PIN screen — check it explicitly here, same wording
+        // used in checkMobile() (line ~639), so a blocked member on a remembered device gets
+        // the same message as one typing their mobile number fresh.
+        if(members[0].free_access_blocked===true){
+          localStorage.removeItem('t2s_uat_logout_reason');
+          showLoading(false);showScreen('screen-mobile');
+          const _bEl=document.getElementById('mobile-err');
+          if(_bEl){_bEl.textContent='Your access has been blocked. Contact @T2Sview on Telegram.';_bEl.classList.add('show');}
+          return;
+        }
+        currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='📱 +91 '+mob;
+        // Manage Devices "Remove" doesn't change status/pin_hash either, so this fast-path
+        // still lands on the normal PIN screen (correct — just re-enter PIN) but with no
+        // explanation of why they were logged out; show it once here instead.
+        if(localStorage.getItem('t2s_uat_logout_reason')==='device_removed'){
+          localStorage.removeItem('t2s_uat_logout_reason');
+          document.getElementById('pin-err').textContent='This device was removed from your account. Please enter your PIN to continue.';
+        }
+        if(currentMember.pin_hash===null){showScreen('screen-setup');return;}
+        if(await checkLock()){showScreen('screen-pin');return;}
+        showScreen('screen-pin');return;
+      }
+    }catch(e){}
   }
   showLoading(false);showScreen('screen-mobile');
   const _logoutReason=localStorage.getItem('t2s_uat_logout_reason');
   if(_logoutReason==='disabled'){localStorage.removeItem('t2s_uat_logout_reason');const _dEl=document.getElementById('mobile-err');if(_dEl){_dEl.innerHTML='Your account has been disabled. You have been logged out.<br>Please reach out to <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> for more details.';_dEl.classList.add('show');}}
+  else if(_logoutReason==='blocked'){localStorage.removeItem('t2s_uat_logout_reason');const _bEl2=document.getElementById('mobile-err');if(_bEl2){_bEl2.textContent='Your access has been blocked. Contact @T2Sview on Telegram.';_bEl2.classList.add('show');}}
+  else if(_logoutReason==='device_removed'){localStorage.removeItem('t2s_uat_logout_reason');const _rEl=document.getElementById('mobile-err');if(_rEl){_rEl.textContent='This device was removed from your account. Please log in again.';_rEl.classList.add('show');}}
 })();
 
 if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js').catch(()=>{});}
