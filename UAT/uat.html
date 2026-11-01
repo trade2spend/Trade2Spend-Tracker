@@ -545,7 +545,7 @@
             <div class="tab" onclick="switchTab('updates', this)">Updates</div>
             <div class="tab" onclick="switchTab('performance', this)">Performance</div>
             <div class="tab" onclick="switchTab('learning', this)">Learning</div>
-            <div class="tab" onclick="switchTab('about', this)">About</div>
+            <div class="tab" onclick="switchTab('about', this)">Settings</div>
         </div>
         <!-- Live Banner Ticker — filled by renderLiveTicker(); click opens t.me/tusharview -->
         <div id="live-ticker-wrap" onclick="window.open('https://t.me/T2Sview','_blank')">
@@ -760,6 +760,11 @@
 
     <!-- ABOUT TAB -->
     <div id="about" class="content-section">
+        <div style="background:var(--card-bg);padding:24px;border-radius:12px;border:1px solid var(--border);margin-bottom:12px;">
+            <h3 style="color:var(--text-main);font-size:0.95rem;font-weight:800;margin-bottom:4px;">Manage Devices</h3>
+            <p style="font-size:0.72rem;color:var(--text-muted);margin-bottom:16px;">Devices currently logged in to your account.</p>
+            <div id="manage-devices-list"></div>
+        </div>
         <div style="background:var(--card-bg);padding:24px;border-radius:12px;border:1px solid var(--border);margin-bottom:12px;">
             <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px;">
                 <img src="logo.png" style="width:46px;height:46px;border-radius:10px;" alt="Logo">
@@ -1084,7 +1089,7 @@
         if (!direction) return '';
         return `${direction} `;
     }
-    const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', learning:'Learning', about:'About' };
+    const _TAB_LABELS = { markets:'Markets', trades:'Trade Alert', performance:'Performance', updates:'Updates', learning:'Learning', about:'Settings' };
     function setTabBadge(tabKey, count) {
         const tabEl = document.querySelector(`.tab[onclick*="'${tabKey}'"]`);
         if (!tabEl) return;
@@ -1143,6 +1148,7 @@
         }
         if (tabId === 'performance') fetchPerformance();
         if (tabId === 'markets') { fetchMarketData(); _renderMqpTrades(); fetchMarketPreview(); }
+        if (tabId === 'about') loadManageDevices();
         // Show compose card only on Trade Alert tab (if admin)
         const _compose = document.getElementById('admin-trade-compose');
         if (_compose && _compose.dataset.isAdmin === 'true') {
@@ -2981,6 +2987,52 @@
         if (cm) return !!(cm.is_admin === true || cm.tier === 'paid' || cm.free_access === true);
         return localStorage.getItem('t2s_uat_mode') === 'paid'; // best-effort fallback if cache not populated yet
     }
+    // Shared by the members-table and sessions-table realtime branches so both ever make
+    // ONE decision from ONE fresh read of the member row — avoids two different messages
+    // firing for the same underlying cause (e.g. admin PIN-reset touches both tables at once).
+    let _rtRedirecting = false;
+    function _rtRedirectToLogin(reason) {
+        _rtRedirecting = true;
+        if (reason) localStorage.setItem('t2s_uat_logout_reason', reason);
+        window.location.href = 'login.html';
+    }
+    async function _rtRefetchMemberAndAct(deviceRemovedFallback) {
+        if (_rtRedirecting) return;
+        const _rtMid = localStorage.getItem('t2s_uat_member_id');
+        if (!_rtMid) return; // this device already logged itself out locally — nothing to do
+        let rows;
+        try {
+            rows = await sbFetch(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`, { method: 'GET' });
+        } catch (_) { return; }
+        if (_rtRedirecting || !rows || !rows.length) return;
+        const m = rows[0];
+        if (m.status === 'disabled') { _rtRedirectToLogin(null); return; }
+        // Admin reset this member's PIN — kick out immediately so they set a new one
+        if (m.pin_hash === null) {
+            localStorage.removeItem('t2s_uat_last_login');
+            localStorage.removeItem('t2s_uat_mode');
+            localStorage.removeItem('t2s_uat_request_pending');
+            _rtRedirectToLogin(null);
+            return;
+        }
+        if (m.free_access_blocked === true) { _rtRedirectToLogin('blocked'); return; }
+        // If member was in the free-access approval queue, redirect to login to set PIN
+        if (localStorage.getItem('t2s_uat_request_pending') === '1') {
+            localStorage.removeItem('t2s_uat_request_pending');
+            localStorage.removeItem('t2s_uat_mode');
+            localStorage.removeItem('t2s_uat_last_login');
+            _rtRedirectToLogin(null);
+            return;
+        }
+        if (deviceRemovedFallback) { _rtRedirectToLogin('device_removed'); return; }
+        // Nothing wrong — normal background refresh, not a redirect
+        window._cachedMember = Object.assign(window._cachedMember || {}, m);
+        const newMode = (m.tier === 'paid' || m.free_access) ? 'paid' : 'free';
+        localStorage.setItem('t2s_uat_mode', newMode);
+        _renderMemberChip(m);
+        fetchUpdates();
+        fetchTradeAlerts();
+    }
     function initRealtimeSubscription() {
         if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
         clearTimeout(_rtReconnectTimer);
@@ -2994,7 +3046,8 @@
 
         _rtSocket.onopen = () => {
             const _rtChanges = [
-                { event: '*', schema: 'public', table: 'members', filter: 'id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') }
+                { event: '*', schema: 'public', table: 'members', filter: 'id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') },
+                { event: '*', schema: 'public', table: 'sessions', filter: 'member_id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') }
             ];
             if (_rtUnlocked) _rtChanges.unshift({ event: '*', schema: 'public', table: 'posts' }); // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
             _rtSocket.send(JSON.stringify({
@@ -3020,36 +3073,21 @@
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
                 if (msg.payload?.table === 'members') {
-                    const _rtMid = localStorage.getItem('t2s_uat_member_id');
-                    if (!_rtMid) return;
-                    sbFetch(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`, { method: 'GET' })
-                        .then(rows => {
-                            if (!rows || !rows.length) return;
-                            const m = rows[0];
-                            if (m.status === 'disabled') { window.location.href = 'login.html'; return; }
-                            // Admin reset this member's PIN — kick out immediately so they set a new one
-                            if (m.pin_hash === null) {
-                                localStorage.removeItem('t2s_uat_last_login');
-                                localStorage.removeItem('t2s_uat_mode');
-                                localStorage.removeItem('t2s_uat_request_pending');
-                                window.location.href = 'login.html';
-                                return;
-                            }
-                            // If member was in the free-access approval queue, redirect to login to set PIN
-                            if (localStorage.getItem('t2s_uat_request_pending') === '1') {
-                                localStorage.removeItem('t2s_uat_request_pending');
-                                localStorage.removeItem('t2s_uat_mode');
-                                localStorage.removeItem('t2s_uat_last_login');
-                                window.location.href = 'login.html';
-                                return;
-                            }
-                            window._cachedMember = Object.assign(window._cachedMember || {}, m);
-                            const newMode = (m.tier === 'paid' || m.free_access) ? 'paid' : 'free';
-                            localStorage.setItem('t2s_uat_mode', newMode);
-                            _renderMemberChip(m);
-                            fetchUpdates();
-                            fetchTradeAlerts();
-                        }).catch(() => {});
+                    _rtRefetchMemberAndAct(false);
+                    return;
+                }
+                if (msg.payload?.table === 'sessions') {
+                    // Only react when THIS device's own session row just went inactive.
+                    // Several existing flows can cause that (self idle-timeout, self logout,
+                    // admin PIN-reset deactivating every session) — _rtRefetchMemberAndAct()
+                    // re-checks the member row fresh so those keep showing their own correct
+                    // message; only a genuinely normal member row falls through to
+                    // 'device_removed' (Manage Devices "Remove" from another device).
+                    const _rtRow = msg.payload?.new;
+                    const _rtDid = localStorage.getItem('t2s_uat_device_id');
+                    if (_rtRow && _rtDid && _rtRow.device_id === _rtDid && _rtRow.is_active === false) {
+                        _rtRefetchMemberAndAct(true);
+                    }
                     return;
                 }
                 localStorage.removeItem('t2s_uat_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
@@ -5367,6 +5405,68 @@
         window.location.href='login.html';
     }
 
+    function _mdFormatLastActive(iso){
+        try {
+            const d = new Date(iso);
+            const mins = Math.round((Date.now() - d.getTime()) / 60000);
+            if (mins < 1) return 'Active just now';
+            if (mins < 60) return `Active ${mins}m ago`;
+            const hrs = Math.round(mins / 60);
+            if (hrs < 24) return `Active ${hrs}h ago`;
+            return 'Active ' + d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day:'numeric', month:'short' });
+        } catch(e) { return ''; }
+    }
+
+    async function loadManageDevices(){
+        const list = document.getElementById('manage-devices-list');
+        if (!list) return;
+        const memberId = localStorage.getItem('t2s_uat_member_id');
+        const myDid = localStorage.getItem('t2s_uat_device_id');
+        if (!memberId) { list.innerHTML = ''; return; }
+        list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">Loading…</p>';
+        try {
+            const rows = await sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id,device_id,device_type,last_active&order=last_active.desc`, { method:'GET' });
+            if (!rows || !rows.length) { list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">No active devices found.</p>'; return; }
+            // Fail closed: only offer Remove when exactly one row confidently matches this
+            // browser's own device_id — if that's ever ambiguous (0 or 2+ matches), show no
+            // Remove buttons at all rather than risk removing the wrong row.
+            const myMatches = rows.filter(r => r.device_id === myDid);
+            const canIdentifyMine = !!myDid && myMatches.length === 1;
+            list.innerHTML = rows.map(r => {
+                const isMine = canIdentifyMine && r.device_id === myDid;
+                const label = r.device_type === 'desktop' ? '🖥️ Desktop' : '📱 Mobile';
+                const when = r.last_active ? _mdFormatLastActive(r.last_active) : '';
+                const action = isMine
+                    ? '<span style="font-size:0.68rem;font-weight:700;color:var(--primary);">This device</span>'
+                    : (canIdentifyMine ? `<button onclick="removeDevice('${r.id}','${r.device_id}')" style="font-size:0.72rem;font-weight:700;color:#dc2626;background:none;border:1px solid #fecaca;border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;">Remove</button>` : '');
+                return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
+                    <div>
+                        <div style="font-size:0.84rem;font-weight:700;color:var(--text-main);">${label}</div>
+                        <div style="font-size:0.68rem;color:var(--text-muted);">${when}</div>
+                    </div>
+                    ${action}
+                </div>`;
+            }).join('');
+        } catch(e) {
+            list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">Could not load devices.</p>';
+        }
+    }
+
+    async function removeDevice(sessionId, deviceId){
+        if (!confirm('This device will be logged out immediately and will need to re-enter the PIN to log in again. Continue?')) return;
+        const memberId = localStorage.getItem('t2s_uat_member_id');
+        try {
+            // Target by this exact session row's own id (not just member+device) so a stale
+            // duplicate row for the same device could never be patched by accident.
+            await sbFetch(`sessions?id=eq.${sessionId}&member_id=eq.${memberId}&device_id=eq.${deviceId}`, {
+                method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' }
+            });
+            loadManageDevices();
+        } catch(e) {
+            alert('Could not remove this device. Please try again.');
+        }
+    }
+
     function toggleCurrMonthDetail() {
         const detail = document.getElementById('curr-month-detail');
         const arrow  = document.getElementById('curr-month-arrow');
@@ -5415,8 +5515,9 @@
         if(mode !== 'free' && memberId){
             try {
                 const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`,{method:'GET'});
-                if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'||members[0].pin_hash===null){
+                if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'||members[0].pin_hash===null||members[0].free_access_blocked===true){
                     if(members&&members[0]&&members[0].status==='disabled') localStorage.setItem('t2s_uat_logout_reason','disabled');
+                    if(members&&members[0]&&members[0].free_access_blocked===true) localStorage.setItem('t2s_uat_logout_reason','blocked');
                     window.location.href='login.html'; return;
                 }
                 window._cachedMember = members[0];
@@ -5425,6 +5526,21 @@
                 // Silent last_seen ping — feeds free-access inactivity monitor
                 sbFetch(`members?id=eq.${memberId}`,{method:'PATCH',body:JSON.stringify({last_seen:new Date().toISOString()})}).catch(()=>{});
             } catch(e){ console.warn('Auth check failed',e); }
+        }
+        // free_access_blocked can occur with mode cached as 'free' (e.g. a member deactivated
+        // then later blocked, or blocked while an access request was still pending) — the
+        // auth-check above only runs when mode!=='free', so it would miss this. Checked here
+        // separately, and ONLY for this one field, so it never touches pin_hash/status and
+        // can't misfire on the legitimate pending-request case (also mode='free'+memberId,
+        // with pin_hash genuinely null because no PIN was ever set up — not an auth failure).
+        if (mode === 'free' && memberId) {
+            try {
+                const _fab = await sbFetch(`members?id=eq.${memberId}&select=free_access_blocked`, {method:'GET'});
+                if (_fab && _fab[0] && _fab[0].free_access_blocked === true) {
+                    localStorage.setItem('t2s_uat_logout_reason','blocked');
+                    window.location.href='login.html'; return;
+                }
+            } catch(e) {}
         }
         // Analytics: session start
         _trackEvent('session_start', { mode, tab: new URL(location.href).hash.replace('#','') || 'trades' });
