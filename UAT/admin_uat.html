@@ -2537,6 +2537,9 @@ async function toggleTier(id, newTier){
   if (newTier === 'paid' && m && (m.acquisition_source === 'free' || !m.acquisition_source)) {
     patch.acquisition_source = 'free_to_paid';
   }
+  // G3: upgrading to paid auto-clears any earlier free-tier access block — paid access is
+  // independent of the free-access approval queue that block applied to.
+  if (newTier === 'paid') patch.free_access_blocked = false;
   try {
     await sbPatch(`members?id=eq.${id}`, patch);
     if(m){ m.tier = newTier; if(patch.acquisition_source) m.acquisition_source = patch.acquisition_source; renderMemberList(allMembers); }
