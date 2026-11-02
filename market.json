@@ -1,22 +1,22 @@
 {
   "marketOpen": true,
-  "lastUpdated": "2026-11-02T04:00:25.296Z",
+  "lastUpdated": "2026-11-02T04:15:39.666Z",
   "dataSource": "broker",
   "indices": {
     "NIFTY": {
-      "price": 23271.65,
-      "change": 218.55,
-      "changePct": 0.95
+      "price": 23323.45,
+      "change": 270.35,
+      "changePct": 1.17
     },
     "SENSEX": {
-      "price": 75286.46,
-      "change": 826.93,
-      "changePct": 1.11
+      "price": 75441.17,
+      "change": 981.64,
+      "changePct": 1.32
     },
     "BANKNIFTY": {
-      "price": 54977.2,
-      "change": 290.25,
-      "changePct": 0.53
+      "price": 54930.65,
+      "change": 243.7,
+      "changePct": 0.45
     }
   },
   "indexSources": {
@@ -26,263 +26,268 @@
   },
   "breadth": {
     "nifty50": {
-      "advancing": 39,
-      "declining": 11,
+      "advancing": 40,
+      "declining": 10,
       "unchanged": 0
     }
   },
   "gainers": [
     {
       "symbol": "RELIANCE",
-      "price": 1229.5,
-      "change": 5.55
+      "price": 1239.5,
+      "change": 6.4
     },
     {
       "symbol": "MAXHEALTH",
-      "price": 891.15,
-      "change": 3.62
+      "price": 898.25,
+      "change": 4.45
     },
     {
       "symbol": "TATASTEEL",
-      "price": 173.35,
-      "change": 3.43
-    },
-    {
-      "symbol": "NTPC",
-      "price": 326.35,
-      "change": 3.19
+      "price": 174.34,
+      "change": 4.02
     },
     {
       "symbol": "JIOFIN",
-      "price": 210.59,
-      "change": 2.98
+      "price": 211.69,
+      "change": 3.52
     },
     {
-      "symbol": "COALINDIA",
-      "price": 398,
-      "change": 2.31
+      "symbol": "NTPC",
+      "price": 327.2,
+      "change": 3.46
     },
     {
       "symbol": "MARUTI",
-      "price": 11655,
-      "change": 2.26
+      "price": 11723,
+      "change": 2.86
     },
     {
-      "symbol": "POWERGRID",
-      "price": 269.5,
-      "change": 1.7
+      "symbol": "COALINDIA",
+      "price": 399.95,
+      "change": 2.81
     },
     {
       "symbol": "TMPV",
-      "price": 269.9,
-      "change": 1.7
-    },
-    {
-      "symbol": "SBIN",
-      "price": 977.6,
-      "change": 1.64
-    },
-    {
-      "symbol": "BEL",
-      "price": 374.95,
-      "change": 1.37
+      "price": 271.65,
+      "change": 2.35
     },
     {
       "symbol": "ASIANPAINT",
-      "price": 2351.4,
-      "change": 1.35
+      "price": 2367.6,
+      "change": 2.05
+    },
+    {
+      "symbol": "BEL",
+      "price": 377.3,
+      "change": 2
+    },
+    {
+      "symbol": "POWERGRID",
+      "price": 269.75,
+      "change": 1.79
     },
     {
       "symbol": "HINDUNILVR",
-      "price": 1889.6,
-      "change": 1.34
+      "price": 1897.6,
+      "change": 1.77
     },
     {
       "symbol": "SHRIRAMFIN",
-      "price": 834,
-      "change": 1.32
+      "price": 837.6,
+      "change": 1.76
     },
     {
       "symbol": "ONGC",
-      "price": 228.29,
-      "change": 1.29
-    },
-    {
-      "symbol": "HINDALCO",
-      "price": 895.55,
-      "change": 1.23
-    },
-    {
-      "symbol": "ULTRACEMCO",
-      "price": 11177,
-      "change": 1.2
+      "price": 229.15,
+      "change": 1.67
     },
     {
       "symbol": "M&M",
-      "price": 2871.8,
-      "change": 1.11
-    },
-    {
-      "symbol": "INDIGO",
-      "price": 4928.1,
-      "change": 1.04
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "price": 1992.6,
-      "change": 0.96
+      "price": 2882,
+      "change": 1.47
     },
     {
       "symbol": "NESTLEIND",
-      "price": 1177.2,
-      "change": 0.87
-    },
-    {
-      "symbol": "BAJAJFINSV",
-      "price": 1681,
-      "change": 0.8
-    },
-    {
-      "symbol": "BAJFINANCE",
-      "price": 946.35,
-      "change": 0.77
-    },
-    {
-      "symbol": "ITC",
-      "price": 267.5,
-      "change": 0.72
-    },
-    {
-      "symbol": "LT",
-      "price": 3898.8,
-      "change": 0.7
-    },
-    {
-      "symbol": "GRASIM",
-      "price": 3002,
-      "change": 0.69
-    },
-    {
-      "symbol": "JSWSTEEL",
-      "price": 1254.5,
-      "change": 0.68
-    },
-    {
-      "symbol": "SBILIFE",
-      "price": 1669.4,
-      "change": 0.65
+      "price": 1183.4,
+      "change": 1.41
     },
     {
       "symbol": "TCS",
-      "price": 2514.1,
-      "change": 0.46
+      "price": 2537.4,
+      "change": 1.39
     },
     {
-      "symbol": "ADANIENT",
-      "price": 2591,
-      "change": 0.45
+      "symbol": "ULTRACEMCO",
+      "price": 11190,
+      "change": 1.31
     },
     {
-      "symbol": "HDFCLIFE",
-      "price": 526.4,
-      "change": 0.29
+      "symbol": "ITC",
+      "price": 269,
+      "change": 1.28
+    },
+    {
+      "symbol": "HINDALCO",
+      "price": 896,
+      "change": 1.28
+    },
+    {
+      "symbol": "SBIN",
+      "price": 973.75,
+      "change": 1.24
+    },
+    {
+      "symbol": "INDIGO",
+      "price": 4933.9,
+      "change": 1.15
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "price": 1995.3,
+      "change": 1.09
     },
     {
       "symbol": "HCLTECH",
-      "price": 1431.6,
-      "change": 0.25
+      "price": 1442.4,
+      "change": 1
+    },
+    {
+      "symbol": "ADANIENT",
+      "price": 2599.3,
+      "change": 0.77
+    },
+    {
+      "symbol": "GRASIM",
+      "price": 3004.4,
+      "change": 0.77
+    },
+    {
+      "symbol": "JSWSTEEL",
+      "price": 1255.3,
+      "change": 0.75
+    },
+    {
+      "symbol": "BAJFINANCE",
+      "price": 945.75,
+      "change": 0.71
+    },
+    {
+      "symbol": "BAJAJFINSV",
+      "price": 1679.2,
+      "change": 0.7
+    },
+    {
+      "symbol": "SBILIFE",
+      "price": 1669.2,
+      "change": 0.64
     },
     {
       "symbol": "ETERNAL",
-      "price": 344.4,
-      "change": 0.22
+      "price": 345.65,
+      "change": 0.58
     },
     {
-      "symbol": "KOTAKBANK",
-      "price": 462.45,
-      "change": 0.18
-    },
-    {
-      "symbol": "TATACONSUM",
-      "price": 1027.5,
-      "change": 0.16
-    },
-    {
-      "symbol": "HDFCBANK",
-      "price": 693.75,
-      "change": 0.14
-    },
-    {
-      "symbol": "AXISBANK",
-      "price": 1218.7,
-      "change": 0.14
+      "symbol": "LT",
+      "price": 3892.1,
+      "change": 0.53
     },
     {
       "symbol": "DRREDDY",
-      "price": 1352.3,
-      "change": 0.02
+      "price": 1357.9,
+      "change": 0.44
     },
     {
-      "symbol": "ICICIBANK",
-      "price": 1398.2,
-      "change": 0.01
+      "symbol": "KOTAKBANK",
+      "price": 463.35,
+      "change": 0.38
+    },
+    {
+      "symbol": "CIPLA",
+      "price": 1383.6,
+      "change": 0.34
+    },
+    {
+      "symbol": "ADANIPORTS",
+      "price": 1853.8,
+      "change": 0.21
+    },
+    {
+      "symbol": "HDFCLIFE",
+      "price": 526,
+      "change": 0.21
+    },
+    {
+      "symbol": "TITAN",
+      "price": 4445.2,
+      "change": 0.2
+    },
+    {
+      "symbol": "TATACONSUM",
+      "price": 1028,
+      "change": 0.2
+    },
+    {
+      "symbol": "HDFCBANK",
+      "price": 693.8,
+      "change": 0.14
     }
   ],
   "losers": [
     {
-      "symbol": "APOLLOHOSP",
-      "price": 8331.5,
-      "change": -1.38
-    },
-    {
       "symbol": "SUNPHARMA",
-      "price": 1754.7,
+      "price": 1754.8,
       "change": -1.29
     },
     {
-      "symbol": "WIPRO",
-      "price": 196.16,
-      "change": -1.08
-    },
-    {
-      "symbol": "TECHM",
-      "price": 1778,
-      "change": -0.71
-    },
-    {
-      "symbol": "INFY",
-      "price": 1178.1,
-      "change": -0.58
-    },
-    {
-      "symbol": "BAJAJ-AUTO",
-      "price": 10300,
-      "change": -0.48
+      "symbol": "APOLLOHOSP",
+      "price": 8344.5,
+      "change": -1.23
     },
     {
       "symbol": "EICHERMOT",
-      "price": 7196.5,
-      "change": -0.33
+      "price": 7158.5,
+      "change": -0.85
     },
     {
-      "symbol": "TITAN",
-      "price": 4424.5,
-      "change": -0.27
+      "symbol": "TECHM",
+      "price": 1781.9,
+      "change": -0.5
     },
     {
       "symbol": "TRENT",
-      "price": 3010.4,
-      "change": -0.23
+      "price": 3004,
+      "change": -0.44
     },
     {
-      "symbol": "ADANIPORTS",
-      "price": 1846.9,
-      "change": -0.17
+      "symbol": "BAJAJ-AUTO",
+      "price": 10319,
+      "change": -0.3
     },
     {
-      "symbol": "CIPLA",
-      "price": 1378.4,
-      "change": -0.04
+      "symbol": "INFY",
+      "price": 1181.7,
+      "change": -0.28
+    },
+    {
+      "symbol": "AXISBANK",
+      "price": 1215,
+      "change": -0.16
+    },
+    {
+      "symbol": "ICICIBANK",
+      "price": 1396.2,
+      "change": -0.13
+    },
+    {
+      "symbol": "BSE",
+      "price": 3508,
+      "change": -0.07
+    },
+    {
+      "symbol": "TITAN",
+      "price": 4435,
+      "change": -0.03
     }
   ]
 }
