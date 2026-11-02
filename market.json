@@ -1,6 +1,6 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-11-02T10:03:55.457Z",
+  "lastUpdated": "2026-11-02T10:16:09.600Z",
   "dataSource": "broker",
   "indices": {
     "NIFTY": {
@@ -230,6 +230,11 @@
       "change": -2.03
     },
     {
+      "symbol": "WIPRO",
+      "price": 196.4,
+      "change": -0.96
+    },
+    {
       "symbol": "ICICIBANK",
       "price": 1387.4,
       "change": -0.76
@@ -248,11 +253,6 @@
       "symbol": "AXISBANK",
       "price": 1209,
       "change": -0.66
-    },
-    {
-      "symbol": "BSE",
-      "price": 3490,
-      "change": -0.58
     },
     {
       "symbol": "HDFCLIFE",
@@ -284,5 +284,7 @@
       "price": 2501.7,
       "change": -0.04
     }
-  ]
+  ],
+  "optionHighs": {},
+  "optionLows": {}
 }
