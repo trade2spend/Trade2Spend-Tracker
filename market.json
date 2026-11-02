@@ -1,22 +1,22 @@
 {
-  "marketOpen": false,
-  "lastUpdated": "2026-10-30T10:15:48.956Z",
+  "marketOpen": true,
+  "lastUpdated": "2026-11-02T03:45:09.532Z",
   "dataSource": "broker",
   "indices": {
     "NIFTY": {
-      "price": 23053.1,
-      "change": 116.35,
-      "changePct": 0.51
+      "price": 23213.9,
+      "change": 160.8,
+      "changePct": 0.7
     },
     "SENSEX": {
-      "price": 74459.53,
-      "change": 308.49,
-      "changePct": 0.42
+      "price": 75101.96,
+      "change": 642.43,
+      "changePct": 0.86
     },
     "BANKNIFTY": {
-      "price": 54686.95,
-      "change": -222.7,
-      "changePct": -0.41
+      "price": 54915.6,
+      "change": 228.65,
+      "changePct": 0.42
     }
   },
   "indexSources": {
@@ -28,10 +28,25 @@
     "nifty50": {
       "advancing": 50,
       "declining": 0,
-      "unchanged": 50
+      "unchanged": 47
     }
   },
   "gainers": [
+    {
+      "symbol": "RELIANCE",
+      "price": 1228.1,
+      "change": 5.43
+    },
+    {
+      "symbol": "M&M",
+      "price": 2860,
+      "change": 0.69
+    },
+    {
+      "symbol": "INFY",
+      "price": 1191.9,
+      "change": 0.58
+    },
     {
       "symbol": "HDFCBANK",
       "price": 692.8,
@@ -48,16 +63,6 @@
       "change": 0
     },
     {
-      "symbol": "INFY",
-      "price": 1185,
-      "change": 0
-    },
-    {
-      "symbol": "RELIANCE",
-      "price": 1164.9,
-      "change": 0
-    },
-    {
       "symbol": "BHARTIARTL",
       "price": 1973.7,
       "change": 0
@@ -70,11 +75,6 @@
     {
       "symbol": "WIPRO",
       "price": 198.31,
-      "change": 0
-    },
-    {
-      "symbol": "M&M",
-      "price": 2840.3,
       "change": 0
     },
     {
@@ -285,115 +285,49 @@
   ],
   "losers": [
     {
-      "symbol": "SHRIRAMFIN",
-      "price": 823.15,
-      "change": -2.13
+      "symbol": "SBILIFE",
+      "price": 1649.5,
+      "change": -0.55
     },
     {
-      "symbol": "NESTLEIND",
-      "price": 1167,
-      "change": -1.82
+      "symbol": "SUNPHARMA",
+      "price": 1770,
+      "change": -0.43
     },
     {
-      "symbol": "M&M",
-      "price": 2840.3,
-      "change": -1.72
-    },
-    {
-      "symbol": "JIOFIN",
-      "price": 204.5,
-      "change": -1.21
-    },
-    {
-      "symbol": "ADANIPORTS",
-      "price": 1850,
-      "change": -1.18
-    },
-    {
-      "symbol": "ULTRACEMCO",
-      "price": 11045,
-      "change": -1.16
-    },
-    {
-      "symbol": "TATASTEEL",
-      "price": 167.6,
-      "change": -1.1
+      "symbol": "APOLLOHOSP",
+      "price": 8420.5,
+      "change": -0.33
     },
     {
       "symbol": "ADANIENT",
-      "price": 2579.4,
-      "change": -1.09
+      "price": 2575.2,
+      "change": -0.16
     },
     {
-      "symbol": "COALINDIA",
-      "price": 389,
-      "change": -1.04
-    },
-    {
-      "symbol": "SBIN",
-      "price": 961.85,
-      "change": -1.03
-    },
-    {
-      "symbol": "JSWSTEEL",
-      "price": 1246,
-      "change": -0.75
+      "symbol": "ETERNAL",
+      "price": 343.3,
+      "change": -0.1
     },
     {
       "symbol": "AXISBANK",
-      "price": 1217,
-      "change": -0.65
-    },
-    {
-      "symbol": "BAJAJ-AUTO",
-      "price": 10350,
-      "change": -0.32
-    },
-    {
-      "symbol": "MARUTI",
-      "price": 11397,
-      "change": -0.25
-    },
-    {
-      "symbol": "EICHERMOT",
-      "price": 7220,
-      "change": -0.25
-    },
-    {
-      "symbol": "TMPV",
-      "price": 265.4,
-      "change": -0.23
-    },
-    {
-      "symbol": "RELIANCE",
-      "price": 1164.9,
-      "change": -0.21
-    },
-    {
-      "symbol": "HINDALCO",
-      "price": 884.7,
-      "change": -0.18
-    },
-    {
-      "symbol": "ONGC",
-      "price": 225.39,
-      "change": -0.18
-    },
-    {
-      "symbol": "BEL",
-      "price": 369.9,
-      "change": -0.03
+      "price": 1216.1,
+      "change": -0.07
     },
     {
       "symbol": "BAJAJFINSV",
-      "price": 1667.6,
+      "price": 1667,
+      "change": -0.04
+    },
+    {
+      "symbol": "GRASIM",
+      "price": 2980.5,
+      "change": -0.03
+    },
+    {
+      "symbol": "HDFCLIFE",
+      "price": 524.8,
       "change": -0.02
     }
-  ],
-  "optionHighs": {
-    "NIFTY-23000-CE": 195.25
-  },
-  "optionLows": {
-    "NIFTY-23000-CE": 128.8
-  }
+  ]
 }
