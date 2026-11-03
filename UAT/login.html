@@ -679,7 +679,7 @@ async function verifyPin(){
     const d=await res.json();
     if(d.success){
       localStorage.removeItem('t2s_uat_lock_until');localStorage.removeItem('t2s_uat_unlock_req_at');localStorage.removeItem('t2s_uat_unlock_req_for');
-      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember.tier==='paid'?'paid':'free');
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',(currentMember.tier==='paid'||currentMember.free_access)?'paid':'free');
       if(d.sessionToken) localStorage.setItem('t2s_uat_member_token',d.sessionToken); // checkpoint stage1_posts_gatekeeper — carried forward for uat.html after redirect
       showLoading(false);window.location.href=MAIN_APP_URL;
       return;
@@ -840,7 +840,7 @@ async function processSetupPin(){
         setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');
         return;
       }
-      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember&&currentMember.tier==='paid'?'paid':'free');localStorage.removeItem('t2s_uat_pin_reset_at');if(d.sessionToken) localStorage.setItem('t2s_uat_member_token',d.sessionToken);showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
+      localStorage.setItem('t2s_uat_last_login',Date.now().toString());localStorage.setItem('t2s_uat_mode',currentMember&&(currentMember.tier==='paid'||currentMember.free_access)?'paid':'free');localStorage.removeItem('t2s_uat_pin_reset_at');if(d.sessionToken) localStorage.setItem('t2s_uat_member_token',d.sessionToken);showLoading(false);toast('✓ PIN set! Welcome to Trade2Spend.');setTimeout(()=>{window.location.href=MAIN_APP_URL;},800);
     }catch(e){showLoading(false);document.getElementById('setup-err').textContent='Failed to save PIN. Check connection.';setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');}
   }
 }
