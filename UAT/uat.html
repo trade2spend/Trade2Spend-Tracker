@@ -3735,7 +3735,7 @@
         if (member.is_admin === true) {
             _tierChip.textContent = 'ADMIN';
             _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);';
-        } else if (member.tier === 'paid') {
+        } else if (member.tier === 'paid' || member.free_access === true) {
             _tierChip.textContent = 'PAID';
             _tierChip.style.cssText = 'display:inline-block;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:#059669;border:1px solid rgba(5,150,105,0.3);';
         } else {
