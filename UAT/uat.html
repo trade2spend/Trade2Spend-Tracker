@@ -3072,18 +3072,18 @@
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.event !== 'postgres_changes') return;
-                if (msg.payload?.table === 'members') {
+                if (msg.payload?.data?.table === 'members') {
                     _rtRefetchMemberAndAct(false);
                     return;
                 }
-                if (msg.payload?.table === 'sessions') {
+                if (msg.payload?.data?.table === 'sessions') {
                     // Only react when THIS device's own session row just went inactive.
                     // Several existing flows can cause that (self idle-timeout, self logout,
                     // admin PIN-reset deactivating every session) — _rtRefetchMemberAndAct()
                     // re-checks the member row fresh so those keep showing their own correct
                     // message; only a genuinely normal member row falls through to
                     // 'device_removed' (Manage Devices "Remove" from another device).
-                    const _rtRow = msg.payload?.new;
+                    const _rtRow = msg.payload?.data?.record;
                     const _rtDid = localStorage.getItem('t2s_uat_device_id');
                     if (_rtRow && _rtDid && _rtRow.device_id === _rtDid && _rtRow.is_active === false) {
                         _rtRefetchMemberAndAct(true);
@@ -3096,7 +3096,7 @@
                 fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
                 if (_rtTabId === 'trades') fetchTradeAlerts();
                 if (_rtTabId === 'markets') fetchMarketPreview(); // refresh Markets quick-preview Updates sub-tab on new post
-                if (msg.payload?.eventType === 'INSERT' && msg.payload?.new && !msg.payload.new.is_deleted && !msg.payload.new.parent_id && ['trade_alert','general','market_update'].includes(msg.payload.new.post_type)) _triggerAlert(msg.payload.new);
+                if (msg.payload?.data?.type === 'INSERT' && msg.payload?.data?.record && !msg.payload.data.record.is_deleted && !msg.payload.data.record.parent_id && ['trade_alert','general','market_update'].includes(msg.payload.data.record.post_type)) _triggerAlert(msg.payload.data.record);
             } catch(_) {}
         };
 
