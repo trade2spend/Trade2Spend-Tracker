@@ -539,7 +539,7 @@ function _mobileLockRender(mmss,isPending,errEl,btn,member,inp){
 }
 function _mobileLockRecheck(member,inp,errEl){
   const btn=document.getElementById('mobile-btn');
-  sbFetch(`sessions?member_id=eq.${member.id}&locked_until=gt.${encodeURIComponent(new Date().toISOString())}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}})
+  sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&locked_until=gt.${encodeURIComponent(new Date().toISOString())}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}})
     .then(s=>{
       if(s&&s.length>0&&s[0].locked_until){
         const targetDate=new Date(s[0].locked_until);
@@ -605,7 +605,7 @@ async function checkMobile(){
     const member=members[0];
     if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @T2Sview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
-    const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
+    const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
     if(_acctLock&&_acctLock.length>0){
       // checkpoint pin_lock_countdown v004/v005 (2026-10-29) — was its own static,
       // once-rendered text with no countdown; now shares the same engine checkLock()/
@@ -800,8 +800,8 @@ async function submitRegistration(){
     const did=getDeviceId();const deviceType=/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop';
     const mobile='+91'+currentUnregisteredMobile;
     const consentText='I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.';
-    const _devBlk=await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&select=device_id`,{method:'GET'});
-    if(_devBlk&&_devBlk.length>0){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='This device has been restricted. Contact @T2Sview on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
+    const _devBlk=await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&select=blocked_until`,{method:'GET'});
+    if(_devBlk&&_devBlk.some(b=>b.blocked_until===null||new Date(b.blocked_until)>new Date())){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='This device has been restricted. Contact @T2Sview on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
     const _rlSince=new Date(Date.now()-24*3600000).toISOString();
     const _rlRecent=await sbFetch(`access_requests?device_id=eq.${did}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`,{method:'GET'});
     if(_rlRecent&&_rlRecent.length>=3){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Too many requests from this device. Try again after 24 hours.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
