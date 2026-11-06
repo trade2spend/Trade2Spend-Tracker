@@ -1475,7 +1475,7 @@
                 const _faLockLs=localStorage.getItem('t2s_uat_lock_until');const _faLockedMidLs=localStorage.getItem('t2s_uat_locked_mid');
                 if(_faLockLs&&new Date()<new Date(_faLockLs)&&_faLockedMidLs===_faMid){const _faMinsLs=Math.max(1,Math.ceil((new Date(_faLockLs)-new Date())/60000));_faSetLockHint(_faMinsLs);return;}
                 const _faNowLock=new Date().toISOString();
-                const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
+                const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&device_id=eq.${localStorage.getItem('t2s_uat_device_id')||''}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
                 if(_faLockRow&&_faLockRow.length>0){const _faLuDb=new Date(_faLockRow[0].locked_until);const _faMinsDb=Math.max(1,Math.ceil((_faLuDb-new Date())/60000));localStorage.setItem('t2s_uat_lock_until',_faLockRow[0].locked_until);localStorage.setItem('t2s_uat_locked_mid',_faMid);_faSetLockHint(_faMinsDb);return;}
                 if (hint) { hint.style.color = '#4a2a78'; hint.textContent = _faMember.pin_hash ? 'Registered member — enter your PIN below.' : 'Registered member — set up your PIN below.'; }
                 _faMobileBlocked = true;
@@ -1562,8 +1562,8 @@
             const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
             const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
             // Check if this device has been blocked by admin
-            const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=device_id`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-            if (_devBlk && _devBlk.length > 0) {
+            const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            if (_devBlk && _devBlk.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
                 if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This device has been restricted. Contact @T2Sview on Telegram.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                 return;
@@ -5458,8 +5458,12 @@
         try {
             // Target by this exact session row's own id (not just member+device) so a stale
             // duplicate row for the same device could never be patched by accident.
+            // checkpoint device_removal_lock (2026-11-05) — also locks the removed device for
+            // 30 minutes, so a hijacker who gets removed can't immediately log back in on the
+            // same device. failed_attempts_today reset so this doesn't compound with any
+            // pre-existing wrong-PIN count on that row.
             await sbFetch(`sessions?id=eq.${sessionId}&member_id=eq.${memberId}&device_id=eq.${deviceId}`, {
-                method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' }
+                method: 'PATCH', body: JSON.stringify({ is_active: false, locked_until: new Date(Date.now() + 30*60000).toISOString(), failed_attempts_today: 0 }), headers: { 'Prefer': 'return=minimal' }
             });
             loadManageDevices();
         } catch(e) {
