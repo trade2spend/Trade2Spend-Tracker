@@ -576,9 +576,13 @@ async function checkLock(){
       localStorage.removeItem('t2s_uat_lock_until');return false;
     }
   }catch(e){
-    // DB failed — fall back to localStorage
+    // DB failed — fall back to localStorage, but only if it's for the SAME member currently
+    // being checked (checkpoint pinkey_unscoped_lock_fix, 2026-11-07) — matches the same
+    // scoping the DB-success path's own fallback already uses a few lines above.
     const loc=localStorage.getItem('t2s_uat_lock_until');
-    if(loc&&new Date()<new Date(loc)){_showLockMsg(new Date(loc));return true;}
+    const locMid=localStorage.getItem('t2s_uat_locked_mid');
+    const curMid=localStorage.getItem('t2s_uat_member_id');
+    if(loc&&new Date()<new Date(loc)&&locMid===curMid){_showLockMsg(new Date(loc));return true;}
   }
   if(_lockIv){clearInterval(_lockIv);_lockIv=null;}
   localStorage.removeItem('t2s_uat_lock_until');return false;
@@ -669,7 +673,13 @@ async function checkMobile(){
 }
 
 function updateDots(buf,pfx='d'){for(let i=0;i<4;i++){const d=document.getElementById(`${pfx}${i}`);if(!d)return;d.classList.toggle('filled',i<buf.length);d.classList.remove('error','shake');}}
-function pinKey(k){if(pinBuffer.length>=4)return;const lk=localStorage.getItem('t2s_uat_lock_until');if(lk&&new Date()<new Date(lk))return;pinBuffer+=k;updateDots(pinBuffer);if(pinBuffer.length===4)setTimeout(verifyPin,120);}
+// checkpoint pinkey_unscoped_lock_fix (2026-11-07) — removed the bare lock_until timestamp
+// check that used to live here. It had no member/device scoping, so a leftover lock
+// timestamp from an unrelated device could silently freeze this PIN pad with zero
+// explanation. checkLock() (member+device scoped) already gates access before this screen
+// is shown, and the server re-verifies on submit — this extra client-side guard was
+// redundant and, under the per-device lock design, actively wrong.
+function pinKey(k){if(pinBuffer.length>=4)return;pinBuffer+=k;updateDots(pinBuffer);if(pinBuffer.length===4)setTimeout(verifyPin,120);}
 function pinDel(){pinBuffer=pinBuffer.slice(0,-1);updateDots(pinBuffer);document.getElementById('pin-err').textContent='';}
 
 // checkpoint pin_hash_consolidated (2026-10-18) — PIN check now happens entirely
