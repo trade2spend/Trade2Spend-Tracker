@@ -274,3 +274,37 @@
     redactPostContent
   };
 });
+
+// ── AUTO-UPDATE DETECTION (checkpoint version_check_autoupdate, 2026-11-07) ──────────────
+// Browser-only, self-starting: any page just needs <script src="trade_unlock_shared.js">,
+// nothing else. Checks this page's own ETag/Last-Modified periodically; if it changes (a new
+// version was deployed), shows a banner with a manual "Refresh now" button — never
+// auto-reloads on its own, so no one mid-PIN-entry or mid-typing is ever unexpectedly
+// interrupted. Guarded so Node's require() (server.js) never executes this block.
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  (function () {
+    let _t2sVersionBaseline = null;
+    let _t2sUpdateDetected = false;
+    async function _t2sCheckForUpdate() {
+      if (_t2sUpdateDetected) return; // already showing the banner — stop polling
+      try {
+        const res = await fetch(location.pathname, { method: 'HEAD', cache: 'no-store' });
+        const tag = res.headers.get('etag') || res.headers.get('last-modified');
+        if (!tag) return; // headers unavailable for some reason — fail silent, never block the app
+        if (_t2sVersionBaseline === null) { _t2sVersionBaseline = tag; return; } // first check — just record baseline
+        if (tag !== _t2sVersionBaseline) { _t2sUpdateDetected = true; _t2sShowUpdateBanner(); }
+      } catch (e) { /* network hiccup — fail silent, try again next scheduled check */ }
+    }
+    function _t2sShowUpdateBanner() {
+      if (document.getElementById('t2s-update-banner')) return;
+      const b = document.createElement('div');
+      b.id = 't2s-update-banner';
+      b.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#4a2a78;color:#fff;padding:12px 16px;text-align:center;font-family:inherit;font-size:0.85rem;font-weight:600;';
+      b.innerHTML = 'A new version is available. <button onclick="location.reload()" style="margin-left:10px;padding:6px 14px;border:none;border-radius:8px;background:#fff;color:#4a2a78;font-weight:700;cursor:pointer;">Refresh now</button>';
+      document.body.appendChild(b);
+    }
+    setTimeout(_t2sCheckForUpdate, 3000);
+    setInterval(_t2sCheckForUpdate, 600000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) _t2sCheckForUpdate(); });
+  })();
+}
