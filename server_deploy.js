@@ -1,3 +1,5 @@
+// DEPLOY: T2S-UAT-20261110-001 | server.js: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved plan 2026-11-10). NEW UAT-only routes /uat-admin-verify-pin, /uat-admin-pub (lock_status), /uat-admin-sb (admin data door, exact action/field rules). UAT DB only, via new env UAT_SUPABASE_SERVICE_KEY (no anon fallback; all three routes return 503 until it is set). UAT admin passes stored hashed in uat_auth_tokens (8h, max 2 devices, never accepted by prod routes). Admin list, PIN hash and lock live only in the locked uat_admins table (no anon access). No public set-PIN route in UAT: owner sets/resets the UAT PIN hash in the UAT DB (hash made locally with Trading_Bot/make_uat_admin_pin_hash.cjs). No Telegram from UAT. Existing /uat-sb now strips pin_hash/admin_pin_hash from every reply. Prod routes, prod admin PIN routes, _issueAdminToken, _executeSecretValid, /prod-sb untouched. Needs UAT SQL UAT/sql/20261110_uat_admin_login.sql before use. Rollback: restore server.js.bak_20261110_pre_uat_admin.
+// DEPLOY: T2S-UAT-20261029-001 | server.js: /uat-setup-pin — post-"Reset PIN" device lock (checkpoint pin_reset_device_lock, Codex-reviewed 2 rounds, no unresolved blockers). If a member has any historical login_success audit_log row (any device), this is a post-reset re-setup, not first-time signup — the calling device must itself have a prior login_success row for this member, else rejected with {deviceNotRegistered:true}. First-time signup (zero history for the member) is unaffected, still allowed from any device. Scoped deliberately to admin's "Reset PIN" action only (pin_hash=null) — NOT admin's "Unlock" action (handleUnlock in admin_uat.html only clears locked_until/failed_attempts_today, PIN stays intact, member still needs the real PIN regardless of device; Tushar's explicit call, 2026-10-29, no new restriction wanted there beyond the existing 2-device limit). Audit_log used (not sessions.is_active) because admin's "Reset PIN" action clears is_active for every device, so by the time this check runs it can no longer tell the real registered device from an impostor — audit_log rows are untouched by that reset. Fails CLOSED: if the audit_log lookup itself errors (non-array response), rejects rather than proceeding as if no history exists. Bundled fix (Codex-found side-bug): the 2-device active-session-limit check now runs BEFORE the pin_hash write, not after — previously a limitReached rejection left the member with no PIN and no way to retry (pin_hash was already saved). Also added the matching login_success audit_log write to /uat-setup-pin's own success path (previously only /uat-verify-pin wrote this event), so a first-time-setup device is correctly recognized as "has logged in before" if this member is ever reset in the future. Companion: UAT/login_uat.html (lockout countdown, same date). Rollback: restore the pre-20261029 /uat-setup-pin block (member lookup → immediate pin_hash PATCH → allActive check → session reactivate/insert → recheck → token) and remove the two new checkpoint comment blocks + the new login_success audit_log write.
 // DEPLOY: T2S-PROD-20261021-002 | server.js: Admin PIN server-side (checkpoint admin_pin_server / admin_pin_server_shipdecision, Codex-reviewed 2+2 rounds, both clean/withdrawn). The admin app's own unlock PIN (admin.html/admin_uat.html) moves from pure client-side PBKDF2 compare against localStorage.t2s_pin to server-verified bcrypt against a new members.admin_pin_hash column (scoped to is_admin=true; Tushar added the column manually — not a schema change made by this session). New endpoints POST /admin-setup-pin (atomic conditional admin_pin_hash IS NULL, same pattern as /uat-setup-pin) and POST /admin-verify-pin (bcrypt compare; in-memory CAS wrong-attempt counter via _adminPinAttempts; 3 wrong → writes the existing keep_alive_log admin_pwa_locked row + fires the existing Telegram Reset-PIN alert via the new shared sendAdminLockAlert() helper, which /admin-alert now also calls instead of duplicating the message). On success, issues a random 8-hour session token (_issueAdminToken, crypto.randomBytes) instead of the real EXECUTE_SECRET — the master secret is never transmitted by this flow. All 20 existing EXECUTE_SECRET-only inbound gates now call the new _executeSecretValid(secret) helper (secret === process.env.EXECUTE_SECRET || isValidAdminSessionToken(secret)) instead of a direct !== comparison — additive only, nothing removed. Device-slot registration (_registerAdminDeviceSlot) mirrors admin.html's registerAdminSession() exactly (same keep_alive_log admin_session_<deviceId> rows, same 2-device evict-oldest rule) so the token map can never exceed 2 live entries; evicting a slot also revokes that device's token. Both existing Telegram reset paths (admin_pin_reset_confirm callback, /unlock_admin command) now also call _adminPinFullReset() — nulls admin_pin_hash AND wipes every outstanding token, so a PIN reset can't leave an old token still working. Client changes (Trading_Bot/index.html, UAT/admin_uat.html — both ship together, same local-PIN code in both): checkPin()/saveNewPin() call the new endpoints instead of local PBKDF2; on success, the returned sessionToken is saved to the SAME localStorage key (t2s_execute_secret) the ~18 existing admin-action call sites already read — zero changes needed to any of them. hashAdminPin() removed from both client files (no longer called). Known, accepted limitation (Tushar's explicit decision 2026-10-21, after 2 Codex rounds each on admin_pin_server and admin_pin_server_shipdecision): these endpoints cannot verify the caller already passed the existing TOTP layer, because that layer has never had server-side session tracking either (purely browser-remembered via t2s_admin_session_exp) — same category as the already-parked "no real per-caller login/token system" item, not a new gap. Rollback: revert the 20 _executeSecretValid( calls back to their literal !secret||secret!==process.env.EXECUTE_SECRET form; remove the admin PIN block (constants through sendAdminLockAlert helper) and the /admin-verify-pin+/admin-setup-pin route block; revert /admin-alert to its inline message; revert the two Telegram reset paths to drop the _adminPinFullReset() calls; revert checkPin()/saveNewPin()/hashAdminPin() in both client files.
 // DEPLOY: T2S-PROD-20261021-001 | server.js: Finding C REGRESSION FIX — the 2026-10-20 allowlist (T2S-PROD-20261020-001) broke "Send to Members" within a day because its investigation only matched backtick-quoted sbFetch calls and missed every single-quoted sbPost('posts',...) call site (the actual way every create/POST action in this codebase is written). Re-investigated with a quote-agnostic search across all 4 consumer files. Fixes: PROD_SB_RULES.posts and UAT_SB_RULES.members/posts now include POST; UAT_SB_RULES gained 3 entire tables missed in the first pass (feature_flags, audit_log, device_blocks). Also fixed a new near-miss found while correcting this: _sbProxyBlocksIsAdmin now checks `is_admin === true` instead of mere key presence — the real "add member" feature explicitly sends `is_admin:false` as a safe default, which the original presence-check would have wrongly blocked too, once POST was allowed. Verified: 32 checks replayed against the actual extracted functions — the exact call that broke prod now succeeds, is_admin:false now succeeds, is_admin:true (any context) still correctly blocked, every previously-verified real call site and every attack shape re-confirmed. Codex not re-reviewed for this hotfix (same checkpoint's methodology already approved twice; this is a correction to the investigation's completeness, not a new design). Rollback: revert PROD_SB_RULES.posts to ['GET','PATCH'], UAT_SB_RULES to its 2026-10-20 shape (drop feature_flags/audit_log/device_blocks, drop POST from members/posts), revert _sbProxyBlocksIsAdmin to the hasOwnProperty check — note this restores the regression.
 // DEPLOY: T2S-PROD-20261020-001 | server.js: Finding C fix — /prod-sb and /uat-sb no longer forward ANY {table,method} to Supabase using the service-role key (which bypasses every RLS rule already built this project). Added PROD_SB_RULES/UAT_SB_RULES table+method allowlists (6 tables for /prod-sb: members/sessions/posts/post_shares/push_subscriptions/read_receipts; 5 for /uat-sb: members/sessions/posts/access_requests/keep_alive_log — UAT's member-facing files bypass /uat-sb entirely via a separate anon-key path, not part of this fix), built from an exhaustive grep of every real sbFetch/sbGet/sbPatch/sbPost call site across login.html, index.html, Trading_Bot/index.html, UAT/admin_uat.html. Field-level restriction is a BLOCKLIST (is_admin only, the one field with zero legitimate call site anywhere and the single most severe possible abuse) rather than a full allowlist — investigation surfaced 3 previously-missed legitimate fields across 3 passes (tour_completed, acquisition_source, sessions.pin_hash on POST — prod's PIN setup flow still writes this directly), proving an exact field allowlist was too fragile to build safely. Any request for an unlisted table, an unsupported method on a listed table, or an is_admin write → 403. Verified: replayed all ~45 real call-site shapes found during investigation against the actual extracted functions — 100% allowed; separately verified unknown-table/wrong-method/is_admin-write attack shapes are all rejected. Codex-reviewed (2 rounds on checkpoint prodsb_allowlist, no unresolved blockers — one round caught that the original investigation had missed admin.html's own use of /prod-sb entirely). Does NOT solve the deeper residual (anyone who knows a specific mobile number can still look it up via the now-narrower members GET — no auth/token system exists to close that; tracked separately). Rollback: remove the _sbProxyAllowed/_sbProxyBlocksIsAdmin calls from both /uat-sb and /prod-sb handlers (2 call sites) and the PROD_SB_RULES/UAT_SB_RULES/_sbProxyTable/_sbProxyAllowed/_sbProxyBlocksIsAdmin block.
@@ -100,6 +102,10 @@ const GROQ_KEY       = process.env.GROQ_KEY       || '';
 // ── UAT SUPABASE PROXY ────────────────────────────────────────────────────────
 const UAT_SB_URL    = 'https://ivjyadnspyobzgbdoajj.supabase.co';
 const UAT_SB_KEY    = process.env.UAT_SUPABASE_KEY   || '';
+// checkpoint uat_admin_login (2026-11-10) — UAT-only privileged key, used ONLY by the new
+// /uat-admin-* routes. No fallback to UAT_SUPABASE_KEY on purpose: the login-pass table must
+// never be reachable with the public anon key. Unset → those routes return 503 (fail closed).
+const UAT_SB_SVC_KEY = process.env.UAT_SUPABASE_SERVICE_KEY || '';
 const UAT_PROXY_SEC = process.env.UAT_PROXY_SECRET   ;
 const PROD_PROXY_SEC    = process.env.PROD_PROXY_SECRET  ;
 const TOTP_DEPLOY_SEC   = process.env.TOTP_DEPLOY_SECRET || '';
@@ -800,6 +806,187 @@ async function sbFetchUat(path, opts = {}) {
   });
   const text = await r.text();
   return text ? JSON.parse(text) : [];
+}
+
+// ── UAT ADMIN LOGIN (checkpoint uat_admin_login, 2026-11-10) ─────────────────────────
+// UAT-only admin PIN login, admin pass and admin data door. Reads/writes the UAT DB only,
+// via UAT_SB_SVC_KEY — never the prod DB, never the public anon key. Prod admin routes
+// (/admin-verify-pin, /admin-setup-pin, _issueAdminToken, _executeSecretValid, /prod-sb)
+// are untouched and never accept a UAT admin pass. No Telegram alerts (owner rule: UAT
+// must never touch prod). A UAT admin's live passes in uat_auth_tokens ARE its device
+// slots (max 2 devices, oldest evicted) — one record set, one database.
+// Who is a UAT admin, their PIN hash and lock state live ONLY in uat_admins (no anon
+// access) — NOT in members.is_admin / keep_alive_log, which the public anon key can still
+// write until Phase 5 (Codex post-review BLOCKER, 2026-11-10). There is deliberately NO
+// public set-PIN route in UAT: the owner (sole admin) sets/resets the UAT admin PIN hash
+// directly in the UAT DB (owner decision 2026-11-10, Codex-agreed), so nothing exists for
+// a stranger to claim.
+const UAT_ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // same 8h window as the prod admin pass
+const _uatAdminAttempts = new Map(); // adminId -> wrong PIN count (in-memory, same as prod _adminPinAttempts)
+const _uatAdminRate = new Map();     // ip -> { count, reset } — own bucket, 20 / 5 min
+const _UAT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const _UAT_ADMIN_DEV_RE = /^adm_[0-9a-f]{32}$/;          // admin_uat.html getAdminDeviceId() format
+const _UAT_SAFE_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;         // member device ids in filters
+const _UAT_ISO_RE = /^\d{4}-\d{2}-\d{2}(T[0-9:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+// Privileged UAT DB call. Throws on any non-2xx so every caller fails closed.
+async function sbUatSvc(path, opts = {}) {
+  if (!UAT_SB_SVC_KEY) throw new Error('UAT_SUPABASE_SERVICE_KEY not set');
+  const { headers: extraHdrs, ...rest } = opts;
+  const r = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, {
+    ...rest,
+    headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...(extraHdrs || {}), 'apikey': UAT_SB_SVC_KEY, 'Authorization': `Bearer ${UAT_SB_SVC_KEY}` }
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`UAT DB ${r.status}: ${text.slice(0, 200)}`);
+  return text ? JSON.parse(text) : [];
+}
+function _uatTokHash(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
+function _uatAdminRateOk(req) {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let e = _uatAdminRate.get(ip);
+  if (!e || now > e.reset) { e = { count: 0, reset: now + 5 * 60 * 1000 }; _uatAdminRate.set(ip, e); }
+  e.count++;
+  return e.count <= 20;
+}
+
+// Issue a UAT admin pass. Only the sha256 of the pass is stored. Same 2-device rule as prod
+// _registerAdminDeviceSlot: this device's older passes are revoked; if 2 OTHER devices still
+// hold live passes, the oldest device's passes are revoked.
+async function _uatIssueAdminPass(adminId, deviceId) {
+  const nowIso = new Date().toISOString();
+  const live = await sbUatSvc(`uat_auth_tokens?kind=eq.admin&member_id=eq.${adminId}&revoked_at=is.null&expires_at=gt.${encodeURIComponent(nowIso)}&select=device_id,created_at&order=created_at.asc`);
+  await sbUatSvc(`uat_auth_tokens?kind=eq.admin&member_id=eq.${adminId}&device_id=eq.${deviceId}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: nowIso }), headers: { 'Prefer': 'return=minimal' } });
+  const others = [...new Set((live || []).map(r => r.device_id).filter(d => d !== deviceId))]; // oldest first
+  if (others.length >= 2) {
+    await sbUatSvc(`uat_auth_tokens?kind=eq.admin&member_id=eq.${adminId}&device_id=eq.${encodeURIComponent(others[0])}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: nowIso }), headers: { 'Prefer': 'return=minimal' } });
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  await sbUatSvc('uat_auth_tokens', { method: 'POST', body: JSON.stringify({ token_hash: _uatTokHash(token), kind: 'admin', member_id: adminId, device_id: deviceId, expires_at: new Date(Date.now() + UAT_ADMIN_TOKEN_TTL_MS).toISOString() }), headers: { 'Prefer': 'return=minimal' } });
+  return token;
+}
+
+// Valid only if: right format, stored, kind=admin, not revoked, not expired, AND the member
+// is still listed in uat_admins right now (fresh read every call, no cache — removing the
+// row logs that admin out on their next action). Any DB error throws → caller rejects.
+async function _uatValidateAdminPass(token) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) return null;
+  const nowIso = new Date().toISOString();
+  const rows = await sbUatSvc(`uat_auth_tokens?token_hash=eq.${_uatTokHash(token)}&kind=eq.admin&revoked_at=is.null&expires_at=gt.${encodeURIComponent(nowIso)}&select=member_id,device_id&limit=1`);
+  if (!rows || !rows.length) return null;
+  const adm = await sbUatSvc(`uat_admins?member_id=eq.${rows[0].member_id}&select=member_id&limit=1`);
+  if (!adm || !adm.length) return null;
+  return { adminId: rows[0].member_id, deviceId: rows[0].device_id };
+}
+// Looks up a UAT admin by member id. Returns { pin_hash, locked_at, name } or null.
+async function _uatGetAdmin(adminId) {
+  const a = await sbUatSvc(`uat_admins?member_id=eq.${adminId}&select=pin_hash,locked_at&limit=1`);
+  if (!a || !a.length) return null;
+  const mem = await sbUatSvc(`members?id=eq.${adminId}&select=name&limit=1`);
+  return { ...a[0], name: (mem && mem[0] && mem[0].name) || 'Admin' };
+}
+async function _uatMemberIdByMobile(mobile) {
+  const m = await sbUatSvc(`members?mobile=eq.${mobile.replace(/\+/g, '%2B')}&select=id&limit=1`);
+  return m && m.length ? m[0].id : null;
+}
+
+// Removes PIN hashes from any reply, at any depth (embedded rows included).
+function _uatRedactHashes(v) {
+  if (Array.isArray(v)) return v.map(_uatRedactHashes);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const [k, x] of Object.entries(v)) { if (k === 'pin_hash' || k === 'admin_pin_hash') continue; o[k] = _uatRedactHashes(x); }
+    return o;
+  }
+  return v;
+}
+
+// /uat-admin-sb rules: exactly the admin actions admin_uat.html performs today (approvals,
+// active/inactive, member management, device blocks, PIN reset/unlock queue, free-access
+// switch). Anything not listed → 403. Writes: exact filter shape + allowed fields + values.
+const _uatIsBool = v => v === true || v === false;
+const _uatIsIso = v => typeof v === 'string' && _UAT_ISO_RE.test(v);
+const _uatIsDateOrNull = v => v === null || _uatIsIso(v);
+const _UAT_ADMIN_RULES = {
+  members: {
+    GET: true,
+    PATCH: { filter: [['id', 'uuid']], fields: {
+      free_access: _uatIsBool,
+      free_access_blocked: _uatIsBool,
+      status: v => v === 'enabled' || v === 'disabled',
+      tier: v => v === 'free' || v === 'paid',
+      subscription_end: _uatIsDateOrNull,
+      acquisition_source: v => v === 'free' || v === 'free_to_paid' || v === 'direct_paid',
+      pin_hash: v => v === null,
+    } },
+    POST: { filter: [], required: ['mobile', 'name', 'tier'], fields: {
+      mobile: v => typeof v === 'string' && /^\+91\d{10}$/.test(v),
+      name: v => typeof v === 'string' && v.trim().length > 0 && v.length <= 60,
+      tier: v => v === 'free' || v === 'paid',
+      status: v => v === 'enabled',
+      is_admin: v => v === false,
+      tour_completed: v => v === false,
+      acquisition_source: v => v === 'free' || v === 'direct_paid',
+      subscription_end: _uatIsDateOrNull,
+    } },
+  },
+  sessions: {
+    GET: true,
+    PATCH: { filter: [['member_id', 'uuid']], fields: {
+      is_active: v => v === false,
+      locked_until: v => v === null,
+      failed_attempts_today: v => v === 0,
+    } },
+  },
+  access_requests: {
+    GET: true,
+    PATCH: [
+      { filter: [['id', 'uuid']], fields: { status: v => v === 'approved' || v === 'rejected' || v === 'blocked', last_rejected_at: _uatIsIso } },
+      { filter: [['device_id', 'safe'], ['status', 'pending']], fields: { status: v => v === 'blocked' } },
+    ],
+  },
+  audit_log: {
+    GET: true,
+    POST: { filter: [], required: ['event_type'], fields: {
+      event_type: v => v === 'access_approved' || v === 'access_rejected' || v === 'number_blocked',
+      event_data: v => !!v && typeof v === 'object' && !Array.isArray(v),
+    } },
+    // Server forces the extra condition, so only queue rows can ever be deleted.
+    DELETE: { filter: [['id', 'uuid']], fields: {}, appendFilter: 'event_type=in.(pin_reset_request,unlock_request)' },
+  },
+  device_blocks: {
+    GET: true,
+    POST: { filter: [], required: ['device_id'], fields: {
+      device_id: v => typeof v === 'string' && _UAT_SAFE_ID_RE.test(v),
+      reason: v => typeof v === 'string' && v.length <= 200,
+    } },
+    DELETE: { filter: [['device_id', 'safe']], fields: {} },
+  },
+  feature_flags: {
+    GET: q => q.get('key') === 'eq.free_access_requests_enabled',
+    PATCH: { filter: [['key', 'free_access_requests_enabled']], fields: { value: _uatIsBool, updated_at: _uatIsIso } },
+  },
+};
+function _uatFilterOk(q, spec) {
+  const keys = [...q.keys()];
+  if (keys.length !== spec.length || new Set(keys).size !== keys.length) return false;
+  return spec.every(([k, kind]) => {
+    const v = q.get(k);
+    if (typeof v !== 'string' || !v.startsWith('eq.')) return false;
+    const x = v.slice(3);
+    if (kind === 'uuid') return _UAT_UUID_RE.test(x);
+    if (kind === 'safe') return _UAT_SAFE_ID_RE.test(x);
+    return x === kind; // literal value
+  });
+}
+function _uatBodyOk(bodyStr, rule) {
+  let b; try { b = JSON.parse(bodyStr || 'null'); } catch { return false; }
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false; // single row only
+  const keys = Object.keys(b);
+  if (!keys.length) return false;
+  if (!keys.every(k => Object.prototype.hasOwnProperty.call(rule.fields, k) && rule.fields[k](b[k]))) return false;
+  return (rule.required || []).every(k => Object.prototype.hasOwnProperty.call(b, k));
 }
 
 // ── WEB PUSH — native implementation (RFC 8291 + RFC 8292, no npm dep) ───────
@@ -5616,6 +5803,15 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         const deviceType = /Mobi|Android/i.test(req.headers['user-agent'] || '') ? 'mobile' : 'desktop';
         const nowIso = new Date().toISOString();
 
+        // ── Cross-account "fishing" device block (checkpoint device_fishing_lock) — shared by
+        // both /uat-setup-pin and /uat-verify-pin, checked first since it's independent of
+        // which member is being targeted. blocked_until===null means permanent (existing
+        // admin-managed block); a future blocked_until is a temporary, self-expiring block.
+        const _devBlocks = await sbFetchUat(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`);
+        if (_devBlocks && _devBlocks.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
+          res.end(JSON.stringify({ success: false, deviceBlocked: true })); return;
+        }
+
         // ── POST /uat-setup-pin ───────────────────────────────────────────────
         if (urlPath === '/uat-setup-pin') {
           const mobile = String(parsed.mobile || '');
@@ -5624,16 +5820,35 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           if (!members || !members.length) { res.end(JSON.stringify({ success: false })); return; }
           const memberId = members[0].id;
           const _setupMember = members[0];
+
+          // checkpoint pin_reset_device_lock (2026-10-29) — if this member has ANY historical
+          // successful login (any device, any time), this is a post-"Reset PIN" re-setup, not
+          // a first-time signup. Require the CALLING device to itself have a prior login_success
+          // for this member. audit_log rows are never touched by the admin "Reset PIN" action
+          // (unlike sessions.is_active, which that action clears for every device) — so this is
+          // the one reset-proof signal of "this device really logged in before." Fails CLOSED:
+          // if the audit_log lookup itself errors, never proceed as if no history exists.
+          const priorAnySuccess = await sbFetchUat(`audit_log?event_type=eq.login_success&member_id=eq.${memberId}&select=device_id&limit=1`);
+          if (!Array.isArray(priorAnySuccess)) { res.end(JSON.stringify({ success: false })); return; }
+          if (priorAnySuccess.length) {
+            const priorThisDevice = await sbFetchUat(`audit_log?event_type=eq.login_success&member_id=eq.${memberId}&device_id=eq.${deviceId}&select=id&limit=1`);
+            if (!Array.isArray(priorThisDevice) || !priorThisDevice.length) { res.end(JSON.stringify({ success: false, deviceNotRegistered: true })); return; }
+          }
+
+          // Concurrent-session-limit handling — mirrors existing client logic exactly
+          // (login_uat.html processSetupPin / uat.html _faSetupPin2), just server-side.
+          // Moved BEFORE the pin_hash write (checkpoint pin_reset_device_lock) — this used to
+          // run AFTER the PIN was already saved, so a limitReached rejection left the member
+          // with no PIN and no way to retry setup. Now nothing is written until every check passes.
+          const allActive = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+          if (allActive && allActive.length >= 2) { res.end(JSON.stringify({ success: false, limitReached: true })); return; }
+
           const newHash = bcrypt.hashSync(pin, 10);
           // Atomic conditional write — exactly one caller can ever win this transition.
           // A 0-row response means pin_hash was already non-null (lost the race, or
           // nothing to set) — checkpoint pin_hash_setup_identity's agreed mitigation.
           const written = await sbFetchUat(`members?id=eq.${memberId}&pin_hash=is.null`, { method: 'PATCH', body: JSON.stringify({ pin_hash: newHash }) });
           if (!written || !written.length) { res.end(JSON.stringify({ success: false, alreadySet: true })); return; }
-          // Concurrent-session-limit handling — mirrors existing client logic exactly
-          // (login_uat.html processSetupPin / uat.html _faSetupPin2), just server-side.
-          const allActive = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
-          if (allActive && allActive.length >= 2) { res.end(JSON.stringify({ success: false, limitReached: true })); return; }
           // Reactivate a pre-existing (e.g. previously-locked, is_active:false) row for this
           // exact device instead of inserting a second one for the same (member,device) pair.
           const priorRow = await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&select=id`);
@@ -5647,6 +5862,11 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
             res.end(JSON.stringify({ success: false, limitReached: true })); return;
           }
+          // checkpoint pin_reset_device_lock (2026-10-29) — mirrors /uat-verify-pin's own
+          // login_success write (same fire-and-forget best-effort pattern, not a hard
+          // guarantee — Codex-noted), so a first-time setup is USUALLY recognized as "this
+          // device has logged in before" the next time this member goes through a PIN reset.
+          sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_success', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { tier: _setupMember.tier, via: 'setup' } }) }).catch(() => {});
           // checkpoint stage1_posts_gatekeeper (2026-10-25) — issue a real login-proof,
           // additive field only, nothing existing removed/renamed.
           const _setupToken = _issueMemberToken(memberId, deviceId, _setupMember.tier, _setupMember.is_admin, _setupMember.free_access);
@@ -5663,9 +5883,12 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         if (!members || !members.length || members[0].status === 'disabled') { res.end(JSON.stringify({ success: false, disabled: true })); return; }
         const member = members[0];
 
-        // Account-wide lock check (any session row for this member, not just this device).
-        const acctLock = await sbFetchUat(`sessions?member_id=eq.${memberId}&locked_until=gt.${encodeURIComponent(nowIso)}&select=locked_until&limit=1`);
-        if (acctLock && acctLock.length) { res.end(JSON.stringify({ success: false, locked: true, locked_until: acctLock[0].locked_until })); return; }
+        // Per-device lock check (checkpoint device_lock_scope, 2026-11-05) — scoped to THIS
+        // device only. A lock on a different device for the same member must never block this
+        // one (previously checked ANY session row for the member, which let a stranger's own
+        // device-only lock wrongly block the real member's other device — live-confirmed bug).
+        const deviceLock = await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&locked_until=gt.${encodeURIComponent(nowIso)}&select=locked_until&limit=1`);
+        if (deviceLock && deviceLock.length) { res.end(JSON.stringify({ success: false, locked: true, locked_until: deviceLock[0].locked_until })); return; }
 
         if (!member.pin_hash) { res.end(JSON.stringify({ success: false })); return; }
 
@@ -5708,7 +5931,37 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           res.end(JSON.stringify({ success: true, sessionToken: _verifyToken })); return;
         }
 
-        // ── Wrong PIN — atomic (compare-and-swap) attempt counting, no client-trusted state ──
+        // ── Wrong PIN — record the attempt FIRST, unconditionally, so the fishing check below
+        // never undercounts (checkpoint device_fishing_lock, 2026-11-05) — this replaces the
+        // two branch-local login_fail writes that used to run only on the non-lock path.
+        await sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_fail', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: {} }) }).catch(() => {});
+
+        // ── Cross-account fishing detection (checkpoint device_fishing_lock) — device-scoped,
+        // independent of the per-device lock below. Advisory/additive: if this check itself
+        // errors, fail OPEN for this new layer only — the per-device/registered-device lock
+        // below still fully applies regardless, so a transient error here never blocks a real
+        // member, it only means this one bonus check was skipped for this attempt.
+        try {
+          const _fwFlag = await sbFetchUat(`feature_flags?key=eq.device_fishing_window_hours&select=value`);
+          const _fwRaw = (_fwFlag && _fwFlag[0]) ? Number(_fwFlag[0].value) : NaN;
+          const _fwHours = (Number.isFinite(_fwRaw) && _fwRaw > 0) ? _fwRaw : 24; // default 24h, change via feature_flags, no redeploy needed
+          const _fwSince = new Date(Date.now() - _fwHours * 3600000).toISOString();
+          const _fwRows = await sbFetchUat(`audit_log?event_type=eq.login_fail&device_id=eq.${deviceId}&created_at=gt.${encodeURIComponent(_fwSince)}&select=member_id`);
+          const _fwDistinct = new Set((_fwRows || []).map(r => r.member_id)).size;
+          if (_fwDistinct > 3) {
+            const _priorEsc = await sbFetchUat(`audit_log?event_type=eq.device_fishing_lock&device_id=eq.${deviceId}&select=id`);
+            const _escNum = (_priorEsc ? _priorEsc.length : 0) + 1;
+            const _permanent = _escNum >= 3;
+            const _blockBody = _permanent
+              ? { device_id: deviceId, reason: `Fishing activity: ${_fwDistinct} different numbers tried within ${_fwHours}h (escalation ${_escNum} — permanent)` }
+              : { device_id: deviceId, reason: `Fishing activity: ${_fwDistinct} different numbers tried within ${_fwHours}h (escalation ${_escNum} — temporary)`, blocked_until: new Date(Date.now() + 30 * 60000).toISOString() };
+            await sbFetchUat('device_blocks', { method: 'POST', body: JSON.stringify(_blockBody) }).catch(() => {});
+            sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'device_fishing_lock', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { distinct_members: _fwDistinct, window_hours: _fwHours, escalation: _escNum, permanent: _permanent } }) }).catch(() => {});
+            res.end(JSON.stringify({ success: false, deviceBlocked: true })); return;
+          }
+        } catch (e) { /* fail open for this advisory layer only — see comment above */ }
+
+        // ── Per-device attempt counting (compare-and-swap, no client-trusted state) ──────────
         if (isRegisteredDevice) {
           const oldCount = registeredRow.failed_attempts_today || 0;
           const newCount = oldCount + 1;
@@ -5721,13 +5974,15 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           const finalCount = Math.max(newCount, oldCount + 1);
           if (finalCount >= MAX_ATTEMPTS_PIN) {
             const lu = new Date(Date.now() + LOCK_MINUTES_PIN * 60000).toISOString();
-            await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ locked_until: lu, failed_attempts_today: finalCount }) }).catch(() => {});
+            // checkpoint device_lock_scope (2026-11-05, Tushar's explicit correction) — locks
+            // ONLY this device's own row now, never every active session for the member. A
+            // registered device failing 3 times must not also lock the member's OTHER device.
+            await sbFetchUat(`sessions?id=eq.${registeredRow.id}`, { method: 'PATCH', body: JSON.stringify({ locked_until: lu, failed_attempts_today: finalCount }) }).catch(() => {});
             sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'account_locked', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { locked_until: lu, attempts: finalCount } }) }).catch(() => {});
-            // Notify the member's OTHER registered devices — this device is the one that just failed.
-            sendPushToMemberUat(memberId, { title: '⚠️ Incorrect PIN attempts', body: `Your account was locked after repeated incorrect PIN entries on a registered device (${deviceType}). If this wasn't you, contact @T2Sview.` }, deviceId).catch(() => {});
+            // Other registered devices are NOT locked anymore — informational push only.
+            sendPushToMemberUat(memberId, { title: '⚠️ Incorrect PIN attempts', body: `Repeated incorrect PIN entries locked a registered device (${deviceType}) for 30 minutes. If this wasn't you, contact @T2Sview.` }, deviceId).catch(() => {});
             res.end(JSON.stringify({ success: false, locked: true, locked_until: lu })); return;
           }
-          sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_fail', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { attempts: finalCount } }) }).catch(() => {});
           res.end(JSON.stringify({ success: false, attemptsRemaining: MAX_ATTEMPTS_PIN - finalCount })); return;
         } else {
           // Brand-new/never-logged-in device — deliberately locks only THIS device, never the
@@ -5755,7 +6010,6 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             finalCount = 1;
             await sbFetchUat('sessions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, device_type: deviceType, device_name: 'Unknown', is_active: false, failed_attempts_today: finalCount, last_active: nowIso }) }).catch(() => {});
           }
-          sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'login_fail', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { attempts: finalCount } }) }).catch(() => {});
           res.end(JSON.stringify({ success: false, attemptsRemaining: MAX_ATTEMPTS_PIN - finalCount })); return;
         }
       } catch (e) {
@@ -5825,6 +6079,166 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     return;
   }
 
+  // ── UAT ADMIN LOGIN ROUTES (checkpoint uat_admin_login, 2026-11-10) ─────────────
+  // UAT-only. See the uat_admin_login helper block for the rules. All three routes fail
+  // closed (503) until UAT_SUPABASE_SERVICE_KEY is set on the server.
+  if (req.method === 'OPTIONS' && (urlPath === '/uat-admin-verify-pin' || urlPath === '/uat-admin-pub' || urlPath === '/uat-admin-sb')) {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+
+  // POST /uat-admin-verify-pin {pin, device_id, admin_id | mobile}. Same rules and reply
+  // shapes as prod's /admin-verify-pin, against the UAT DB, with no Telegram alerts.
+  // No set-PIN route: the owner sets the UAT PIN hash directly in the UAT DB.
+  if (req.method === 'POST' && urlPath === '/uat-admin-verify-pin') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (!_uatAdminRateOk(req)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' })); return;
+    }
+    if (!UAT_SB_SVC_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT admin login not configured on server' })); return;
+    }
+    let rawBody = '';
+    req.on('data', c => rawBody += c);
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); // soft-fail pattern, same as prod admin PIN routes
+      try {
+        const parsed = JSON.parse(rawBody || '{}');
+        const pin = String(parsed.pin || '');
+        const deviceId = String(parsed.device_id || '');
+        if (!/^\d{4}$/.test(pin) || !_UAT_ADMIN_DEV_RE.test(deviceId)) { res.end(JSON.stringify({ success: false })); return; }
+
+        let adminId;
+        const mobileIn = String(parsed.mobile || '');
+        if (mobileIn) {
+          if (!/^\+91\d{10}$/.test(mobileIn)) { res.end(JSON.stringify({ success: false })); return; }
+          adminId = await _uatMemberIdByMobile(mobileIn);
+        } else {
+          adminId = String(parsed.admin_id || '');
+          if (!_UAT_UUID_RE.test(adminId)) adminId = null;
+        }
+        const adm = adminId ? await _uatGetAdmin(adminId) : null;
+        if (!adm) { res.end(JSON.stringify({ success: false })); return; } // not a UAT admin — generic
+        // Persistent lock first (uat_admins.locked_at — no anon access). Cleared by owner SQL.
+        if (adm.locked_at) { res.end(JSON.stringify({ success: false, locked: true })); return; }
+        if (!adm.pin_hash) { res.end(JSON.stringify({ success: false })); return; } // no PIN yet — generic
+
+        if (bcrypt.compareSync(pin, adm.pin_hash)) {
+          _uatAdminAttempts.delete(adminId);
+          let sessionToken;
+          try { sessionToken = await _uatIssueAdminPass(adminId, deviceId); }
+          catch (e) { console.error('[uat-admin-pin] pass issue failed', e.message); res.end(JSON.stringify({ success: false, serverBusy: true })); return; }
+          res.end(JSON.stringify({ success: true, sessionToken, adminId, name: adm.name })); return;
+        }
+
+        const newCount = (_uatAdminAttempts.get(adminId) || 0) + 1;
+        _uatAdminAttempts.set(adminId, newCount);
+        if (newCount >= MAX_ATTEMPTS_PIN) {
+          _uatAdminAttempts.delete(adminId);
+          try { await sbUatSvc(`uat_admins?member_id=eq.${adminId}`, { method: 'PATCH', body: JSON.stringify({ locked_at: new Date().toISOString() }), headers: { 'Prefer': 'return=minimal' } }); } catch (e) { console.error('[uat-admin-pin] lock write failed', e.message); }
+          res.end(JSON.stringify({ success: false, locked: true })); return;
+        }
+        res.end(JSON.stringify({ success: false, attemptsRemaining: MAX_ATTEMPTS_PIN - newCount })); return;
+      } catch (e) {
+        console.error('[uat-admin-pin]', e.message);
+        try { res.end(JSON.stringify({ success: false })); } catch {}
+      }
+    });
+    return;
+  }
+
+  // POST /uat-admin-pub {action:'lock_status', admin_id} — pre-PIN screen check.
+  // Replies only {locked, needsSetup}; a non-admin / unknown id gets the same all-false shape.
+  if (req.method === 'POST' && urlPath === '/uat-admin-pub') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (!_uatAdminRateOk(req)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' })); return;
+    }
+    if (!UAT_SB_SVC_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT admin login not configured on server' })); return;
+    }
+    let pBody = '';
+    req.on('data', c => pBody += c);
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      try {
+        const parsed = JSON.parse(pBody || '{}');
+        const adminId = String(parsed.admin_id || '');
+        if (parsed.action !== 'lock_status' || !_UAT_UUID_RE.test(adminId)) { res.end(JSON.stringify({ ok: false })); return; }
+        const adm = await sbUatSvc(`uat_admins?member_id=eq.${adminId}&select=pin_hash,locked_at&limit=1`);
+        if (!adm || !adm.length) { res.end(JSON.stringify({ ok: true, locked: false, needsSetup: false })); return; }
+        res.end(JSON.stringify({ ok: true, locked: !!adm[0].locked_at, needsSetup: !adm[0].pin_hash }));
+      } catch (e) {
+        console.error('[uat-admin-pub]', e.message);
+        try { res.end(JSON.stringify({ ok: false })); } catch {}
+      }
+    });
+    return;
+  }
+
+  // POST /uat-admin-sb {token, path, method, body, headers} — the UAT admin data door.
+  // Needs a valid UAT admin pass (fresh is_admin check every call). Only the actions in
+  // _UAT_ADMIN_RULES are allowed. Only a 'Prefer' header with a known value is forwarded;
+  // server auth headers are always the server's own. PIN hashes are stripped from replies.
+  if (req.method === 'POST' && urlPath === '/uat-admin-sb') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (!UAT_SB_SVC_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT admin login not configured on server' })); return;
+    }
+    let aBody = '';
+    req.on('data', c => aBody += c);
+    req.on('end', async () => {
+      try {
+        const { token, path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(aBody || '{}');
+        let who = null;
+        try { who = await _uatValidateAdminPass(token); } catch (e) { console.error('[uat-admin-sb] pass check failed', e.message); who = null; }
+        if (!who) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Unauthorized' })); return; }
+        const m = String(method || 'GET').toUpperCase();
+        const p = String(path || '');
+        const qi = p.indexOf('?');
+        const table = qi === -1 ? p : p.slice(0, qi);
+        const q = new URLSearchParams(qi === -1 ? '' : p.slice(qi + 1));
+        const tRules = Object.prototype.hasOwnProperty.call(_UAT_ADMIN_RULES, table) ? _UAT_ADMIN_RULES[table] : null;
+        let allowed = false, extra = '';
+        if (tRules && tRules[m] && !p.includes('uat_auth_tokens') && !p.includes('uat_admins')) {
+          if (m === 'GET') {
+            allowed = tRules.GET === true || (typeof tRules.GET === 'function' && tRules.GET(q));
+          } else {
+            const cands = Array.isArray(tRules[m]) ? tRules[m] : [tRules[m]];
+            for (const r of cands) {
+              if (!_uatFilterOk(q, r.filter)) continue;
+              const bodyOk = m === 'DELETE' ? reqBody == null : _uatBodyOk(reqBody, r);
+              if (bodyOk) { allowed = true; extra = r.appendFilter || ''; break; }
+            }
+          }
+        }
+        if (!allowed) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return; }
+        const pref = xh && typeof xh === 'object' ? xh.Prefer : undefined;
+        const prefer = (pref === 'return=minimal' || pref === 'return=representation') ? pref : 'return=representation';
+        const finalPath = extra ? `${p}${qi === -1 ? '?' : '&'}${extra}` : p;
+        const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${finalPath}`, {
+          method: m,
+          headers: { 'Content-Type': 'application/json', 'Prefer': prefer, 'apikey': UAT_SB_SVC_KEY, 'Authorization': `Bearer ${UAT_SB_SVC_KEY}` },
+          ...((m === 'POST' || m === 'PATCH') && reqBody ? { body: reqBody } : {})
+        });
+        const text = await sbRes.text();
+        let out = text || '[]';
+        if (sbRes.ok && text) { try { out = JSON.stringify(_uatRedactHashes(JSON.parse(text))); } catch {} }
+        res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+        res.end(out);
+      } catch (e) {
+        console.error('[uat-admin-sb]', e.message);
+        try { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Server error' })); } catch {}
+      }
+    });
+    return;
+  }
+
   // ── UAT SUPABASE PROXY — POST /uat-sb ────────────────────────────────────────
   if (req.method === 'OPTIONS' && urlPath === '/uat-sb') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type,x-t2s-uat' });
@@ -5853,8 +6267,13 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         const fwdHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
         const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
         const text = await sbRes.text();
+        // checkpoint uat_admin_login (2026-11-10) — strip pin_hash/admin_pin_hash from every
+        // reply (reads AND write echoes), so the new admin_pin_hash column can never leak
+        // through this page-visible-password door. admin_uat.html never reads either field.
+        let uatOut = text || '[]';
+        if (sbRes.ok && text) { try { uatOut = JSON.stringify(_uatRedactHashes(JSON.parse(text))); } catch {} }
         res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
-        res.end(text || '[]');
+        res.end(uatOut);
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
