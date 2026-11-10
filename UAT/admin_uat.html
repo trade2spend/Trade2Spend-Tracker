@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261110-002 | admin_uat: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved 2026-11-10). One build setting _isUatBuild()=true. UAT: (1) no Kotak 6-digit code screen; app opens to PIN; (2) PIN checked by /uat-admin-verify-pin (UAT DB only); first login on a browser asks mobile + PIN; lock state from /uat-admin-pub; (3) all admin-login browser storage names UAT-only via _ak() (t2s_uat_*) — never reads/changes/deletes prod admin's saved login on the same website; (4) every non-posts DB call goes through /uat-admin-sb with the UAT admin pass (posts stay on /uat-sb); 401 after login → back to PIN; (5) no in-app set-PIN card, no email-unlock redirect, ?reset=1 only forgets the remembered identity; (6) Kotak connect/disconnect, push-to-prod, market holiday, restore, backup, dummy likes, member notifications, contract refresh switched off in UAT. Prod admin file untouched. Rollback: restore admin_uat.html.bak_20261110_pre_step3. -->
 <!-- T2S-UAT-20261019-002 | admin_uat: Finding B fix — mirrors T2S-PROD-20261019-002 applied to admin.html. All T2SMonitor2026 call sites migrated to localStorage t2s_execute_secret; refresh-contracts' key removed entirely. Dead unused `_FA_SECRET` constant (line ~1767) left untouched — zero references, out of scope. Codex-reviewed (2 rounds, clean). Rollback: revert each x-t2s-secret value back to 'T2SMonitor2026'. -->
 <!-- T2S-UAT-20261018-002 | admin_uat: Finding K fix — disconnectKotak() now sends x-t2s-secret: localStorage t2s_execute_secret with its POST /logout-kotak call (previously sent no headers at all). Mirrors T2S-PROD-20261018-003 applied to admin.html. Companion server.js change adds an EXECUTE_SECRET-only guard to that route. Codex-reviewed (2 rounds, clean). Rollback: revert the fetch call back to no headers object. -->
 <!-- T2S-UAT-20260918-001 | admin_uat: resetMemberPin root-cause fix — replaced DELETE sessions with the same two-step PIN/session invalidation used by handlePinReset: (1) PATCH members pin_hash=null, (2) PATCH sessions is_active=false (all sessions for member). Previously only DELETEd session rows and never cleared pin_hash, so member could still authenticate with old PIN. Reuses the common mechanism: pin_hash=null triggers Realtime kick-out (online) and uat.html init() redirect (offline). Rollback: revert both PATCH lines back to the single DELETE sessions line. -->
@@ -477,7 +478,7 @@ body{background:var(--bg);min-height:100vh;}
       <button class="tab on" onclick="showTab('trade')">Trade</button>
       <button class="tab" onclick="showTab('general')">General</button>
       <button class="tab" onclick="showTab('posts')">📢 Posts</button>
-      <button class="tab" onclick="showTab('algo')">🤖 Algo</button>
+      <button class="tab" id="tab-btn-algo" onclick="showTab('algo')">🤖 Algo</button>
       <button class="tab" onclick="showTab('setup')">Setup</button>
       <button class="tab" onclick="showTab('manage')">Manage</button>
       <button class="tab" onclick="showTab('membership')">Cards</button>
@@ -1168,7 +1169,7 @@ body{background:var(--bg);min-height:100vh;}
   </div>
 
   <!-- App PIN Lock -->
-  <div class="setup-card">
+  <div class="setup-card" id="app-pin-card">
     <div class="setup-label">🔐 App PIN Lock</div>
     <div class="info-text" style="margin-bottom:8px;">Set a 4-digit PIN — asked every time you reopen the app within your 8-hour TOTP session.</div>
     <!-- checkpoint admin_pin_switchable_identity (2026-10-23) — shows which admin
@@ -1627,6 +1628,17 @@ body{background:var(--bg);min-height:100vh;}
      auto-update-detection banner only; this page doesn't use its trade-unlock functions. -->
 <script src="trade_unlock_shared.js"></script>
 <script>
+// ── BUILD SETTING (checkpoint uat_admin_login, 2026-11-10) ──────────────────────
+// This file is the UAT build of the admin app. true = UAT: PIN-only login against the UAT
+// database (/uat-admin-*), UAT-only browser storage names, no Kotak controls and no actions
+// that reach production. NOTE for the later PROD build: returning false here is NOT enough
+// on its own — the data path (sbFetch) must also be pointed at the production admin door,
+// which is built as part of the release step.
+function _isUatBuild() { return true; }
+// Admin-login browser storage name. UAT and prod admin are on the same website (one shared
+// browser storage), so UAT uses its own names and never reads, changes or deletes prod's.
+function _ak(name) { return _isUatBuild() ? name.replace(/^t2s_/, 't2s_uat_') : name; }
+function _uatOnly(msg) { showToast(msg || 'Not available in UAT — this action reaches the live production platform.'); }
 
 let tradeTone='Professional', genTone='Professional';
 let lastTradeMsg='', lastGenMsg='';
@@ -1676,6 +1688,7 @@ function softRefresh() {
   showToast('✓ Refreshed');
 }
 function showTab(t){
+  if (t === 'algo' && _isUatBuild()) t = 'trade'; // checkpoint uat_admin_login — Algo closed in UAT (owner, 2026-11-10)
   _currentTab = t;
   ['chart','trade','general','posts','algo','setup','manage','membership','campaign','results','history'].forEach(id=>{
     document.getElementById('tab-'+id).style.display=id===t?'block':'none';
@@ -2109,7 +2122,8 @@ async function loadFaAnalytics() {
     el.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
     try {
         const [storageR, accessReqs] = await Promise.all([
-            fetch(`${_VM_ADMIN}/storage-status`).then(r => r.json()).catch(() => ({})),
+            // checkpoint uat_admin_login — UAT never reads the live server; {} is the existing "unavailable" path
+            _isUatBuild() ? Promise.resolve({}) : fetch(`${_VM_ADMIN}/storage-status`).then(r => r.json()).catch(() => ({})),
             sbGet('access_requests?select=status').catch(() => [])
         ]);
         const counts = { pending: 0, approved: 0, rejected: 0, blocked: 0 };
@@ -2491,7 +2505,8 @@ async function sendFollowUp() {
 }
 
 async function applyTradeUpdate(tradeId, intents) {
-    const secret = localStorage.getItem('t2s_execute_secret');
+  if (_isUatBuild()) return; // checkpoint uat_admin_login — writes the live trades file (no caller today; blocked in UAT anyway)
+    const secret = localStorage.getItem(_ak('t2s_execute_secret'));
     if (!secret) { showToast('Add Execute Secret in Setup to auto-update trades.'); return; }
 
     // Fetch current trades.json
@@ -2612,11 +2627,11 @@ let _lastAlgoSend = 0;
 
 // ── ADMIN DEVICE ID ──────────────────────────────────────────────────────────
 function getAdminDeviceId() {
-  let id = localStorage.getItem('t2s_admin_device');
+  let id = localStorage.getItem(_ak('t2s_admin_device'));
   if (!id) {
     const bytes = crypto.getRandomValues(new Uint8Array(16));
     id = 'adm_' + Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
-    localStorage.setItem('t2s_admin_device', id);
+    localStorage.setItem(_ak('t2s_admin_device'), id);
   }
   return id;
 }
@@ -2637,11 +2652,16 @@ function showAdminLocked(reason) {
   const grid = document.querySelector('.pin-grid');
   if (grid) grid.style.opacity = '0.25';
   document.getElementById('pin-dots').style.display = 'none';
+  if (_isUatBuild()) { // checkpoint uat_admin_login — UAT unlock is done in the UAT database
+    document.getElementById('pin-err').textContent = 'Locked after 3 wrong PINs. Unlock it in the UAT database (see UAT/sql/20261110_uat_admin_login.sql).';
+    return;
+  }
   document.getElementById('email-unlock-wrap').style.display = 'block';
 }
 
 
 async function handleMagicLink() {
+  if (_isUatBuild()) return false; // checkpoint uat_admin_login — this path redirects to the production admin page
   const hash = window.location.hash;
   if (!hash.includes('access_token')) return false;
   const params = new URLSearchParams(hash.slice(1));
@@ -2650,7 +2670,7 @@ async function handleMagicLink() {
   // own remembered admin identity (lockout doesn't clear it, so it's still
   // here); treat email unlock as a full reset for that one admin, same as the
   // Telegram/URL-escape-hatch paths.
-  const magicAdminId = localStorage.getItem('t2s_admin_id');
+  const magicAdminId = localStorage.getItem(_ak('t2s_admin_id'));
   try {
     if (magicAdminId) {
       await sbFetch(`keep_alive_log?source=eq.admin_pwa_locked_${magicAdminId}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
@@ -2659,21 +2679,21 @@ async function handleMagicLink() {
   } catch(e) {}
   // Clear this device's remembered identity so it re-enters its mobile number
   // and sets a fresh PIN after email verification.
-  localStorage.removeItem('t2s_admin_id');
-  localStorage.removeItem('t2s_admin_name');
+  localStorage.removeItem(_ak('t2s_admin_id'));
+  localStorage.removeItem(_ak('t2s_admin_name'));
   // Flag: skip PIN overlay once and land on Setup tab
-  sessionStorage.setItem('t2s_post_unlock', '1');
+  sessionStorage.setItem(_ak('t2s_post_unlock'), '1');
   window.location.replace('https://app.trade2spend.com/admin.html');
   return true;
 }
 
 // ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
 async function checkSessionSlot() {
-  if (sessionStorage.getItem('t2s_admin_authed')) return;
+  if (sessionStorage.getItem(_ak('t2s_admin_authed'))) return;
   const mySource = 'admin_session_' + getAdminDeviceId();
   try {
     const rows = await sbGet('keep_alive_log?source=like.admin_session_%25&order=pinged_at.asc');
-    if (sessionStorage.getItem('t2s_admin_authed')) return;
+    if (sessionStorage.getItem(_ak('t2s_admin_authed'))) return;
     const mine   = rows.find(r => r.source === mySource);
     const others = rows.filter(r => r.source !== mySource);
     if (!mine && others.length >= 2) { showAdminLocked('sessions'); }
@@ -2714,21 +2734,22 @@ function showAdminMobileRow() {
 function updateCurrentAdminDisplay() {
   const el = document.getElementById('setup-current-admin');
   if (!el) return;
-  const name = localStorage.getItem('t2s_admin_name');
+  const name = localStorage.getItem(_ak('t2s_admin_name'));
   el.textContent = name ? ('Logged in as: ' + name) : '';
 }
 async function pinInit() {
   updateCurrentAdminDisplay();
   // If PIN was already verified this browser session, skip overlay
-  if (sessionStorage.getItem('t2s_admin_authed')) {
+  if (sessionStorage.getItem(_ak('t2s_admin_authed'))) {
     document.getElementById('pin-overlay').classList.add('hidden');
     return;
   }
+  if (_isUatBuild()) { await _uatPinInit(); return; } // checkpoint uat_admin_login
   // URL escape hatch — open admin.html?reset=1 in Safari to bypass any lockout
   if (new URLSearchParams(window.location.search).get('reset') === '1') {
-    localStorage.removeItem('t2s_admin_id');
-    localStorage.removeItem('t2s_admin_name');
-    localStorage.removeItem('t2s_admin_lock_until');
+    localStorage.removeItem(_ak('t2s_admin_id'));
+    localStorage.removeItem(_ak('t2s_admin_name'));
+    localStorage.removeItem(_ak('t2s_admin_lock_until'));
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
     showAdminMobileRow();
@@ -2740,10 +2761,10 @@ async function pinInit() {
   if (await handleMagicLink()) return; // magic link clicked from email — unlock and reload
 
   // If arriving from email unlock (sessionStorage flag set by handleMagicLink)
-  if (sessionStorage.getItem('t2s_post_unlock')) {
-    sessionStorage.removeItem('t2s_post_unlock');
-    localStorage.removeItem('t2s_admin_id');
-    localStorage.removeItem('t2s_admin_name');
+  if (sessionStorage.getItem(_ak('t2s_post_unlock'))) {
+    sessionStorage.removeItem(_ak('t2s_post_unlock'));
+    localStorage.removeItem(_ak('t2s_admin_id'));
+    localStorage.removeItem(_ak('t2s_admin_name'));
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
     showAdminMobileRow();
@@ -2753,7 +2774,7 @@ async function pinInit() {
 
   // No remembered identity on this device yet — nothing to check (no PIN exists
   // for an identity we don't know), go straight to Setup with the mobile step.
-  const adminId = localStorage.getItem('t2s_admin_id');
+  const adminId = localStorage.getItem(_ak('t2s_admin_id'));
   if (!adminId) {
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
@@ -2772,9 +2793,9 @@ async function pinInit() {
   if (pinReset && pinReset.length > 0) {
     await sbFetch(`keep_alive_log?source=eq.admin_pin_reset_${adminId}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
     await sbFetch(`keep_alive_log?source=eq.admin_pwa_locked_${adminId}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
-    localStorage.removeItem('t2s_admin_id');
-    localStorage.removeItem('t2s_admin_name');
-    localStorage.removeItem('t2s_admin_lock_until');
+    localStorage.removeItem(_ak('t2s_admin_id'));
+    localStorage.removeItem(_ak('t2s_admin_name'));
+    localStorage.removeItem(_ak('t2s_admin_lock_until'));
     document.getElementById('pin-overlay').classList.add('hidden');
     showTab('setup');
     showAdminMobileRow();
@@ -2788,15 +2809,53 @@ async function pinInit() {
   const identityDisplay = document.getElementById('pin-identity-display');
   const mobileInput = document.getElementById('pin-mobile-input');
   if (identityDisplay) {
-    identityDisplay.textContent = 'Logging in as: ' + (localStorage.getItem('t2s_admin_name') || 'Admin') + ' (tap to switch)';
+    identityDisplay.textContent = 'Logging in as: ' + (localStorage.getItem(_ak('t2s_admin_name')) || 'Admin') + ' (tap to switch)';
     identityDisplay.style.display = 'block';
   }
   if (mobileInput) { mobileInput.style.display = 'none'; mobileInput.value = ''; }
 
   document.getElementById('pin-overlay').classList.remove('hidden');
-  if (sessionStorage.getItem('t2s_admin_authed')) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
+  if (sessionStorage.getItem(_ak('t2s_admin_authed'))) { document.getElementById('pin-overlay').classList.add('hidden'); return; }
   if (locks && locks.length > 0) { showAdminLocked('pin'); return; }
   await checkSessionSlot();
+}
+
+// checkpoint uat_admin_login (2026-11-10) — UAT login screen. No setup / reset / email
+// paths, no browser-side device-slot bookkeeping (the UAT server enforces the 2-device
+// limit). Remembered identity → ask the UAT server for lock state, then show the PIN pad.
+// No identity yet (first login on this browser) → PIN pad with the mobile field open.
+async function _uatPinInit() {
+  if (new URLSearchParams(window.location.search).get('reset') === '1') {
+    // Only forgets which admin this browser remembers — never touches any PIN or lock.
+    localStorage.removeItem(_ak('t2s_admin_id'));
+    localStorage.removeItem(_ak('t2s_admin_name'));
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+  const overlay = document.getElementById('pin-overlay');
+  const identityDisplay = document.getElementById('pin-identity-display');
+  const mobileInput = document.getElementById('pin-mobile-input');
+  const adminId = localStorage.getItem(_ak('t2s_admin_id'));
+  overlay.classList.remove('hidden');
+  if (!adminId) {
+    if (identityDisplay) identityDisplay.style.display = 'none';
+    if (mobileInput) { mobileInput.style.display = 'block'; mobileInput.value = ''; }
+    document.getElementById('pin-err').textContent = 'Enter your UAT admin mobile number, then your PIN.';
+    return;
+  }
+  if (identityDisplay) {
+    identityDisplay.textContent = 'Logging in as: ' + (localStorage.getItem(_ak('t2s_admin_name')) || 'Admin') + ' (tap to switch)';
+    identityDisplay.style.display = 'block';
+  }
+  if (mobileInput) { mobileInput.style.display = 'none'; mobileInput.value = ''; }
+  try {
+    const r = await fetch('https://api.trade2spend.com/uat-admin-pub', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'lock_status', admin_id: adminId })
+    });
+    const d = await r.json();
+    if (d.ok && d.locked) { showAdminLocked('pin'); return; }
+    if (d.ok && d.needsSetup) document.getElementById('pin-err').textContent = 'No UAT PIN is set for this admin yet — set it in the UAT database first.';
+  } catch (e) { /* display-only check — the PIN itself is always checked by the server */ }
 }
 
 // checkpoint admin_pin_switchable_identity (2026-10-23) — tap the identity display to
@@ -2815,9 +2874,22 @@ async function adminAuthInit() {
   const pinOv = document.getElementById('pin-overlay');
   if (pinOv) pinOv.classList.add('hidden');
 
-  if (sessionStorage.getItem('t2s_admin_authed')) return;
+  // checkpoint uat_admin_login — UAT: no Kotak 6-digit code screen (it logs in the live
+  // Kotak connection) and no in-app set-PIN card (the owner sets the UAT PIN in the UAT DB).
+  if (_isUatBuild()) {
+    const pinCard = document.getElementById('app-pin-card');
+    if (pinCard) pinCard.style.display = 'none';
+    // Algo trading closed in UAT (owner decision 2026-11-10). Buttons hidden, not removed,
+    // because showTab() matches tab buttons to screens by position.
+    ['tab-btn-algo', 'algo-trade-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = 'none'; });
+    if (sessionStorage.getItem(_ak('t2s_admin_authed'))) return;
+    await pinInit();
+    return;
+  }
 
-  const exp = localStorage.getItem('t2s_admin_session_exp');
+  if (sessionStorage.getItem(_ak('t2s_admin_authed'))) return;
+
+  const exp = localStorage.getItem(_ak('t2s_admin_session_exp'));
   if (exp && Date.now() < parseInt(exp)) {
     await pinInit(); // TOTP valid — pinInit shows PIN overlay
     return;
@@ -2830,6 +2902,7 @@ async function adminAuthInit() {
 }
 
 async function submitAdminTotp() {
+  if (_isUatBuild()) return; // checkpoint uat_admin_login — UAT never sends the live Kotak code
   const inp = document.getElementById('admin-totp-inp');
   const errEl = document.getElementById('admin-totp-err');
   const btn = document.querySelector('#totp-overlay button');
@@ -2852,7 +2925,7 @@ async function submitAdminTotp() {
       // gets a fresh sessionStorage (browser-native behavior) so PIN is asked
       // again; a plain refresh in the same session correctly stays unlocked if
       // the PIN was already entered this session (Tushar's explicit call).
-      localStorage.setItem('t2s_admin_session_exp', String(Date.now() + 8 * 60 * 60 * 1000));
+      localStorage.setItem(_ak('t2s_admin_session_exp'), String(Date.now() + 8 * 60 * 60 * 1000));
       _kotakConnected = true;
       _lastKotakLoginMs = Date.now();
       document.getElementById('totp-overlay').style.display = 'none';
@@ -2881,8 +2954,9 @@ async function submitAdminTotp() {
 }
 
 function lockAdminApp() {
-  sessionStorage.removeItem('t2s_admin_authed');
-  localStorage.removeItem('t2s_admin_session_exp');
+  if (_isUatBuild()) localStorage.removeItem(_ak('t2s_execute_secret')); // checkpoint uat_admin_login — lock also drops the UAT pass
+  sessionStorage.removeItem(_ak('t2s_admin_authed'));
+  localStorage.removeItem(_ak('t2s_admin_session_exp'));
   location.reload();
 }
 
@@ -2921,10 +2995,11 @@ async function checkPin() {
   const switching = mobileInput && mobileInput.style.display !== 'none' && mobileInput.value.replace(/\D/g, '').length === 10;
   const body = switching
     ? { pin, device_id: getAdminDeviceId(), mobile: '+91' + mobileInput.value.replace(/\D/g, ''), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } }
-    : { pin, device_id: getAdminDeviceId(), admin_id: localStorage.getItem('t2s_admin_id'), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } };
+    : { pin, device_id: getAdminDeviceId(), admin_id: localStorage.getItem(_ak('t2s_admin_id')), deviceInfo: { platform: navigator.platform, userAgent: navigator.userAgent.slice(0,100) } };
   let d;
   try {
-    const r = await fetch('https://api.trade2spend.com/admin-verify-pin', {
+    // checkpoint uat_admin_login — UAT build checks the PIN against the UAT DB only.
+    const r = await fetch(_isUatBuild() ? 'https://api.trade2spend.com/uat-admin-verify-pin' : 'https://api.trade2spend.com/admin-verify-pin', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
@@ -2937,17 +3012,20 @@ async function checkPin() {
     pinBuffer = '';
     updatePinDots();
     document.getElementById('pin-overlay').classList.add('hidden');
-    sessionStorage.setItem('t2s_admin_authed', '1');
+    sessionStorage.setItem(_ak('t2s_admin_authed'), '1');
     // Server issues a short-lived (8h), revocable token in place of the real
     // EXECUTE_SECRET — saved to the same key every existing admin-action call
     // site already reads, so no other code needs to change.
-    if (d.sessionToken) localStorage.setItem('t2s_execute_secret', d.sessionToken);
+    if (d.sessionToken) localStorage.setItem(_ak('t2s_execute_secret'), d.sessionToken);
     // Switched to a different identity — update the device's "sticky" remembered one.
     if (switching && d.adminId) {
-      localStorage.setItem('t2s_admin_id', d.adminId);
-      localStorage.setItem('t2s_admin_name', d.name || 'Admin');
+      localStorage.setItem(_ak('t2s_admin_id'), d.adminId);
+      localStorage.setItem(_ak('t2s_admin_name'), d.name || 'Admin');
       updateCurrentAdminDisplay();
     }
+    // checkpoint uat_admin_login — UAT data now needs the pass, so screens that loaded
+    // behind the PIN screen got nothing; one reload lets every screen load properly.
+    if (_isUatBuild()) { location.reload(); return; }
     return;
   }
   if (d.serverBusy) {
@@ -2984,6 +3062,10 @@ async function checkPin() {
 
 
 async function saveNewPin() {
+  if (_isUatBuild()) { // checkpoint uat_admin_login — no in-app set-PIN route in UAT
+    document.getElementById('pin-err-setup').textContent = 'In UAT the admin PIN is set in the UAT database (see UAT/sql/20261110_uat_admin_login.sql).';
+    return;
+  }
   const newPin = document.getElementById('new-pin-input').value.trim();
   const confirmPin = document.getElementById('confirm-pin-input').value.trim();
   const errEl = document.getElementById('pin-err-setup');
@@ -3033,14 +3115,14 @@ async function saveNewPin() {
       errEl.textContent = 'Could not save PIN — check your mobile number, or use Telegram Reset PIN if one is already set.';
       return;
     }
-    if (d.sessionToken) localStorage.setItem('t2s_execute_secret', d.sessionToken);
+    if (d.sessionToken) localStorage.setItem(_ak('t2s_execute_secret'), d.sessionToken);
     // adminId is this device's permanent identity marker — saved once, never
     // asked for again via the mobile-number step on this device.
     // adminId/name become this device's "sticky" active identity — the one just
     // set up. Switching to a different already-set-up one later happens from the
     // PIN screen itself (checkpoint admin_pin_switchable_identity).
-    if (d.adminId) localStorage.setItem('t2s_admin_id', d.adminId);
-    if (d.name)    localStorage.setItem('t2s_admin_name', d.name);
+    if (d.adminId) localStorage.setItem(_ak('t2s_admin_id'), d.adminId);
+    if (d.name)    localStorage.setItem(_ak('t2s_admin_name'), d.name);
     updateCurrentAdminDisplay();
   } catch (e) {
     errEl.textContent = 'Server unreachable — check internet and retry.';
@@ -3160,6 +3242,7 @@ function refreshAlgoTab() {
 // ALGO MODAL (from Trade tab button)
 // ═══════════════════════════════════════
 function openAlgoModal() {
+  if (_isUatBuild()) { _uatOnly('Algo trading is closed in UAT.'); return; } // checkpoint uat_admin_login
   if (!lastTradeMsg) {
     showToast('Generate a trade message first.');
     return;
@@ -3218,6 +3301,7 @@ async function sendToAlgoBot() {
 // CORE — SEND TO TRADING BOT VIA TELEGRAM
 // ═══════════════════════════════════════
 async function sendAlgoBotMessage(qty, slDuration) {
+  if (_isUatBuild()) return; // checkpoint uat_admin_login — opens the real trading bot; Algo closed in UAT
   const now = Date.now();
   if (now - _lastAlgoSend < 2000) { showToast('Please wait before sending again.'); return; }
   _lastAlgoSend = now;
@@ -3764,6 +3848,7 @@ function recallHistory(i){
 
 // T2S-CUG-20260716-003: Push UAT → Prod
 async function pushUatToProd() {
+  if (_isUatBuild()) { _uatOnly('Push to production is not available from UAT.'); return; } // checkpoint uat_admin_login — reaches live production
   const btn = document.getElementById('push-to-prod-btn');
   const status = document.getElementById('push-to-prod-status');
   if (!confirm('This will deploy the UAT version to ALL members at app.trade2spend.com.\n\nAre you sure?')) return;
@@ -3771,7 +3856,7 @@ async function pushUatToProd() {
   btn.textContent = 'Pushing...';
   if (status) { status.style.display = 'block'; status.textContent = 'Contacting server...'; status.style.color = 'var(--muted)'; }
   try {
-    const r = await fetch('https://api.trade2spend.com/push-uat-to-prod', { headers: { 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' }, signal: AbortSignal.timeout(30000) });
+    const r = await fetch('https://api.trade2spend.com/push-uat-to-prod', { headers: { 'x-t2s-secret': localStorage.getItem(_ak('t2s_execute_secret')) || '' }, signal: AbortSignal.timeout(30000) });
     const d = await r.json();
     if (d.ok) {
       if (status) { status.textContent = 'Done! Live at app.trade2spend.com in ~60s.'; status.style.color = 'var(--green)'; }
@@ -3883,11 +3968,12 @@ function syncHolidayUI(active) {
 }
 
 async function toggleMarketHoliday() {
+  if (_isUatBuild()) { _uatOnly('Market holiday is not available in UAT — it changes the live server.'); return; } // checkpoint uat_admin_login — reaches live production
   const newState = !_marketHolidayActive;
   try {
     const r = await fetch('https://api.trade2spend.com/market-holiday', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem(_ak('t2s_execute_secret')) || '' },
       body: JSON.stringify({ holiday: newState })
     });
     if (!r.ok) throw new Error('Server error');
@@ -3901,6 +3987,13 @@ async function toggleMarketHoliday() {
 }
 
 async function checkKotakStatus() {
+  if (_isUatBuild()) { // checkpoint uat_admin_login — UAT never reads the live server's Kotak state
+    const t = document.getElementById('kotak-status-text');
+    if (t) t.textContent = 'Not available in UAT';
+    // Still mark the check as done: openPushModal() waits on this promise.
+    if (!_kotakStatusReady) { _kotakStatusReady = true; _resolveKotakStatus(); }
+    return;
+  }
   const dot = document.getElementById('kotak-dot');
   const txt = document.getElementById('kotak-status-text');
   const sec = document.getElementById('kotak-login-section');
@@ -3988,6 +4081,7 @@ function skipQuickTotp() {
 }
 
 async function connectKotakQuick() {
+  if (_isUatBuild()) { _uatOnly('Kotak connect is not available in UAT — it controls the live Kotak connection.'); return; } // checkpoint uat_admin_login — reaches live production
   const totp = (document.getElementById('quick-totp-inp').value || '').trim();
   const msg = document.getElementById('quick-totp-msg');
   if (!/^\d{6}$/.test(totp)) { showToast('Enter 6-digit TOTP from Kotak app'); return; }
@@ -4032,6 +4126,7 @@ async function connectKotakQuick() {
 }
 
 async function connectKotak() {
+  if (_isUatBuild()) { _uatOnly('Kotak connect is not available in UAT — it controls the live Kotak connection.'); return; } // checkpoint uat_admin_login — reaches live production
   const inp = document.getElementById('totp-input');
   const btn = document.getElementById('kotak-connect-btn');
   const msg = document.getElementById('kotak-msg');
@@ -4079,7 +4174,8 @@ async function connectKotak() {
 }
 
 async function disconnectKotak() {
-  try { await fetch('https://api.trade2spend.com/logout-kotak', { method: 'POST', headers: { 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' } }); } catch(e) {}
+  if (_isUatBuild()) { _uatOnly('Kotak disconnect is not available in UAT — it would stop live prices for real members.'); return; } // checkpoint uat_admin_login — reaches live production
+  try { await fetch('https://api.trade2spend.com/logout-kotak', { method: 'POST', headers: { 'x-t2s-secret': localStorage.getItem(_ak('t2s_execute_secret')) || '' } }); } catch(e) {}
   _kotakConnected = false;
   const hdrDot   = document.getElementById('kotak-hdr-dot');
   const algoDot  = document.getElementById('kotak-dot');
@@ -4098,6 +4194,7 @@ async function checkServerStatus() {
   const body = document.getElementById('server-status-body');
   const btn  = document.getElementById('server-status-refresh-btn');
   if (!body) return;
+  if (_isUatBuild()) { body.textContent = 'Not available in UAT — this reads the live server.'; return; } // checkpoint uat_admin_login
   btn.textContent = 'Checking…'; btn.disabled = true;
   try {
     const r = await fetch('https://api.trade2spend.com/debug', { signal: AbortSignal.timeout(6000) });
@@ -5695,13 +5792,32 @@ async function sbFetch(path, opts = {}) {
   const { headers: xh, ...rest } = opts;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
+  // checkpoint uat_admin_login — UAT build: everything except posts goes through the
+  // UAT admin door, which needs the UAT admin pass from a correct PIN. Posts stay on the
+  // old door for now (posts work is deferred).
+  const useAdminDoor = _isUatBuild() && String(path).split('?')[0] !== 'posts';
   try {
-    const res = await fetch(`${UAT_PROXY}/uat-sb`, {
-      method: 'POST', signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', 'x-t2s-uat': UAT_TOKEN },
-      body: JSON.stringify({ path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
-    });
+    const res = useAdminDoor
+      ? await fetch(`${UAT_PROXY}/uat-admin-sb`, {
+          method: 'POST', signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json' },
+          // Pass is only sent once the PIN was entered in THIS session — so nothing loads
+          // behind the PIN screen, and a reopened app always needs the PIN again.
+          body: JSON.stringify({ token: sessionStorage.getItem(_ak('t2s_admin_authed')) ? (localStorage.getItem(_ak('t2s_execute_secret')) || '') : '', path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
+        })
+      : await fetch(`${UAT_PROXY}/uat-sb`, {
+          method: 'POST', signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'x-t2s-uat': UAT_TOKEN },
+          body: JSON.stringify({ path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
+        });
     const text = await res.text();
+    // Pass expired / admin removed while logged in → back to the PIN screen. Only when this
+    // browser had actually logged in, so screens loading behind the PIN screen can't loop.
+    if (useAdminDoor && res.status === 401 && sessionStorage.getItem(_ak('t2s_admin_authed'))) {
+      sessionStorage.removeItem(_ak('t2s_admin_authed'));
+      localStorage.removeItem(_ak('t2s_execute_secret'));
+      location.reload();
+    }
     if (!res.ok) throw new Error(`proxy ${res.status}: ${text.slice(0, 120)}`);
     return text ? JSON.parse(text) : [];
   } finally { clearTimeout(timer); }
@@ -5716,7 +5832,8 @@ async function sbDelete(path) {
 
 // ── GITHUB BACKUP (via VM — token stored securely in server .env) ──
 async function writeBackup(newPost) {
-  const secret = localStorage.getItem('t2s_execute_secret') || '';
+  if (_isUatBuild()) return; // checkpoint uat_admin_login — reaches live production (silently skipped in UAT)
+  const secret = localStorage.getItem(_ak('t2s_execute_secret')) || '';
   if (!secret) return;
   const res = await fetch('https://api.trade2spend.com/backup-post', {
     method: 'POST',
@@ -5727,7 +5844,8 @@ async function writeBackup(newPost) {
 }
 
 async function restoreFromBackup() {
-  const secret = localStorage.getItem('t2s_execute_secret') || '';
+  if (_isUatBuild()) { _uatOnly('Restore is not available in UAT — it writes into live posts.'); return; } // checkpoint uat_admin_login — reaches live production
+  const secret = localStorage.getItem(_ak('t2s_execute_secret')) || '';
   if (!secret) { showToast('Execute secret not set in Setup.'); return; }
   const btn = document.getElementById('restore-backup-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Restoring...'; }
@@ -5753,7 +5871,7 @@ async function openPushModal(type){
   const msg = type === 'trade' ? lastTradeMsg : lastGenMsg;
   if(!msg){ showToast('Generate a message first.'); return; }
   if (!_kotakStatusReady) await _kotakStatusPromise;
-  if (!_kotakConnected && _isDuringMarketHours() && !_totpAskedToday()) {
+  if (!_isUatBuild() && !_kotakConnected && _isDuringMarketHours() && !_totpAskedToday()) { // UAT: never asks for the live Kotak code
     _markTotpAsked();
     showQuickTotp(() => _doOpenPushModal(type));
   } else {
@@ -5790,9 +5908,10 @@ function setPushAud(val){
 }
 
 function scheduleDummyLikes(postId) {
+  if (_isUatBuild()) return; // checkpoint uat_admin_login — reaches live production (silently skipped in UAT)
   fetch('https://api.trade2spend.com/schedule-dummy-likes', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
+    headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem(_ak('t2s_execute_secret')) || '' },
     body: JSON.stringify({ postId })
   }).catch(() => {});
 }
@@ -5831,13 +5950,17 @@ async function confirmPushToMembers(){
     // Fire push notification to all subscribed devices (non-blocking)
     const _pushTitle = pushMsgType === 'trade' ? '🚨 Trade Alert — Trade2Spend' : '📢 Trade2Spend Update';
     const _pushBody  = msg.replace(/\[WHY\][\s\S]*?\[\/WHY\]/gi, '').split('\n').find(l => l.trim() && !/^only for|^educational/i.test(l.trim()))?.trim().slice(0, 100) || 'New update';
+    // checkpoint uat_admin_login — UAT: no notifications to real members' phones and no
+    // live contract refresh (both reach production). The post itself is saved in UAT above.
+    if (!_isUatBuild()) {
     fetch('https://api.trade2spend.com/send-push', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem(_ak('t2s_execute_secret')) || '' },
       body: JSON.stringify({ title: _pushTitle, body: _pushBody, tag: 't2s-alert', url: 'https://app.trade2spend.com/#updates', postId: _savedPost?.id, post_type: _postType })
     }).catch(() => {});
     if (pushMsgType === 'trade') {
       fetch('https://api.trade2spend.com/refresh-contracts', { method: 'POST' }).catch(() => {});
+    }
     }
   } catch(e){
     showToast('Failed: ' + (e.message || 'Check connection'));
@@ -6168,7 +6291,7 @@ function clearChartUpload() {
 }
 
 async function analyseChart() {
-  const secret = localStorage.getItem('t2s_execute_secret') || '';
+  const secret = localStorage.getItem(_ak('t2s_execute_secret')) || '';
   if (!_chartImageBase64) { showToast('Please upload a chart screenshot first'); return; }
   const btn = document.getElementById('chart-analyse-btn');
   const loading = document.getElementById('chart-loading');
@@ -6313,7 +6436,7 @@ async function submitBugReport() {
   try {
     const res = await fetch('https://api.trade2spend.com/report-issue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem('t2s_execute_secret') || '' },
+      headers: { 'Content-Type': 'application/json', 'x-t2s-secret': localStorage.getItem(_ak('t2s_execute_secret')) || '' },
       body: JSON.stringify({ tab, description: desc, screenshot: _bugB64 || null, screenshotType: _bugMime, reportedAt: new Date().toISOString() })
     });
     const data = await res.json();
