@@ -1,7 +1,7 @@
 {
-  "marketOpen": false,
-  "lastUpdated": "2026-11-09T10:16:08.761Z",
-  "dataSource": "broker",
+  "marketOpen": true,
+  "lastUpdated": "2026-11-10T03:45:24.881Z",
+  "dataSource": "nse",
   "indices": {
     "NIFTY": {
       "price": 25044.65,
@@ -20,8 +20,8 @@
     }
   },
   "indexSources": {
-    "NIFTY": "kotak",
-    "BANKNIFTY": "kotak",
+    "NIFTY": "nse",
+    "BANKNIFTY": "nse",
     "SENSEX": "kotak"
   },
   "breadth": {
@@ -284,7 +284,5 @@
       "price": 295,
       "change": -0.1
     }
-  ],
-  "optionHighs": {},
-  "optionLows": {}
+  ]
 }
