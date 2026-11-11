@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261111-001 | uat.html: member_rt_logout_fix — _rtRefetchMemberAndAct no longer logs out a new limited-access member on unrelated row changes (e.g. finishing/skipping the product tour). (a) 'no PIN' is treated as an admin PIN reset only for a PIN-logged-in browser (t2s_uat_mode !== 'free'); (b) the pending-request branch logs out only once the latest access request is no longer 'pending' (same query as init), and stays put if that check fails. Disabled/blocked/device-removed kick-outs unchanged. Rollback: restore uat.html.bak_20261111_pre_fixes. -->
 <!-- T2S-UAT-20261019-001 | uat.html: Finding B fix — public control key (T2SMonitor2026) removed. Mirrors T2S-PROD-20261019-001 applied to index.html. sendReply()'s two /send-push calls now send x-t2s-secret from localStorage t2s_execute_secret instead of the hardcoded public string; /refresh-contracts call sends no key (server-side check removed, Tushar's decision). Codex-reviewed (2 rounds, clean). Rollback: revert both x-t2s-secret values back to the literal string 'T2SMonitor2026'. -->
 <!-- T2S-UAT-20261018-001 | uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed _faHashPin() (SHA-256+static-salt). _faVerifyPin() and _faSetupPin2() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin (reuses existing _VM constant) — pin_hash is never fetched to or computed in this page again. Also fixes a pre-existing inconsistency: this in-app PIN modal previously locked ALL of a member's active sessions on 3 wrong attempts regardless of whether the device had logged in before; it now matches login_uat.html's deliberate per-device-only lockout for never-registered devices (server-enforced). Rollback: restore _faHashPin(), revert _faVerifyPin()/_faSetupPin2() to the pre-20261018 direct-Supabase compare. -->
 <!-- T2S-UAT-20261014-002 | uat.html: Exit-price parsing fix — mirrors T2S-PROD-20261014-002 applied to index.html. parseFollowUpContent: widened the exit-price fallback regex to match past-tense "exited" + filler words ("remaining", "another 25%", etc.), and moved the "went to X" fallback to run after it so an explicit stated exit price always wins over a vaguer earlier reference in the same message. Regression-verified against all 654 real follow_up posts ever sent — only the reported bug case changes, zero other differences. Codex-reviewed. Rollback: revert to original order/regex, same as T2S-PROD-20261014-002. -->
@@ -3007,8 +3008,11 @@
         if (_rtRedirecting || !rows || !rows.length) return;
         const m = rows[0];
         if (m.status === 'disabled') { _rtRedirectToLogin(null); return; }
-        // Admin reset this member's PIN — kick out immediately so they set a new one
-        if (m.pin_hash === null) {
+        // Admin reset this member's PIN — kick out immediately so they set a new one.
+        // checkpoint member_rt_logout_fix (2026-11-11): only for a PIN-logged-in browser. A new
+        // limited-access member has no PIN by design, so any unrelated change to their row
+        // (e.g. finishing the product tour) used to log them out.
+        if (m.pin_hash === null && localStorage.getItem('t2s_uat_mode') !== 'free') {
             localStorage.removeItem('t2s_uat_last_login');
             localStorage.removeItem('t2s_uat_mode');
             localStorage.removeItem('t2s_uat_request_pending');
@@ -3016,8 +3020,26 @@
             return;
         }
         if (m.free_access_blocked === true) { _rtRedirectToLogin('blocked'); return; }
-        // If member was in the free-access approval queue, redirect to login to set PIN
+        // If member was in the free-access approval queue, redirect to login to set PIN —
+        // checkpoint member_rt_logout_fix (2026-11-11): ONLY once the request is actually
+        // decided (no longer 'pending'). Same latest-request query init uses. If the check
+        // fails, stay put — never log someone out on an error.
+        // Approval also sets free_access=true on this same row, so that alone means "decided"
+        // (no race with the access_requests update — Codex review 2026-11-11). Otherwise ask
+        // for the latest request status. Still pending → fall through to the remaining checks.
+        let _rtDecided = false;
         if (localStorage.getItem('t2s_uat_request_pending') === '1') {
+            if (m.free_access === true) {
+                _rtDecided = true;
+            } else {
+                try {
+                    const _rtReq = await sbFetch(`access_requests?member_id=eq.${_rtMid}&order=created_at.desc&limit=1&select=status`, { method: 'GET' });
+                    if (Array.isArray(_rtReq) && _rtReq.length && _rtReq[0].status !== 'pending') _rtDecided = true;
+                } catch (_) { /* check failed — never log out on an error */ }
+                if (_rtRedirecting) return;
+            }
+        }
+        if (_rtDecided) {
             localStorage.removeItem('t2s_uat_request_pending');
             localStorage.removeItem('t2s_uat_mode');
             localStorage.removeItem('t2s_uat_last_login');
