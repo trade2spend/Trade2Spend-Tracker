@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261111-004 | admin_uat: manage_stage1b — request cards: 'Applied:' date label; one label per card (Person / Device / Person + Device / Old record, else the status) with its meaning on hover (title) or tap (line below), plus an ⓘ key next to the Blocked filter; Block on approved cards (approved, non-paid) and Unblock on person-blocked cards (same memberBlock/memberUnblock as Members, list refreshes after); Unblock device opens Devices; request list now 2 database trips (members embedded), always shows Loading…, stale replies ignored; applicant name/mobile now escaped. Members BLOCKED label explains itself on hover/tap. Admin app only. Rollback: restore admin_uat.html.bak_20261111_pre_stage1b. -->
 <!-- T2S-UAT-20261111-003 | admin_uat: manage_stage1 — Manage tab split into 4 tabs (Requests | Members | Activity | Devices), each showing only its own content; Requests holds access requests + Enable switch + PIN resets/unlocks, with a tab badge = pending access + pending PIN requests; Members holds Add Member + ONE merged list (old approved-members sub-list removed) with search and filters All/Paid/Approved/Blocked/Disabled, APPROVED/BLOCKED labels, Block/Unblock on approved members (row + detail sheet), Remove access (old Deactivate) in detail sheet; Block = free_access false + blocked true + newest request blocked; Unblock = free_access true + blocked false + newest request approved; fake '72h left' label removed. No server change (existing UAT admin door rules cover every write). Rollback: restore admin_uat.html.bak_20261111_pre_stage1. -->
 <!-- T2S-UAT-20261111-002 | admin_uat: admin_fixes_1111 — (1) Enable Requests switch saves {value} only (UAT feature_flags has key,value only — it never saved before); (2) Free Access members list orders by created_at (free_access_granted_at doesn't exist in UAT); (3) lock / not-set-up / set-PIN messages give no unlock hints; (4) 'Pending' sub-tab renamed 'Requests' (default filter stays Pending); (5) Blocked devices show the mobile numbers used on each device (from access_requests + sessions). Rollback: restore admin_uat.html.bak_20261111_pre_fixes. -->
 <!-- T2S-UAT-20261110-002 | admin_uat: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved 2026-11-10). One build setting _isUatBuild()=true. UAT: (1) no Kotak 6-digit code screen; app opens to PIN; (2) PIN checked by /uat-admin-verify-pin (UAT DB only); first login on a browser asks mobile + PIN; lock state from /uat-admin-pub; (3) all admin-login browser storage names UAT-only via _ak() (t2s_uat_*) — never reads/changes/deletes prod admin's saved login on the same website; (4) every non-posts DB call goes through /uat-admin-sb with the UAT admin pass (posts stay on /uat-sb); 401 after login → back to PIN; (5) no in-app set-PIN card, no email-unlock redirect, ?reset=1 only forgets the remembered identity; (6) Kotak connect/disconnect, push-to-prod, market holiday, restore, backup, dummy likes, member notifications, contract refresh switched off in UAT. Prod admin file untouched. Rollback: restore admin_uat.html.bak_20261110_pre_step3. -->
@@ -77,6 +78,7 @@ body{background:var(--bg);min-height:100vh;}
 .mgmt-c3r2{display:flex;align-items:center;}
 /* Request action buttons — :has(>button) is a structural selector, not an inline-style selector */
 #fa-requests-list div:has(>button){flex-wrap:nowrap!important;}
+.tag-tip{flex-basis:100%;grid-column:1/-1;font-size:11px;line-height:1.45;color:var(--text);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;margin-top:6px;white-space:pre-line;} /* manage_stage1b */
 #fa-requests-list div:has(>button)>button{min-width:0!important;font-size:10px!important;padding:5px 3px!important;}
 @keyframes spin-once{to{transform:rotate(360deg)}}
 .refreshing{animation:spin-once .4s linear;display:inline-block;}
@@ -1529,12 +1531,13 @@ body{background:var(--bg);min-height:100vh;}
       </label>
     </div>
     <div>
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+      <div data-tiphost style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
         <button onclick="loadAccessRequests('all')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">All</button>
         <button onclick="loadAccessRequests('pending')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #d97706;background:#fef3c7;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Pending</button>
         <button onclick="loadAccessRequests('approved')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #059669;background:#f0fdf4;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Approved</button>
         <button onclick="loadAccessRequests('rejected')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Rejected</button>
         <button onclick="loadAccessRequests('blocked')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #dc2626;background:#fef2f2;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Blocked</button>
+        <button id="blk-key-btn" onclick="_tipToggle(event,this)" data-tip="What the labels mean:&#10;Person — this person is blocked (cannot log in or apply).&#10;Device — this phone/computer is blocked (no new requests from it); the person is not.&#10;Person + Device — both are blocked.&#10;Old record — says blocked, but nothing is blocked now." title="What the labels mean" style="font-size:13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;line-height:1;">ⓘ</button>
       </div>
       <div id="fa-requests-list" style="font-size:13px;">Loading...</div>
     </div>
@@ -1864,74 +1867,115 @@ function _mgInitReqBadge() {
     _mgUpdateReqBadge();
 }
 
+// checkpoint manage_stage1b (2026-11-11) — request cards: "Applied:" date, one block label with its
+// meaning on hover (computer) or tap (phone), Block / Unblock on the card, 2 database trips instead of 3,
+// "Loading…" every time, and an out-of-date reply can never overwrite a newer list.
+const _BLK_TAGS = {
+    person: { label: 'Person',          color: '#dc2626', bg: '#fef2f2', tip: 'Person blocked: this person cannot log in or apply again, from any phone or computer. Tap Unblock to give their access back.' },
+    both:   { label: 'Person + Device', color: '#dc2626', bg: '#fef2f2', tip: 'Person and device blocked: this person cannot log in or apply, and no new request can be sent from this phone/computer.' },
+    device: { label: 'Device',          color: '#7c3aed', bg: '#f5f3ff', tip: 'Device blocked: no new request can be sent from this phone/computer. The person themselves is not blocked. Unblock it in the Devices tab.' },
+    old:    { label: 'Old record',      color: '#6b7280', bg: '#f3f4f6', tip: 'Old record: this request still says blocked, but neither the person nor the device is blocked now. Nothing is stopping them.' },
+};
+function _tipToggle(ev, el) {
+    if (ev) ev.stopPropagation();
+    const host = el.closest('[data-tiphost]');
+    if (!host) return;
+    const open = host.querySelector(':scope > .tag-tip');
+    if (open) { const same = open._from === el; open.remove(); if (same) return; }
+    const t = document.createElement('div');
+    t.className = 'tag-tip';
+    t.textContent = el.getAttribute('data-tip') || '';
+    t._from = el;
+    host.appendChild(t);
+}
+function _blkTagHtml(kind) {
+    const t = _BLK_TAGS[kind];
+    return `<span data-tip="${t.tip}" title="${t.tip}" onclick="_tipToggle(event,this)" style="font-size:11px;font-weight:700;color:${t.color};background:${t.bg};border:1px solid ${t.color}55;padding:3px 8px;border-radius:10px;white-space:nowrap;cursor:help;">${t.label}</span>`;
+}
+
+let _faReqGen = 0;
+let _faReqFilter = 'pending';
 async function loadAccessRequests(statusFilter = 'pending') {
     const list = document.getElementById('fa-requests-list');
     if (!list) return;
-    list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
+    const gen = ++_faReqGen;
+    _faReqFilter = statusFilter;
+    list.innerHTML = '<div style="color:var(--muted2);font-size:13px;text-align:center;padding:16px;">Loading…</div>';
     try {
-        // 1. Fetch filtered requests from UAT Supabase
+        // Trip 1: the requests, with each applicant's current access state
         const qFilter = statusFilter === 'all' ? '' : `&status=eq.${statusFilter}`;
-        const reqs = await sbGet(`access_requests?select=id,member_id,name,device_id,device_type,created_at,status${qFilter}&order=created_at.desc&limit=50`);
+        const reqs = await sbGet(`access_requests?select=id,member_id,name,device_id,device_type,created_at,status,members(mobile,name,tier,free_access,free_access_blocked)${qFilter}&order=created_at.desc&limit=50`);
+        if (gen !== _faReqGen) return;
         if (!reqs.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No requests found.</div>'; return; }
 
-        // 2. Collect unique device_ids and member_ids for batch fetch
+        // Trip 2 (in parallel): every request from the same devices (with numbers), and which devices are blocked
         const deviceIds = [...new Set(reqs.map(r => r.device_id).filter(Boolean))];
-        const memberIds = [...new Set(reqs.map(r => r.member_id).filter(Boolean))];
-
-        // 3. Fetch all requests from those devices + member data in parallel
-        const [allDeviceReqs, members] = await Promise.all([
-            deviceIds.length ? sbGet(`access_requests?device_id=in.(${deviceIds.join(',')})&select=id,member_id,device_id,status`) : Promise.resolve([]),
-            memberIds.length ? sbGet(`members?id=in.(${memberIds.join(',')})&select=id,mobile,name`) : Promise.resolve([])
+        const [allDeviceReqs, blocks] = await Promise.all([
+            deviceIds.length ? sbGet(`access_requests?device_id=in.(${deviceIds.join(',')})&select=member_id,device_id,members(mobile)`) : Promise.resolve([]),
+            deviceIds.length ? sbGet(`device_blocks?device_id=in.(${deviceIds.join(',')})&select=device_id,blocked_until`).catch(() => null) : Promise.resolve([])
         ]);
+        if (gen !== _faReqGen) return;
+        const now = Date.now();
+        const devKnown = blocks !== null; // lookup failed → never guess a device's block state
+        const blockedDev = new Set((blocks || []).filter(b => !b.blocked_until || new Date(b.blocked_until).getTime() > now).map(b => b.device_id));
 
-        // 4. Fetch mobiles for any additional member_ids seen in device history
-        const extraIds = [...new Set(allDeviceReqs.map(r => r.member_id).filter(mid => mid && !memberIds.includes(mid)))];
-        const extraMembers = extraIds.length ? await sbGet(`members?id=in.(${extraIds.join(',')})&select=id,mobile`) : [];
-        const memberMap = {};
-        [...members, ...extraMembers].forEach(m => { memberMap[m.id] = m; });
-
-        // 5. Build device history: device_id → { count, mobiles Set }
+        // Device history: device_id → { count, mobiles }
         const devMap = {};
-        allDeviceReqs.forEach(r => {
+        (allDeviceReqs || []).forEach(r => {
             if (!r.device_id) return;
             if (!devMap[r.device_id]) devMap[r.device_id] = { count: 0, mobiles: new Set() };
             devMap[r.device_id].count++;
-            const m = memberMap[r.member_id];
-            if (m && m.mobile) devMap[r.device_id].mobiles.add(m.mobile.replace('+91', ''));
+            const mob = r.members && r.members.mobile;
+            if (mob) devMap[r.device_id].mobiles.add(mob.replace('+91', ''));
         });
 
-        // 6. Render each request card
+        const btn = (bg, fg, label, onclick) => `<button onclick="${onclick}" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:${bg};color:${fg};cursor:pointer;font-family:'Space Grotesk',sans-serif;">${label}</button>`;
         list.innerHTML = reqs.map(req => {
-            const member = memberMap[req.member_id] || {};
-            const mobile = (member.mobile || '').replace('+91', '') || '—';
-            const name = member.name || req.name || '—';
+            const member = req.members || {};
+            const mobile = esc((member.mobile || '').replace('+91', '') || '—');
+            const name = esc(member.name || req.name || '—');
             const date = req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
             const statusColor = { pending:'#d97706', approved:'#059669', rejected:'#6b7280', blocked:'#dc2626' }[req.status] || '#6b7280';
             const isPending = req.status === 'pending';
             const isRejected = req.status === 'rejected';
+            const personBlocked = member.free_access_blocked === true;
+            const deviceBlocked = !!(devKnown && req.device_id && blockedDev.has(req.device_id));
+            // One label: the block label if anything is blocked, otherwise the request status
+            const blkKind = personBlocked && deviceBlocked ? 'both' : personBlocked ? 'person' : deviceBlocked ? 'device' : (req.status === 'blocked' && devKnown ? 'old' : null);
+            const label = blkKind ? _blkTagHtml(blkKind)
+                : `<span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;white-space:nowrap;">${esc(String(req.status || '').toUpperCase())}</span>`;
             const devIcon = req.device_type === 'mobile' ? '📱' : req.device_type === 'desktop' ? '🖥️' : '';
             const dh = devMap[req.device_id];
             const hasMultiple = dh && dh.count > 1;
             const deviceBadge = hasMultiple
-                ? `<div style="margin:6px 0;padding:6px 8px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:11px;color:#92400e;">⚠️ ${dh.count} requests from this device &nbsp;·&nbsp; Numbers tried: ${[...dh.mobiles].join(', ') || '—'}</div>` : '';
-            return `<div style="border:1px solid ${hasMultiple ? '#fcd34d' : 'var(--border2)'};border-radius:8px;padding:10px;margin-bottom:8px;">
+                ? `<div style="margin:6px 0;padding:6px 8px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:11px;color:#92400e;">⚠️ ${dh.count} requests from this device &nbsp;·&nbsp; Numbers tried: ${esc([...dh.mobiles].join(', ')) || '—'}</div>` : '';
+            const mid = esc(req.member_id), rid = esc(req.id), did = esc(req.device_id || '');
+            const mobDigits = String(member.mobile || '').replace(/\D/g, '').slice(-10); // digits only — safe inside onclick
+            let actions = '';
+            if (isPending || isRejected) {
+                actions = btn('#059669', '#fff', '✅ Approve', `actionRequestDirect('${rid}','${mid}','approve')`)
+                    + (isPending ? btn('#e5e7eb', '#374151', '❌ Reject', `actionRequestDirect('${rid}','${mid}','reject')`)
+                        + btn('#dc2626', '#fff', '🚫 Block #', `actionRequestDirect('${rid}','${mid}','block_number')`)
+                        + (req.device_id && !deviceBlocked ? btn('#7c3aed', '#fff', '📵 Block Device', `blockDeviceDirect('${did}')`) : '') : '');
+            } else if (personBlocked) {
+                actions = btn('#059669', '#fff', '✓ Unblock', `memberUnblock('${mid}','${mobDigits}')`);
+            } else if (req.status === 'approved' && member.tier !== 'paid' && member.free_access === true) {
+                actions = btn('#dc2626', '#fff', '🚫 Block', `memberBlock('${mid}','${mobDigits}')`);
+            }
+            if (deviceBlocked) actions += btn('#7c3aed', '#fff', 'Unblock device', `showFaSubTab('devices')`);
+            return `<div data-tiphost style="border:1px solid ${hasMultiple ? '#fcd34d' : 'var(--border2)'};border-radius:8px;padding:10px;margin-bottom:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
                     <div>
                         <div style="font-size:13px;font-weight:700;">${name} ${devIcon}</div>
-                        <div style="font-size:11px;color:var(--muted2);">${mobile} · ${date}</div>
+                        <div style="font-size:11px;color:var(--muted2);">${mobile} · Applied: ${date}</div>
                     </div>
-                    <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;white-space:nowrap;">${req.status.toUpperCase()}</span>
+                    ${label}
                 </div>
                 ${deviceBadge}
-                ${(isPending || isRejected) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-                    <button onclick="actionRequestDirect('${req.id}','${req.member_id}','approve')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">✅ Approve</button>
-                    ${isPending ? `<button onclick="actionRequestDirect('${req.id}','${req.member_id}','reject')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">❌ Reject</button>
-                    <button onclick="actionRequestDirect('${req.id}','${req.member_id}','block_number')" style="flex:1;min-width:70px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block #</button>
-                    ${req.device_id ? `<button onclick="blockDeviceDirect('${req.device_id}')" style="flex:1;min-width:80px;font-size:12px;font-weight:700;padding:7px;border:none;border-radius:8px;background:#7c3aed;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">📵 Block Device</button>` : ''}` : ''}
-                </div>` : ''}
+                ${actions ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${actions}</div>` : ''}
             </div>`;
         }).join('');
-    } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+    } catch(e) { if (gen === _faReqGen) list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${esc(e.message)}</div>`; }
 }
 
 async function actionRequestDirect(requestId, memberId, action) {
@@ -1993,9 +2037,13 @@ async function _mgLatestRequest(memberId) {
     const r = await sbGet(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=id,status`);
     return (Array.isArray(r) && r[0]) ? r[0] : null;
 }
-function _mgLabel(memberId) {
+function _mgLabel(memberId, fallback) {
     const m = allMembers.find(x => x.id === memberId);
-    return m ? (m.name || m.mobile || 'this member') : 'this member';
+    return m ? (m.name || m.mobile || 'this member') : (fallback || 'this member');
+}
+function _mgAfterAccessChange() { // manage_stage1b — keep the Requests list in step too
+    const p = document.getElementById('fa-panel-requests');
+    if (p && p.style.display !== 'none') loadAccessRequests(_faReqFilter);
 }
 function _mgSetLocal(memberId, patch) {
     const m = allMembers.find(x => x.id === memberId);
@@ -2003,8 +2051,8 @@ function _mgSetLocal(memberId, patch) {
     _mgmtRerender();
 }
 
-async function memberBlock(memberId) {
-    if (!confirm(`Block ${_mgLabel(memberId)}?\n\nThey lose access and are logged out immediately. You can unblock them later from Members → Blocked.`)) return;
+async function memberBlock(memberId, fallbackLabel) {
+    if (!confirm(`Block ${_mgLabel(memberId, fallbackLabel)}?\n\nThey lose access and are logged out immediately. You can unblock them later from Members → Blocked.`)) return;
     const patch = { free_access: false, free_access_blocked: true };
     try {
         await sbPatch(`members?id=eq.${memberId}`, patch);
@@ -2017,10 +2065,11 @@ async function memberBlock(memberId) {
         showToast('🚫 Member blocked');
     } catch(e) { showToast('🚫 Member blocked (request list not updated: ' + e.message + ')'); }
     closeDetail();
+    _mgAfterAccessChange();
 }
 
-async function memberUnblock(memberId) {
-    if (!confirm(`Unblock ${_mgLabel(memberId)}?\n\nTheir access comes back right away.`)) return;
+async function memberUnblock(memberId, fallbackLabel) {
+    if (!confirm(`Unblock ${_mgLabel(memberId, fallbackLabel)}?\n\nTheir access comes back right away.`)) return;
     const patch = { free_access: true, free_access_blocked: false };
     try {
         await sbPatch(`members?id=eq.${memberId}`, patch);
@@ -2032,6 +2081,7 @@ async function memberUnblock(memberId) {
         showToast('✅ Member unblocked — access restored');
     } catch(e) { showToast('✅ Member unblocked (request list not updated: ' + e.message + ')'); }
     closeDetail();
+    _mgAfterAccessChange();
 }
 
 // Same as the old "Deactivate": removes access only; the member can apply again.
@@ -2315,7 +2365,7 @@ function renderMemberList(members){
       : _acc === 'approved'
       ? `<span style="background:var(--greenbg);color:var(--green);border:0.5px solid var(--greenborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">APPROVED</span>`
       : _acc === 'blocked'
-      ? `<span style="background:var(--redbg);color:var(--red);border:0.5px solid var(--redborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">BLOCKED</span>`
+      ? `<span data-tip="${_BLK_TAGS.person.tip}" title="${_BLK_TAGS.person.tip}" onclick="_tipToggle(event,this)" style="background:var(--redbg);color:var(--red);border:0.5px solid var(--redborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;cursor:help;">BLOCKED</span>`
       : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">FREE</span>`;
     const accessBtn = _acc === 'approved'
       ? `<button onclick="memberBlock('${safeId}')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">🚫 Block</button>`
@@ -2336,7 +2386,7 @@ function renderMemberList(members){
       ? `<button onclick="setMemberDetailStatus('${safeId}','disabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✕ Disable</button>`
       : `<button onclick="setMemberDetailStatus('${safeId}','enabled',true)" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--greenborder);background:var(--greenbg);color:var(--green);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✓ Enable</button>`;
     return `
-      <div class="mgmt-row">
+      <div class="mgmt-row" data-tiphost>
         <div class="mgmt-c1r1" onclick="openMemberDetail('${safeId}')">
           <span class="mgmt-name">${esc(m.name)||'—'}</span>
           <span style="font-size:10px;color:var(--muted);flex-shrink:0;">›</span>
