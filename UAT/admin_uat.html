@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261111-003 | admin_uat: manage_stage1 — Manage tab split into 4 tabs (Requests | Members | Activity | Devices), each showing only its own content; Requests holds access requests + Enable switch + PIN resets/unlocks, with a tab badge = pending access + pending PIN requests; Members holds Add Member + ONE merged list (old approved-members sub-list removed) with search and filters All/Paid/Approved/Blocked/Disabled, APPROVED/BLOCKED labels, Block/Unblock on approved members (row + detail sheet), Remove access (old Deactivate) in detail sheet; Block = free_access false + blocked true + newest request blocked; Unblock = free_access true + blocked false + newest request approved; fake '72h left' label removed. No server change (existing UAT admin door rules cover every write). Rollback: restore admin_uat.html.bak_20261111_pre_stage1. -->
 <!-- T2S-UAT-20261111-002 | admin_uat: admin_fixes_1111 — (1) Enable Requests switch saves {value} only (UAT feature_flags has key,value only — it never saved before); (2) Free Access members list orders by created_at (free_access_granted_at doesn't exist in UAT); (3) lock / not-set-up / set-PIN messages give no unlock hints; (4) 'Pending' sub-tab renamed 'Requests' (default filter stays Pending); (5) Blocked devices show the mobile numbers used on each device (from access_requests + sessions). Rollback: restore admin_uat.html.bak_20261111_pre_fixes. -->
 <!-- T2S-UAT-20261110-002 | admin_uat: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved 2026-11-10). One build setting _isUatBuild()=true. UAT: (1) no Kotak 6-digit code screen; app opens to PIN; (2) PIN checked by /uat-admin-verify-pin (UAT DB only); first login on a browser asks mobile + PIN; lock state from /uat-admin-pub; (3) all admin-login browser storage names UAT-only via _ak() (t2s_uat_*) — never reads/changes/deletes prod admin's saved login on the same website; (4) every non-posts DB call goes through /uat-admin-sb with the UAT admin pass (posts stay on /uat-sb); 401 after login → back to PIN; (5) no in-app set-PIN card, no email-unlock redirect, ?reset=1 only forgets the remembered identity; (6) Kotak connect/disconnect, push-to-prod, market holiday, restore, backup, dummy likes, member notifications, contract refresh switched off in UAT. Prod admin file untouched. Rollback: restore admin_uat.html.bak_20261110_pre_step3. -->
 <!-- T2S-UAT-20261019-002 | admin_uat: Finding B fix — mirrors T2S-PROD-20261019-002 applied to admin.html. All T2SMonitor2026 call sites migrated to localStorage t2s_execute_secret; refresh-contracts' key removed entirely. Dead unused `_FA_SECRET` constant (line ~1767) left untouched — zero references, out of scope. Codex-reviewed (2 rounds, clean). Rollback: revert each x-t2s-secret value back to 'T2SMonitor2026'. -->
@@ -1509,26 +1510,25 @@ body{background:var(--bg);min-height:100vh;}
 <div id="tab-manage" style="display:none;">
 <div class="page" style="margin-top:12px;">
 
-  <!-- Free Access Requests -->
+  <!-- checkpoint manage_stage1 (2026-11-11) — 4 Manage tabs; each shows only its own content -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px;">
+    <button id="fa-sub-requests" onclick="showFaSubTab('requests')" style="font-size:11px;font-weight:700;padding:8px 4px;border-radius:8px;border:none;background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Requests <span id="mg-req-badge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:2px;"></span></button>
+    <button id="fa-sub-members" onclick="showFaSubTab('members')" style="font-size:11px;font-weight:700;padding:8px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Members</button>
+    <button id="fa-sub-activity" onclick="showFaSubTab('activity')" style="font-size:11px;font-weight:700;padding:8px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Activity</button>
+    <button id="fa-sub-devices" onclick="showFaSubTab('devices')" style="font-size:11px;font-weight:700;padding:8px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Devices</button>
+  </div>
+
+  <!-- ═══ REQUESTS TAB ═══ -->
+  <div id="fa-panel-requests">
   <div class="card" style="margin-bottom:10px;">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
-      <span><span class="card-title-dot"></span>📋 Free Access Requests <span id="fa-badge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 7px;margin-left:6px;">0</span></span>
+      <span><span class="card-title-dot"></span>📋 Access Requests <span id="fa-badge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 7px;margin-left:6px;">0</span></span>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;">
         <input type="checkbox" id="fa-feature-toggle" onchange="toggleFreeAccessFeature(this.checked)" style="width:16px;height:16px;accent-color:#059669;">
         Enable Requests
       </label>
     </div>
-
-    <!-- Sub-tabs — CSS grid keeps all 4 in one visible row on any screen width -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:12px;border-bottom:1px solid var(--border2);padding-bottom:10px;">
-      <button id="fa-sub-requests" onclick="showFaSubTab('requests')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Requests</button>
-      <button id="fa-sub-active" onclick="showFaSubTab('active')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Members</button>
-      <button id="fa-sub-analytics" onclick="showFaSubTab('analytics')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Analytics</button>
-      <button id="fa-sub-devices" onclick="showFaSubTab('devices')" style="font-size:10px;font-weight:700;padding:5px 4px;border-radius:8px;border:none;background:var(--bg3);color:var(--text);cursor:pointer;font-family:'Space Grotesk',sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Devices</button>
-    </div>
-
-    <!-- Requests panel -->
-    <div id="fa-panel-requests">
+    <div>
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
         <button onclick="loadAccessRequests('all')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">All</button>
         <button onclick="loadAccessRequests('pending')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #d97706;background:#fef3c7;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Pending</button>
@@ -1537,22 +1537,6 @@ body{background:var(--bg);min-height:100vh;}
         <button onclick="loadAccessRequests('blocked')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #dc2626;background:#fef2f2;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Blocked</button>
       </div>
       <div id="fa-requests-list" style="font-size:13px;">Loading...</div>
-    </div>
-
-    <!-- Active free-access members panel -->
-    <div id="fa-panel-active" style="display:none;">
-      <div id="fa-active-list" style="font-size:13px;">Loading...</div>
-    </div>
-
-    <!-- Analytics panel -->
-    <div id="fa-panel-analytics" style="display:none;">
-      <div id="fa-analytics-data" style="font-size:13px;">Loading...</div>
-    </div>
-
-    <!-- Blocked Devices panel -->
-    <div id="fa-panel-devices" style="display:none;">
-      <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;">Devices blocked from submitting access requests. Unblocking lets the owner apply again.</div>
-      <div id="fa-devices-list" style="font-size:13px;">Loading...</div>
     </div>
   </div>
 
@@ -1570,7 +1554,10 @@ body{background:var(--bg);min-height:100vh;}
       <div id="pru-list" style="font-size:13px;"><div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">Loading...</div></div>
     </div>
   </div>
+  </div><!-- /fa-panel-requests -->
 
+  <!-- ═══ MEMBERS TAB ═══ -->
+  <div id="fa-panel-members" style="display:none;">
   <!-- Add Member — collapsed by default; expand via toggle -->
   <div class="card" style="margin-bottom:10px;">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -1615,12 +1602,31 @@ body{background:var(--bg);min-height:100vh;}
     </div>
     <div id="mgmt-acq-pills" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
       <button id="acq-pill-all" onclick="setAcqFilter('all')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--goldborder);background:var(--gold);color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">All</button>
-      <button id="acq-pill-direct_paid" onclick="setAcqFilter('direct_paid')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Direct Paid</button>
-      <button id="acq-pill-free_to_paid" onclick="setAcqFilter('free_to_paid')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Free → Paid</button>
-      <button id="acq-pill-free" onclick="setAcqFilter('free')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Free</button>
+      <button id="acq-pill-paid" onclick="setAcqFilter('paid')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Paid</button>
+      <button id="acq-pill-approved" onclick="setAcqFilter('approved')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Approved</button>
+      <button id="acq-pill-blocked" onclick="setAcqFilter('blocked')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Blocked</button>
+      <button id="acq-pill-disabled" onclick="setAcqFilter('disabled')" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:16px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Disabled</button>
     </div>
     <div id="mgmt-list" style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">Tap Refresh to load members</div>
   </div>
+  </div><!-- /fa-panel-members -->
+
+  <!-- ═══ ACTIVITY TAB ═══ (full activity screen comes in Stage 4) -->
+  <div id="fa-panel-activity" style="display:none;">
+  <div class="card" style="margin-bottom:10px;">
+    <div class="card-title"><span class="card-title-dot"></span>📊 Activity</div>
+    <div id="fa-analytics-data" style="font-size:13px;">Loading...</div>
+  </div>
+  </div><!-- /fa-panel-activity -->
+
+  <!-- ═══ DEVICES TAB ═══ -->
+  <div id="fa-panel-devices" style="display:none;">
+  <div class="card" style="margin-bottom:10px;">
+    <div class="card-title"><span class="card-title-dot"></span>📵 Blocked Devices</div>
+    <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;">Devices blocked from submitting access requests. Unblocking lets the owner apply again.</div>
+    <div id="fa-devices-list" style="font-size:13px;">Loading...</div>
+  </div>
+  </div><!-- /fa-panel-devices -->
 
 </div>
 </div>
@@ -1672,6 +1678,7 @@ window.onload=()=>{
   checkKotakStatus();
   // PIN section: observe #pru-list mutations so section auto-expands when requests arrive
   initPruObserver();
+  _mgInitReqBadge(); // checkpoint manage_stage1 — Requests tab badge
 };
 
 // ── TABS ──
@@ -1826,15 +1833,35 @@ async function toggleFreeAccessFeature(enabled) {
     } catch(e) { showToast('❌ Error: ' + e.message); }
 }
 
+// checkpoint manage_stage1 (2026-11-11) — Manage tabs: Requests | Members | Activity | Devices.
+// Each tab is its own panel; entering a tab refreshes only that tab's content.
 function showFaSubTab(tab) {
-    ['requests','active','analytics','devices'].forEach(t => {
-        document.getElementById(`fa-panel-${t}`).style.display = t === tab ? 'block' : 'none';
+    ['requests','members','activity','devices'].forEach(t => {
+        const panel = document.getElementById(`fa-panel-${t}`);
+        if (panel) panel.style.display = t === tab ? 'block' : 'none';
         const btn = document.getElementById(`fa-sub-${t}`);
         if (btn) { btn.style.background = t === tab ? 'var(--gold)' : 'var(--bg3)'; btn.style.color = t === tab ? '#fff' : 'var(--text)'; }
     });
-    if (tab === 'active') loadFreeAccessMembers();
-    if (tab === 'analytics') loadFaAnalytics();
+    if (tab === 'requests') { loadFreeAccessTab(); loadPinUnlockRequests(); }
+    if (tab === 'members') loadMembers();
+    if (tab === 'activity') loadFaAnalytics();
     if (tab === 'devices') loadBlockedDevices();
+}
+
+// Requests tab badge = pending access requests + pending PIN reset/unlock requests.
+// Reads the two existing badges (written by their own loaders), so no loader is changed.
+function _mgUpdateReqBadge() {
+    const n = el => { const e = document.getElementById(el); return (e && e.style.display !== 'none') ? (parseInt(e.textContent, 10) || 0) : 0; };
+    const total = n('fa-badge') + n('pru-badge');
+    const b = document.getElementById('mg-req-badge');
+    if (b) { b.textContent = total; b.style.display = total > 0 ? 'inline' : 'none'; }
+}
+function _mgInitReqBadge() {
+    ['fa-badge','pru-badge'].forEach(id => {
+        const e = document.getElementById(id);
+        if (e) new MutationObserver(_mgUpdateReqBadge).observe(e, { attributes: true, attributeFilter: ['style'], childList: true, characterData: true, subtree: true });
+    });
+    _mgUpdateReqBadge();
 }
 
 async function loadAccessRequests(statusFilter = 'pending') {
@@ -1936,6 +1963,7 @@ async function actionRequestDirect(requestId, memberId, action) {
             sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         }
         loadAccessRequests('pending');
+        if (allMembers.length) loadMembers(); // checkpoint manage_stage1 — keep the Members list in step
         const pending = await sbGet('access_requests?status=eq.pending&select=id').catch(() => []);
         const badge = document.getElementById('fa-badge');
         if (badge) { badge.textContent = pending.length; badge.style.display = pending.length > 0 ? 'inline' : 'none'; }
@@ -1957,52 +1985,65 @@ async function blockDeviceDirect(deviceId) {
     } catch(e) { showToast('❌ ' + e.message); }
 }
 
-async function loadFreeAccessMembers() {
-    const list = document.getElementById('fa-active-list');
-    if (!list) return;
-    list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
-    try {
-        const members = await sbGet('members?free_access=eq.true&select=id,mobile,name,last_seen&order=created_at.desc') /* checkpoint admin_fixes_1111: newest joined first */;
-        if (!members.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No active free-access members.</div>'; return; }
-        list.innerHTML = members.map(m => {
-            const lastSeen = m.last_seen ? new Date(m.last_seen) : null;
-            const hoursAgo = lastSeen ? Math.round((Date.now() - lastSeen.getTime()) / 3_600_000) : null;
-            const hoursLeft = hoursAgo !== null ? Math.max(0, 72 - hoursAgo) : '?';
-            const urgency = hoursAgo !== null && hoursAgo > 48 ? '#dc2626' : '#059669';
-            return `<div style="border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-                    <div>
-                        <div style="font-size:13px;font-weight:700;">${m.name || '—'}</div>
-                        <div style="font-size:11px;color:var(--muted2);">${m.mobile || '—'}</div>
-                    </div>
-                    <span style="font-size:11px;font-weight:700;color:${urgency};">${hoursLeft}h left</span>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button onclick="faActionMember('${m.id}','deactivate')" style="flex:1;min-width:70px;font-size:11px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#e5e7eb;color:#374151;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Deactivate</button>
-                    <button onclick="faActionMember('${m.id}','block')" style="flex:1;min-width:70px;font-size:11px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🚫 Block</button>
-                </div>
-            </div>`;
-        }).join('');
-    } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+// checkpoint manage_stage1 (2026-11-11) — the separate "approved members" list is merged into the
+// Members tab list. Block / Unblock / Remove access act on one member from that list.
+// Block and Unblock also update the member's newest access request, so Requests → Blocked/Approved
+// shows the same state. Only approved (non-paid) members get these actions.
+async function _mgLatestRequest(memberId) {
+    const r = await sbGet(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=id,status`);
+    return (Array.isArray(r) && r[0]) ? r[0] : null;
+}
+function _mgLabel(memberId) {
+    const m = allMembers.find(x => x.id === memberId);
+    return m ? (m.name || m.mobile || 'this member') : 'this member';
+}
+function _mgSetLocal(memberId, patch) {
+    const m = allMembers.find(x => x.id === memberId);
+    if (m) Object.assign(m, patch);
+    _mgmtRerender();
 }
 
-async function faActionMember(memberId, action) {
+async function memberBlock(memberId) {
+    if (!confirm(`Block ${_mgLabel(memberId)}?\n\nThey lose access and are logged out immediately. You can unblock them later from Members → Blocked.`)) return;
+    const patch = { free_access: false, free_access_blocked: true };
     try {
-        const patch = action === 'deactivate'
-            ? { free_access: false }
-            : { free_access: false, free_access_blocked: true };
         await sbPatch(`members?id=eq.${memberId}`, patch);
-        showToast(action === 'deactivate' ? '✅ Access removed (can re-apply)' : '🚫 Member blocked');
-        loadFreeAccessMembers();
-    } catch(e) { showToast('❌ ' + e.message); }
+    } catch(e) { showToast('❌ ' + e.message); return; }
+    _mgSetLocal(memberId, patch);
+    try {
+        const req = await _mgLatestRequest(memberId);
+        if (req && req.status !== 'blocked') await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'blocked' });
+        sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: req ? req.id : null, member_id: memberId } }).catch(()=>{});
+        showToast('🚫 Member blocked');
+    } catch(e) { showToast('🚫 Member blocked (request list not updated: ' + e.message + ')'); }
+    closeDetail();
 }
 
-async function faUnblockMember(memberId) {
+async function memberUnblock(memberId) {
+    if (!confirm(`Unblock ${_mgLabel(memberId)}?\n\nTheir access comes back right away.`)) return;
+    const patch = { free_access: true, free_access_blocked: false };
     try {
-        await sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: false });
-        showToast('✅ Member unblocked — they can now request access again');
-        loadFreeAccessMembers();
+        await sbPatch(`members?id=eq.${memberId}`, patch);
+    } catch(e) { showToast('❌ ' + e.message); return; }
+    _mgSetLocal(memberId, patch);
+    try {
+        const req = await _mgLatestRequest(memberId);
+        if (req && req.status !== 'approved') await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'approved' });
+        showToast('✅ Member unblocked — access restored');
+    } catch(e) { showToast('✅ Member unblocked (request list not updated: ' + e.message + ')'); }
+    closeDetail();
+}
+
+// Same as the old "Deactivate": removes access only; the member can apply again.
+async function memberRemoveAccess(memberId) {
+    if (!confirm(`Remove access for ${_mgLabel(memberId)}?\n\nThey can apply again later.`)) return;
+    const patch = { free_access: false };
+    try {
+        await sbPatch(`members?id=eq.${memberId}`, patch);
+        _mgSetLocal(memberId, patch);
+        showToast('✅ Access removed (can re-apply)');
     } catch(e) { showToast('❌ ' + e.message); }
+    closeDetail();
 }
 
 async function loadBlockedDevices() {
@@ -2178,7 +2219,7 @@ async function loadMembers(){
   const el = document.getElementById('mgmt-list');
   el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">Loading...</div>';
   try {
-    allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end,acquisition_source&order=created_at.desc&limit=200');
+    allMembers = await sbGet('members?select=id,mobile,name,tier,status,subscription_end,acquisition_source,free_access,free_access_blocked&order=created_at.desc&limit=200'); // checkpoint manage_stage1: + access state
     updateMgmtCount();
     filterMembers(document.getElementById('mgmt-search').value || '');
   } catch(e){
@@ -2188,10 +2229,7 @@ async function loadMembers(){
 
 function filterMembers(q) {
   const txt = (q || '').toLowerCase().trim();
-  let filtered = allMembers;
-  if (_mgmtAcqFilter !== 'all') {
-    filtered = filtered.filter(m => m.acquisition_source === _mgmtAcqFilter);
-  }
+  let filtered = allMembers.filter(_mgmtMatches);
   if (txt) {
     filtered = filtered.filter(m =>
       (m.mobile && m.mobile.includes(txt)) ||
@@ -2204,15 +2242,33 @@ function filterMembers(q) {
 function updateMgmtCount() {
   const countEl = document.getElementById('mgmt-total-count');
   if (!countEl) return;
-  const n = _mgmtAcqFilter === 'all'
-    ? allMembers.length
-    : allMembers.filter(m => m.acquisition_source === _mgmtAcqFilter).length;
+  const n = allMembers.filter(_mgmtMatches).length;
   countEl.textContent = `${n} members`;
+}
+
+// checkpoint manage_stage1 (2026-11-11) — one member list for everyone. Filters:
+// Paid = tier paid; Approved = non-paid with access you granted; Blocked = non-paid, blocked;
+// Disabled = account disabled. A disabled member also still shows under its tier filter.
+function _memberAccess(m) {
+  if (m.tier === 'paid') return 'paid';
+  if (m.free_access_blocked === true) return 'blocked';
+  if (m.free_access === true) return 'approved';
+  return 'none';
+}
+function _mgmtMatches(m) {
+  if (_mgmtAcqFilter === 'all') return true;
+  if (_mgmtAcqFilter === 'disabled') return m.status === 'disabled';
+  return _memberAccess(m) === _mgmtAcqFilter;
+}
+function _mgmtRerender() {
+  const s = document.getElementById('mgmt-search');
+  updateMgmtCount();
+  filterMembers(s ? s.value || '' : '');
 }
 
 function setAcqFilter(src) {
   _mgmtAcqFilter = src;
-  ['all','direct_paid','free_to_paid','free'].forEach(k => {
+  ['all','paid','approved','blocked','disabled'].forEach(k => {
     const btn = document.getElementById('acq-pill-' + k);
     if (!btn) return;
     const active = k === src;
@@ -2253,9 +2309,19 @@ function renderMemberList(members){
     const safeId    = esc(m.id);
     const st        = memberExpiryStatus(m.subscription_end, m.status);
     const isEnabled = m.status === 'enabled';
-    const tierBadge = m.tier === 'paid'
+    const _acc = _memberAccess(m); // checkpoint manage_stage1
+    const tierBadge = _acc === 'paid'
       ? `<span style="background:var(--goldbg);color:var(--gold);border:0.5px solid var(--goldborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">PAID</span>`
+      : _acc === 'approved'
+      ? `<span style="background:var(--greenbg);color:var(--green);border:0.5px solid var(--greenborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">APPROVED</span>`
+      : _acc === 'blocked'
+      ? `<span style="background:var(--redbg);color:var(--red);border:0.5px solid var(--redborder);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">BLOCKED</span>`
       : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;">FREE</span>`;
+    const accessBtn = _acc === 'approved'
+      ? `<button onclick="memberBlock('${safeId}')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--redborder);background:var(--redbg);color:var(--red);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">🚫 Block</button>`
+      : _acc === 'blocked'
+      ? `<button onclick="memberUnblock('${safeId}')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;border:0.5px solid var(--greenborder);background:var(--greenbg);color:var(--green);cursor:pointer;font-family:'Space Grotesk',sans-serif;white-space:nowrap;">✓ Unblock</button>`
+      : '';
     const acqStyles = { direct_paid: ['Direct Paid','var(--gold)','var(--goldbg)','var(--goldborder)'], free_to_paid: ['Free → Paid','var(--blue)','var(--bluebg)','var(--blueborder)'], free: ['Free','var(--muted)','var(--bg3)','var(--border2)'] };
     const acqE    = acqStyles[m.acquisition_source];
     const acqBadge = acqE ? `<span style="font-size:9px;font-weight:700;color:${acqE[1]};background:${acqE[2]};border:0.5px solid ${acqE[3]};border-radius:10px;padding:1px 6px;">${acqE[0]}</span>` : '';
@@ -2278,7 +2344,7 @@ function renderMemberList(members){
         <div class="mgmt-c2r1">${esc(m.mobile)||''}</div>
         <div class="mgmt-c3r1">${tierBadge}</div>
         <div class="mgmt-c1r2">${expText}</div>
-        <div class="mgmt-c2r2">${acqBadge||'<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
+        <div class="mgmt-c2r2">${accessBtn || acqBadge || '<span style="font-size:9px;color:var(--muted);">—</span>'}</div>
         <div class="mgmt-c3r2">${statusBtn}</div>
       </div>`;
   }).join('');
@@ -2319,7 +2385,7 @@ function openMemberDetail(memberId) {
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
           ${m.tier==='paid'
             ? `<span style="background:var(--goldbg);color:var(--gold);border:0.5px solid var(--goldborder);border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">PAID</span>`
-            : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">FREE</span>`}
+            : `<span style="background:var(--bg3);color:var(--muted);border:0.5px solid var(--border2);border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">${({approved:'APPROVED',blocked:'BLOCKED'})[_memberAccess(m)] || 'FREE'}</span>`}
           <span style="background:${st.bg};color:${st.color};border:0.5px solid ${st.border};border-radius:20px;font-size:10px;font-weight:700;padding:3px 9px;">${st.label}</span>
         </div>
       </div>
@@ -2368,6 +2434,15 @@ function openMemberDetail(memberId) {
           🔑 Reset PIN
         </button>
       </div>
+      ${(() => { const _a = _memberAccess(m); // checkpoint manage_stage1 — access actions (non-paid only)
+        if (_a === 'approved') return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <button onclick="memberBlock('${esc(m.id)}')" style="padding:10px 4px;border:none;border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--redbg);color:var(--red);">🚫 Block</button>
+          <button onclick="memberRemoveAccess('${esc(m.id)}')" style="padding:10px 4px;border:0.5px solid var(--border2);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--bg3);color:var(--text);">Remove access</button>
+        </div>`;
+        if (_a === 'blocked') return `<div style="margin-bottom:10px;">
+          <button onclick="memberUnblock('${esc(m.id)}')" style="width:100%;padding:10px 4px;border:none;border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--greenbg);color:var(--green);">✓ Unblock — restore access</button>
+        </div>`;
+        return ''; })()}
 
       <button onclick="closeDetail()" style="width:100%;padding:10px;border:0.5px solid var(--border2);border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Close</button>
     </div>`;
@@ -2391,7 +2466,7 @@ async function extendSubscription(memberId, extraDays, skipSheet = false){
   try {
     await sbPatch(`members?id=eq.${memberId}`, { subscription_end: newEnd });
     m.subscription_end = newEnd;
-    renderMemberList(allMembers);
+    _mgmtRerender();
     if (!skipSheet) openMemberDetail(memberId);
     else showToast(`✓ Extended +${extraDays}d → ${newEnd}`);
   } catch(e){ alert('Failed to extend: ' + e.message); }
@@ -2414,7 +2489,7 @@ async function setMemberDetailStatus(memberId, status, skipSheet = false){
     await sbPatch(`members?id=eq.${memberId}`, { status });
     const m = allMembers.find(x => x.id === memberId);
     if (m) m.status = status;
-    renderMemberList(allMembers);
+    _mgmtRerender();
     if (!skipSheet) openMemberDetail(memberId);
     else showToast(status === 'enabled' ? '✓ Member enabled' : '✓ Member disabled');
   } catch(e){ alert('Failed: ' + e.message); }
@@ -2586,7 +2661,7 @@ async function toggleTier(id, newTier){
   if (newTier === 'paid') patch.free_access_blocked = false;
   try {
     await sbPatch(`members?id=eq.${id}`, patch);
-    if(m){ m.tier = newTier; if(patch.acquisition_source) m.acquisition_source = patch.acquisition_source; renderMemberList(allMembers); }
+    if(m){ m.tier = newTier; if(patch.acquisition_source) m.acquisition_source = patch.acquisition_source; if(patch.free_access_blocked === false) m.free_access_blocked = false; _mgmtRerender(); } // manage_stage1: keep BLOCKED label in step
     showToast(`✓ Switched to ${newTier}`);
     openMemberDetail(id);
   } catch(e){ alert('Failed: '+e.message); }
@@ -2599,7 +2674,7 @@ async function setExpiryDate(memberId){
     await sbPatch(`members?id=eq.${memberId}`, { subscription_end: val });
     const m = allMembers.find(x => x.id === memberId);
     if(m){ m.subscription_end = val; }
-    renderMemberList(allMembers);
+    _mgmtRerender();
     openMemberDetail(memberId);
   } catch(e){ alert('Failed to set date: ' + e.message); }
 }
