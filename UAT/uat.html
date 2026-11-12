@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261112-001 | uat.html: activity_stage2 — activity now goes ONLY to the UAT door /uat-track-event (the shared /track-event that wrote into the production table is no longer called). Member pass identifies members; limited users send their device id. Real actions sent at once, time records batched, unsent kept (max 100, localStorage t2s_uat_act_queue) and retried; 401 keeps real actions until next login. Recorded: like/unlike (after save), share_post/share_app (only when the share completed or link copied — ShareGuard.trigger now returns true/false), tab_switch / refresh / Telegram links / open trade / follow-ups via one capture click listener (real taps only, isTrusted), premium popup open, notifications turned on, request access open/submitted (old names mapped), session start/end + tab time. Limited users: /uat-visitor-ping on open + every 5 min. A device with an active 24h 'app' block sees 'Access not available. Contact @T2Sview' instead of limited mode (checked first in init). Rollback: restore uat.html.bak_20261112_pre_stage2. -->
 <!-- T2S-UAT-20261111-001 | uat.html: member_rt_logout_fix — _rtRefetchMemberAndAct no longer logs out a new limited-access member on unrelated row changes (e.g. finishing/skipping the product tour). (a) 'no PIN' is treated as an admin PIN reset only for a PIN-logged-in browser (t2s_uat_mode !== 'free'); (b) the pending-request branch logs out only once the latest access request is no longer 'pending' (same query as init), and stays put if that check fails. Disabled/blocked/device-removed kick-outs unchanged. Rollback: restore uat.html.bak_20261111_pre_fixes. -->
 <!-- T2S-UAT-20261019-001 | uat.html: Finding B fix — public control key (T2SMonitor2026) removed. Mirrors T2S-PROD-20261019-001 applied to index.html. sendReply()'s two /send-push calls now send x-t2s-secret from localStorage t2s_execute_secret instead of the hardcoded public string; /refresh-contracts call sends no key (server-side check removed, Tushar's decision). Codex-reviewed (2 rounds, clean). Rollback: revert both x-t2s-secret values back to the literal string 'T2SMonitor2026'. -->
 <!-- T2S-UAT-20261018-001 | uat.html: PIN hashing fix (Finding O, checkpoint pin_hash_consolidated) — removed _faHashPin() (SHA-256+static-salt). _faVerifyPin() and _faSetupPin2() now POST to new server.js endpoints /uat-verify-pin and /uat-setup-pin (reuses existing _VM constant) — pin_hash is never fetched to or computed in this page again. Also fixes a pre-existing inconsistency: this in-app PIN modal previously locked ALL of a member's active sessions on 3 wrong attempts regardless of whether the device had logged in before; it now matches login_uat.html's deliberate per-device-only lockout for never-registered devices (server-enforced). Rollback: restore _faHashPin(), revert _faVerifyPin()/_faSetupPin2() to the pre-20261018 direct-Supabase compare. -->
@@ -1024,6 +1025,7 @@
         try {
             if (wasLiked) await sbFetch(`post_shares?post_id=eq.${postId}&member_id=eq.${memberId}&platform=eq._like`, { method: 'DELETE' });
             else          await sbFetch('post_shares', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId, platform: '_like', shared_at: new Date().toISOString() }) });
+            _trackEvent(wasLiked ? 'unlike_post' : 'like_post', { post_id: postId }); // activity_stage2
         } catch(e) {
             console.error('[Like save]', e.message);
             _likeToast('Like not saved: ' + e.message.slice(0, 80));
@@ -1165,6 +1167,7 @@
 
     function showPopup() {
         document.getElementById('premiumPopup').style.display = 'flex';
+        _trackEvent('premium_popup_open', {}); // activity_stage2
         _populateFreeAccessCTA().catch(() => {});
     }
     function closePopup() { document.getElementById('premiumPopup').style.display = 'none'; }
@@ -1629,16 +1632,38 @@
         }
     }
 
-    // ── ANALYTICS BEACON ─────────────────────────────────────────────────────
-    const _analyticsQueue = [];
+    // ── ACTIVITY TRACKER (checkpoint activity_stage2, 2026-11-12) ───────────
+    // Sends activity ONLY to the UAT server door /uat-track-event (UAT database). The old
+    // shared /track-event (which wrote into the production table) is no longer called.
+    // Who: the member's login pass; limited users are identified by this device's id only.
+    // Real actions are sent at once; time/open/close records are batched. Unsent records
+    // are kept (max 100) and retried. The server decides which actions count as "active".
+    const _ACT_QKEY = 't2s_uat_act_queue';
+    const _ACT_BATCHED = new Set(['tab_time', 'session_start', 'session_end']);
+    let _analyticsQueue = [];
+    try { const q = JSON.parse(localStorage.getItem(_ACT_QKEY) || '[]'); if (Array.isArray(q)) _analyticsQueue = q.slice(-100); } catch(e) {}
     let _tabStartTime = Date.now();
     let _currentTab = 'trades';
+    let _actFlushing = false;
+    function _actSaveQueue() { try { localStorage.setItem(_ACT_QKEY, JSON.stringify(_analyticsQueue.slice(-100))); } catch(e) {} }
+    // Who is acting right now: the logged-in member, or this device for limited users.
+    function _actWho() {
+        const isMember = localStorage.getItem('t2s_uat_mode') !== 'free' && !!localStorage.getItem('t2s_uat_member_id') && !!localStorage.getItem('t2s_uat_member_token');
+        return isMember ? 'm:' + localStorage.getItem('t2s_uat_member_id') : 'd:' + _faGetDeviceId();
+    }
 
     function _trackEvent(type, data = {}) {
-        const memberId = localStorage.getItem('t2s_uat_member_id');
-        if (!memberId) return;
-        _analyticsQueue.push({ type, data: { ...data, ts: Date.now() } });
-        // Don't save stored queue — flush only in-memory queue
+        // Old names → new names (so nothing recorded before is lost)
+        let action = type, d = Object.assign({}, data);
+        if (type === 'button_click') action = d.button === 'request_access_golden' ? 'request_access_open' : d.button === 'request_submitted' ? 'request_submitted' : '';
+        if (type === 'tab_view') action = 'tab_time';
+        if (type === 'session_end' && d.last_tab) { d.tab = d.last_tab; delete d.last_tab; }
+        if (!action) return;
+        delete d.button;
+        _analyticsQueue.push({ action, data: d, who: _actWho() }); // who: never sent under another identity
+        if (_analyticsQueue.length > 100) _analyticsQueue.splice(0, _analyticsQueue.length - 100);
+        _actSaveQueue();
+        if (!_ACT_BATCHED.has(action)) _flushAnalytics().catch(() => {});
     }
 
     function _trackTabView(tabId) {
@@ -1650,24 +1675,89 @@
     }
 
     async function _flushAnalytics() {
-        const memberId = localStorage.getItem('t2s_uat_member_id');
-        if (!memberId || _analyticsQueue.length === 0) return;
-        const events = _analyticsQueue.splice(0, _analyticsQueue.length);
+        if (_actFlushing || _analyticsQueue.length === 0) return;
+        _actFlushing = true;
+        // Records made by someone else on this browser (before a logout / account switch) are dropped.
+        const who = _actWho();
+        _analyticsQueue = _analyticsQueue.filter(e => e.who === who);
+        if (!_analyticsQueue.length) { _actSaveQueue(); _actFlushing = false; return; }
+        const events = _analyticsQueue.slice(0, 20);
+        const token = localStorage.getItem('t2s_uat_member_token');
+        const isMember = who.startsWith('m:');
+        const body = { events: events.map(e => ({ action: e.action, data: e.data })), device_type: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'desktop' };
+        if (isMember) body.token = token; else body.device_id = _faGetDeviceId();
         try {
-            await fetch(`${_VM}/track-event`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ memberId, events })
-            });
-        } catch(e) { _analyticsQueue.unshift(...events); } // put back on failure
+            const r = await fetch(`${_VM}/uat-track-event`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true });
+            if (r.ok || r.status === 400) {
+                _analyticsQueue.splice(0, events.length);           // sent (or unusable) — remove
+            } else if (r.status === 401) {
+                // Pass no longer valid (expired / server restarted before it was saved): keep only
+                // real actions until the next login, drop time records.
+                _analyticsQueue = _analyticsQueue.filter(e => !_ACT_BATCHED.has(e.action));
+            }                                                       // 429 / 5xx: keep, retry later
+        } catch(e) { /* offline: keep, retry later */ }
+        _actSaveQueue();
+        _actFlushing = false;
+        if (_analyticsQueue.length && events.length === 20) setTimeout(() => _flushAnalytics().catch(() => {}), 1000);
     }
 
-    setInterval(_flushAnalytics, 10 * 60 * 1000); // flush every 10 minutes
+    setInterval(() => _flushAnalytics().catch(() => {}), 5 * 60 * 1000);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
             if (_currentTab) _trackEvent('session_end', { last_tab: _currentTab, duration_sec: Math.round((Date.now() - _tabStartTime) / 1000) });
             _flushAnalytics().catch(() => {});
         }
     });
+
+    // Real taps only (isTrusted): tab switches, refresh, Telegram links, opening a trade or
+    // follow-ups. Programmatic tab changes (app restoring the last tab etc.) are not counted.
+    document.addEventListener('click', function(ev) {
+        if (!ev.isTrusted) return;
+        const t = ev.target;
+        if (!t || !t.closest) return;
+        let el;
+        if ((el = t.closest('.tabs .tab'))) {
+            const m = (el.getAttribute('onclick') || '').match(/switchTab\('([a-z_]+)'/);
+            if (m && !el.classList.contains('active')) _trackEvent('tab_switch', { tab: m[1] });
+        } else if (t.closest('#refresh-btn')) {
+            _trackEvent('refresh_tap', {});
+        } else if (t.closest('#live-ticker-wrap')) {
+            _trackEvent('telegram_click', { cta: 'ticker' });
+        } else if ((el = t.closest('a[href*="t.me/"]'))) {
+            const where = el.closest('#premiumPopup') ? 'popup_' : '';
+            const kind = el.classList.contains('btn-primary') ? 'join_premium' : el.classList.contains('btn-secondary') ? 'free_channel' : 'link';
+            _trackEvent('telegram_click', { cta: where + kind });
+        } else if ((el = t.closest('.mqp-card[onclick*="_mqpNavTrade"]'))) {
+            const pid = el.getAttribute('data-post-id') || '';
+            _trackEvent('open_trade', /^[0-9a-f-]{36}$/i.test(pid) ? { post_id: pid, source: 'markets' } : { source: 'markets' });
+        } else if (t.closest('[onclick*="goToSpecificTrade"]')) {
+            _trackEvent('open_trade', { source: 'link' });
+        } else if ((el = t.closest('[onclick*="toggleReplies"]'))) {
+            _trackEvent('open_followups', {});
+        }
+    }, true);
+
+    // Limited users: "app is open" signal for the Online count (no identity).
+    function _visitorPing() {
+        if (localStorage.getItem('t2s_uat_mode') !== 'free' || document.visibilityState !== 'visible') return;
+        fetch(`${_VM}/uat-visitor-ping`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_id: _faGetDeviceId() }) }).catch(() => {});
+    }
+
+    // A device given a 24-hour "app" block cannot use limited mode.
+    async function _uatAppBlocked() {
+        try {
+            const did = _faGetDeviceId();
+            const rows = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&scope=eq.app&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            const now = Date.now();
+            return Array.isArray(rows) && rows.some(b => !b.blocked_until || new Date(b.blocked_until).getTime() > now);
+        } catch(e) { return false; }
+    }
+    function _showAppBlocked() {
+        const o = document.createElement('div');
+        o.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#f6f3ee;display:flex;align-items:center;justify-content:center;padding:24px;font-family:inherit;';
+        o.innerHTML = '<div style="max-width:340px;text-align:center;"><div style="font-size:2rem;margin-bottom:10px;">🚫</div><div style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:8px;">Access not available</div><div style="font-size:0.85rem;color:#6b7280;">Contact <a href="https://t.me/T2Sview" style="color:#4a2a78;font-weight:700;">@T2Sview</a></div></div>';
+        document.body.appendChild(o);
+    }
 
     function _advDecCollapse() {
         _advDecOpen = null;
@@ -3223,14 +3313,17 @@
             trigger: function(customTitle, customText) {
                 var payload = this.getPayload(customTitle, customText);
                 if (payload.url.includes('github.io') || payload.url !== CANONICAL_URL) payload.url = CANONICAL_URL;
+                // activity_stage2: returns a promise → true only if the share sheet completed or the link was copied
                 if (navigator.share) {
-                    navigator.share(payload).catch(function() {});
+                    return navigator.share(payload).then(function() { return true; }).catch(function() { return false; });
                 } else if (navigator.clipboard) {
-                    navigator.clipboard.writeText(CANONICAL_URL).then(function() {
+                    return navigator.clipboard.writeText(CANONICAL_URL).then(function() {
                         if (typeof _bellToast === 'function') _bellToast('🔗 Link copied to clipboard!');
-                    }).catch(function() {});
+                        return true;
+                    }).catch(function() { return false; });
                 } else {
                     window.prompt('Copy link:', CANONICAL_URL);
+                    return Promise.resolve(false);
                 }
             }
         });
@@ -3240,7 +3333,8 @@
         const card = document.getElementById('ucard-' + postId);
         const content = card ? (card.dataset.content || '') : '';
         const text = `${content.substring(0, 50)}...\n📲 Full update on Trade2Spend →`;
-        window.T2S_ShareGuard.trigger('Trade2Spend Update', text);
+        const _done = await window.T2S_ShareGuard.trigger('Trade2Spend Update', text);
+        if (_done) _trackEvent('share_post', /^[0-9a-f-]{36}$/i.test(String(postId)) ? { post_id: String(postId) } : {}); // activity_stage2
     }
 
     async function deletePost(postId) {
@@ -5386,6 +5480,7 @@
         }
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
+            _trackEvent('notifications_on', {}); // activity_stage2
             await subscribeToPush(true);
             updateNotifBell();
             _bellToast('✓ Notification sent! Check your screen.');
@@ -5529,6 +5624,9 @@
         if(mode !== 'free' && !memberId){
             window.location.href='login.html'; return;
         }
+        // activity_stage2 — checked first, before anything loads: a device with an active
+        // 24-hour "app" block cannot use limited mode.
+        if (mode === 'free' && await _uatAppBlocked()) { _showAppBlocked(); return; }
         if(mode !== 'free' && memberId){
             if(Date.now()-lastLogin >= SESSION_24H){
                 const _expDid=localStorage.getItem('t2s_uat_device_id');
@@ -5570,6 +5668,7 @@
         }
         // Analytics: session start
         _trackEvent('session_start', { mode, tab: new URL(location.href).hash.replace('#','') || 'trades' });
+        if (mode === 'free') { _visitorPing(); setInterval(_visitorPing, 5 * 60 * 1000); } // activity_stage2 — limited users' Online signal
         // Load banner posts at init — independent of which tab is active
         sbFetch('posts?is_deleted=eq.false&post_type=eq.banner&order=sent_at.desc&limit=20', { method: 'GET' })
             .then(function(bp) {
@@ -6182,10 +6281,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 600);
 });
 function _shareApp() {
-  window.T2S_ShareGuard.trigger(
+  Promise.resolve(window.T2S_ShareGuard.trigger(
     'Trade2Spend — Live Trade Alerts & Market Updates',
     'Get live NSE trade alerts and market updates from Trade2Spend!'
-  );
+  )).then(function(done) { if (done && typeof _trackEvent === 'function') _trackEvent('share_app', {}); }).catch(function() {}); // activity_stage2
 }
 
     /* ── ALERT NOTIFICATION SYSTEM ─────────────────────────────────────────── */
