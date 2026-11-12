@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261112-003 | uat.html: activity_stage3 — (1) time-spent fix: going out of view records tab_time once + session_end (no duration) and restarts the timer; coming back restarts it + session_start; session_start at open names the restored tab. (2) Idle logout minutes from server setting (default 120, was 30); also on reopen (last touch or login time, checked before refresh); reason "idle"; stale last_active cleared. (3) notice strip after inactivity_notice_days full market days (default 3; removal after 5) for approved members (from /uat-activity-status; hides after a real action; closing it is not activity) with short "to stay active" list + …more (list from DB); same rule line on the in-app Limited Free Access screen (was a fixed "72 hours"). (4) Removed after inactivity (newest request blocked/inactivity) → logout with reason "inactive", at open and via realtime; read error → stay. Admin "Remove access" unchanged. Rollback: restore uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261112-001 | uat.html: activity_stage2 — activity now goes ONLY to the UAT door /uat-track-event (the shared /track-event that wrote into the production table is no longer called). Member pass identifies members; limited users send their device id. Real actions sent at once, time records batched, unsent kept (max 100, localStorage t2s_uat_act_queue) and retried; 401 keeps real actions until next login. Recorded: like/unlike (after save), share_post/share_app (only when the share completed or link copied — ShareGuard.trigger now returns true/false), tab_switch / refresh / Telegram links / open trade / follow-ups via one capture click listener (real taps only, isTrusted), premium popup open, notifications turned on, request access open/submitted (old names mapped), session start/end + tab time. Limited users: /uat-visitor-ping on open + every 5 min. A device with an active 24h 'app' block sees 'Access not available. Contact @T2Sview' instead of limited mode (checked first in init). Rollback: restore uat.html.bak_20261112_pre_stage2. -->
 <!-- T2S-UAT-20261111-001 | uat.html: member_rt_logout_fix — _rtRefetchMemberAndAct no longer logs out a new limited-access member on unrelated row changes (e.g. finishing/skipping the product tour). (a) 'no PIN' is treated as an admin PIN reset only for a PIN-logged-in browser (t2s_uat_mode !== 'free'); (b) the pending-request branch logs out only once the latest access request is no longer 'pending' (same query as init), and stays put if that check fails. Disabled/blocked/device-removed kick-outs unchanged. Rollback: restore uat.html.bak_20261111_pre_fixes. -->
 <!-- T2S-UAT-20261019-001 | uat.html: Finding B fix — public control key (T2SMonitor2026) removed. Mirrors T2S-PROD-20261019-001 applied to index.html. sendReply()'s two /send-push calls now send x-t2s-secret from localStorage t2s_execute_secret instead of the hardcoded public string; /refresh-contracts call sends no key (server-side check removed, Tushar's decision). Codex-reviewed (2 rounds, clean). Rollback: revert both x-t2s-secret values back to the literal string 'T2SMonitor2026'. -->
@@ -826,7 +827,7 @@
       <div>✅ Free access to paid trade alerts</div>
       <div>✅ Full analysis &amp; follow-ups</div>
       <div>✅ Active as long as you're engaged</div>
-      <div>⚠️ Removed after 72 hours of inactivity</div>
+      <div id="golden-inact-line">⚠️ Access is removed if you stay inactive</div>
     </div>
     <button onclick="showAccessRequestModal()" style="background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border:none;border-radius:12px;padding:13px 20px;font-size:0.92rem;font-weight:800;cursor:pointer;width:100%;font-family:inherit;letter-spacing:0.02em;">Continue to Apply →</button>
     <p style="font-size:0.68rem;opacity:0.55;margin-top:10px;">Not SEBI registered · Educational purposes only</p>
@@ -1202,7 +1203,7 @@
             if (lr && lr.status === 'pending') {
                 cta.innerHTML = `<p style="font-size:0.8rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">⏳ Request pending — you'll be notified when reviewed.</p>`;
             } else if (lr && lr.block_reason === 'inactivity') {
-                cta.innerHTML = `<div style="background:#fef3c7;border-radius:10px;padding:10px;font-size:0.78rem;color:#92400e;margin:0;"><b>⚠️ Free access removed</b> — 72h inactivity.<br><button onclick="closePopup();showGoldenOpportunityScreen()" style="background:var(--accent);color:white;border:none;border-radius:8px;padding:7px 14px;font-size:0.78rem;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit;">Re-apply for Free Access →</button></div>`;
+                cta.innerHTML = `<div style="background:#fef3c7;border-radius:10px;padding:10px;font-size:0.78rem;color:#92400e;margin:0;"><b>⚠️ Free access removed</b> — no activity for several market days.<br><button onclick="closePopup();showGoldenOpportunityScreen()" style="background:var(--accent);color:white;border:none;border-radius:8px;padding:7px 14px;font-size:0.78rem;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit;">Re-apply for Free Access →</button></div>`;
             } else if (lr && lr.status === 'rejected' && lr.last_rejected_at) {
                 const retryAt = new Date(new Date(lr.last_rejected_at).getTime() + 24 * 3_600_000);
                 if (retryAt.getTime() > Date.now()) {
@@ -1688,6 +1689,7 @@
         if (isMember) body.token = token; else body.device_id = _faGetDeviceId();
         try {
             const r = await fetch(`${_VM}/uat-track-event`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true });
+            if (r.ok) { try { const j = await r.clone().json(); if (j && j.engaged) _inactNoticeHide(); } catch(_) {} } // activity_stage3
             if (r.ok || r.status === 400) {
                 _analyticsQueue.splice(0, events.length);           // sent (or unusable) — remove
             } else if (r.status === 401) {
@@ -1702,10 +1704,23 @@
     }
 
     setInterval(() => _flushAnalytics().catch(() => {}), 5 * 60 * 1000);
+    // activity_stage3 — time-spent fix: each stretch of time is counted once. Going out of view
+    // records the time on the current tab and restarts the timer; coming back restarts it again.
+    let _actHidden = false;
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
-            if (_currentTab) _trackEvent('session_end', { last_tab: _currentTab, duration_sec: Math.round((Date.now() - _tabStartTime) / 1000) });
+            if (_actHidden) return;
+            _actHidden = true;
+            if (_currentTab) {
+                _trackEvent('tab_view', { tab: _currentTab, duration_sec: Math.round((Date.now() - _tabStartTime) / 1000) });
+                _trackEvent('session_end', { last_tab: _currentTab });
+            }
+            _tabStartTime = Date.now();
             _flushAnalytics().catch(() => {});
+        } else if (_actHidden) {
+            _actHidden = false;
+            _tabStartTime = Date.now();
+            _trackEvent('session_start', { mode: localStorage.getItem('t2s_uat_mode'), tab: _currentTab || 'trades' });
         }
     });
 
@@ -1757,6 +1772,86 @@
         o.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#f6f3ee;display:flex;align-items:center;justify-content:center;padding:24px;font-family:inherit;';
         o.innerHTML = '<div style="max-width:340px;text-align:center;"><div style="font-size:2rem;margin-bottom:10px;">🚫</div><div style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:8px;">Access not available</div><div style="font-size:0.85rem;color:#6b7280;">Contact <a href="https://t.me/T2Sview" style="color:#4a2a78;font-weight:700;">@T2Sview</a></div></div>';
         document.body.appendChild(o);
+    }
+
+    // ── activity_stage3 (2026-11-12): timers. Numbers (idle minutes, notice/removal hours) and the
+    // "what counts as activity" list come from the server (database settings) — not from this file.
+    // Closing the notice or tapping "more" is NOT activity (no tracked element inside it).
+    const _ACT_IDLE_KEY = 't2s_uat_idle_min';
+    function _actIdleMs() {
+        let n = NaN; try { n = parseInt(localStorage.getItem(_ACT_IDLE_KEY) || '', 10); } catch(_) {}
+        return (Number.isFinite(n) && n > 0 ? n : 120) * 60000;
+    }
+    function _actEsc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+    // Short sentence + "…more" that opens the full list (no clutter).
+    function _actHintsHtml(list, id) {
+        if (!Array.isArray(list) || !list.length) return '';
+        const safe = list.filter(x => typeof x === 'string' && x).map(_actEsc);
+        if (!safe.length) return '';
+        const tail = ' Opening the app or scrolling does not count.';
+        if (safe.length <= 3) return ` To stay active: ${safe.join(', ')}.<span style="font-weight:500;">${tail}</span>`;
+        return ` To stay active: ${safe.slice(0, 3).join(', ')}<span id="${id}-rest" style="display:none;font-weight:500;">, ${safe.slice(3).join(', ')}.${tail}</span>`
+            + ` <a href="#" onclick="event.preventDefault();var r=document.getElementById('${id}-rest');if(r)r.style.display='inline';this.remove();" style="color:inherit;font-weight:700;text-decoration:underline;white-space:nowrap;">…more</a>`;
+    }
+    async function _actStatus() {
+        const isMember = _actWho().startsWith('m:');
+        const body = isMember ? { token: localStorage.getItem('t2s_uat_member_token') } : {};
+        try {
+            const r = await fetch(`${_VM}/uat-activity-status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            if (!r.ok) return null;
+            const j = await r.json();
+            if (j && Number.isInteger(j.idle_minutes) && j.idle_minutes > 0) { try { localStorage.setItem(_ACT_IDLE_KEY, String(j.idle_minutes)); } catch(_) {} }
+            _actFillRuleLine(j);
+            return j;
+        } catch(_) { return null; }
+    }
+    // The "Limited Free Access" screen: rule line from the server numbers + DB list.
+    function _actFillRuleLine(j) {
+        const line = document.getElementById('golden-inact-line');
+        if (!line || !j || !Number.isInteger(j.remove_days) || j.remove_days < 1) return;
+        line.innerHTML = `⚠️ Removed after ${j.remove_days} market day${j.remove_days === 1 ? '' : 's'} without activity (weekends and market holidays don't count).` + _actHintsHtml(j.activities, 'golden-hints');
+    }
+    let _inactDismissed = false;
+    function _inactNoticeHide() { const el = document.getElementById('inact-notice'); if (el) el.remove(); }
+    function _inactNoticeShow(j) {
+        if (document.getElementById('inact-notice')) return;
+        const header = document.querySelector('.sticky-header');
+        if (!header) return;
+        const md = n => `${n} market day${n === 1 ? '' : 's'}`;
+        const el = document.createElement('div');
+        el.id = 'inact-notice';
+        el.style.cssText = 'background:#fffbeb;border-top:1px solid #f59e0b;color:#92400e;font-size:0.75rem;font-weight:700;padding:7px 34px 7px 14px;line-height:1.5;position:relative;';
+        el.innerHTML = `⏳ No activity for ${md(j.days_inactive)}. Your access is removed after ${md(j.days_left)} more without activity (weekends and market holidays don't count).`
+            + _actHintsHtml(j.activities, 'inact-hints')
+            + `<button onclick="_inactDismissed=true;_inactNoticeHide();" aria-label="Close" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#92400e;font-size:1rem;cursor:pointer;line-height:1;">×</button>`;
+        header.appendChild(el);
+    }
+    // Approved members only (the server returns hours only for them). Any failure → no notice.
+    async function _inactCheck() {
+        if (!_actWho().startsWith('m:')) { _inactNoticeHide(); return; }
+        const j = await _actStatus();
+        if (!j || !Number.isInteger(j.days_inactive) || !Number.isInteger(j.days_left) || !Number.isInteger(j.notice_days)
+            || _inactDismissed || j.days_left <= 0 || j.days_inactive < j.notice_days) { _inactNoticeHide(); return; }
+        _inactNoticeShow(j);
+    }
+    // Removed for inactivity while in the app? Only when the newest request says so — any read
+    // error → stay put (never log out on an error). Admin's manual "Remove access" is unchanged.
+    async function _inactRemovedCheck(m, memberId) {
+        if (!m || !memberId || m.tier === 'paid' || m.is_admin === true || m.free_access === true || m.free_access_blocked === true) return false;
+        if (localStorage.getItem('t2s_uat_mode') !== 'paid') return false;
+        try {
+            const r = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason`, { method: 'GET' });
+            return Array.isArray(r) && r.length > 0 && r[0].status === 'blocked' && r[0].block_reason === 'inactivity';
+        } catch(_) { return false; }
+    }
+    function _inactLogout(memberId) {
+        const did = localStorage.getItem('t2s_uat_device_id');
+        const p = (memberId && did) ? sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${did}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }).catch(() => {}) : Promise.resolve();
+        localStorage.removeItem('t2s_uat_mode');
+        localStorage.removeItem('t2s_uat_last_login');
+        localStorage.removeItem('t2s_uat_last_active');
+        localStorage.setItem('t2s_uat_logout_reason', 'inactive');
+        p.finally(() => { window.location.href = 'login.html'; });
     }
 
     function _advDecCollapse() {
@@ -3137,6 +3232,9 @@
             return;
         }
         if (deviceRemovedFallback) { _rtRedirectToLogin('device_removed'); return; }
+        // activity_stage3 — access removed after the inactivity period → log out with the message
+        if (await _inactRemovedCheck(m, _rtMid)) { if (_rtRedirecting) return; _rtRedirecting = true; _inactLogout(_rtMid); return; }
+        if (_rtRedirecting) return;
         // Nothing wrong — normal background refresh, not a redirect
         window._cachedMember = Object.assign(window._cachedMember || {}, m);
         const newMode = (m.tier === 'paid' || m.free_access) ? 'paid' : 'free';
@@ -5633,6 +5731,17 @@
                 if(_expDid){try{await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_expDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
                 window.location.href='login.html'; return;
             }
+            // activity_stage3 — idle logout also on reopen: compare the last touch saved before the
+            // app was closed (or the login time, whichever is later) BEFORE it is refreshed below.
+            const _lastTouch = Date.parse(localStorage.getItem('t2s_uat_last_active') || '') || 0;
+            const _idleRef = Math.max(_lastTouch, lastLogin);
+            if (_idleRef > 0 && Date.now() - _idleRef > _actIdleMs()) {
+                const _idDid = localStorage.getItem('t2s_uat_device_id');
+                if (_idDid) { try { await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_idDid}&is_active=eq.true`, { method:'PATCH', body: JSON.stringify({ is_active:false }), headers: { 'Prefer':'return=minimal' } }); } catch(e) {} }
+                localStorage.removeItem('t2s_uat_last_active');
+                localStorage.setItem('t2s_uat_logout_reason', 'idle');
+                window.location.href='login.html'; return;
+            }
         }
         // Start market data fetch immediately — runs in parallel with auth check below
         const _mktLoad = fetchMarketData();
@@ -5644,6 +5753,7 @@
                     if(members&&members[0]&&members[0].free_access_blocked===true) localStorage.setItem('t2s_uat_logout_reason','blocked');
                     window.location.href='login.html'; return;
                 }
+                if (await _inactRemovedCheck(members[0], memberId)) { _inactLogout(memberId); return; } // activity_stage3
                 window._cachedMember = members[0];
                 // Render tier chip immediately — before any tab fetch completes
                 _renderMemberChip(members[0]);
@@ -5666,8 +5776,6 @@
                 }
             } catch(e) {}
         }
-        // Analytics: session start
-        _trackEvent('session_start', { mode, tab: new URL(location.href).hash.replace('#','') || 'trades' });
         if (mode === 'free') { _visitorPing(); setInterval(_visitorPing, 5 * 60 * 1000); } // activity_stage2 — limited users' Online signal
         // Load banner posts at init — independent of which tab is active
         sbFetch('posts?is_deleted=eq.false&post_type=eq.banner&order=sent_at.desc&limit=20', { method: 'GET' })
@@ -5717,17 +5825,19 @@
                 }).catch(() => {});
         }
         // Idle auto-lock: update last_active on real user interactions
-        const IDLE_MS = 30 * 60 * 1000;
+        // activity_stage3: minutes from the server setting (idle_logout_minutes, default 120), was 30.
         function markActive(){ localStorage.setItem('t2s_uat_last_active', new Date().toISOString()); }
         markActive();
         ['touchstart','click','keypress','scroll'].forEach(ev => document.addEventListener(ev, markActive, { passive:true }));
         // Check every 60s — redirect to login if idle > 30 min; deactivate session in DB first
         const _heartbeat = setInterval(async () => {
             const last = new Date(localStorage.getItem('t2s_uat_last_active') || 0).getTime();
-            if (Date.now() - last > IDLE_MS) {
+            if (Date.now() - last > _actIdleMs()) { // activity_stage3: re-read so a fresh server setting applies at once
                 clearInterval(_heartbeat);
                 const _idleDid=localStorage.getItem('t2s_uat_device_id');
                 if(memberId&&_idleDid){try{await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_idleDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
+                localStorage.removeItem('t2s_uat_last_active'); // activity_stage3: no stale value into the next login
+                if (memberId && mode !== 'free') localStorage.setItem('t2s_uat_logout_reason', 'idle');
                 window.location.href='login.html';
             }
         }, 60000);
@@ -5748,12 +5858,20 @@
         })();
         if (restoreTab && restoreTab !== 'markets') {
             const tabEl = document.querySelector(`.tab[onclick*="'${restoreTab}'"]`);
-            if (tabEl) switchTab(restoreTab, tabEl);
+            if (tabEl) { _currentTab = null; switchTab(restoreTab, tabEl); } // activity_stage3: restoring is not time on the default tab
         } else {
             // Pre-load trade alerts in background so tab is instant when user switches
             fetchTradeAlerts();
             fetchMarketPreview();
         }
+        // Analytics: session start — activity_stage3: after the tab restore, so it names the tab really showing
+        // The tab really showing (the page opens on Markets; the tracker used to assume Trades).
+        { const _at = document.querySelector('.tabs .tab.active'); const _mt = _at && (_at.getAttribute('onclick') || '').match(/switchTab\('([a-z_]+)'/); if (_mt) _currentTab = _mt[1]; }
+        _tabStartTime = Date.now();
+        _trackEvent('session_start', { mode, tab: _currentTab || 'markets' });
+        // activity_stage3 — idle setting refresh for everyone; 48h notice for approved members (now + every 30 min)
+        if (mode !== 'free' && memberId) { _inactCheck(); setInterval(_inactCheck, 30 * 60 * 1000); }
+        else { _actStatus(); }
         initRealtimeSubscription(); // start live connection at page load regardless of which tab opens first
         // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
