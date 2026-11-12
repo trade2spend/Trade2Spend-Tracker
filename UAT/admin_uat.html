@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261112-002 | admin_uat: activity_stage2 — approve / reject / Block # / Block Device / Block / Unblock now also save WHEN (access_requests.reviewed_at) and WHY (block_reason person/device); blocked request cards show 'Blocked on: date · Person/Device'; Unblock writes audit 'access_unblocked'; Devices tab shows what each block covers (New requests / App + requests); blockDevice24h() added for the Activity screen (Stage 4). Needs server T2S-UAT-20261112-001 door rules + UAT SQL 20261112_activity_tracking.sql. Rollback: restore admin_uat.html.bak_20261112_pre_stage2. -->
 <!-- T2S-UAT-20261111-004 | admin_uat: manage_stage1b — request cards: 'Applied:' date label; one label per card (Person / Device / Person + Device / Old record, else the status) with its meaning on hover (title) or tap (line below), plus an ⓘ key next to the Blocked filter; Block on approved cards (approved, non-paid) and Unblock on person-blocked cards (same memberBlock/memberUnblock as Members, list refreshes after); Unblock device opens Devices; request list now 2 database trips (members embedded), always shows Loading…, stale replies ignored; applicant name/mobile now escaped. Members BLOCKED label explains itself on hover/tap. Admin app only. Rollback: restore admin_uat.html.bak_20261111_pre_stage1b. -->
 <!-- T2S-UAT-20261111-003 | admin_uat: manage_stage1 — Manage tab split into 4 tabs (Requests | Members | Activity | Devices), each showing only its own content; Requests holds access requests + Enable switch + PIN resets/unlocks, with a tab badge = pending access + pending PIN requests; Members holds Add Member + ONE merged list (old approved-members sub-list removed) with search and filters All/Paid/Approved/Blocked/Disabled, APPROVED/BLOCKED labels, Block/Unblock on approved members (row + detail sheet), Remove access (old Deactivate) in detail sheet; Block = free_access false + blocked true + newest request blocked; Unblock = free_access true + blocked false + newest request approved; fake '72h left' label removed. No server change (existing UAT admin door rules cover every write). Rollback: restore admin_uat.html.bak_20261111_pre_stage1. -->
 <!-- T2S-UAT-20261111-002 | admin_uat: admin_fixes_1111 — (1) Enable Requests switch saves {value} only (UAT feature_flags has key,value only — it never saved before); (2) Free Access members list orders by created_at (free_access_granted_at doesn't exist in UAT); (3) lock / not-set-up / set-PIN messages give no unlock hints; (4) 'Pending' sub-tab renamed 'Requests' (default filter stays Pending); (5) Blocked devices show the mobile numbers used on each device (from access_requests + sessions). Rollback: restore admin_uat.html.bak_20261111_pre_fixes. -->
@@ -1904,7 +1905,7 @@ async function loadAccessRequests(statusFilter = 'pending') {
     try {
         // Trip 1: the requests, with each applicant's current access state
         const qFilter = statusFilter === 'all' ? '' : `&status=eq.${statusFilter}`;
-        const reqs = await sbGet(`access_requests?select=id,member_id,name,device_id,device_type,created_at,status,members(mobile,name,tier,free_access,free_access_blocked)${qFilter}&order=created_at.desc&limit=50`);
+        const reqs = await sbGet(`access_requests?select=id,member_id,name,device_id,device_type,created_at,status,reviewed_at,block_reason,members(mobile,name,tier,free_access,free_access_blocked)${qFilter}&order=created_at.desc&limit=50`);
         if (gen !== _faReqGen) return;
         if (!reqs.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No requests found.</div>'; return; }
 
@@ -1968,6 +1969,7 @@ async function loadAccessRequests(statusFilter = 'pending') {
                     <div>
                         <div style="font-size:13px;font-weight:700;">${name} ${devIcon}</div>
                         <div style="font-size:11px;color:var(--muted2);">${mobile} · Applied: ${date}</div>
+                        ${req.status === 'blocked' && req.reviewed_at ? `<div style="font-size:11px;color:#b91c1c;">Blocked on: ${new Date(req.reviewed_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}${req.block_reason === 'person' ? ' · Person' : req.block_reason === 'device' ? ' · Device' : ''}</div>` : ''}
                     </div>
                     ${label}
                 </div>
@@ -1989,18 +1991,18 @@ async function actionRequestDirect(requestId, memberId, action) {
         }
         if (action === 'approve') {
             await Promise.all([
-                sbPatch(`access_requests?id=eq.${requestId}`, { status: 'approved' }),
+                sbPatch(`access_requests?id=eq.${requestId}`, { status: 'approved', reviewed_at: new Date().toISOString(), block_reason: null }), // activity_stage2: + when
                 sbPatch(`members?id=eq.${memberId}`, { free_access: true, status: 'enabled' })
             ]);
             showToast('✅ Approved — free access granted');
             sbPost('audit_log', { event_type: 'access_approved', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         } else if (action === 'reject') {
-            await sbPatch(`access_requests?id=eq.${requestId}`, { status: 'rejected', last_rejected_at: new Date().toISOString() });
+            await sbPatch(`access_requests?id=eq.${requestId}`, { status: 'rejected', last_rejected_at: new Date().toISOString(), reviewed_at: new Date().toISOString() }); // activity_stage2: + when
             showToast('❌ Request rejected');
             sbPost('audit_log', { event_type: 'access_rejected', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         } else if (action === 'block_number') {
             await Promise.all([
-                sbPatch(`access_requests?id=eq.${requestId}`, { status: 'blocked' }),
+                sbPatch(`access_requests?id=eq.${requestId}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'person' }), // activity_stage2: + when/why
                 sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: true })
             ]);
             showToast('🚫 Number blocked — member cannot request again');
@@ -2019,7 +2021,7 @@ async function blockDeviceDirect(deviceId) {
     try {
         await Promise.all([
             sbPost('device_blocks', { device_id: deviceId, reason: 'Blocked by admin' }),
-            sbPatch(`access_requests?device_id=eq.${deviceId}&status=eq.pending`, { status: 'blocked' })
+            sbPatch(`access_requests?device_id=eq.${deviceId}&status=eq.pending`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'device' }) // activity_stage2: + when/why
         ]);
         showToast('📵 Device blocked — all pending requests from it are blocked');
         loadAccessRequests('pending');
@@ -2060,7 +2062,7 @@ async function memberBlock(memberId, fallbackLabel) {
     _mgSetLocal(memberId, patch);
     try {
         const req = await _mgLatestRequest(memberId);
-        if (req && req.status !== 'blocked') await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'blocked' });
+        if (req) await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'person' }); // activity_stage2: always stamp when/why
         sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: req ? req.id : null, member_id: memberId } }).catch(()=>{});
         showToast('🚫 Member blocked');
     } catch(e) { showToast('🚫 Member blocked (request list not updated: ' + e.message + ')'); }
@@ -2077,7 +2079,8 @@ async function memberUnblock(memberId, fallbackLabel) {
     _mgSetLocal(memberId, patch);
     try {
         const req = await _mgLatestRequest(memberId);
-        if (req && req.status !== 'approved') await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'approved' });
+        if (req) await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'approved', reviewed_at: new Date().toISOString(), block_reason: null }); // activity_stage2
+        sbPost('audit_log', { event_type: 'access_unblocked', event_data: { request_id: req ? req.id : null, member_id: memberId } }).catch(()=>{});
         showToast('✅ Member unblocked — access restored');
     } catch(e) { showToast('✅ Member unblocked (request list not updated: ' + e.message + ')'); }
     closeDetail();
@@ -2101,7 +2104,7 @@ async function loadBlockedDevices() {
     if (!list) return;
     list.innerHTML = '<div style="color:var(--muted2);font-size:12px;">Loading...</div>';
     try {
-        const blocks = await sbGet('device_blocks?select=device_id,reason,blocked_at,blocked_until&order=blocked_at.desc');
+        const blocks = await sbGet('device_blocks?select=*&order=blocked_at.desc'); // activity_stage2: * so the new scope column shows when present
         if (!blocks.length) { list.innerHTML = '<div style="color:var(--muted2);font-size:12px;text-align:center;padding:12px;">No blocked devices.</div>'; return; }
         // checkpoint admin_fixes_1111 — show the mobile numbers used on each blocked device (from
         // that device's access requests and logins), so you know whom you are unblocking. Any
@@ -2132,11 +2135,28 @@ async function loadBlockedDevices() {
                 <div style="font-size:11px;font-weight:700;color:#dc2626;word-break:break-all;margin-bottom:2px;">${b.device_id}</div>
                 <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px;">📱 ${_numsByDev[b.device_id] ? [..._numsByDev[b.device_id]].map(esc).join(', ') : 'No number found for this device'}</div>
                 <div style="font-size:11px;color:var(--muted2);margin-bottom:2px;">${b.reason || '—'} · ${when}</div>
-                <div style="font-size:11px;font-weight:700;color:${b.blocked_until ? '#d97706' : '#dc2626'};margin-bottom:6px;">${statusLabel}</div>
+                <div style="font-size:11px;font-weight:700;color:${b.blocked_until ? '#d97706' : '#dc2626'};margin-bottom:6px;">${statusLabel} · ${b.scope === 'app' ? 'App + requests blocked' : 'New requests blocked'}</div>
                 <button onclick="unblockDevice('${b.device_id}')" style="font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-family:'Space Grotesk',sans-serif;">🔓 Unblock</button>
             </div>`;
         }).join('');
     } catch(e) { list.innerHTML = `<div style="color:#dc2626;font-size:12px;">Error: ${e.message}</div>`; }
+}
+
+// activity_stage2 — 24-hour block for a device sending suspicious activity: blocks limited mode
+// and new requests; its activity is ignored. Used from the Activity screen (Stage 4).
+async function blockDevice24h(deviceId) {
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(deviceId))) return;
+    if (!confirm('Block this device for 24 hours?\n\nIt cannot open the app in limited mode or send requests, and its activity is ignored.')) return;
+    try {
+        const cur = await sbGet(`device_blocks?device_id=eq.${deviceId}&select=*`);
+        const now = Date.now();
+        const active = (cur || []).find(b => !b.blocked_until || new Date(b.blocked_until).getTime() > now);
+        if (active && (active.scope === 'app' || !active.blocked_until)) { showToast('Already blocked'); return; }
+        if ((cur || []).length) await sbDelete(`device_blocks?device_id=eq.${deviceId}`); // replace an expired / requests-only row
+        await sbPost('device_blocks', { device_id: deviceId, reason: 'Suspicious activity (24h)', scope: 'app', blocked_until: new Date(now + 24 * 3600000).toISOString() });
+        showToast('📵 Device blocked for 24 hours');
+        loadBlockedDevices();
+    } catch(e) { showToast('❌ ' + e.message); }
 }
 
 async function unblockDevice(deviceId) {
