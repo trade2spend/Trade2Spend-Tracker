@@ -1,3 +1,4 @@
+// DEPLOY: T2S-UAT-20261112-001 | server.js: activity_stage2 — UAT-ONLY additions: (1) _makeActivity(env) activity recorder (env = UAT DB now; same code wired to prod at release): member pass resolved server-side (in-memory, else hashed row in uat_auth_tokens) with fresh enabled/PIN/blocked/active-session checks (60s cache); action list + engagement flag from activity_actions table (5-min cache); details whitelisted; rate limits per IP and per member/device; 24h 'app' device blocks ignored; engagement sets member_activity_state.last_activity_at (server time). (2) Routes POST /uat-track-event and /uat-visitor-ping (503 without UAT private key). (3) Member pass hash also saved on /uat-verify-pin and /uat-setup-pin (fire-and-forget; login unchanged). (4) Nightly 04:30 IST rpc activity_nightly on the UAT DB. (5) /uat-admin-sb rules: access_requests reviewed_at/block_reason, audit access_unblocked, device_blocks scope/blocked_until (<=30 days), read-only activity tables. Prod routes, /track-event, /uat-member-sb and /uat-sb unchanged. Rollback: restore server.js.bak_20261112_pre_stage2.
 // DEPLOY: T2S-UAT-20261110-001 | server.js: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved plan 2026-11-10). NEW UAT-only routes /uat-admin-verify-pin, /uat-admin-pub (lock_status), /uat-admin-sb (admin data door, exact action/field rules). UAT DB only, via new env UAT_SUPABASE_SERVICE_KEY (no anon fallback; all three routes return 503 until it is set). UAT admin passes stored hashed in uat_auth_tokens (8h, max 2 devices, never accepted by prod routes). Admin list, PIN hash and lock live only in the locked uat_admins table (no anon access). No public set-PIN route in UAT: owner sets/resets the UAT PIN hash in the UAT DB (hash made locally with Trading_Bot/make_uat_admin_pin_hash.cjs). No Telegram from UAT. Existing /uat-sb now strips pin_hash/admin_pin_hash from every reply. Prod routes, prod admin PIN routes, _issueAdminToken, _executeSecretValid, /prod-sb untouched. Needs UAT SQL UAT/sql/20261110_uat_admin_login.sql before use. Rollback: restore server.js.bak_20261110_pre_uat_admin.
 // DEPLOY: T2S-UAT-20261029-001 | server.js: /uat-setup-pin — post-"Reset PIN" device lock (checkpoint pin_reset_device_lock, Codex-reviewed 2 rounds, no unresolved blockers). If a member has any historical login_success audit_log row (any device), this is a post-reset re-setup, not first-time signup — the calling device must itself have a prior login_success row for this member, else rejected with {deviceNotRegistered:true}. First-time signup (zero history for the member) is unaffected, still allowed from any device. Scoped deliberately to admin's "Reset PIN" action only (pin_hash=null) — NOT admin's "Unlock" action (handleUnlock in admin_uat.html only clears locked_until/failed_attempts_today, PIN stays intact, member still needs the real PIN regardless of device; Tushar's explicit call, 2026-10-29, no new restriction wanted there beyond the existing 2-device limit). Audit_log used (not sessions.is_active) because admin's "Reset PIN" action clears is_active for every device, so by the time this check runs it can no longer tell the real registered device from an impostor — audit_log rows are untouched by that reset. Fails CLOSED: if the audit_log lookup itself errors (non-array response), rejects rather than proceeding as if no history exists. Bundled fix (Codex-found side-bug): the 2-device active-session-limit check now runs BEFORE the pin_hash write, not after — previously a limitReached rejection left the member with no PIN and no way to retry (pin_hash was already saved). Also added the matching login_success audit_log write to /uat-setup-pin's own success path (previously only /uat-verify-pin wrote this event), so a first-time-setup device is correctly recognized as "has logged in before" if this member is ever reset in the future. Companion: UAT/login_uat.html (lockout countdown, same date). Rollback: restore the pre-20261029 /uat-setup-pin block (member lookup → immediate pin_hash PATCH → allActive check → session reactivate/insert → recheck → token) and remove the two new checkpoint comment blocks + the new login_success audit_log write.
 // DEPLOY: T2S-PROD-20261021-002 | server.js: Admin PIN server-side (checkpoint admin_pin_server / admin_pin_server_shipdecision, Codex-reviewed 2+2 rounds, both clean/withdrawn). The admin app's own unlock PIN (admin.html/admin_uat.html) moves from pure client-side PBKDF2 compare against localStorage.t2s_pin to server-verified bcrypt against a new members.admin_pin_hash column (scoped to is_admin=true; Tushar added the column manually — not a schema change made by this session). New endpoints POST /admin-setup-pin (atomic conditional admin_pin_hash IS NULL, same pattern as /uat-setup-pin) and POST /admin-verify-pin (bcrypt compare; in-memory CAS wrong-attempt counter via _adminPinAttempts; 3 wrong → writes the existing keep_alive_log admin_pwa_locked row + fires the existing Telegram Reset-PIN alert via the new shared sendAdminLockAlert() helper, which /admin-alert now also calls instead of duplicating the message). On success, issues a random 8-hour session token (_issueAdminToken, crypto.randomBytes) instead of the real EXECUTE_SECRET — the master secret is never transmitted by this flow. All 20 existing EXECUTE_SECRET-only inbound gates now call the new _executeSecretValid(secret) helper (secret === process.env.EXECUTE_SECRET || isValidAdminSessionToken(secret)) instead of a direct !== comparison — additive only, nothing removed. Device-slot registration (_registerAdminDeviceSlot) mirrors admin.html's registerAdminSession() exactly (same keep_alive_log admin_session_<deviceId> rows, same 2-device evict-oldest rule) so the token map can never exceed 2 live entries; evicting a slot also revokes that device's token. Both existing Telegram reset paths (admin_pin_reset_confirm callback, /unlock_admin command) now also call _adminPinFullReset() — nulls admin_pin_hash AND wipes every outstanding token, so a PIN reset can't leave an old token still working. Client changes (Trading_Bot/index.html, UAT/admin_uat.html — both ship together, same local-PIN code in both): checkPin()/saveNewPin() call the new endpoints instead of local PBKDF2; on success, the returned sessionToken is saved to the SAME localStorage key (t2s_execute_secret) the ~18 existing admin-action call sites already read — zero changes needed to any of them. hashAdminPin() removed from both client files (no longer called). Known, accepted limitation (Tushar's explicit decision 2026-10-21, after 2 Codex rounds each on admin_pin_server and admin_pin_server_shipdecision): these endpoints cannot verify the caller already passed the existing TOTP layer, because that layer has never had server-side session tracking either (purely browser-remembered via t2s_admin_session_exp) — same category as the already-parked "no real per-caller login/token system" item, not a new gap. Rollback: revert the 20 _executeSecretValid( calls back to their literal !secret||secret!==process.env.EXECUTE_SECRET form; remove the admin PIN block (constants through sendAdminLockAlert helper) and the /admin-verify-pin+/admin-setup-pin route block; revert /admin-alert to its inline message; revert the two Telegram reset paths to drop the _adminPinFullReset() calls; revert checkPin()/saveNewPin()/hashAdminPin() in both client files.
@@ -891,6 +892,139 @@ async function _uatMemberIdByMobile(mobile) {
   return m && m.length ? m[0].id : null;
 }
 
+// ── ACTIVITY TRACKING (checkpoint activity_stage2, 2026-11-12) ─────────────────────────
+// Records member / limited-user activity into the database given by env.svc (UAT DB now;
+// the SAME code is wired to the prod DB at the production release — nothing here is
+// UAT-specific except the env object built below). Identity always comes from the member
+// pass, never from the browser. Which actions exist / count as "active" comes from the
+// activity_actions table (cached 5 min), not from this code.
+const _ACT_DEV_RE  = /^[A-Za-z0-9_-]{1,100}$/;
+const _ACT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function _makeActivity(env) {
+  let catalog = null, catalogAt = 0;
+  const passCache = new Map();   // token hash -> { at, who }   (60s)
+  const blockCache = new Map();  // device id -> { at, blocked } (60s)
+  const rate = new Map();        // key -> { count, reset }
+  function rateOk(key, limit) {
+    const now = Date.now();
+    let e = rate.get(key);
+    if (!e || now > e.reset) { e = { count: 0, reset: now + 5 * 60 * 1000 }; rate.set(key, e); }
+    if (rate.size > 20000) for (const [k, v] of rate) if (now > v.reset) rate.delete(k);
+    e.count++;
+    return e.count <= limit;
+  }
+  async function getCatalog() {
+    if (catalog && Date.now() - catalogAt < 5 * 60 * 1000) return catalog;
+    const rows = await env.svc('activity_actions?enabled=eq.true&select=action,is_engagement');
+    catalog = new Map((rows || []).map(r => [r.action, !!r.is_engagement]));
+    catalogAt = Date.now();
+    return catalog;
+  }
+  // Member pass → { memberId, deviceId } or null. Fresh checks (cached 60s): member enabled,
+  // has a PIN, not blocked, and this device's session still active — so a PIN reset, device
+  // removal, disable or block stops tracking within a minute.
+  async function resolvePass(token) {
+    if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) return null;
+    const h = _uatTokHash(token);
+    const c = passCache.get(h);
+    if (c && Date.now() - c.at < 60000) return c.who;
+    let who = null;
+    const mem = env.memoryPass(token);
+    if (mem) who = { memberId: mem.memberId, deviceId: mem.deviceId };
+    else {
+      const nowIso = new Date().toISOString();
+      const t = await env.svc(`uat_auth_tokens?token_hash=eq.${h}&kind=eq.member&revoked_at=is.null&expires_at=gt.${encodeURIComponent(nowIso)}&select=member_id,device_id&limit=1`);
+      if (t && t.length) who = { memberId: t[0].member_id, deviceId: t[0].device_id };
+    }
+    if (who) {
+      const [m, sess] = await Promise.all([
+        env.svc(`members?id=eq.${who.memberId}&select=status,pin_hash,free_access_blocked&limit=1`),
+        env.svc(`sessions?member_id=eq.${who.memberId}&device_id=eq.${encodeURIComponent(who.deviceId)}&is_active=eq.true&select=id&limit=1`),
+      ]);
+      const r = m && m[0];
+      if (!r || r.status !== 'enabled' || !r.pin_hash || r.free_access_blocked === true || !sess || !sess.length) who = null;
+    }
+    passCache.set(h, { at: Date.now(), who });
+    if (passCache.size > 5000) passCache.clear();
+    return who;
+  }
+  // Active 24h "app" block on this device → its activity is ignored.
+  async function deviceAppBlocked(deviceId) {
+    const c = blockCache.get(deviceId);
+    if (c && Date.now() - c.at < 60000) return c.blocked;
+    // A read failure throws (route → 500): nothing is recorded and the app retries later.
+    const rows = await env.svc(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&scope=eq.app&select=blocked_until`);
+    const now = Date.now();
+    const blocked = (rows || []).some(b => !b.blocked_until || Date.parse(b.blocked_until) > now);
+    blockCache.set(deviceId, { at: Date.now(), blocked });
+    if (blockCache.size > 5000) blockCache.clear();
+    return blocked;
+  }
+  function cleanDetails(d) {
+    const o = {};
+    if (!d || typeof d !== 'object') return o;
+    if (typeof d.tab === 'string' && /^[a-z_]{1,30}$/.test(d.tab)) o.tab = d.tab;
+    if (typeof d.post_id === 'string' && _ACT_UUID_RE.test(d.post_id)) o.post_id = d.post_id;
+    if (typeof d.cta === 'string' && /^[a-z0-9_]{1,40}$/.test(d.cta)) o.cta = d.cta;
+    if (typeof d.source === 'string' && /^[a-z_]{1,30}$/.test(d.source)) o.source = d.source;
+    if (Number.isInteger(d.duration_sec) && d.duration_sec >= 0 && d.duration_sec <= 86400) o.duration_sec = d.duration_sec;
+    return o;
+  }
+  // body: { token?, device_id, device_type?, events: [{ action, data }] }
+  async function track(body, ip) {
+    const events = Array.isArray(body.events) ? body.events.slice(0, 20) : [];
+    if (!events.length) return { status: 400, out: { ok: false, error: 'events required' } };
+    if (!rateOk('ip:' + ip, 600)) return { status: 429, out: { ok: false } };
+    let memberId = null, deviceId = null;
+    if (body.token) {
+      const who = await resolvePass(body.token);
+      if (!who) return { status: 401, out: { ok: false, error: 'login again' } };
+      memberId = who.memberId; deviceId = who.deviceId;
+    } else {
+      deviceId = String(body.device_id || '');
+      if (!_ACT_DEV_RE.test(deviceId)) return { status: 400, out: { ok: false, error: 'device_id required' } };
+    }
+    if (!rateOk('who:' + (memberId || deviceId), 240)) return { status: 429, out: { ok: false } };
+    if (await deviceAppBlocked(deviceId)) return { status: 200, out: { ok: true, recorded: 0 } };
+    const cat = await getCatalog();
+    const deviceType = body.device_type === 'mobile' || body.device_type === 'desktop' ? body.device_type : null;
+    const rows = []; let engaged = false;
+    for (const e of events) {
+      if (!e || typeof e.action !== 'string' || !cat.has(e.action)) continue;
+      rows.push({ member_id: memberId, device_id: deviceId, action: e.action, details: cleanDetails(e.data), device_type: deviceType });
+      if (cat.get(e.action)) engaged = true;
+    }
+    if (!rows.length) return { status: 200, out: { ok: true, recorded: 0 } };
+    await env.svc('member_activity', { method: 'POST', body: JSON.stringify(rows), headers: { 'Prefer': 'return=minimal' } });
+    if (engaged && memberId) {
+      const now = new Date().toISOString(); // server time — the browser's clock is never used
+      await env.svc('member_activity_state', { method: 'POST', body: JSON.stringify({ member_id: memberId, last_activity_at: now, updated_at: now }), headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' } });
+    }
+    return { status: 200, out: { ok: true, recorded: rows.length } };
+  }
+  // body: { device_id } — limited users' "app is open" signal, for the Online count only.
+  async function visitorPing(body, ip) {
+    const deviceId = String(body.device_id || '');
+    if (!_ACT_DEV_RE.test(deviceId)) return { status: 400, out: { ok: false } };
+    if (!rateOk('ping:' + ip, 60)) return { status: 429, out: { ok: false } };
+    if (await deviceAppBlocked(deviceId)) return { status: 200, out: { ok: true } };
+    await env.svc('visitor_pings', { method: 'POST', body: JSON.stringify({ device_id: deviceId, last_seen: new Date().toISOString() }), headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' } });
+    return { status: 200, out: { ok: true } };
+  }
+  // Save the member pass (hash only) so tracking survives a server restart. One live pass
+  // per member+device: older ones are revoked first.
+  async function savePass(token, memberId, deviceId, ttlMs) {
+    if (!_ACT_UUID_RE.test(String(memberId)) || !_ACT_DEV_RE.test(String(deviceId))) return;
+    const nowIso = new Date().toISOString();
+    await env.svc(`uat_auth_tokens?kind=eq.member&member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: nowIso }), headers: { 'Prefer': 'return=minimal' } });
+    await env.svc('uat_auth_tokens', { method: 'POST', body: JSON.stringify({ token_hash: _uatTokHash(token), kind: 'member', member_id: memberId, device_id: deviceId, expires_at: new Date(Date.now() + ttlMs).toISOString() }), headers: { 'Prefer': 'return=minimal' } });
+  }
+  async function nightly() { return env.svc('rpc/activity_nightly', { method: 'POST', body: '{}' }); }
+  return { track, visitorPing, savePass, nightly };
+}
+// UAT wiring. Only built when the UAT private key is set; every call goes to the UAT DB.
+const _uatActivity = UAT_SB_SVC_KEY ? _makeActivity({ svc: sbUatSvc, memoryPass: _validateMemberToken }) : null;
+
 // Removes PIN hashes from any reply, at any depth (embedded rows included).
 function _uatRedactHashes(v) {
   if (Array.isArray(v)) return v.map(_uatRedactHashes);
@@ -942,14 +1076,15 @@ const _UAT_ADMIN_RULES = {
   access_requests: {
     GET: true,
     PATCH: [
-      { filter: [['id', 'uuid']], fields: { status: v => v === 'approved' || v === 'rejected' || v === 'blocked', last_rejected_at: _uatIsIso } },
-      { filter: [['device_id', 'safe'], ['status', 'pending']], fields: { status: v => v === 'blocked' } },
+      { filter: [['id', 'uuid']], fields: { status: v => v === 'approved' || v === 'rejected' || v === 'blocked', last_rejected_at: _uatIsIso,
+        reviewed_at: _uatIsIso, block_reason: v => v === null || v === 'person' || v === 'device' } }, // activity_stage2: + reviewed_at, block_reason
+      { filter: [['device_id', 'safe'], ['status', 'pending']], fields: { status: v => v === 'blocked', reviewed_at: _uatIsIso, block_reason: v => v === 'device' } },
     ],
   },
   audit_log: {
     GET: true,
     POST: { filter: [], required: ['event_type'], fields: {
-      event_type: v => v === 'access_approved' || v === 'access_rejected' || v === 'number_blocked',
+      event_type: v => v === 'access_approved' || v === 'access_rejected' || v === 'number_blocked' || v === 'access_unblocked', // activity_stage2: + access_unblocked
       event_data: v => !!v && typeof v === 'object' && !Array.isArray(v),
     } },
     // Server forces the extra condition, so only queue rows can ever be deleted.
@@ -960,9 +1095,21 @@ const _UAT_ADMIN_RULES = {
     POST: { filter: [], required: ['device_id'], fields: {
       device_id: v => typeof v === 'string' && _UAT_SAFE_ID_RE.test(v),
       reason: v => typeof v === 'string' && v.length <= 200,
+      // activity_stage2: 24-hour "app" block for suspicious limited-user activity (max 30 days ahead)
+      scope: v => v === 'requests' || v === 'app',
+      blocked_until: v => _uatIsIso(v) && Date.parse(v) > Date.now() && Date.parse(v) <= Date.now() + 30 * 86400000,
     } },
     DELETE: { filter: [['device_id', 'safe']], fields: {} },
   },
+  // activity_stage2 — read-only, for the admin Activity screen (Stage 4). Admin door only;
+  // these tables are NOT on the general /uat-sb list and are locked from the public key.
+  member_activity: { GET: true },
+  member_activity_state: { GET: true },
+  activity_actions: { GET: true },
+  activity_settings: { GET: true },
+  activity_daily: { GET: true },
+  activity_hourly: { GET: true },
+  visitor_pings: { GET: true },
   feature_flags: {
     GET: q => q.get('key') === 'eq.free_access_requests_enabled',
     PATCH: { filter: [['key', 'free_access_requests_enabled']], fields: { value: _uatIsBool, updated_at: _uatIsIso } },
@@ -5870,6 +6017,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           // checkpoint stage1_posts_gatekeeper (2026-10-25) — issue a real login-proof,
           // additive field only, nothing existing removed/renamed.
           const _setupToken = _issueMemberToken(memberId, deviceId, _setupMember.tier, _setupMember.is_admin, _setupMember.free_access);
+          if (_uatActivity) _uatActivity.savePass(_setupToken, memberId, deviceId, MEMBER_TOKEN_TTL_MS).catch(e => console.error('[uat-activity] savePass', e.message)); // activity_stage2
           res.end(JSON.stringify({ success: true, sessionToken: _setupToken })); return;
         }
 
@@ -5928,6 +6076,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           // checkpoint stage1_posts_gatekeeper (2026-10-25) — issue a real login-proof,
           // additive field only, nothing existing removed/renamed.
           const _verifyToken = _issueMemberToken(memberId, deviceId, member.tier, member.is_admin, member.free_access);
+          if (_uatActivity) _uatActivity.savePass(_verifyToken, memberId, deviceId, MEMBER_TOKEN_TTL_MS).catch(e => console.error('[uat-activity] savePass', e.message)); // activity_stage2
           res.end(JSON.stringify({ success: true, sessionToken: _verifyToken })); return;
         }
 
@@ -6015,6 +6164,33 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       } catch (e) {
         console.error('[uat-pin]', e.message);
         try { res.end(JSON.stringify({ success: false })); } catch {}
+      }
+    });
+    return;
+  }
+
+  // ── UAT ACTIVITY ROUTES (checkpoint activity_stage2, 2026-11-12) ────────────────────────
+  // POST /uat-track-event and POST /uat-visitor-ping. UAT DB only (via _uatActivity). Fail
+  // closed (503) if the UAT private key is not set. The shared /track-event is untouched.
+  if (req.method === 'OPTIONS' && (urlPath === '/uat-track-event' || urlPath === '/uat-visitor-ping')) {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && (urlPath === '/uat-track-event' || urlPath === '/uat-visitor-ping')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    if (!_uatActivity) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'not configured' })); return; }
+    let aBody = '';
+    req.on('data', c => { aBody += c; if (aBody.length > 16384) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+        const parsed = JSON.parse(aBody || '{}');
+        const r = urlPath === '/uat-track-event' ? await _uatActivity.track(parsed, ip) : await _uatActivity.visitorPing(parsed, ip);
+        res.writeHead(r.status); res.end(JSON.stringify(r.out));
+      } catch (e) {
+        console.error('[uat-activity]', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ ok: false }));
       }
     });
     return;
@@ -6946,6 +7122,18 @@ async function checkFreeAccessInactivity() {
   } catch (e) { console.error('[free-access] Inactivity check error:', e.message); }
 }
 setInterval(checkFreeAccessInactivity, 30 * 60 * 1000);
+
+// ── UAT ACTIVITY NIGHTLY (checkpoint activity_stage2) — UAT private key only, UAT DB only.
+// Rolls finished days into summaries and deletes old details (periods are DB settings).
+let _uatActivityNightlyDay = '';
+setInterval(() => {
+  if (!_uatActivity) return;
+  const ist = new Date(Date.now() + 5.5 * 3600000);
+  const day = ist.toISOString().slice(0, 10);
+  if (ist.getUTCHours() !== 4 || ist.getUTCMinutes() < 30 || _uatActivityNightlyDay === day) return;
+  _uatActivityNightlyDay = day;
+  _uatActivity.nightly().then(r => console.log('[uat-activity] nightly', JSON.stringify(r))).catch(e => console.error('[uat-activity] nightly', e.message));
+}, 5 * 60 * 1000);
 
 // ── ANALYTICS ARCHIVAL (daily 4 AM IST) ──────────────────────────────────────
 async function archiveOldAnalytics() {
