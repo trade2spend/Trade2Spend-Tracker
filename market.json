@@ -1,6 +1,6 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-11-12T10:02:25.174Z",
+  "lastUpdated": "2026-11-12T10:16:08.967Z",
   "dataSource": "broker",
   "indices": {
     "NIFTY": {
@@ -126,11 +126,6 @@
       "symbol": "HINDALCO",
       "price": 964,
       "change": 0.18
-    },
-    {
-      "symbol": "BSE",
-      "price": 3909.1,
-      "change": 0.08
     }
   ],
   "losers": [
@@ -289,5 +284,11 @@
       "price": 1352.1,
       "change": -0.09
     }
-  ]
+  ],
+  "optionHighs": {
+    "NIFTY-25300-PE": 243.8
+  },
+  "optionLows": {
+    "NIFTY-25300-PE": 184.4
+  }
 }
