@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261112-003 | admin_uat: activity_stage3 — request cards: "Inactive" label (block_reason inactivity, set by the server inactivity check; below Person/Device, above Old record) with "Removed on: date · No activity"; pending cards show "Re-applied after inactivity" when the member had an earlier inactivity removal (one extra read in the existing parallel trip; read error → no tag); label key ⓘ explains Inactive. No new writes, door rules unchanged. Rollback: restore admin_uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261112-002 | admin_uat: activity_stage2 — approve / reject / Block # / Block Device / Block / Unblock now also save WHEN (access_requests.reviewed_at) and WHY (block_reason person/device); blocked request cards show 'Blocked on: date · Person/Device'; Unblock writes audit 'access_unblocked'; Devices tab shows what each block covers (New requests / App + requests); blockDevice24h() added for the Activity screen (Stage 4). Needs server T2S-UAT-20261112-001 door rules + UAT SQL 20261112_activity_tracking.sql. Rollback: restore admin_uat.html.bak_20261112_pre_stage2. -->
 <!-- T2S-UAT-20261111-004 | admin_uat: manage_stage1b — request cards: 'Applied:' date label; one label per card (Person / Device / Person + Device / Old record, else the status) with its meaning on hover (title) or tap (line below), plus an ⓘ key next to the Blocked filter; Block on approved cards (approved, non-paid) and Unblock on person-blocked cards (same memberBlock/memberUnblock as Members, list refreshes after); Unblock device opens Devices; request list now 2 database trips (members embedded), always shows Loading…, stale replies ignored; applicant name/mobile now escaped. Members BLOCKED label explains itself on hover/tap. Admin app only. Rollback: restore admin_uat.html.bak_20261111_pre_stage1b. -->
 <!-- T2S-UAT-20261111-003 | admin_uat: manage_stage1 — Manage tab split into 4 tabs (Requests | Members | Activity | Devices), each showing only its own content; Requests holds access requests + Enable switch + PIN resets/unlocks, with a tab badge = pending access + pending PIN requests; Members holds Add Member + ONE merged list (old approved-members sub-list removed) with search and filters All/Paid/Approved/Blocked/Disabled, APPROVED/BLOCKED labels, Block/Unblock on approved members (row + detail sheet), Remove access (old Deactivate) in detail sheet; Block = free_access false + blocked true + newest request blocked; Unblock = free_access true + blocked false + newest request approved; fake '72h left' label removed. No server change (existing UAT admin door rules cover every write). Rollback: restore admin_uat.html.bak_20261111_pre_stage1. -->
@@ -1538,7 +1539,7 @@ body{background:var(--bg);min-height:100vh;}
         <button onclick="loadAccessRequests('approved')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #059669;background:#f0fdf4;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Approved</button>
         <button onclick="loadAccessRequests('rejected')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Rejected</button>
         <button onclick="loadAccessRequests('blocked')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #dc2626;background:#fef2f2;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Blocked</button>
-        <button id="blk-key-btn" onclick="_tipToggle(event,this)" data-tip="What the labels mean:&#10;Person — this person is blocked (cannot log in or apply).&#10;Device — this phone/computer is blocked (no new requests from it); the person is not.&#10;Person + Device — both are blocked.&#10;Old record — says blocked, but nothing is blocked now." title="What the labels mean" style="font-size:13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;line-height:1;">ⓘ</button>
+        <button id="blk-key-btn" onclick="_tipToggle(event,this)" data-tip="What the labels mean:&#10;Person — this person is blocked (cannot log in or apply).&#10;Device — this phone/computer is blocked (no new requests from it); the person is not.&#10;Person + Device — both are blocked.&#10;Old record — says blocked, but nothing is blocked now.&#10;Inactive — access removed automatically after no activity; they can apply again." title="What the labels mean" style="font-size:13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;line-height:1;">ⓘ</button>
       </div>
       <div id="fa-requests-list" style="font-size:13px;">Loading...</div>
     </div>
@@ -1876,6 +1877,9 @@ const _BLK_TAGS = {
     both:   { label: 'Person + Device', color: '#dc2626', bg: '#fef2f2', tip: 'Person and device blocked: this person cannot log in or apply, and no new request can be sent from this phone/computer.' },
     device: { label: 'Device',          color: '#7c3aed', bg: '#f5f3ff', tip: 'Device blocked: no new request can be sent from this phone/computer. The person themselves is not blocked. Unblock it in the Devices tab.' },
     old:    { label: 'Old record',      color: '#6b7280', bg: '#f3f4f6', tip: 'Old record: this request still says blocked, but neither the person nor the device is blocked now. Nothing is stopping them.' },
+    // activity_stage3
+    inactive: { label: 'Inactive',      color: '#b45309', bg: '#fffbeb', tip: 'Inactive: access was removed automatically after the set number of market days with no activity (weekends and holidays not counted). They are not blocked and can apply again.' },
+    reapplied: { label: 'Re-applied after inactivity', color: '#b45309', bg: '#fffbeb', tip: 'Re-applied after inactivity: this person lost access earlier for no activity and has now applied again.' },
 };
 function _tipToggle(ev, el) {
     if (ev) ev.stopPropagation();
@@ -1911,10 +1915,14 @@ async function loadAccessRequests(statusFilter = 'pending') {
 
         // Trip 2 (in parallel): every request from the same devices (with numbers), and which devices are blocked
         const deviceIds = [...new Set(reqs.map(r => r.device_id).filter(Boolean))];
-        const [allDeviceReqs, blocks] = await Promise.all([
+        // activity_stage3: + earlier inactivity removals of the members whose requests are pending
+        const pendMids = [...new Set(reqs.filter(r => r.status === 'pending' && /^[0-9a-f-]{36}$/i.test(String(r.member_id || ''))).map(r => r.member_id))];
+        const [allDeviceReqs, blocks, inactReqs] = await Promise.all([
             deviceIds.length ? sbGet(`access_requests?device_id=in.(${deviceIds.join(',')})&select=member_id,device_id,members(mobile)`) : Promise.resolve([]),
-            deviceIds.length ? sbGet(`device_blocks?device_id=in.(${deviceIds.join(',')})&select=device_id,blocked_until`).catch(() => null) : Promise.resolve([])
+            deviceIds.length ? sbGet(`device_blocks?device_id=in.(${deviceIds.join(',')})&select=device_id,blocked_until`).catch(() => null) : Promise.resolve([]),
+            pendMids.length ? sbGet(`access_requests?member_id=in.(${pendMids.join(',')})&block_reason=eq.inactivity&select=member_id,created_at`).catch(() => []) : Promise.resolve([])
         ]);
+        const _inactBefore = (mid, at) => (inactReqs || []).some(x => x.member_id === mid && x.created_at && at && new Date(x.created_at) < new Date(at));
         if (gen !== _faReqGen) return;
         const now = Date.now();
         const devKnown = blocks !== null; // lookup failed → never guess a device's block state
@@ -1942,7 +1950,8 @@ async function loadAccessRequests(statusFilter = 'pending') {
             const personBlocked = member.free_access_blocked === true;
             const deviceBlocked = !!(devKnown && req.device_id && blockedDev.has(req.device_id));
             // One label: the block label if anything is blocked, otherwise the request status
-            const blkKind = personBlocked && deviceBlocked ? 'both' : personBlocked ? 'person' : deviceBlocked ? 'device' : (req.status === 'blocked' && devKnown ? 'old' : null);
+            const isInactive = req.status === 'blocked' && req.block_reason === 'inactivity'; // activity_stage3
+            const blkKind = personBlocked && deviceBlocked ? 'both' : personBlocked ? 'person' : deviceBlocked ? 'device' : isInactive ? 'inactive' : (req.status === 'blocked' && devKnown ? 'old' : null);
             const label = blkKind ? _blkTagHtml(blkKind)
                 : `<span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;white-space:nowrap;">${esc(String(req.status || '').toUpperCase())}</span>`;
             const devIcon = req.device_type === 'mobile' ? '📱' : req.device_type === 'desktop' ? '🖥️' : '';
@@ -1969,7 +1978,8 @@ async function loadAccessRequests(statusFilter = 'pending') {
                     <div>
                         <div style="font-size:13px;font-weight:700;">${name} ${devIcon}</div>
                         <div style="font-size:11px;color:var(--muted2);">${mobile} · Applied: ${date}</div>
-                        ${req.status === 'blocked' && req.reviewed_at ? `<div style="font-size:11px;color:#b91c1c;">Blocked on: ${new Date(req.reviewed_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}${req.block_reason === 'person' ? ' · Person' : req.block_reason === 'device' ? ' · Device' : ''}</div>` : ''}
+                        ${req.status === 'blocked' && req.reviewed_at ? `<div style="font-size:11px;color:${isInactive ? '#b45309' : '#b91c1c'};">${isInactive ? 'Removed on' : 'Blocked on'}: ${new Date(req.reviewed_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}${req.block_reason === 'person' ? ' · Person' : req.block_reason === 'device' ? ' · Device' : isInactive ? ' · No activity' : ''}</div>` : ''}
+                        ${isPending && _inactBefore(req.member_id, req.created_at) ? `<div style="margin-top:4px;">${_blkTagHtml('reapplied')}</div>` : ''}
                     </div>
                     ${label}
                 </div>
