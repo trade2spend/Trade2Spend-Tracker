@@ -1,3 +1,4 @@
+// DEPLOY: T2S-UAT-20261112-003 | server.js: activity_stage3 — UAT-ONLY: (1) savePass also calls DB rpc activity_clock_start (inactivity clock starts at a real PIN login for approved free members; login is not activity). (2) POST /uat-activity-status {token?}: settings numbers + member-facing activity list for anyone; own market days without activity (rpc activity_member_status) for a valid member pass. (3) Inactivity check every inactivity_check_minutes (DB setting) → rpc activity_inactivity_sweep on the UAT DB; counts FULL market days (Mon-Fri, not in market_holidays), default 5; pauses if the year's holiday list is missing. (3b) NEW OUTBOUND CALL (owner-approved 2026-11-12): read-only GET nseindia.com/api/holiday-master once a day from 15 Dec (next year) or when the current year is missing; saved to market_holidays; Telegram note via tgSend. (4) /uat-track-event reply adds engaged:true|false. Needs UAT/sql/20261112_activity_timers.sql. Prod routes, prod checkFreeAccessInactivity, /track-event, door rules unchanged. Rollback: restore server.js.bak_20261112_pre_stage3.
 // DEPLOY: T2S-UAT-20261112-001 | server.js: activity_stage2 — UAT-ONLY additions: (1) _makeActivity(env) activity recorder (env = UAT DB now; same code wired to prod at release): member pass resolved server-side (in-memory, else hashed row in uat_auth_tokens) with fresh enabled/PIN/blocked/active-session checks (60s cache); action list + engagement flag from activity_actions table (5-min cache); details whitelisted; rate limits per IP and per member/device; 24h 'app' device blocks ignored; engagement sets member_activity_state.last_activity_at (server time). (2) Routes POST /uat-track-event and /uat-visitor-ping (503 without UAT private key). (3) Member pass hash also saved on /uat-verify-pin and /uat-setup-pin (fire-and-forget; login unchanged). (4) Nightly 04:30 IST rpc activity_nightly on the UAT DB. (5) /uat-admin-sb rules: access_requests reviewed_at/block_reason, audit access_unblocked, device_blocks scope/blocked_until (<=30 days), read-only activity tables. Prod routes, /track-event, /uat-member-sb and /uat-sb unchanged. Rollback: restore server.js.bak_20261112_pre_stage2.
 // DEPLOY: T2S-UAT-20261110-001 | server.js: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved plan 2026-11-10). NEW UAT-only routes /uat-admin-verify-pin, /uat-admin-pub (lock_status), /uat-admin-sb (admin data door, exact action/field rules). UAT DB only, via new env UAT_SUPABASE_SERVICE_KEY (no anon fallback; all three routes return 503 until it is set). UAT admin passes stored hashed in uat_auth_tokens (8h, max 2 devices, never accepted by prod routes). Admin list, PIN hash and lock live only in the locked uat_admins table (no anon access). No public set-PIN route in UAT: owner sets/resets the UAT PIN hash in the UAT DB (hash made locally with Trading_Bot/make_uat_admin_pin_hash.cjs). No Telegram from UAT. Existing /uat-sb now strips pin_hash/admin_pin_hash from every reply. Prod routes, prod admin PIN routes, _issueAdminToken, _executeSecretValid, /prod-sb untouched. Needs UAT SQL UAT/sql/20261110_uat_admin_login.sql before use. Rollback: restore server.js.bak_20261110_pre_uat_admin.
 // DEPLOY: T2S-UAT-20261029-001 | server.js: /uat-setup-pin — post-"Reset PIN" device lock (checkpoint pin_reset_device_lock, Codex-reviewed 2 rounds, no unresolved blockers). If a member has any historical login_success audit_log row (any device), this is a post-reset re-setup, not first-time signup — the calling device must itself have a prior login_success row for this member, else rejected with {deviceNotRegistered:true}. First-time signup (zero history for the member) is unaffected, still allowed from any device. Scoped deliberately to admin's "Reset PIN" action only (pin_hash=null) — NOT admin's "Unlock" action (handleUnlock in admin_uat.html only clears locked_until/failed_attempts_today, PIN stays intact, member still needs the real PIN regardless of device; Tushar's explicit call, 2026-10-29, no new restriction wanted there beyond the existing 2-device limit). Audit_log used (not sessions.is_active) because admin's "Reset PIN" action clears is_active for every device, so by the time this check runs it can no longer tell the real registered device from an impostor — audit_log rows are untouched by that reset. Fails CLOSED: if the audit_log lookup itself errors (non-array response), rejects rather than proceeding as if no history exists. Bundled fix (Codex-found side-bug): the 2-device active-session-limit check now runs BEFORE the pin_hash write, not after — previously a limitReached rejection left the member with no PIN and no way to retry (pin_hash was already saved). Also added the matching login_success audit_log write to /uat-setup-pin's own success path (previously only /uat-verify-pin wrote this event), so a first-time-setup device is correctly recognized as "has logged in before" if this member is ever reset in the future. Companion: UAT/login_uat.html (lockout countdown, same date). Rollback: restore the pre-20261029 /uat-setup-pin block (member lookup → immediate pin_hash PATCH → allActive check → session reactivate/insert → recheck → token) and remove the two new checkpoint comment blocks + the new login_success audit_log write.
@@ -1000,7 +1001,7 @@ function _makeActivity(env) {
       const now = new Date().toISOString(); // server time — the browser's clock is never used
       await env.svc('member_activity_state', { method: 'POST', body: JSON.stringify({ member_id: memberId, last_activity_at: now, updated_at: now }), headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' } });
     }
-    return { status: 200, out: { ok: true, recorded: rows.length } };
+    return { status: 200, out: { ok: true, recorded: rows.length, engaged: !!(engaged && memberId) } }; // activity_stage3: engaged → app hides the inactivity notice
   }
   // body: { device_id } — limited users' "app is open" signal, for the Online count only.
   async function visitorPing(body, ip) {
@@ -1015,15 +1016,136 @@ function _makeActivity(env) {
   // per member+device: older ones are revoked first.
   async function savePass(token, memberId, deviceId, ttlMs) {
     if (!_ACT_UUID_RE.test(String(memberId)) || !_ACT_DEV_RE.test(String(deviceId))) return;
-    const nowIso = new Date().toISOString();
-    await env.svc(`uat_auth_tokens?kind=eq.member&member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: nowIso }), headers: { 'Prefer': 'return=minimal' } });
-    await env.svc('uat_auth_tokens', { method: 'POST', body: JSON.stringify({ token_hash: _uatTokHash(token), kind: 'member', member_id: memberId, device_id: deviceId, expires_at: new Date(Date.now() + ttlMs).toISOString() }), headers: { 'Prefer': 'return=minimal' } });
+    let err = null;
+    try {
+      const nowIso = new Date().toISOString();
+      await env.svc(`uat_auth_tokens?kind=eq.member&member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: nowIso }), headers: { 'Prefer': 'return=minimal' } });
+      await env.svc('uat_auth_tokens', { method: 'POST', body: JSON.stringify({ token_hash: _uatTokHash(token), kind: 'member', member_id: memberId, device_id: deviceId, expires_at: new Date(Date.now() + ttlMs).toISOString() }), headers: { 'Prefer': 'return=minimal' } });
+    } catch (e) { err = e; }
+    // activity_stage3: a real PIN login starts the 72h clock for an approved member (the DB
+    // function decides; login itself is never counted as activity).
+    try { await env.svc('rpc/activity_clock_start', { method: 'POST', body: JSON.stringify({ p_member: memberId }) }); }
+    catch (e) { err = err || e; }
+    if (err) throw err;
   }
   async function nightly() { return env.svc('rpc/activity_nightly', { method: 'POST', body: '{}' }); }
-  return { track, visitorPing, savePass, nightly };
+
+  // ── activity_stage3 (2026-11-12, rev 2): timers in MARKET DAYS (Mon-Fri, not an NSE holiday).
+  // All numbers come from activity_settings; counting is done by DB functions, so the notice and
+  // the removal always agree.
+  let settings = null, settingsAt = 0, hints = null, hintsAt = 0;
+  async function getSettings() {
+    if (settings && Date.now() - settingsAt < 5 * 60 * 1000) return settings;
+    const rows = await env.svc('activity_settings?select=key,value');
+    const o = {}; (rows || []).forEach(r => { o[r.key] = r.value; });
+    const num = (k, d) => { const n = parseInt(o[k], 10); return Number.isFinite(n) && n > 0 ? n : d; };
+    const remove = num('inactivity_remove_days', 5);
+    let notice = num('inactivity_notice_days', 3);
+    if (notice >= remove) notice = Math.max(1, remove - 1);
+    settings = { idle_minutes: num('idle_logout_minutes', 120), remove_days: remove, notice_days: notice, check_minutes: num('inactivity_check_minutes', 15) };
+    settingsAt = Date.now();
+    return settings;
+  }
+  // Member-facing "what counts as activity" — only enabled, engaging actions with a hint.
+  async function getHints() {
+    if (hints && Date.now() - hintsAt < 5 * 60 * 1000) return hints;
+    const rows = await env.svc('activity_actions?enabled=eq.true&is_engagement=eq.true&member_hint=not.is.null&select=member_hint,hint_order&order=hint_order.asc.nullslast');
+    hints = (rows || []).map(r => String(r.member_hint)).filter(h => h.length && h.length <= 60).slice(0, 20);
+    hintsAt = Date.now();
+    return hints;
+  }
+  // body: { token? }. Anyone: the settings numbers + the activity list (nothing personal).
+  // A valid member pass also gets that member's own market days without activity (approved
+  // free members with a running clock only; nothing while the holiday list is missing).
+  async function status(body, ip) {
+    if (!rateOk('st:' + ip, 120)) return { status: 429, out: { ok: false } };
+    const s = await getSettings();
+    const out = { ok: true, idle_minutes: s.idle_minutes, notice_days: s.notice_days, remove_days: s.remove_days, activities: await getHints() };
+    if (body && body.token) {
+      const who = await resolvePass(body.token);
+      if (who) {
+        const r = await env.svc('rpc/activity_member_status', { method: 'POST', body: JSON.stringify({ p_member: who.memberId }) });
+        if (r && r.tracked === true && Number.isInteger(r.days_inactive) && Number.isInteger(r.days_left)) {
+          out.days_inactive = r.days_inactive;
+          out.days_left = r.days_left;
+        }
+      }
+    }
+    return { status: 200, out };
+  }
+  async function sweep() { return env.svc('rpc/activity_inactivity_sweep', { method: 'POST', body: '{}' }); }
+  async function checkMinutes() { return (await getSettings()).check_minutes; }
+
+  // NSE holiday list. From 15 Dec (India time) the server tries once a day to fetch NEXT year's
+  // list from NSE (read-only) until it is saved; it also fills the CURRENT year if it is ever
+  // missing. Telegram on success; from 31 Dec a daily reminder while still missing. While the
+  // current year is missing, removals pause (DB side), so nobody loses access by mistake.
+  const MON = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+  function parseNseHolidays(j) {
+    const rows = j && Array.isArray(j.CM) ? j.CM : [];
+    const out = [];
+    for (const r of rows) {
+      const m = /^(\d{2})-([A-Z][a-z]{2})-(\d{4})$/.exec(String(r && r.tradingDate || ''));
+      if (!m || !MON[m[2]]) continue;
+      const name = String(r.description || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120);
+      if (!name) continue;
+      out.push({ day: `${m[3]}-${MON[m[2]]}-${m[1]}`, name, source: 'nse' });
+    }
+    return out;
+  }
+  // A year is loaded only when its "fully loaded" marker exists (written AFTER all its dates).
+  async function hasYear(y) {
+    const r = await env.svc(`market_holiday_years?year=eq.${y}&select=year&limit=1`);
+    return Array.isArray(r) && r.length > 0;
+  }
+  async function holidaySync(y) {
+    if (await hasYear(y)) return { year: y, status: 'present' };
+    const rows = (parseNseHolidays(await env.fetchNse())).filter(r => r.day.startsWith(y + '-'));
+    if (!rows.length) return { year: y, status: 'not_published' };
+    await env.svc('market_holidays', { method: 'POST', body: JSON.stringify(rows), headers: { 'Prefer': 'resolution=ignore-duplicates,return=minimal' } });
+    await env.svc('market_holiday_years', { method: 'POST', body: JSON.stringify({ year: y, source: 'nse' }), headers: { 'Prefer': 'resolution=ignore-duplicates,return=minimal' } });
+    return { year: y, status: 'saved', count: rows.length };
+  }
+  let holTriedDay = '';
+  async function holidayTick(now = Date.now()) {
+    const ist = new Date(now + 5.5 * 3600000);
+    const day = ist.toISOString().slice(0, 10);
+    if (holTriedDay === day) return null;
+    const y = ist.getUTCFullYear(), mo = ist.getUTCMonth() + 1, d = ist.getUTCDate();
+    const targets = [y];
+    if (mo === 12 && d >= 15) targets.push(y + 1);
+    const done = [];
+    for (const t of targets) {
+      try {
+        const r = await holidaySync(t);
+        done.push(r);
+        if (r.status === 'saved') env.notify(`✅ ${env.label}: NSE market holidays for ${t} saved (${r.count} dates). Inactivity removals use them automatically.`);
+        else if (r.status === 'not_published' && (t === y || (mo === 12 && d === 31)))
+          env.notify(`⚠️ ${env.label}: NSE market holidays for ${t} not found yet. ${t === y ? 'Inactivity removals are PAUSED until the list is added.' : 'Will try again tomorrow.'}`);
+      } catch (e) {
+        done.push({ year: t, status: 'error', error: e.message });
+        if (t === y || (mo === 12 && d === 31)) env.notify(`⚠️ ${env.label}: could not fetch NSE market holidays for ${t} (${e.message}). ${t === y ? 'Inactivity removals are PAUSED.' : 'Will try again tomorrow.'}`);
+      }
+    }
+    holTriedDay = day;
+    return done;
+  }
+  return { track, visitorPing, savePass, nightly, status, sweep, checkMinutes, holidayTick, parseNseHolidays };
 }
 // UAT wiring. Only built when the UAT private key is set; every call goes to the UAT DB.
-const _uatActivity = UAT_SB_SVC_KEY ? _makeActivity({ svc: sbUatSvc, memoryPass: _validateMemberToken }) : null;
+// activity_stage3: NSE holiday fetch (read-only, December only + if the current year is missing)
+// and Telegram notes go through these two env hooks.
+// Same headers + session cookie the existing NSE market feed uses (NSE_HEADERS / refreshNSECookies).
+async function _fetchNseHolidays() {
+  if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+  const url = 'https://www.nseindia.com/api/holiday-master?type=trading';
+  let r = await ft(url, { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 15000);
+  if (!r.ok) { await refreshNSECookies(); r = await ft(url, { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 15000); }
+  if (!r.ok) throw new Error('NSE ' + r.status);
+  return r.json();
+}
+const _uatActivity = UAT_SB_SVC_KEY ? _makeActivity({ svc: sbUatSvc, memoryPass: _validateMemberToken,
+  fetchNse: _fetchNseHolidays, notify: t => { tgSend(t).catch(() => {}); }, label: 'UAT' }) : null;
 
 // Removes PIN hashes from any reply, at any depth (embedded rows included).
 function _uatRedactHashes(v) {
@@ -6172,11 +6294,11 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
   // ── UAT ACTIVITY ROUTES (checkpoint activity_stage2, 2026-11-12) ────────────────────────
   // POST /uat-track-event and POST /uat-visitor-ping. UAT DB only (via _uatActivity). Fail
   // closed (503) if the UAT private key is not set. The shared /track-event is untouched.
-  if (req.method === 'OPTIONS' && (urlPath === '/uat-track-event' || urlPath === '/uat-visitor-ping')) {
+  if (req.method === 'OPTIONS' && (urlPath === '/uat-track-event' || urlPath === '/uat-visitor-ping' || urlPath === '/uat-activity-status')) { // activity_stage3: + status
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
     res.end(); return;
   }
-  if (req.method === 'POST' && (urlPath === '/uat-track-event' || urlPath === '/uat-visitor-ping')) {
+  if (req.method === 'POST' && (urlPath === '/uat-track-event' || urlPath === '/uat-visitor-ping' || urlPath === '/uat-activity-status')) { // activity_stage3: + status
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     if (!_uatActivity) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'not configured' })); return; }
@@ -6186,7 +6308,9 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       try {
         const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
         const parsed = JSON.parse(aBody || '{}');
-        const r = urlPath === '/uat-track-event' ? await _uatActivity.track(parsed, ip) : await _uatActivity.visitorPing(parsed, ip);
+        const r = urlPath === '/uat-track-event' ? await _uatActivity.track(parsed, ip)
+          : urlPath === '/uat-activity-status' ? await _uatActivity.status(parsed, ip)
+          : await _uatActivity.visitorPing(parsed, ip);
         res.writeHead(r.status); res.end(JSON.stringify(r.out));
       } catch (e) {
         console.error('[uat-activity]', e.message);
@@ -7134,6 +7258,28 @@ setInterval(() => {
   _uatActivityNightlyDay = day;
   _uatActivity.nightly().then(r => console.log('[uat-activity] nightly', JSON.stringify(r))).catch(e => console.error('[uat-activity] nightly', e.message));
 }, 5 * 60 * 1000);
+
+// ── UAT INACTIVITY CHECK (checkpoint activity_stage3) — UAT private key only, UAT DB only.
+// Every inactivity_check_minutes (DB setting, default 15): one DB call removes approved free
+// members with no real action for inactivity_remove_days FULL market days (weekends + NSE holidays
+// skipped). Also: once-a-day NSE holiday list check (December for next year). The DB function re-checks everything
+// and is safe to run twice; a missed run (restart) just runs at the next tick.
+let _uatSweepAt = 0, _uatSweepBusy = false;
+setInterval(async () => {
+  if (!_uatActivity || _uatSweepBusy) return;
+  _uatSweepBusy = true;
+  try {
+    const mins = await _uatActivity.checkMinutes();
+    if (Date.now() - _uatSweepAt >= mins * 60000) {
+      _uatSweepAt = Date.now();
+      const r = await _uatActivity.sweep();
+      if (r && (r.removed || r.clocks_cleared || r.paused)) console.log('[uat-activity] inactivity check', JSON.stringify(r));
+    }
+  } catch (e) { console.error('[uat-activity] inactivity check', e.message); }
+  try { const h = await _uatActivity.holidayTick(); if (h) console.log('[uat-activity] holidays', JSON.stringify(h)); }
+  catch (e) { console.error('[uat-activity] holidays', e.message); }
+  finally { _uatSweepBusy = false; }
+}, 60 * 1000);
 
 // ── ANALYTICS ARCHIVAL (daily 4 AM IST) ──────────────────────────────────────
 async function archiveOldAnalytics() {
