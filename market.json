@@ -1,6 +1,6 @@
 {
   "marketOpen": false,
-  "lastUpdated": "2026-11-13T10:04:01.010Z",
+  "lastUpdated": "2026-11-13T10:16:15.036Z",
   "dataSource": "broker",
   "indices": {
     "NIFTY": {
@@ -43,11 +43,6 @@
       "change": 0.96
     },
     {
-      "symbol": "BSE",
-      "price": 3937.7,
-      "change": 0.73
-    },
-    {
       "symbol": "ASIANPAINT",
       "price": 2550,
       "change": 0.53
@@ -86,6 +81,11 @@
       "symbol": "MAXHEALTH",
       "price": 947.1,
       "change": 0.08
+    },
+    {
+      "symbol": "RELIANCE",
+      "price": 1339.7,
+      "change": 0
     }
   ],
   "losers": [
@@ -284,5 +284,11 @@
       "price": 363.65,
       "change": -0.19
     }
-  ]
+  ],
+  "optionHighs": {
+    "NIFTY-25250-CE": 169.4
+  },
+  "optionLows": {
+    "NIFTY-25250-CE": 132.85
+  }
 }
