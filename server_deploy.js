@@ -2022,51 +2022,15 @@ async function fetchNSEBreadth() {
   };
 }
 
-async function fetchNSEMovers() {
-  if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
-
-  // Primary: equity-stockIndices gives ALL 50 stocks so count matches advance/decline bar
-  try {
-    const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050', {
-      headers: { ...NSE_HEADERS, 'Cookie': _nseCookies }
-    }, 8000);
-    if (r.ok) {
-      const d = await r.json();
-      const stocks = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50');
-      if (stocks.length > 0) {
-        // Keep symbol registry current — detects rebalancing automatically
-        _updateNifty50Symbols(stocks.map(s => s.symbol));
-        const mapStock = s => ({
-          symbol: s.symbol,
-          price:  parseFloat(parseFloat(s.lastPrice || s.ltp || 0).toFixed(2)),
-          change: parseFloat(parseFloat(s.pChange || s.perChange || 0).toFixed(2))
-        });
-        const pctField = s => parseFloat(s.pChange || s.perChange || 0);
-        return {
-          gainers: stocks.filter(s => pctField(s) > 0).sort((a,b) => pctField(b)-pctField(a)).map(mapStock),
-          losers:  stocks.filter(s => pctField(s) < 0).sort((a,b) => pctField(a)-pctField(b)).map(mapStock)
-        };
-      }
-    }
-    console.log('[movers] equity-stockIndices returned no data, trying fallback');
-  } catch(e) { console.error('[movers] equity-stockIndices failed:', e.message); }
-
-  // Fallback: significant movers — shows subset but works reliably
-  try {
-    const [gr, lr] = await Promise.all([
-      ft('https://www.nseindia.com/api/live-analysis-variations?index=gainers', { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000),
-      ft('https://www.nseindia.com/api/live-analysis-variations?index=loosers', { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 8000)
-    ]);
-    if (!gr.ok || !lr.ok) { _nseCookieTs = 0; return null; }
-    const [gd, ld] = await Promise.all([gr.json(), lr.json()]);
-    const mapStock = s => ({ symbol: s.symbol, price: parseFloat(parseFloat(s.ltp||0).toFixed(2)), change: parseFloat(parseFloat(s.perChange||0).toFixed(2)) });
-    console.log('[movers] fallback succeeded');
-    return {
-      gainers: (gd?.NIFTY?.data||[]).sort((a,b)=>(b.perChange||0)-(a.perChange||0)).map(mapStock),
-      losers:  (ld?.NIFTY?.data||[]).sort((a,b)=>(a.perChange||0)-(b.perChange||0)).map(mapStock)
-    };
-  } catch(e) { console.error('[movers] fallback also failed:', e.message); return null; }
-}
+// checkpoint nifty50_kotak_only (2026-11-14) — fetchNSEMovers() removed entirely. It was NSE's
+// own gainers/losers call, hit every scraper cycle in parallel with (and competing against) the
+// Kotak-based movers below; whichever had more stocks won. Root cause of the Wipro/BSE bug: the
+// "fallback" branch here pulled from a different, not-necessarily-current NSE dataset with no
+// check against the real Nifty 50 roster. Tushar's decision: NSE is now used ONLY to learn the
+// list of 50 names (see getNifty50Symbols() below, on its own weekly/month-start schedule) — never
+// for live prices or for gainers/losers. Kotak supplies 100% of the live movers data now.
+// Rollback: restore server.js.bak_20261112_pre_stage3 (pre-dates this change) for the old function
+// and the old call site / merge logic in runMarketScraper.
 
 // ── KOTAK OPTION LTP SYSTEM ──────────────────────────────────────────────────
 
@@ -2897,23 +2861,40 @@ async function fetchKotakIndicesCombined() {
 }
 
 // ── NIFTY 50 SYMBOL REGISTRY (dynamic — refreshed from NSE, no hardcoded list) ──
-// Source of truth: NSE equity-stockIndices API. Cached to disk, refreshed weekly
-// or immediately when a composition change is detected.
+// checkpoint nifty50_kotak_only (2026-11-14) — NSE is called ONLY to learn which 50 names
+// currently make up the index, and only on a fixed schedule: every Monday, and the first
+// trading day of each month (never on a rolling timer, never for prices/movers). Kotak prices
+// whichever 50 names this returns. Root cause this replaces: the old 7-day-rolling-timer
+// refresh silently stopped succeeding for 6+ weeks (NSE calls were being blocked) and kept
+// serving a stale cache that still had Wipro after NSE's real Sep-30 Wipro->BSE swap — nobody
+// was told. This version retries once a day for as long as it's failing and alerts Tushar once
+// per day until it resolves (or he supplies the corrected list himself), so it can never again
+// go stale for weeks unnoticed.
 const N50_CACHE_FILE = path.join(__dirname, 'nifty50_cache.json');
-const N50_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-let _nifty50Symbols   = null; // ['ADANIENT', 'RELIANCE', ...] — NSE trading symbols
-let _nifty50SymbolsTs = 0;    // timestamp of last confirmed-fresh list
+let _nifty50Symbols        = null;  // ['ADANIENT', 'RELIANCE', ...] — NSE trading symbols, always exactly 50
+let _nifty50SymbolsTs      = 0;     // timestamp of last confirmed-fresh list
+let _nifty50LastAttemptDate = '';   // IST YYYY-MM-DD of the last refresh attempt (success or failure) — at most 1 NSE call/day
+let _nifty50NeedsRetry     = true;  // true until a refresh succeeds; forces a daily retry while stale. Starts true so a fresh boot with no valid cache fetches immediately regardless of day.
+let _nifty50LastAlertDate  = '';    // IST YYYY-MM-DD of the last "list is stale" Telegram alert — caps alerts at 1/day
+let _nifty50FetchInFlight  = false; // overlap guard — set before any await (checkpoint nifty50_kotak_only: this function is called both at startup and from the continuous Kotak loop, so two near-simultaneous calls are a real possibility, not theoretical)
+let _nifty50HolidayCache   = null;  // { year, set:Set<'YYYY-MM-DD'> } — NSE trading-holiday dates, fetched once per year, kept in memory only (no DB writes, independent of the UAT activity feature)
 
 function loadNifty50Cache() {
   try {
     if (fs.existsSync(N50_CACHE_FILE)) {
       const { symbols, ts } = JSON.parse(fs.readFileSync(N50_CACHE_FILE, 'utf8'));
-      if (Array.isArray(symbols) && symbols.length >= 45) {
-        _nifty50Symbols   = symbols;
-        _nifty50SymbolsTs = ts || 0;
+      // Exactly 50 required — Nifty 50 is always exactly 50 names; anything else is a bad
+      // snapshot. This rejection is what self-heals the old stuck 51-name (Wipro+BSE) cache
+      // the next time this process restarts.
+      if (Array.isArray(symbols) && symbols.length === 50) {
+        _nifty50Symbols    = symbols;
+        _nifty50SymbolsTs  = ts || 0;
+        _nifty50NeedsRetry = false;
         const ageDays = Math.round((Date.now() - (ts || 0)) / 86400000);
         console.log(`[nifty50] loaded ${symbols.length} symbols from cache (${ageDays}d old)`);
+      } else if (Array.isArray(symbols)) {
+        console.log(`[nifty50] cache rejected — had ${symbols.length} symbols, need exactly 50; will refetch`);
       }
     }
   } catch(e) { console.error('[nifty50] cache load error:', e.message); }
@@ -2925,48 +2906,104 @@ function _saveNifty50Cache() {
   } catch(e) { console.error('[nifty50] cache save error:', e.message); }
 }
 
-// Called from fetchNSEMovers() whenever a full 50-stock response is received.
-// Detects composition changes and saves to disk; otherwise just keeps in memory.
-function _updateNifty50Symbols(freshSymbols) {
-  if (!freshSymbols?.length) return;
-  const compositionChanged = _nifty50Symbols &&
-    JSON.stringify([...freshSymbols].sort()) !== JSON.stringify([..._nifty50Symbols].sort());
-  const cacheStale = !_nifty50Symbols || Date.now() - _nifty50SymbolsTs > N50_REFRESH_MS;
-  if (compositionChanged) {
-    console.log(`[nifty50] composition changed — was ${_nifty50Symbols?.length}, now ${freshSymbols.length} stocks`);
-  }
-  if (compositionChanged || cacheStale || !_nifty50Symbols) {
-    _nifty50Symbols   = freshSymbols;
-    _nifty50SymbolsTs = Date.now();
-    _saveNifty50Cache();
-  }
-}
-
-// Returns the current Nifty 50 NSE symbol list.
-// Uses memory cache if fresh; does a standalone NSE fetch if stale; returns stale if fetch fails.
-async function getNifty50Symbols() {
-  if (_nifty50Symbols && Date.now() - _nifty50SymbolsTs < N50_REFRESH_MS) return _nifty50Symbols;
+const _N50_MON = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' };
+// Read-only NSE trading-holiday lookup, cached per year in memory. Reuses the same
+// _fetchNseHolidays() the UAT activity feature uses, but independently — nothing is read from
+// or written to any database here, and this has no dependency on that feature being deployed.
+async function _nifty50HolidaySetForYear(year) {
+  if (_nifty50HolidayCache?.year === year) return _nifty50HolidayCache.set;
   try {
-    if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
-    const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050',
-      { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
-    if (r.ok) {
-      const d = await r.json();
-      const syms = (d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50').map(s => s.symbol);
-      if (syms.length >= 45) {
-        _nifty50Symbols   = syms;
-        _nifty50SymbolsTs = Date.now();
-        _saveNifty50Cache();
-        console.log(`[nifty50] standalone refresh: ${syms.length} symbols`);
-        return _nifty50Symbols;
-      }
+    const j = await _fetchNseHolidays();
+    const rows = j && Array.isArray(j.CM) ? j.CM : [];
+    const set = new Set();
+    for (const r of rows) {
+      const m = /^(\d{2})-([A-Z][a-z]{2})-(\d{4})$/.exec(String(r && r.tradingDate || ''));
+      if (!m || !_N50_MON[m[2]]) continue;
+      set.add(`${m[3]}-${_N50_MON[m[2]]}-${m[1]}`);
     }
-  } catch(e) { console.error('[nifty50] standalone refresh failed:', e.message); }
-  return _nifty50Symbols || []; // return stale cache; empty only on first-ever run if NSE is down
+    _nifty50HolidayCache = { year, set };
+    return set;
+  } catch(e) {
+    console.error('[nifty50] holiday fetch failed:', e.message);
+    return _nifty50HolidayCache?.set || new Set(); // best-effort — falls back to a weekend-only check below
+  }
 }
 
-// Kotak Nifty50 equity LTPs — used during market hours when NSE movers are blocked
-// Symbol list is fetched dynamically from NSE (see getNifty50Symbols above).
+// True only on: every Monday, or the first trading day (Mon-Fri, not an NSE holiday) of the month.
+async function _isNifty50RefreshDay(ist) {
+  if (ist.getUTCDay() === 1) return true; // Monday (IST weekday, same date-shift trick as holidayTick)
+  const dateNum = ist.getUTCDate();
+  if (dateNum > 4) return false; // cheap exit — the first trading day always falls within the 1st-4th
+  const year = ist.getUTCFullYear(), month = ist.getUTCMonth();
+  const holidays = await _nifty50HolidaySetForYear(year);
+  const pad = n => String(n).padStart(2, '0');
+  for (let d = 1; d <= dateNum; d++) {
+    const dow = new Date(Date.UTC(year, month, d)).getUTCDay();
+    const dayStr = `${year}-${pad(month + 1)}-${pad(d)}`;
+    const isTradingDay = dow !== 0 && dow !== 6 && !holidays.has(dayStr);
+    if (isTradingDay) return d === dateNum; // first trading day of the month found — is it today?
+  }
+  return false;
+}
+
+// Returns the current Nifty 50 NSE symbol list. Hits NSE only on a scheduled day (see
+// _isNifty50RefreshDay) or while a previous scheduled attempt is still unresolved (daily
+// retry) — at most once per IST calendar day either way. Every other call costs nothing.
+async function getNifty50Symbols() {
+  // Overlap guard set BEFORE any await — this function is called both at startup and from the
+  // continuous Kotak loop, so two near-simultaneous calls are a real possibility. Without this,
+  // both could pass the date check below (set only after an await) and each independently hit
+  // NSE and send its own alert (Codex-flagged, checkpoint nifty50_kotak_only).
+  if (_nifty50FetchInFlight) return _nifty50Symbols || [];
+
+  const ist = new Date(Date.now() + 5.5 * 3600000);
+  const todayIst = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+  if (_nifty50LastAttemptDate === todayIst) return _nifty50Symbols || [];
+
+  _nifty50FetchInFlight = true;
+  try {
+    const scheduled = await _isNifty50RefreshDay(ist);
+    if (!scheduled && !_nifty50NeedsRetry) return _nifty50Symbols || [];
+
+    _nifty50LastAttemptDate = todayIst;
+    try {
+      if (!_nseCookies || Date.now() - _nseCookieTs > 10 * 60 * 1000) await refreshNSECookies();
+      const r = await ft('https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050',
+        { headers: { ...NSE_HEADERS, 'Cookie': _nseCookies } }, 10000);
+      if (r.ok) {
+        const d = await r.json();
+        const syms = [...new Set((d?.data || []).filter(s => s.symbol && s.symbol !== 'NIFTY 50').map(s => s.symbol))];
+        if (syms.length === 50) {
+          const changed = _nifty50Symbols && JSON.stringify([...syms].sort()) !== JSON.stringify([..._nifty50Symbols].sort());
+          _nifty50Symbols    = syms;
+          _nifty50SymbolsTs  = Date.now();
+          _nifty50NeedsRetry = false;
+          _saveNifty50Cache();
+          console.log(`[nifty50] refreshed: ${syms.length} symbols${changed ? ' (composition changed)' : ''}`);
+          return _nifty50Symbols;
+        }
+        console.log(`[nifty50] refresh rejected — NSE returned ${syms.length} symbols, need exactly 50`);
+      } else {
+        console.log(`[nifty50] refresh failed — NSE HTTP ${r.status}`);
+      }
+    } catch(e) { console.error('[nifty50] refresh failed:', e.message); }
+
+    // Failed (or rejected) — keep the existing list, retry again tomorrow, alert at most once/day.
+    _nifty50NeedsRetry = true;
+    if (_nifty50LastAlertDate !== todayIst) {
+      _nifty50LastAlertDate = todayIst;
+      const staleDays = _nifty50SymbolsTs ? Math.round((Date.now() - _nifty50SymbolsTs) / 86400000) : null;
+      tgAlert(`⚠️ <b>Nifty 50 stock list refresh failed</b>\nStill using the list from ${staleDays != null ? staleDays + ' day(s) ago' : 'an unknown date'}. Retrying daily until it succeeds.`).catch(() => {});
+    }
+    return _nifty50Symbols || [];
+  } finally {
+    _nifty50FetchInFlight = false;
+  }
+}
+
+// Kotak Nifty50 equity LTPs — the sole source of gainers/losers now (checkpoint
+// nifty50_kotak_only, 2026-11-14). Symbol list is fetched from NSE only on a schedule
+// (see getNifty50Symbols above); live prices here are always Kotak, never NSE.
 let _kotakMoversCache = null, _kotakMoversCacheTs = 0;
 let _kotak50LastGood  = {};   // SYMBOL → { data:{symbol,price,change}, ts } — persisted across restarts (checkpoint kotak50_persist, 2026-10-16)
 let _kotak50InFlight  = false; // overlap guard — prevents two concurrent runs if retries ever run long
@@ -3296,8 +3333,9 @@ async function runMarketScraper(force = false) {
   }
 
   try {
-    // NSE for NIFTY + BANKNIFTY + movers; BSE India public API for SENSEX
-    const [nseData, sensex, movers] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE(), fetchNSEMovers()]);
+    // NSE for NIFTY + BANKNIFTY; BSE India public API for SENSEX. Movers no longer come from
+    // NSE at all (checkpoint nifty50_kotak_only, 2026-11-14) — Kotak supplies gainers/losers.
+    const [nseData, sensex] = await Promise.all([fetchNSEAllIndices(), fetchSensexBSE()]);
     // Refresh active contracts from Supabase every 5 min (feeds the 5s Kotak LTP interval)
     refreshActiveContracts().catch(e => console.error('[contracts] bg refresh error:', e.message));
     // NSE option chain — always fetch as baseline; Kotak 5s interval overrides per-contract if scrip master works
@@ -3389,9 +3427,11 @@ async function runMarketScraper(force = false) {
       // `dataSource`, which stays as-is; this is per-index detail for ops visibility only.
       indexSources: { NIFTY: _idxSrc.NIFTY || existing.indexSources?.NIFTY || null, BANKNIFTY: _idxSrc.BANKNIFTY || existing.indexSources?.BANKNIFTY || null, SENSEX: _idxSrc.SENSEX || existing.indexSources?.SENSEX || null },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      // Prefer whichever source has more stocks — Kotak beats NSE fallback (which caps at ~20)
-      gainers: _firstNonEmpty(_kotakMoversCache?.gainers?.length > (movers?.gainers?.length || 0) ? _kotakMoversCache.gainers : movers?.gainers, _kotakMoversCache?.gainers, existing.gainers),
-      losers:  _firstNonEmpty(_kotakMoversCache?.losers?.length  > (movers?.losers?.length  || 0) ? _kotakMoversCache.losers  : movers?.losers,  _kotakMoversCache?.losers,  existing.losers)
+      // Kotak only (checkpoint nifty50_kotak_only, 2026-11-14) — NSE is no longer a competing
+      // source for gainers/losers. Falls back to the last-published list only if Kotak has
+      // nothing this cycle (e.g. session not live yet).
+      gainers: _firstNonEmpty(_kotakMoversCache?.gainers, existing.gainers),
+      losers:  _firstNonEmpty(_kotakMoversCache?.losers,  existing.losers)
     };
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
@@ -6780,10 +6820,9 @@ setTimeout(async () => {
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
   }
-  // Refresh Nifty 50 symbol list at startup if cache is older than 7 days
-  if (!_nifty50Symbols || Date.now() - _nifty50SymbolsTs > N50_REFRESH_MS) {
-    getNifty50Symbols().catch(() => {}); // non-blocking; runs in background
-  }
+  // getNifty50Symbols() now decides internally whether today is a scheduled refresh day (or a
+  // pending retry) — calling it unconditionally here costs nothing on a non-scheduled day.
+  getNifty50Symbols().catch(() => {}); // non-blocking; runs in background
   if (isMarketHours() && !marketScraperInterval) {
     startMarketScraper();
   }
