@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-003 | uat.html: sesscheck2 — live signal seen to drop at admin logout, so the device check also runs on window focus, right after the live connection (re)subscribes, on the existing 5-min last-seen update when it finds no logged-in row (no new timer — owner 2026-11-15), and at app open in parallel with the member read and BEFORE the app loads (no logged-in flash). Rollback: restore uat.html.bak_20261115_pre_sesscheck2. -->
 <!-- T2S-UAT-20261115-002 | uat.html: sesscheck — on app open and whenever the app comes back on screen, checks that THIS device is still logged in (sessions row); only a clear 'all rows inactive' answer sends it to the login page ('device removed' message); errors never log out; limited visitors skipped. Fixes: admin 'Log out all devices' not kicking a backgrounded/closed app. Rollback: restore uat.html.bak_20261115_pre_sesscheck. -->
 <!-- T2S-UAT-20261115-001 | uat.html: stage3b — (1) logout() waits (max 3s) for the session-inactive update before leaving the page (it was being cancelled, leaving devices "active" and members hitting the 2-device limit). (2) Inactivity notice reworded: "No activity for N market days. Use the app within the next market day(s) to keep your access. What counts? …more" (full list + not-counted note behind …more). (3) "⚡ Active only as long as you stay engaged" highlighted on the Limited Free Access screen. Rollback: restore uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | uat.html: activity_stage3 — (1) time-spent fix: going out of view records tab_time once + session_end (no duration) and restarts the timer; coming back restarts it + session_start; session_start at open names the restored tab. (2) Idle logout minutes from server setting (default 120, was 30); also on reopen (last touch or login time, checked before refresh); reason "idle"; stale last_active cleared. (3) notice strip after inactivity_notice_days full market days (default 3; removal after 5) for approved members (from /uat-activity-status; hides after a real action; closing it is not activity) with short "to stay active" list + …more (list from DB); same rule line on the in-app Limited Free Access screen (was a fixed "72 hours"). (4) Removed after inactivity (newest request blocked/inactivity) → logout with reason "inactive", at open and via realtime; read error → stay. Admin "Remove access" unchanged. Rollback: restore uat.html.bak_20261112_pre_stage3. -->
@@ -3196,22 +3197,30 @@
     // and whenever it comes back on screen, ask once: is this device still logged in?
     // Only a clear answer "this device's rows are all logged out" acts; errors never log out.
     // Limited (no-login) visitors are skipped.
+    // sesscheck2 (2026-11-15) — the live signal was seen to drop exactly when admin logged a member
+    // out, so the check also runs: when the window gets focus, right after the live connection
+    // (re)subscribes, when the existing 5-min last-seen update finds no logged-in row, and at app open BEFORE the app shows.
+    // Returns 'out' only on a clear "all this device's rows are logged out"; otherwise null.
+    async function _sessReadSelf() {
+        if (localStorage.getItem('t2s_uat_mode') === 'free') return null;
+        if (localStorage.getItem('t2s_uat_request_pending') === '1') return null; // waiting for approval — no login yet (Codex 2026-11-15)
+        const mid = localStorage.getItem('t2s_uat_member_id');
+        const did = localStorage.getItem('t2s_uat_device_id');
+        if (!mid || !did || !/^[0-9a-f-]{36}$/i.test(mid) || !/^[A-Za-z0-9_-]{1,100}$/.test(did)) return null;
+        try {
+            const rows = await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${encodeURIComponent(did)}&select=is_active`, { method: 'GET' });
+            return (Array.isArray(rows) && rows.length && rows.every(r => r && r.is_active === false)) ? 'out' : null;
+        } catch (_) { return null; } // check failed — never log out on an error
+    }
     let _sessCheckBusy = false;
     async function _sessSelfCheck() {
         if (_sessCheckBusy || _rtRedirecting) return;
-        if (localStorage.getItem('t2s_uat_mode') === 'free') return;
-        if (localStorage.getItem('t2s_uat_request_pending') === '1') return; // waiting for approval — no login yet (Codex 2026-11-15)
-        const mid = localStorage.getItem('t2s_uat_member_id');
-        const did = localStorage.getItem('t2s_uat_device_id');
-        if (!mid || !did || !/^[0-9a-f-]{36}$/i.test(mid) || !/^[A-Za-z0-9_-]{1,100}$/.test(did)) return;
         _sessCheckBusy = true;
-        try {
-            const rows = await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${encodeURIComponent(did)}&select=is_active`, { method: 'GET' });
-            if (Array.isArray(rows) && rows.length && rows.every(r => r && r.is_active === false)) _rtRefetchMemberAndAct(true);
-        } catch (_) { /* check failed — never log out on an error */ }
+        try { if (await _sessReadSelf() === 'out' && !_rtRedirecting) _rtRefetchMemberAndAct(true); }
         finally { _sessCheckBusy = false; }
     }
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') _sessSelfCheck(); });
+    window.addEventListener('focus', () => _sessSelfCheck());
     async function _rtRefetchMemberAndAct(deviceRemovedFallback) {
         if (_rtRedirecting) return;
         const _rtMid = localStorage.getItem('t2s_uat_member_id');
@@ -3311,6 +3320,8 @@
         _rtSocket.onmessage = (e) => {
             try {
                 const msg = JSON.parse(e.data);
+                // sesscheck2 — live connection (re)subscribed: anything sent while it was down is lost, so check once
+                if (msg.event === 'system' && msg.payload?.extension === 'postgres_changes' && msg.payload?.status === 'ok') { _sessSelfCheck(); return; }
                 if (msg.event !== 'postgres_changes') return;
                 if (msg.payload?.data?.table === 'members') {
                     _rtRefetchMemberAndAct(false);
@@ -5782,6 +5793,7 @@
         const _mktLoad = fetchMarketData();
         if(mode !== 'free' && memberId){
             try {
+                const _sessP = _sessReadSelf().catch(() => null); // sesscheck2: read in parallel with the member row, decided before the app shows
                 const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`,{method:'GET'});
                 if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'||members[0].pin_hash===null||members[0].free_access_blocked===true){
                     if(members&&members[0]&&members[0].status==='disabled') localStorage.setItem('t2s_uat_logout_reason','disabled');
@@ -5789,8 +5801,8 @@
                     window.location.href='login.html'; return;
                 }
                 if (await _inactRemovedCheck(members[0], memberId)) { _inactLogout(memberId); return; } // activity_stage3
+                if (await _sessP === 'out') { _rtRedirectToLogin('device_removed'); return; } // sesscheck2: this device was logged out while the app was closed
                 window._cachedMember = members[0];
-                _sessSelfCheck(); // sesscheck: this device logged out while the app was closed → login page (runs in background)
                 // Render tier chip immediately — before any tab fetch completes
                 _renderMemberChip(members[0]);
                 // Silent last_seen ping — feeds free-access inactivity monitor
@@ -5827,7 +5839,10 @@
             const _pingLastActive = () => {
                 if(!_did) return;
                 sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
-                    {method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString()})}).catch(()=>{});
+                    {method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString()})})
+                    // sesscheck2 (owner 2026-11-15): reuse this existing 5-min call instead of a new timer —
+                    // nothing updated = this device may be logged out → confirm with one read, then act.
+                    .then(r => { if (Array.isArray(r) && r.length === 0) _sessSelfCheck(); }).catch(()=>{});
             };
             _pingLastActive();
             setInterval(_pingLastActive, 300000);
