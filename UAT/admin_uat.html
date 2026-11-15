@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-002 | admin_uat: sesscheck — 'Log out all devices' and 'Reset PIN' close the member sheet before showing the ✅ message (it was hidden behind the sheet); 'Log out all devices' failure now shows a pop-up. Rollback: restore admin_uat.html.bak_20261115_pre_sesscheck. -->
 <!-- T2S-UAT-20261115-001 | admin_uat: stage3b — member detail sheet: new "📴 Log out all devices" button (confirm → sessions PATCH is_active:false for that member via the existing admin door, same shape as Reset PIN; ✅ only on success, ❌ with reason on failure). Rollback: restore admin_uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | admin_uat: activity_stage3 — request cards: "Inactive" label (block_reason inactivity, set by the server inactivity check; below Person/Device, above Old record) with "Removed on: date · No activity"; pending cards show "Re-applied after inactivity" when the member had an earlier inactivity removal (one extra read in the existing parallel trip; read error → no tag); label key ⓘ explains Inactive. No new writes, door rules unchanged. Rollback: restore admin_uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261112-002 | admin_uat: activity_stage2 — approve / reject / Block # / Block Device / Block / Unblock now also save WHEN (access_requests.reviewed_at) and WHY (block_reason person/device); blocked request cards show 'Blocked on: date · Person/Device'; Unblock writes audit 'access_unblocked'; Devices tab shows what each block covers (New requests / App + requests); blockDevice24h() added for the Activity screen (Stage 4). Needs server T2S-UAT-20261112-001 door rules + UAT SQL 20261112_activity_tracking.sql. Rollback: restore admin_uat.html.bak_20261112_pre_stage2. -->
@@ -2727,8 +2728,9 @@ async function memberLogoutAll(memberId){
   if (!confirm(`Log out ${label} on all devices?\n\nUse this when they see "Maximum concurrent login limit reached". Their PIN stays the same; they just log in again.`)) return;
   try {
     await sbFetch(`sessions?member_id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
+    closeDetail(); // sesscheck: the toast sits below the sheet, so close the sheet first
     showToast(`✅ ${label} logged out on all devices`);
-  } catch(e){ showToast('❌ Could not log out: ' + e.message); }
+  } catch(e){ alert('❌ Could not log out: ' + e.message); }
 }
 
 async function resetMemberPin(memberId){
@@ -2738,6 +2740,7 @@ async function resetMemberPin(memberId){
   try {
     await sbFetch(`members?id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ pin_hash: null }), headers: { 'Prefer': 'return=minimal' } });
     await sbFetch(`sessions?member_id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
+    closeDetail(); // sesscheck: the toast sits below the sheet, so close the sheet first
     showToast(`✓ PIN reset for ${label}`);
   } catch(e){ alert('Failed: '+e.message); }
 }
