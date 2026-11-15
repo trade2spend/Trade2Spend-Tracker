@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-004 | admin_uat: devlist2 — member sheet logout button shows only when useful: logged-in devices → '📴 Log out all devices'; none logged in but old never-closed rows → 'Not logged in on any device' + '🧹 Clear old devices' (live server's 2-device limit still counts them); none → no button; read error → button shown. Rollback: restore admin_uat.html.bak_20261115_pre_devlist2. -->
 <!-- T2S-UAT-20261115-003 | admin_uat: devlist — member detail sheet shows 'Logged-in devices ⓘ' (📱/💻 · last seen X ago): sessions not logged out and seen within the auto-logout time (idle setting, max 24h), read-only calls when the sheet opens, stale-reply guard. Rollback: restore admin_uat.html.bak_20261115_pre_devlist. -->
 <!-- T2S-UAT-20261115-002 | admin_uat: sesscheck — 'Log out all devices' and 'Reset PIN' close the member sheet before showing the ✅ message (it was hidden behind the sheet); 'Log out all devices' failure now shows a pop-up. Rollback: restore admin_uat.html.bak_20261115_pre_sesscheck. -->
 <!-- T2S-UAT-20261115-001 | admin_uat: stage3b — member detail sheet: new "📴 Log out all devices" button (confirm → sessions PATCH is_active:false for that member via the existing admin door, same shape as Reset PIN; ✅ only on success, ❌ with reason on failure). Rollback: restore admin_uat.html.bak_20261115_pre_stage3b. -->
@@ -2531,7 +2532,11 @@ function openMemberDetail(memberId) {
           <button onclick="memberUnblock('${esc(m.id)}')" style="width:100%;padding:10px 4px;border:none;border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--greenbg);color:var(--green);">✓ Unblock — restore access</button>
         </div>`;
         return ''; })()}
-      <button onclick="memberLogoutAll('${esc(m.id)}')" style="width:100%;margin-bottom:10px;padding:10px 4px;border:0.5px solid var(--border2);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--bg3);color:var(--text);">📴 Log out all devices</button>
+      <!-- devlist2: shown only after the device read (see _mdLoadDevices) -->
+      <div id="md-logout-wrap" style="display:none;">
+      <button id="md-logout-btn" onclick="memberLogoutAll('${esc(m.id)}')" style="width:100%;margin-bottom:10px;padding:10px 4px;border:0.5px solid var(--border2);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--bg3);color:var(--text);">📴 Log out all devices</button>
+        <div id="md-logout-hint" style="display:none;font-size:11px;color:var(--muted);margin:-6px 0 10px;line-height:1.4;">Closes old device records that were never logged out. Use if the member sees "Maximum concurrent login limit".</div>
+      </div>
 
       <button onclick="closeDetail()" style="width:100%;padding:10px;border:0.5px solid var(--border2);border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Close</button>
     </div>`;
@@ -2551,26 +2556,42 @@ function _mdAgo(ts){
   const h = Math.floor(min / 60); return h + (h === 1 ? ' hour ago' : ' hours ago');
 }
 async function _mdLoadDevices(memberId){
-  const box = () => { const ov = document.getElementById('member-detail-overlay'); return (ov && ov.dataset.mid === memberId) ? document.getElementById('md-devices') : null; };
+  const mine = () => { const ov = document.getElementById('member-detail-overlay'); return !!(ov && ov.dataset.mid === memberId); };
+  const box = () => mine() ? document.getElementById('md-devices') : null;
+  // devlist2 (owner 2026-11-15): the logout button shows only when it can help.
+  //  logged-in devices        → list + "📴 Log out all devices"
+  //  none, but old open rows  → "Not logged in on any device" + "🧹 Clear old devices" (the LIVE server's
+  //                             2-device limit still counts never-closed rows of any age)
+  //  none at all              → text only, no button
+  //  read failed              → button shown (never leave admin without it)
+  const showBtn = (mode) => {
+    if (!mine()) return;
+    const w = document.getElementById('md-logout-wrap'), bt = document.getElementById('md-logout-btn'), h = document.getElementById('md-logout-hint');
+    if (!w || !bt) return;
+    w.style.display = mode ? 'block' : 'none';
+    if (mode === 'old') { bt.textContent = '🧹 Clear old devices'; bt.title = 'Closes old device records that were never logged out. Use if the member sees "Maximum concurrent login limit".'; if (h) h.style.display = 'block'; }
+    else if (mode) { bt.textContent = '📴 Log out all devices'; bt.title = ''; if (h) h.style.display = 'none'; }
+  };
   if (!/^[0-9a-f-]{36}$/i.test(String(memberId || ''))) { const b = box(); if (b) b.textContent = ''; return; }
-  const since = encodeURIComponent(new Date(Date.now() - 24 * 3600000).toISOString());
   let rows, idleMin = 120;
   try {
     // Codex 2026-11-15: a device not seen within the auto-logout time is logged out the moment it
     // opens again, so it is not shown as logged in. Minutes from the database setting (default 120).
     const [r, st] = await Promise.all([
-      sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true&last_active=gte.${since}&select=device_type,last_active&order=last_active.desc`, { method: 'GET' }),
+      sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=device_type,last_active&order=last_active.desc.nullslast`, { method: 'GET' }),
       sbFetch('activity_settings?key=eq.idle_logout_minutes&select=value', { method: 'GET' }).catch(() => [])
     ]);
     rows = r;
     const n = parseInt(Array.isArray(st) && st[0] ? st[0].value : '', 10);
     if (Number.isFinite(n) && n > 0) idleMin = n;
   }
-  catch (e) { const b = box(); if (b) b.textContent = 'Could not load devices'; return; }
+  catch (e) { const b = box(); if (b) b.textContent = 'Could not load devices'; showBtn('all'); return; }
   const b = box(); if (!b) return; // sheet closed or another member opened meanwhile
-  if (Array.isArray(rows)) rows = rows.filter(x => Date.now() - Date.parse(x.last_active) <= Math.min(idleMin, 1440) * 60000);
-  if (!Array.isArray(rows) || !rows.length) { b.textContent = 'Not logged in on any device'; return; }
-  b.innerHTML = rows.map(r => `<div style="color:var(--text);margin-bottom:3px;">${r.device_type === 'mobile' ? '📱 Mobile' : '💻 Computer'} <span style="color:var(--muted);">· last seen ${esc(_mdAgo(r.last_active))}</span></div>`).join('');
+  const open = Array.isArray(rows) ? rows : [];
+  const live = open.filter(x => x && Date.now() - Date.parse(x.last_active) <= Math.min(idleMin, 1440) * 60000);
+  if (!live.length) { b.textContent = 'Not logged in on any device'; showBtn(open.length ? 'old' : null); return; }
+  b.innerHTML = live.map(r => `<div style="color:var(--text);margin-bottom:3px;">${r.device_type === 'mobile' ? '📱 Mobile' : '💻 Computer'} <span style="color:var(--muted);">· last seen ${esc(_mdAgo(r.last_active))}</span></div>`).join('');
+  showBtn('all');
 }
 
 function closeDetail(){
