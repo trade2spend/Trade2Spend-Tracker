@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-001 | admin_uat: stage3b — member detail sheet: new "📴 Log out all devices" button (confirm → sessions PATCH is_active:false for that member via the existing admin door, same shape as Reset PIN; ✅ only on success, ❌ with reason on failure). Rollback: restore admin_uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | admin_uat: activity_stage3 — request cards: "Inactive" label (block_reason inactivity, set by the server inactivity check; below Person/Device, above Old record) with "Removed on: date · No activity"; pending cards show "Re-applied after inactivity" when the member had an earlier inactivity removal (one extra read in the existing parallel trip; read error → no tag); label key ⓘ explains Inactive. No new writes, door rules unchanged. Rollback: restore admin_uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261112-002 | admin_uat: activity_stage2 — approve / reject / Block # / Block Device / Block / Unblock now also save WHEN (access_requests.reviewed_at) and WHY (block_reason person/device); blocked request cards show 'Blocked on: date · Person/Device'; Unblock writes audit 'access_unblocked'; Devices tab shows what each block covers (New requests / App + requests); blockDevice24h() added for the Activity screen (Stage 4). Needs server T2S-UAT-20261112-001 door rules + UAT SQL 20261112_activity_tracking.sql. Rollback: restore admin_uat.html.bak_20261112_pre_stage2. -->
 <!-- T2S-UAT-20261111-004 | admin_uat: manage_stage1b — request cards: 'Applied:' date label; one label per card (Person / Device / Person + Device / Old record, else the status) with its meaning on hover (title) or tap (line below), plus an ⓘ key next to the Blocked filter; Block on approved cards (approved, non-paid) and Unblock on person-blocked cards (same memberBlock/memberUnblock as Members, list refreshes after); Unblock device opens Devices; request list now 2 database trips (members embedded), always shows Loading…, stale replies ignored; applicant name/mobile now escaped. Members BLOCKED label explains itself on hover/tap. Admin app only. Rollback: restore admin_uat.html.bak_20261111_pre_stage1b. -->
@@ -2523,6 +2524,7 @@ function openMemberDetail(memberId) {
           <button onclick="memberUnblock('${esc(m.id)}')" style="width:100%;padding:10px 4px;border:none;border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--greenbg);color:var(--green);">✓ Unblock — restore access</button>
         </div>`;
         return ''; })()}
+      <button onclick="memberLogoutAll('${esc(m.id)}')" style="width:100%;margin-bottom:10px;padding:10px 4px;border:0.5px solid var(--border2);border-radius:10px;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;background:var(--bg3);color:var(--text);">📴 Log out all devices</button>
 
       <button onclick="closeDetail()" style="width:100%;padding:10px;border:0.5px solid var(--border2);border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Close</button>
     </div>`;
@@ -2714,6 +2716,19 @@ async function applyTradeUpdate(tradeId, intents) {
         headers: { 'Content-Type': 'application/json', 'x-t2s-secret': secret },
         body: JSON.stringify(current)
     });
+}
+
+// stage3b — for a member stuck on "Maximum concurrent login limit reached": logs them out on
+// every device (same database permission as Reset PIN). Their PIN stays; they just log in again.
+async function memberLogoutAll(memberId){
+  if (!/^[0-9a-f-]{36}$/i.test(String(memberId || ''))) return;
+  const m = allMembers.find(x => x.id === memberId);
+  const label = m ? (m.name || m.mobile) : 'this member';
+  if (!confirm(`Log out ${label} on all devices?\n\nUse this when they see "Maximum concurrent login limit reached". Their PIN stays the same; they just log in again.`)) return;
+  try {
+    await sbFetch(`sessions?member_id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
+    showToast(`✅ ${label} logged out on all devices`);
+  } catch(e){ showToast('❌ Could not log out: ' + e.message); }
 }
 
 async function resetMemberPin(memberId){
