@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-003 | admin_uat: devlist — member detail sheet shows 'Logged-in devices ⓘ' (📱/💻 · last seen X ago): sessions not logged out and seen within the auto-logout time (idle setting, max 24h), read-only calls when the sheet opens, stale-reply guard. Rollback: restore admin_uat.html.bak_20261115_pre_devlist. -->
 <!-- T2S-UAT-20261115-002 | admin_uat: sesscheck — 'Log out all devices' and 'Reset PIN' close the member sheet before showing the ✅ message (it was hidden behind the sheet); 'Log out all devices' failure now shows a pop-up. Rollback: restore admin_uat.html.bak_20261115_pre_sesscheck. -->
 <!-- T2S-UAT-20261115-001 | admin_uat: stage3b — member detail sheet: new "📴 Log out all devices" button (confirm → sessions PATCH is_active:false for that member via the existing admin door, same shape as Reset PIN; ✅ only on success, ❌ with reason on failure). Rollback: restore admin_uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | admin_uat: activity_stage3 — request cards: "Inactive" label (block_reason inactivity, set by the server inactivity check; below Person/Device, above Old record) with "Removed on: date · No activity"; pending cards show "Re-applied after inactivity" when the member had an earlier inactivity removal (one extra read in the existing parallel trip; read error → no tag); label key ⓘ explains Inactive. No new writes, door rules unchanged. Rollback: restore admin_uat.html.bak_20261112_pre_stage3. -->
@@ -2475,6 +2476,11 @@ function openMemberDetail(memberId) {
       <!-- Expiry -->
       <div style="font-size:12px;color:${st.color};font-weight:600;margin-bottom:14px;">Expires: ${m.subscription_end || 'Not set'}</div>
 
+      <!-- devlist (2026-11-15): devices logged in right now — filled below -->
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;cursor:pointer;" title="Devices still logged in (not logged out, and seen within the auto-logout time). 'Last seen' is when that device last had the app open — it does not prove the app is open right now." onclick="var h=document.getElementById('md-devices-hint');if(h)h.style.display=h.style.display==='none'?'block':'none';" >Logged-in devices ⓘ</div>
+      <div id="md-devices-hint" style="display:none;font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.4;">Devices still logged in (not logged out, and seen within the auto-logout time). "Last seen" is when the app was last open on that device — it does not prove it is open right now.</div>
+      <div id="md-devices" style="font-size:12px;color:var(--muted);margin-bottom:14px;">Loading…</div>
+
       <!-- Quick extend -->
       <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Extend from ${extendFrom}</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;">
@@ -2530,6 +2536,41 @@ function openMemberDetail(memberId) {
       <button onclick="closeDetail()" style="width:100%;padding:10px;border:0.5px solid var(--border2);border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Close</button>
     </div>`;
   ov.style.display = 'flex';
+  ov.dataset.mid = memberId;
+  _mdLoadDevices(memberId);
+}
+
+// devlist (2026-11-15, owner) — which devices this member is logged in on. Read-only, one call when
+// the sheet opens. A device counts only if not logged out AND seen within the auto-logout time
+// (idle setting, max 24h — older rows are logged out the moment that device opens the app again).
+function _mdAgo(ts){
+  const t = Date.parse(ts); if (!Number.isFinite(t)) return '';
+  const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (min < 1) return 'just now';
+  if (min < 60) return min + ' min ago';
+  const h = Math.floor(min / 60); return h + (h === 1 ? ' hour ago' : ' hours ago');
+}
+async function _mdLoadDevices(memberId){
+  const box = () => { const ov = document.getElementById('member-detail-overlay'); return (ov && ov.dataset.mid === memberId) ? document.getElementById('md-devices') : null; };
+  if (!/^[0-9a-f-]{36}$/i.test(String(memberId || ''))) { const b = box(); if (b) b.textContent = ''; return; }
+  const since = encodeURIComponent(new Date(Date.now() - 24 * 3600000).toISOString());
+  let rows, idleMin = 120;
+  try {
+    // Codex 2026-11-15: a device not seen within the auto-logout time is logged out the moment it
+    // opens again, so it is not shown as logged in. Minutes from the database setting (default 120).
+    const [r, st] = await Promise.all([
+      sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true&last_active=gte.${since}&select=device_type,last_active&order=last_active.desc`, { method: 'GET' }),
+      sbFetch('activity_settings?key=eq.idle_logout_minutes&select=value', { method: 'GET' }).catch(() => [])
+    ]);
+    rows = r;
+    const n = parseInt(Array.isArray(st) && st[0] ? st[0].value : '', 10);
+    if (Number.isFinite(n) && n > 0) idleMin = n;
+  }
+  catch (e) { const b = box(); if (b) b.textContent = 'Could not load devices'; return; }
+  const b = box(); if (!b) return; // sheet closed or another member opened meanwhile
+  if (Array.isArray(rows)) rows = rows.filter(x => Date.now() - Date.parse(x.last_active) <= Math.min(idleMin, 1440) * 60000);
+  if (!Array.isArray(rows) || !rows.length) { b.textContent = 'Not logged in on any device'; return; }
+  b.innerHTML = rows.map(r => `<div style="color:var(--text);margin-bottom:3px;">${r.device_type === 'mobile' ? '📱 Mobile' : '💻 Computer'} <span style="color:var(--muted);">· last seen ${esc(_mdAgo(r.last_active))}</span></div>`).join('');
 }
 
 function closeDetail(){
