@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-001 | uat.html: stage3b — (1) logout() waits (max 3s) for the session-inactive update before leaving the page (it was being cancelled, leaving devices "active" and members hitting the 2-device limit). (2) Inactivity notice reworded: "No activity for N market days. Use the app within the next market day(s) to keep your access. What counts? …more" (full list + not-counted note behind …more). (3) "⚡ Active only as long as you stay engaged" highlighted on the Limited Free Access screen. Rollback: restore uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | uat.html: activity_stage3 — (1) time-spent fix: going out of view records tab_time once + session_end (no duration) and restarts the timer; coming back restarts it + session_start; session_start at open names the restored tab. (2) Idle logout minutes from server setting (default 120, was 30); also on reopen (last touch or login time, checked before refresh); reason "idle"; stale last_active cleared. (3) notice strip after inactivity_notice_days full market days (default 3; removal after 5) for approved members (from /uat-activity-status; hides after a real action; closing it is not activity) with short "to stay active" list + …more (list from DB); same rule line on the in-app Limited Free Access screen (was a fixed "72 hours"). (4) Removed after inactivity (newest request blocked/inactivity) → logout with reason "inactive", at open and via realtime; read error → stay. Admin "Remove access" unchanged. Rollback: restore uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261112-001 | uat.html: activity_stage2 — activity now goes ONLY to the UAT door /uat-track-event (the shared /track-event that wrote into the production table is no longer called). Member pass identifies members; limited users send their device id. Real actions sent at once, time records batched, unsent kept (max 100, localStorage t2s_uat_act_queue) and retried; 401 keeps real actions until next login. Recorded: like/unlike (after save), share_post/share_app (only when the share completed or link copied — ShareGuard.trigger now returns true/false), tab_switch / refresh / Telegram links / open trade / follow-ups via one capture click listener (real taps only, isTrusted), premium popup open, notifications turned on, request access open/submitted (old names mapped), session start/end + tab time. Limited users: /uat-visitor-ping on open + every 5 min. A device with an active 24h 'app' block sees 'Access not available. Contact @T2Sview' instead of limited mode (checked first in init). Rollback: restore uat.html.bak_20261112_pre_stage2. -->
 <!-- T2S-UAT-20261111-001 | uat.html: member_rt_logout_fix — _rtRefetchMemberAndAct no longer logs out a new limited-access member on unrelated row changes (e.g. finishing/skipping the product tour). (a) 'no PIN' is treated as an admin PIN reset only for a PIN-logged-in browser (t2s_uat_mode !== 'free'); (b) the pending-request branch logs out only once the latest access request is no longer 'pending' (same query as init), and stays put if that check fails. Disabled/blocked/device-removed kick-outs unchanged. Rollback: restore uat.html.bak_20261111_pre_fixes. -->
@@ -826,7 +827,7 @@
     <div style="background:rgba(255,255,255,0.08);border-radius:12px;padding:12px;text-align:left;margin-bottom:18px;font-size:0.8rem;line-height:1.8;">
       <div>✅ Free access to paid trade alerts</div>
       <div>✅ Full analysis &amp; follow-ups</div>
-      <div>✅ Active as long as you're engaged</div>
+      <div style="margin:4px 0;padding:5px 8px;border-radius:8px;border:1px solid #f5d67b;background:rgba(245,214,123,0.16);color:#f5d67b;font-weight:800;">⚡ Active only as long as you stay engaged</div>
       <div id="golden-inact-line">⚠️ Access is removed if you stay inactive</div>
     </div>
     <button onclick="showAccessRequestModal()" style="background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border:none;border-radius:12px;padding:13px 20px;font-size:0.92rem;font-weight:800;cursor:pointer;width:100%;font-family:inherit;letter-spacing:0.02em;">Continue to Apply →</button>
@@ -1793,6 +1794,13 @@
         return ` To stay active: ${safe.slice(0, 3).join(', ')}<span id="${id}-rest" style="display:none;font-weight:500;">, ${safe.slice(3).join(', ')}.${tail}</span>`
             + ` <a href="#" onclick="event.preventDefault();var r=document.getElementById('${id}-rest');if(r)r.style.display='inline';this.remove();" style="color:inherit;font-weight:700;text-decoration:underline;white-space:nowrap;">…more</a>`;
     }
+    // stage3b — notice wording: short line + "What counts? …more" that opens the full list.
+    function _actWhatCountsHtml(list, id) {
+        const safe = (Array.isArray(list) ? list : []).filter(x => typeof x === 'string' && x).map(_actEsc);
+        const full = (safe.length ? `Counts as activity: ${safe.join(', ')}. ` : '') + 'Opening the app or scrolling does not count. Weekends and market holidays are not counted.';
+        return ` <span style="font-weight:500;">What counts?</span> <span id="${id}-rest" style="display:none;font-weight:500;"><br>${full}</span>`
+            + `<a href="#" onclick="event.preventDefault();var r=document.getElementById('${id}-rest');if(r)r.style.display='inline';this.remove();" style="color:inherit;font-weight:700;text-decoration:underline;white-space:nowrap;">…more</a>`;
+    }
     async function _actStatus() {
         const isMember = _actWho().startsWith('m:');
         const body = isMember ? { token: localStorage.getItem('t2s_uat_member_token') } : {};
@@ -1817,12 +1825,12 @@
         if (document.getElementById('inact-notice')) return;
         const header = document.querySelector('.sticky-header');
         if (!header) return;
-        const md = n => `${n} market day${n === 1 ? '' : 's'}`;
         const el = document.createElement('div');
         el.id = 'inact-notice';
         el.style.cssText = 'background:#fffbeb;border-top:1px solid #f59e0b;color:#92400e;font-size:0.75rem;font-weight:700;padding:7px 34px 7px 14px;line-height:1.5;position:relative;';
-        el.innerHTML = `⏳ No activity for ${md(j.days_inactive)}. Your access is removed after ${md(j.days_left)} more without activity (weekends and market holidays don't count).`
-            + _actHintsHtml(j.activities, 'inact-hints')
+        const within = j.days_left === 1 ? 'within the next market day' : `within the next ${j.days_left} market days`;
+        el.innerHTML = `⏳ No activity for ${j.days_inactive} market day${j.days_inactive === 1 ? '' : 's'}. <b>Use the app ${within} to keep your access.</b>`
+            + _actWhatCountsHtml(j.activities, 'inact-hints')
             + `<button onclick="_inactDismissed=true;_inactNoticeHide();" aria-label="Close" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#92400e;font-size:1rem;cursor:pointer;line-height:1;">×</button>`;
         header.appendChild(el);
     }
@@ -5611,11 +5619,16 @@
         // Clear session immediately before any async work so refresh cannot auto-login
         ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active','t2s_uat_request_pending','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));
         // Best-effort: mark session inactive in DB
+        // stage3b — wait (max 3s) so the "device inactive" update is not cancelled by leaving the
+        // page (it used to be, leaving the device counted as active). Goes to login either way.
         if (memberId && deviceId) {
-            sbFetch(
-                `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
-                { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
-            ).catch(()=>{});
+            await Promise.race([
+                sbFetch(
+                    `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
+                    { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
+                ).catch(()=>{}),
+                new Promise(r => setTimeout(r, 3000))
+            ]);
         }
         window.location.href='login.html';
     }
