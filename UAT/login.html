@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-001 | login_uat.html: stage3b — (1) "⚡ Active only as long as you stay engaged" highlighted on the apply screen. (2) Apply again with consent only: member removed for inactivity within reapply_days (server setting reapply_quick_days, default 30) goes from "Apply again →" straight to the request screen with the name field hidden (name reused from their previous request, never displayed); SEBI consent tick still required. Older removals / new applicants: unchanged full flow. Rollback: restore login_uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | login_uat.html: activity_stage3 — (1) Apply screen: "removed after N without activity" line + short "to stay active" list with …more (numbers in market days and list from /uat-activity-status, i.e. the database; neutral wording if unreachable). (2) Member removed for inactivity (newest request blocked/inactivity): message on the apply screen + button "Apply again →"; on a remembered device the PIN screen is skipped and the mobile screen explains + Continue → apply flow (read error → old path). (3) Logout messages for reasons "idle" and "inactive". Rollback: restore login_uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261107-001 | login_uat.html: harmless comment-only bump for version-check test, no functional change. -->
 <!-- T2S-UAT-20261029-006 | login_uat.html: lockout live countdown, REVISED after a SECOND live UAT test (checkpoint pin_lock_countdown). v001-v003 wired a live mm:ss countdown into checkLock()/verifyPin(). v004 fixed a real bug a second live test found: "unlock already requested" was a bare 2-hour rolling flag with no link to which lock cycle it was filed for — new _isUnlockReqPendingFor(targetIso) ties it to the exact locked_until; new generic engine _runLockCountdown(targetDate,render,onExpire) lets checkLock()/verifyPin()/checkMobile()'s lock branches share ONE ticker instead of each duplicating it (checkMobile() was a THIRD, previously-missed call site with its own static text and no countdown at all). v005 (Codex re-review, same day): requestUnlock()/requestUnlockFromMobile()'s resend gate was still the bare timestamp, not lock-aware — fixed to also check _isUnlockReqPendingFor(); checkMobile() now clears any previous _lockIv on every call; checkMobile()'s two lock branches now re-verify with the DB at expiry via new _mobileLockRender()/_mobileLockRecheck() instead of assuming local expiry is real. v006 (Codex-found, same day): _mobileLockRecheck()'s DB-query failure path was resetting the lock UI as if unlocked — a FAILED check is not evidence the lock ended; now retries after 5s instead. Same fail-open class of bug also existed in the PIN-screen's own expiry recheck (_showLockMsg's onExpire called generic checkLock(), whose localStorage fallback can't help at this exact boundary since the locally-stored target has by definition already passed) — fixed proactively with a dedicated _pinLockRecheck() that also retries on failure instead of defaulting to unlocked. Also added the missing t2s_uat_unlock_req_for cleanup to the disabled-account logout list. mm:ss display, 1s ticks, 'pagehide' listener clears the interval on any navigation away, request-unlock button resets its stale disabled state on a fresh plain-lock render. Also: processSetupPin() shows a specific message when the server rejects a post-reset setup attempt from an unregistered device (see server.js same-date tag, checkpoint pin_reset_device_lock). Rollback: restore the pre-20261029 checkLock()/checkMobile() (static once-rendered text, no shared engine, no module-level helpers, no pagehide listener, no t2s_uat_unlock_req_for), revert verifyPin()'s d.locked branch to its own inline text, remove _lockIv from the top-of-script let declaration, revert processSetupPin()'s error-message line to drop the deviceNotRegistered branch. -->
@@ -332,10 +333,10 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
       <div style="background:#f3f0f8;border-radius:12px;padding:14px;margin-bottom:18px;font-size:0.82rem;line-height:1.8;color:#1a2030;">
         <div>✅ Free access to paid trade alerts</div>
         <div>✅ Full analysis &amp; follow-ups</div>
-        <div>✅ Active as long as you stay engaged</div>
+        <div style="margin:4px 0;padding:5px 9px;border-radius:8px;border:1px solid #FF6F00;background:#fff7ed;color:#c2410c;font-weight:800;">⚡ Active only as long as you stay engaged</div>
         <div id="intro-inact-line" style="color:#9ca3af;">⚠️ Access is removed if you stay inactive</div>
       </div>
-      <button id="intro-continue-btn" onclick="showScreen('screen-dos-donts')" class="submit-btn">Continue →</button>
+      <button id="intro-continue-btn" onclick="_introContinue()" class="submit-btn">Continue →</button>
     </div>
   </div>
 </div>
@@ -376,11 +377,11 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 <div class="screen hidden" id="screen-register">
   <div class="page-wrap">
     <div class="form-card" style="margin-top:16px;">
-      <button onclick="showScreen('screen-dos-donts')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
+      <button id="reg-back-btn" onclick="showScreen('screen-dos-donts')" style="background:none;border:none;font-size:0.88rem;font-weight:700;color:#4a2a78;cursor:pointer;padding:0 0 14px;font-family:inherit;display:flex;align-items:center;gap:4px;">← Back</button>
       <div class="form-title" style="margin-bottom:4px;">Request Access</div>
       <div class="form-sub" style="margin-bottom:14px;">Limited access — T2Sview will review your request</div>
       <div style="background:#f0f4ff;border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:0.83rem;color:#4a2a78;font-weight:600;">📱 +91 <span id="reg-mobile-display" style="font-weight:800;"></span></div>
-      <label class="input-label">Your Name *</label>
+      <label class="input-label" id="reg-name-label">Your Name *</label>
       <input id="reg-name-input" type="text" placeholder="Enter your full name" maxlength="60" oninput="_checkRegEnable()"
         style="width:100%;padding:12px 13px;border:1.5px solid #e5e0f0;border-radius:10px;font-size:0.9rem;font-family:inherit;color:#1a2030;background:#f9f8fc;outline:none;margin-bottom:14px;">
       <div style="background:#fff5f5;border:2px solid #dc2626;border-radius:10px;padding:12px;margin-bottom:14px;">
@@ -427,12 +428,36 @@ function _introInactive(on){
   if(msg){if(on){msg.textContent=_inactRemovedText()+' You can apply again below.';msg.style.display='block';}else{msg.style.display='none';}}
   if(btn)btn.textContent=on?'Apply again →':'Continue →';
 }
+// stage3b — Apply again with consent only: removed for inactivity within reapply_days (setting,
+// default 30, calendar days) → skip the rules screen and the name field (name kept from the
+// previous request, never shown on screen); the SEBI consent tick is always asked again.
+let _actReapplyDays=30,_quickReapply=null;
+function _quickReapplySet(req){
+  _quickReapply=null;
+  if(req&&req.reviewed_at&&typeof req.name==='string'&&req.name.trim()){
+    const age=(Date.now()-new Date(req.reviewed_at).getTime())/86400000;
+    if(age>=0&&age<=_actReapplyDays)_quickReapply={name:req.name.trim().slice(0,60)};
+  }
+  const lbl=document.getElementById('reg-name-label'),inp=document.getElementById('reg-name-input'),back=document.getElementById('reg-back-btn');
+  if(lbl)lbl.style.display=_quickReapply?'none':'';
+  if(inp)inp.style.display=_quickReapply?'none':'';
+  if(back)back.setAttribute('onclick',_quickReapply?"showScreen('screen-intro')":"showScreen('screen-dos-donts')");
+}
+function _introContinue(){
+  if(_quickReapply){
+    const inp=document.getElementById('reg-name-input');if(inp)inp.value=_quickReapply.name;
+    if(typeof _checkRegEnable==='function')_checkRegEnable();
+    showScreen('screen-register');return;
+  }
+  showScreen('screen-dos-donts');
+}
 function _actEsc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 (function _actLoadStatus(){
   fetch(`${_VM}/uat-activity-status`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null).then(j=>{
     if(!j)return;
     if(Number.isInteger(j.idle_minutes)&&j.idle_minutes>0){try{localStorage.setItem('t2s_uat_idle_min',String(j.idle_minutes));}catch(e){}}
     if(Number.isInteger(j.remove_days)&&j.remove_days>0)_actRemoveDays=j.remove_days;
+    if(Number.isInteger(j.reapply_days)&&j.reapply_days>0)_actReapplyDays=j.reapply_days;
     const line=document.getElementById('intro-inact-line');if(!line)return;
     const list=(Array.isArray(j.activities)?j.activities:[]).filter(x=>typeof x==='string'&&x).map(_actEsc);
     let html=`⚠️ Removed after ${_actMd(_actRemoveDays)} without activity (weekends and market holidays don't count)`;
@@ -639,7 +664,7 @@ async function checkMobile(){
   try{
     const mobile='+91'+inp;
     const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash,free_access,free_access_blocked`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!members||members.length===0){_introInactive(false);currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';document.getElementById('reg-msg').style.display='none';showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');return;}
+    if(!members||members.length===0){_introInactive(false);_quickReapplySet(null);currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';document.getElementById('reg-msg').style.display='none';showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');return;}
     const member=members[0];
     if(member.status==='disabled'){errEl.textContent='Your account is suspended. Contact @T2Sview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
@@ -676,9 +701,10 @@ async function checkMobile(){
     if(member.tier !== 'paid' && !member.free_access){
       if(member.free_access_blocked){errEl.textContent='Your access has been blocked. Contact @T2Sview on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
       // C3: check request status — pending stays on pending screen; rejected/none → re-apply
-      const _latestReq=await sbFetch(`access_requests?member_id=eq.${member.id}&order=created_at.desc&limit=1&select=status,block_reason`,{method:'GET',headers:{'Accept':'application/json'}}).catch(()=>[]); // activity_stage3: + block_reason
+      const _latestReq=await sbFetch(`access_requests?member_id=eq.${member.id}&order=created_at.desc&limit=1&select=status,block_reason,name,reviewed_at`,{method:'GET',headers:{'Accept':'application/json'}}).catch(()=>[]); // activity_stage3: + block_reason; stage3b: + name, reviewed_at
       const _reqStatus=_latestReq&&_latestReq[0]?_latestReq[0].status:null;
       _introInactive(_reqStatus==='blocked'&&_latestReq[0].block_reason==='inactivity'); // activity_stage3: "Apply again" after an inactivity removal
+      _quickReapplySet(_reqStatus==='blocked'&&_latestReq[0].block_reason==='inactivity'?_latestReq[0]:null); // stage3b
       if(_reqStatus==='pending'){
         localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');
         showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-pending');
