@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261115-002 | uat.html: sesscheck — on app open and whenever the app comes back on screen, checks that THIS device is still logged in (sessions row); only a clear 'all rows inactive' answer sends it to the login page ('device removed' message); errors never log out; limited visitors skipped. Fixes: admin 'Log out all devices' not kicking a backgrounded/closed app. Rollback: restore uat.html.bak_20261115_pre_sesscheck. -->
 <!-- T2S-UAT-20261115-001 | uat.html: stage3b — (1) logout() waits (max 3s) for the session-inactive update before leaving the page (it was being cancelled, leaving devices "active" and members hitting the 2-device limit). (2) Inactivity notice reworded: "No activity for N market days. Use the app within the next market day(s) to keep your access. What counts? …more" (full list + not-counted note behind …more). (3) "⚡ Active only as long as you stay engaged" highlighted on the Limited Free Access screen. Rollback: restore uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | uat.html: activity_stage3 — (1) time-spent fix: going out of view records tab_time once + session_end (no duration) and restarts the timer; coming back restarts it + session_start; session_start at open names the restored tab. (2) Idle logout minutes from server setting (default 120, was 30); also on reopen (last touch or login time, checked before refresh); reason "idle"; stale last_active cleared. (3) notice strip after inactivity_notice_days full market days (default 3; removal after 5) for approved members (from /uat-activity-status; hides after a real action; closing it is not activity) with short "to stay active" list + …more (list from DB); same rule line on the in-app Limited Free Access screen (was a fixed "72 hours"). (4) Removed after inactivity (newest request blocked/inactivity) → logout with reason "inactive", at open and via realtime; read error → stay. Admin "Remove access" unchanged. Rollback: restore uat.html.bak_20261112_pre_stage3. -->
 <!-- T2S-UAT-20261112-001 | uat.html: activity_stage2 — activity now goes ONLY to the UAT door /uat-track-event (the shared /track-event that wrote into the production table is no longer called). Member pass identifies members; limited users send their device id. Real actions sent at once, time records batched, unsent kept (max 100, localStorage t2s_uat_act_queue) and retried; 401 keeps real actions until next login. Recorded: like/unlike (after save), share_post/share_app (only when the share completed or link copied — ShareGuard.trigger now returns true/false), tab_switch / refresh / Telegram links / open trade / follow-ups via one capture click listener (real taps only, isTrusted), premium popup open, notifications turned on, request access open/submitted (old names mapped), session start/end + tab time. Limited users: /uat-visitor-ping on open + every 5 min. A device with an active 24h 'app' block sees 'Access not available. Contact @T2Sview' instead of limited mode (checked first in init). Rollback: restore uat.html.bak_20261112_pre_stage2. -->
@@ -3190,6 +3191,27 @@
         if (reason) localStorage.setItem('t2s_uat_logout_reason', reason);
         window.location.href = 'login.html';
     }
+    // sesscheck (2026-11-15) — the live signal above is missed if the app was in the background
+    // or closed when this device was logged out (e.g. admin "Log out all devices"). So on app open
+    // and whenever it comes back on screen, ask once: is this device still logged in?
+    // Only a clear answer "this device's rows are all logged out" acts; errors never log out.
+    // Limited (no-login) visitors are skipped.
+    let _sessCheckBusy = false;
+    async function _sessSelfCheck() {
+        if (_sessCheckBusy || _rtRedirecting) return;
+        if (localStorage.getItem('t2s_uat_mode') === 'free') return;
+        if (localStorage.getItem('t2s_uat_request_pending') === '1') return; // waiting for approval — no login yet (Codex 2026-11-15)
+        const mid = localStorage.getItem('t2s_uat_member_id');
+        const did = localStorage.getItem('t2s_uat_device_id');
+        if (!mid || !did || !/^[0-9a-f-]{36}$/i.test(mid) || !/^[A-Za-z0-9_-]{1,100}$/.test(did)) return;
+        _sessCheckBusy = true;
+        try {
+            const rows = await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${encodeURIComponent(did)}&select=is_active`, { method: 'GET' });
+            if (Array.isArray(rows) && rows.length && rows.every(r => r && r.is_active === false)) _rtRefetchMemberAndAct(true);
+        } catch (_) { /* check failed — never log out on an error */ }
+        finally { _sessCheckBusy = false; }
+    }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') _sessSelfCheck(); });
     async function _rtRefetchMemberAndAct(deviceRemovedFallback) {
         if (_rtRedirecting) return;
         const _rtMid = localStorage.getItem('t2s_uat_member_id');
@@ -5768,6 +5790,7 @@
                 }
                 if (await _inactRemovedCheck(members[0], memberId)) { _inactLogout(memberId); return; } // activity_stage3
                 window._cachedMember = members[0];
+                _sessSelfCheck(); // sesscheck: this device logged out while the app was closed → login page (runs in background)
                 // Render tier chip immediately — before any tab fetch completes
                 _renderMemberChip(members[0]);
                 // Silent last_seen ping — feeds free-access inactivity monitor
