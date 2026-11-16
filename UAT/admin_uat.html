@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261116-002 | admin_uat.html: audit_triggers — Approve / Reject / Block (member sheet + request card) / Unblock no longer send their own history note (audit_log POST); the database writes it in the same step via triggers (UAT/sql/20261116_audit_triggers.sql, must be run first). Why: one Block note was lost on the way on 16 Nov 10:21 IST. Buttons, toasts and all other behaviour unchanged. Rollback: restore admin_uat.html.bak_20261116_pre_auditdb (and drop the 2 triggers, else notes are doubled). -->
 <!-- T2S-UAT-20261116-001 | admin_uat: sweep_logout — Block (Members tab + request card 'Block number') also logs the member out on every device (sessions is_active:false via the existing admin door), so an open app reacts even if the live signal is missed; toast notes if that step failed. Remove access unchanged (moves member to limited view, no logout). Rollback: restore admin_uat.html.bak_20261116_pre_sweeplogout. -->
 <!-- T2S-UAT-20261115-004 | admin_uat: devlist2 — member sheet logout button shows only when useful: logged-in devices → '📴 Log out all devices'; none logged in but old never-closed rows → 'Not logged in on any device' + '🧹 Clear old devices' (live server's 2-device limit still counts them); none → no button; read error → button shown. Rollback: restore admin_uat.html.bak_20261115_pre_devlist2. -->
 <!-- T2S-UAT-20261115-003 | admin_uat: devlist — member detail sheet shows 'Logged-in devices ⓘ' (📱/💻 · last seen X ago): sessions not logged out and seen within the auto-logout time (idle setting, max 24h), read-only calls when the sheet opens, stale-reply guard. Rollback: restore admin_uat.html.bak_20261115_pre_devlist. -->
@@ -2010,11 +2011,9 @@ async function actionRequestDirect(requestId, memberId, action) {
                 sbPatch(`members?id=eq.${memberId}`, { free_access: true, status: 'enabled' })
             ]);
             showToast('✅ Approved — free access granted');
-            sbPost('audit_log', { event_type: 'access_approved', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         } else if (action === 'reject') {
             await sbPatch(`access_requests?id=eq.${requestId}`, { status: 'rejected', last_rejected_at: new Date().toISOString(), reviewed_at: new Date().toISOString() }); // activity_stage2: + when
             showToast('❌ Request rejected');
-            sbPost('audit_log', { event_type: 'access_rejected', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         } else if (action === 'block_number') {
             await Promise.all([
                 sbPatch(`access_requests?id=eq.${requestId}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'person' }), // activity_stage2: + when/why
@@ -2022,7 +2021,6 @@ async function actionRequestDirect(requestId, memberId, action) {
             ]);
             const _devErr = await _mgLogoutDevices(memberId); // sweep_logout
             showToast('🚫 Number blocked — member cannot request again' + (_devErr ? ' (devices not logged out: ' + _devErr + ')' : ''));
-            sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         }
         loadAccessRequests('pending');
         if (allMembers.length) loadMembers(); // checkpoint manage_stage1 — keep the Members list in step
@@ -2090,7 +2088,6 @@ async function memberBlock(memberId, fallbackLabel) {
     try {
         const req = await _mgLatestRequest(memberId);
         if (req) await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'person' }); // activity_stage2: always stamp when/why
-        sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: req ? req.id : null, member_id: memberId } }).catch(()=>{});
         showToast('🚫 Member blocked' + _devNote);
     } catch(e) { showToast('🚫 Member blocked (request list not updated: ' + e.message + ')' + _devNote); }
     closeDetail();
@@ -2107,7 +2104,6 @@ async function memberUnblock(memberId, fallbackLabel) {
     try {
         const req = await _mgLatestRequest(memberId);
         if (req) await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'approved', reviewed_at: new Date().toISOString(), block_reason: null }); // activity_stage2
-        sbPost('audit_log', { event_type: 'access_unblocked', event_data: { request_id: req ? req.id : null, member_id: memberId } }).catch(()=>{});
         showToast('✅ Member unblocked — access restored');
     } catch(e) { showToast('✅ Member unblocked (request list not updated: ' + e.message + ')'); }
     closeDetail();
