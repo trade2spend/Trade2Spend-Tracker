@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261116-002 | uat.html: tglink — 4 plain-text "Contact @T2Sview" messages (suspended x2, device restricted, blocked) in the in-app login/apply form now show @T2Sview as a tappable link to https://t.me/T2Sview (same style as the existing lockout links). Fixed text only, no member data. Rollback: restore uat.html.bak_20261116_pre_tglink. -->
 <!-- T2S-UAT-20261116-001 | uat.html: sweep_logout — when this device is found logged out, the inactivity-removal check now runs before the 'device removed' fallback, so a member removed for inactivity sees the inactivity message + Apply again. Rollback: restore uat.html.bak_20261116_pre_sweeplogout. -->
 <!-- T2S-UAT-20261115-003 | uat.html: sesscheck2 — live signal seen to drop at admin logout, so the device check also runs on window focus, right after the live connection (re)subscribes, on the existing 5-min last-seen update when it finds no logged-in row (no new timer — owner 2026-11-15), and at app open in parallel with the member read and BEFORE the app loads (no logged-in flash). Rollback: restore uat.html.bak_20261115_pre_sesscheck2. -->
 <!-- T2S-UAT-20261115-002 | uat.html: sesscheck — on app open and whenever the app comes back on screen, checks that THIS device is still logged in (sessions row); only a clear 'all rows inactive' answer sends it to the login page ('device removed' message); errors never log out; limited visitors skipped. Fixes: admin 'Log out all devices' not kicking a backgrounded/closed app. Rollback: restore uat.html.bak_20261115_pre_sesscheck. -->
@@ -1474,7 +1475,7 @@
             if (members && members[0]) {
                 const { status, id: _faMid } = members[0];
                 // Disabled account — block immediately
-                if (status === 'disabled') { hint.style.color='#dc2626'; hint.textContent='This account is suspended. Contact @T2Sview on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
+                if (status === 'disabled') { hint.style.color='#dc2626'; hint.innerHTML='This account is suspended. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
                 // Registered member — fetch pin_hash and show inline PIN entry
                 const _faFull = await sbFetch(`members?id=eq.${_faMid}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
                 const _faMember = (_faFull && _faFull[0]) ? _faFull[0] : members[0];
@@ -1546,7 +1547,7 @@
                 const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier,pin_hash`, { method: 'GET' });
                 if (members && members[0]) {
                     const m = members[0];
-                    if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This account is suspended. Contact @T2Sview on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
+                    if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This account is suspended. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
                     // Registered member — show inline PIN entry
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                     // Fetch free_access for correct mode setting after login
@@ -1573,7 +1574,7 @@
             // Check if this device has been blocked by admin
             const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
             if (_devBlk && _devBlk.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='This device has been restricted. Contact @T2Sview on Telegram.'; }
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This device has been restricted. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                 return;
             }
@@ -1603,7 +1604,7 @@
                     }
                 }
                 if (lr.status === 'blocked') {
-                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Your account is blocked. Contact @T2Sview on Telegram.'; }
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='Your account is blocked. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                     return;
                 }
