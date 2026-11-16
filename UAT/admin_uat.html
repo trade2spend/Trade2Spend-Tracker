@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261116-001 | admin_uat: sweep_logout — Block (Members tab + request card 'Block number') also logs the member out on every device (sessions is_active:false via the existing admin door), so an open app reacts even if the live signal is missed; toast notes if that step failed. Remove access unchanged (moves member to limited view, no logout). Rollback: restore admin_uat.html.bak_20261116_pre_sweeplogout. -->
 <!-- T2S-UAT-20261115-004 | admin_uat: devlist2 — member sheet logout button shows only when useful: logged-in devices → '📴 Log out all devices'; none logged in but old never-closed rows → 'Not logged in on any device' + '🧹 Clear old devices' (live server's 2-device limit still counts them); none → no button; read error → button shown. Rollback: restore admin_uat.html.bak_20261115_pre_devlist2. -->
 <!-- T2S-UAT-20261115-003 | admin_uat: devlist — member detail sheet shows 'Logged-in devices ⓘ' (📱/💻 · last seen X ago): sessions not logged out and seen within the auto-logout time (idle setting, max 24h), read-only calls when the sheet opens, stale-reply guard. Rollback: restore admin_uat.html.bak_20261115_pre_devlist. -->
 <!-- T2S-UAT-20261115-002 | admin_uat: sesscheck — 'Log out all devices' and 'Reset PIN' close the member sheet before showing the ✅ message (it was hidden behind the sheet); 'Log out all devices' failure now shows a pop-up. Rollback: restore admin_uat.html.bak_20261115_pre_sesscheck. -->
@@ -2019,7 +2020,8 @@ async function actionRequestDirect(requestId, memberId, action) {
                 sbPatch(`access_requests?id=eq.${requestId}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'person' }), // activity_stage2: + when/why
                 sbPatch(`members?id=eq.${memberId}`, { free_access_blocked: true })
             ]);
-            showToast('🚫 Number blocked — member cannot request again');
+            const _devErr = await _mgLogoutDevices(memberId); // sweep_logout
+            showToast('🚫 Number blocked — member cannot request again' + (_devErr ? ' (devices not logged out: ' + _devErr + ')' : ''));
             sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: requestId, member_id: memberId } }).catch(()=>{});
         }
         loadAccessRequests('pending');
@@ -2067,6 +2069,15 @@ function _mgSetLocal(memberId, patch) {
     _mgmtRerender();
 }
 
+// sweep_logout (2026-11-16, owner) — Block also logs the member out on every device, so an open app
+// reacts through the device triggers (live signal / 5-min last-seen update / check on open or return)
+// even when the live signal for the member row is missed. Returns '' or the error text.
+async function _mgLogoutDevices(memberId) {
+    if (!/^[0-9a-f-]{36}$/i.test(String(memberId || ''))) return 'bad id';
+    try { await sbFetch(`sessions?member_id=eq.${memberId}`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }); return ''; }
+    catch (e) { return e.message || 'error'; }
+}
+
 async function memberBlock(memberId, fallbackLabel) {
     if (!confirm(`Block ${_mgLabel(memberId, fallbackLabel)}?\n\nThey lose access and are logged out immediately. You can unblock them later from Members → Blocked.`)) return;
     const patch = { free_access: false, free_access_blocked: true };
@@ -2074,12 +2085,14 @@ async function memberBlock(memberId, fallbackLabel) {
         await sbPatch(`members?id=eq.${memberId}`, patch);
     } catch(e) { showToast('❌ ' + e.message); return; }
     _mgSetLocal(memberId, patch);
+    const _devErr = await _mgLogoutDevices(memberId); // sweep_logout
+    const _devNote = _devErr ? ' (devices not logged out: ' + _devErr + ')' : '';
     try {
         const req = await _mgLatestRequest(memberId);
         if (req) await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'person' }); // activity_stage2: always stamp when/why
         sbPost('audit_log', { event_type: 'number_blocked', event_data: { request_id: req ? req.id : null, member_id: memberId } }).catch(()=>{});
-        showToast('🚫 Member blocked');
-    } catch(e) { showToast('🚫 Member blocked (request list not updated: ' + e.message + ')'); }
+        showToast('🚫 Member blocked' + _devNote);
+    } catch(e) { showToast('🚫 Member blocked (request list not updated: ' + e.message + ')' + _devNote); }
     closeDetail();
     _mgAfterAccessChange();
 }
