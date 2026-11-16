@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261116-001 | uat.html: sweep_logout — when this device is found logged out, the inactivity-removal check now runs before the 'device removed' fallback, so a member removed for inactivity sees the inactivity message + Apply again. Rollback: restore uat.html.bak_20261116_pre_sweeplogout. -->
 <!-- T2S-UAT-20261115-003 | uat.html: sesscheck2 — live signal seen to drop at admin logout, so the device check also runs on window focus, right after the live connection (re)subscribes, on the existing 5-min last-seen update when it finds no logged-in row (no new timer — owner 2026-11-15), and at app open in parallel with the member read and BEFORE the app loads (no logged-in flash). Rollback: restore uat.html.bak_20261115_pre_sesscheck2. -->
 <!-- T2S-UAT-20261115-002 | uat.html: sesscheck — on app open and whenever the app comes back on screen, checks that THIS device is still logged in (sessions row); only a clear 'all rows inactive' answer sends it to the login page ('device removed' message); errors never log out; limited visitors skipped. Fixes: admin 'Log out all devices' not kicking a backgrounded/closed app. Rollback: restore uat.html.bak_20261115_pre_sesscheck. -->
 <!-- T2S-UAT-20261115-001 | uat.html: stage3b — (1) logout() waits (max 3s) for the session-inactive update before leaving the page (it was being cancelled, leaving devices "active" and members hitting the 2-device limit). (2) Inactivity notice reworded: "No activity for N market days. Use the app within the next market day(s) to keep your access. What counts? …more" (full list + not-counted note behind …more). (3) "⚡ Active only as long as you stay engaged" highlighted on the Limited Free Access screen. Rollback: restore uat.html.bak_20261115_pre_stage3b. -->
@@ -3270,9 +3271,12 @@
             _rtRedirectToLogin(null);
             return;
         }
-        if (deviceRemovedFallback) { _rtRedirectToLogin('device_removed'); return; }
-        // activity_stage3 — access removed after the inactivity period → log out with the message
+        // activity_stage3 — access removed after the inactivity period → log out with the message.
+        // sweep_logout (2026-11-16): checked BEFORE the device-removed fallback — the removal now also
+        // logs the devices out, and the member must see the inactivity message, not "device removed".
         if (await _inactRemovedCheck(m, _rtMid)) { if (_rtRedirecting) return; _rtRedirecting = true; _inactLogout(_rtMid); return; }
+        if (_rtRedirecting) return;
+        if (deviceRemovedFallback) { _rtRedirectToLogin('device_removed'); return; }
         if (_rtRedirecting) return;
         // Nothing wrong — normal background refresh, not a redirect
         window._cachedMember = Object.assign(window._cachedMember || {}, m);
