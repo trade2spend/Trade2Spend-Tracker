@@ -1,3 +1,5 @@
+// DEPLOY: T2S-UAT-20261117-001 | server.js: activity_stage4 — UAT-ONLY: /uat-admin-sb may call two READ-ONLY UAT DB functions for the admin Activity screen: rpc/activity_overview {p_days 1|7|15} and rpc/activity_list {p_metric, p_days, p_key?} (strict shapes; functions locked from the public key; needs UAT/sql/20261117_activity_screen.sql). No table access added. Prod routes unchanged. Rollback: remove the two 'rpc/activity_*' entries from _UAT_ADMIN_RULES.
+// DEPLOY: T2S-UAT-20261115-001 | server.js: stage3b — UAT-ONLY: (1) checkpoint session_24h: /uat-setup-pin and /uat-verify-pin count only sessions used in the last 24h toward the 2-device limit (initial check + recheck, both routes, via _uatFreshActiveSessions); this member's older (or no-timestamp) is_active rows are marked inactive first (best effort), also after a normal login on an already-registered device. (2) /uat-activity-status adds reapply_days (setting reapply_quick_days, default 30). Prod routes unchanged. Rollback: restore server.js.bak_20261115_pre_stage3b.
 // DEPLOY: T2S-UAT-20261112-003 | server.js: activity_stage3 — UAT-ONLY: (1) savePass also calls DB rpc activity_clock_start (inactivity clock starts at a real PIN login for approved free members; login is not activity). (2) POST /uat-activity-status {token?}: settings numbers + member-facing activity list for anyone; own market days without activity (rpc activity_member_status) for a valid member pass. (3) Inactivity check every inactivity_check_minutes (DB setting) → rpc activity_inactivity_sweep on the UAT DB; counts FULL market days (Mon-Fri, not in market_holidays), default 5; pauses if the year's holiday list is missing. (3b) NEW OUTBOUND CALL (owner-approved 2026-11-12): read-only GET nseindia.com/api/holiday-master once a day from 15 Dec (next year) or when the current year is missing; saved to market_holidays; Telegram note via tgSend. (4) /uat-track-event reply adds engaged:true|false. Needs UAT/sql/20261112_activity_timers.sql. Prod routes, prod checkFreeAccessInactivity, /track-event, door rules unchanged. Rollback: restore server.js.bak_20261112_pre_stage3.
 // DEPLOY: T2S-UAT-20261112-001 | server.js: activity_stage2 — UAT-ONLY additions: (1) _makeActivity(env) activity recorder (env = UAT DB now; same code wired to prod at release): member pass resolved server-side (in-memory, else hashed row in uat_auth_tokens) with fresh enabled/PIN/blocked/active-session checks (60s cache); action list + engagement flag from activity_actions table (5-min cache); details whitelisted; rate limits per IP and per member/device; 24h 'app' device blocks ignored; engagement sets member_activity_state.last_activity_at (server time). (2) Routes POST /uat-track-event and /uat-visitor-ping (503 without UAT private key). (3) Member pass hash also saved on /uat-verify-pin and /uat-setup-pin (fire-and-forget; login unchanged). (4) Nightly 04:30 IST rpc activity_nightly on the UAT DB. (5) /uat-admin-sb rules: access_requests reviewed_at/block_reason, audit access_unblocked, device_blocks scope/blocked_until (<=30 days), read-only activity tables. Prod routes, /track-event, /uat-member-sb and /uat-sb unchanged. Rollback: restore server.js.bak_20261112_pre_stage2.
 // DEPLOY: T2S-UAT-20261110-001 | server.js: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved plan 2026-11-10). NEW UAT-only routes /uat-admin-verify-pin, /uat-admin-pub (lock_status), /uat-admin-sb (admin data door, exact action/field rules). UAT DB only, via new env UAT_SUPABASE_SERVICE_KEY (no anon fallback; all three routes return 503 until it is set). UAT admin passes stored hashed in uat_auth_tokens (8h, max 2 devices, never accepted by prod routes). Admin list, PIN hash and lock live only in the locked uat_admins table (no anon access). No public set-PIN route in UAT: owner sets/resets the UAT PIN hash in the UAT DB (hash made locally with Trading_Bot/make_uat_admin_pin_hash.cjs). No Telegram from UAT. Existing /uat-sb now strips pin_hash/admin_pin_hash from every reply. Prod routes, prod admin PIN routes, _issueAdminToken, _executeSecretValid, /prod-sb untouched. Needs UAT SQL UAT/sql/20261110_uat_admin_login.sql before use. Rollback: restore server.js.bak_20261110_pre_uat_admin.
@@ -810,6 +812,17 @@ async function sbFetchUat(path, opts = {}) {
   return text ? JSON.parse(text) : [];
 }
 
+// checkpoint session_24h (2026-11-15) — UAT only. A device counts toward the 2-device limit only
+// if it was used in the last 24 hours (the member pass also lasts 24h and the app forces a fresh
+// login after 24h, so an older device cannot be in use). Older "active" rows for THIS member are
+// marked inactive first (best effort; if that fails, they are still not counted).
+async function _uatFreshActiveSessions(memberId) {
+  const cutoff = encodeURIComponent(new Date(Date.now() - 24 * 3600000).toISOString());
+  // A row with no last-used time is treated as old too (Codex 2026-11-15).
+  try { await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&or=(last_active.lt.${cutoff},last_active.is.null)`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }); } catch (e) {}
+  return sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&last_active=gte.${cutoff}&select=id`);
+}
+
 // ── UAT ADMIN LOGIN (checkpoint uat_admin_login, 2026-11-10) ─────────────────────────
 // UAT-only admin PIN login, admin pass and admin data door. Reads/writes the UAT DB only,
 // via UAT_SB_SVC_KEY — never the prod DB, never the public anon key. Prod admin routes
@@ -1042,7 +1055,7 @@ function _makeActivity(env) {
     const remove = num('inactivity_remove_days', 5);
     let notice = num('inactivity_notice_days', 3);
     if (notice >= remove) notice = Math.max(1, remove - 1);
-    settings = { idle_minutes: num('idle_logout_minutes', 120), remove_days: remove, notice_days: notice, check_minutes: num('inactivity_check_minutes', 15) };
+    settings = { idle_minutes: num('idle_logout_minutes', 120), remove_days: remove, notice_days: notice, check_minutes: num('inactivity_check_minutes', 15), reapply_days: num('reapply_quick_days', 30) };
     settingsAt = Date.now();
     return settings;
   }
@@ -1060,7 +1073,7 @@ function _makeActivity(env) {
   async function status(body, ip) {
     if (!rateOk('st:' + ip, 120)) return { status: 429, out: { ok: false } };
     const s = await getSettings();
-    const out = { ok: true, idle_minutes: s.idle_minutes, notice_days: s.notice_days, remove_days: s.remove_days, activities: await getHints() };
+    const out = { ok: true, idle_minutes: s.idle_minutes, notice_days: s.notice_days, remove_days: s.remove_days, reapply_days: s.reapply_days, activities: await getHints() };
     if (body && body.token) {
       const who = await resolvePass(body.token);
       if (who) {
@@ -1232,6 +1245,17 @@ const _UAT_ADMIN_RULES = {
   activity_daily: { GET: true },
   activity_hourly: { GET: true },
   visitor_pings: { GET: true },
+  // activity_stage4 (2026-11-17) — Activity screen: two READ-ONLY database functions that count and
+  // list (no table access added). Only the period (1/7/15) and fixed-shape names/keys pass; the
+  // functions themselves also refuse anything else and are locked from the public key.
+  'rpc/activity_overview': { POST: { filter: [], required: ['p_days'], fields: {
+    p_days: v => v === 1 || v === 7 || v === 15,
+  } } },
+  'rpc/activity_list': { POST: { filter: [], required: ['p_metric', 'p_days'], fields: {
+    p_metric: v => typeof v === 'string' && /^[a-z0-9_]{2,40}$/.test(v),
+    p_days: v => v === 1 || v === 7 || v === 15,
+    p_key: v => typeof v === 'string' && /^[A-Za-z0-9_:-]{1,100}$/.test(v),
+  } } },
   feature_flags: {
     GET: q => q.get('key') === 'eq.free_access_requests_enabled',
     PATCH: { filter: [['key', 'free_access_requests_enabled']], fields: { value: _uatIsBool, updated_at: _uatIsIso } },
@@ -6149,7 +6173,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           // Moved BEFORE the pin_hash write (checkpoint pin_reset_device_lock) — this used to
           // run AFTER the PIN was already saved, so a limitReached rejection left the member
           // with no PIN and no way to retry setup. Now nothing is written until every check passes.
-          const allActive = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+          const allActive = await _uatFreshActiveSessions(memberId); // session_24h
           if (allActive && allActive.length >= 2) { res.end(JSON.stringify({ success: false, limitReached: true })); return; }
 
           const newHash = bcrypt.hashSync(pin, 10);
@@ -6166,7 +6190,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           } else {
             await sbFetchUat('sessions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, device_type: deviceType, device_name: 'Unknown', is_active: true, last_active: nowIso }) });
           }
-          const recheck = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+          const recheck = await _uatFreshActiveSessions(memberId); // session_24h
           if (recheck && recheck.length > 2) {
             await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
             res.end(JSON.stringify({ success: false, limitReached: true })); return;
@@ -6217,8 +6241,9 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           }
           if (isRegisteredDevice) {
             await sbFetchUat(`sessions?id=eq.${registeredRow.id}`, { method: 'PATCH', body: JSON.stringify({ last_active: nowIso, failed_attempts_today: 0, locked_until: null }) });
+            _uatFreshActiveSessions(memberId).catch(() => {}); // session_24h: also tidy this member's old rows (this device was just refreshed)
           } else {
-            const allActive = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+            const allActive = await _uatFreshActiveSessions(memberId); // session_24h
             if (allActive && allActive.length >= 2) { res.end(JSON.stringify({ success: false, limitReached: true })); return; }
             // registeredRow here, if present, is a dead (is_active:false) row for this exact
             // device — e.g. one that was previously locked as an unregistered device and has
@@ -6228,7 +6253,7 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             } else {
               await sbFetchUat('sessions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, device_type: deviceType, device_name: 'Unknown', is_active: true, last_active: nowIso }) });
             }
-            const recheck = await sbFetchUat(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id`);
+            const recheck = await _uatFreshActiveSessions(memberId); // session_24h
             if (recheck && recheck.length > 2) {
               await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } });
               res.end(JSON.stringify({ success: false, limitReached: true })); return;
