@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261118-001 | admin_uat.html: activity list header wording (owner-approved) — the grey line under a list title now says "As of now" for Inactive / No activity yet / Online / post opened+liked lists, "Last 15 days" for post shares, and the chosen period (Today / Last 7 days / Last 15 days) for all other lists; "max 200, newest first" → "Shows up to 200 people, latest first". Text only. Rollback: restore admin_uat.html.bak_20261118_pre_listhead. -->
 <!-- T2S-UAT-20261117-001 | admin_uat.html: activity_stage4 — Manage → Activity: period chips (Today / 7 / 15 days) and sections Right now (members + visitors online), Inactive in FULL MARKET DAYS (same counting as removal), Actions (likes, shares, premium interest, button taps), Usage (time per tab, busiest hours, phone/computer), Journey + Retention, Posts (last 20: opened/likes/shares), Health (unusual activity with 24h Block for limited devices, storage vs 500 MB). Every number taps open its list (max 200). Data only from two READ-ONLY DB functions via the UAT admin door (needs UAT/sql/20261117_activity_screen.sql + server T2S-UAT-20261117-001). Request counts at the top unchanged. Rollback: restore admin_uat.html.bak_20261117_pre_stage4. -->
 <!-- T2S-UAT-20261116-002 | admin_uat.html: audit_triggers — Approve / Reject / Block (member sheet + request card) / Unblock no longer send their own history note (audit_log POST); the database writes it in the same step via triggers (UAT/sql/20261116_audit_triggers.sql, must be run first). Why: one Block note was lost on the way on 16 Nov 10:21 IST. Buttons, toasts and all other behaviour unchanged. Rollback: restore admin_uat.html.bak_20261116_pre_auditdb (and drop the 2 triggers, else notes are doubled). -->
 <!-- T2S-UAT-20261116-001 | admin_uat: sweep_logout — Block (Members tab + request card 'Block number') also logs the member out on every device (sessions is_active:false via the existing admin door), so an open app reacts even if the live signal is missed; toast notes if that step failed. Remove access unchanged (moves member to limited view, no logout). Rollback: restore admin_uat.html.bak_20261116_pre_sweeplogout. -->
@@ -2440,6 +2441,13 @@ async function _actLoad() {
 }
 
 // List sheet behind one number.
+// List header: lists that are always "as of now" say so; the rest show the chosen period.
+// Post shares are only kept 15 days, so that list says so.
+function _actListScope(metric) {
+    if (metric === 'post_shared') return 'Last 15 days';
+    if (/^inactive_/.test(metric) || ['online_members', 'online_visitors', 'post_opened', 'post_liked'].includes(metric)) return 'As of now';
+    return _actDays === 1 ? 'Today' : `Last ${_actDays} days`;
+}
 async function _actOpenList(metric, key, title) {
     if (!/^[a-z0-9_]{2,40}$/.test(String(metric))) return;
     if (key != null && !_ACT_KEY_OK.test(String(key))) return;
@@ -2454,7 +2462,7 @@ async function _actOpenList(metric, key, title) {
     ov.style.display = 'flex';
     const top = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><b style="font-size:14px;">${_actEsc(title)}</b>
         <button onclick="_actCloseList()" style="border:none;background:var(--bg3);border-radius:8px;padding:4px 10px;cursor:pointer;">✕</button></div>
-        <div style="font-size:11px;color:var(--muted2);margin-bottom:6px;">${_actEsc(_actPeriodText())} · max 200, newest first</div>`;
+        <div style="font-size:11px;color:var(--muted2);margin-bottom:6px;">${_actEsc(_actListScope(metric))} · Shows up to 200 people, latest first</div>`;
     const box = c => `<div style="background:var(--bg2);width:100%;max-width:480px;max-height:75vh;overflow-y:auto;border-radius:14px 14px 0 0;padding:14px;">${top}${c}</div>`;
     ov.innerHTML = box('<div style="color:var(--muted2);font-size:12px;">Loading…</div>');
     const body = { p_metric: metric, p_days: _actDays };
