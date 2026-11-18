@@ -2514,6 +2514,36 @@ async function refreshActiveContracts() {
       const action = actionMatch ? (actionMatch[1].toUpperCase().startsWith('SELL') ? 'SELL' : 'BUY') : 'BUY';
       const expM   = t.match(/\b(NEXT\s+WEEKLY|WEEKLY|MONTHLY)\b/i);
       let expiry = resolveExpiry(expM ? expM[1] : 'Weekly', instr);
+      // For instruments with no real expiry data (individual stocks — anything outside the 5
+      // tracked indices), skip the day-of-week guess entirely and look up the real, currently-
+      // listed contract directly from the already-downloaded scrip master (same source Kotak's
+      // own search_scrip examples use — no separate fetch, no date assumption). Stocks have
+      // exactly one live monthly contract per strike (no weekly product on NSE), so an
+      // instrument+strike+type match is unambiguous. Falls through unchanged (same guessed
+      // value as before) if no match is found. Explicit whitelist check (not just "does
+      // _expiryDates[instr] exist") — guarantees this can never run for a tracked index even in
+      // the brief window right after a restart before buildExpiryDates() has populated that map.
+      // Keep this list identical to buildExpiryDates()'s own list if that one is ever changed.
+      const _SM_TRACKED_INDICES = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY', 'BANKEX'];
+      if (!_SM_TRACKED_INDICES.includes(instr)) {
+        const _smPrefix = `${instr}-${strike}-${type}-`;
+        const _smPrefixAlt = `${instr}-${strike * 100}-${type}-`; // paise-scale strike — mirrors getOptionToken's dual lookup
+        const _smMatches = Object.keys(_scripMaster).filter(k => k.startsWith(_smPrefix) || k.startsWith(_smPrefixAlt));
+        if (_smMatches.length > 0) {
+          const _MONS_SM = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+          const _todaySM = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+          _todaySM.setHours(0, 0, 0, 0);
+          const _smParsed = _smMatches.map(k => {
+            const raw = k.slice(k.lastIndexOf('-') + 1); // DDMMMYYYY suffix
+            const m = raw.match(/^(\d{2})([A-Z]{3})(\d{4})$/);
+            return { raw, ts: m ? Date.UTC(parseInt(m[3]), _MONS_SM.indexOf(m[2]), parseInt(m[1])) : NaN };
+          }).filter(x => !isNaN(x.ts) && x.ts >= _todaySM.getTime()).sort((a, b) => a.ts - b.ts);
+          if (_smParsed.length > 0) {
+            console.log(`[contracts] ${instr}-${strike}-${type}: real scrip-master expiry ${_smParsed[0].raw} found, overriding guessed ${expiry}`);
+            expiry = _smParsed[0].raw;
+          }
+        }
+      }
       // Guard: skip if resolved expiry is already in the past (expired contract — price is near-zero)
       // Format DDMMMYYYY e.g. "28JUL2026" → parse as UTC date for comparison
       // Edge case: day after expiry, Kotak scrip master currentRaw is stale → fall back to nextRaw
@@ -2895,6 +2925,12 @@ async function fetchKotakIndicesCombined() {
 // per day until it resolves (or he supplies the corrected list himself), so it can never again
 // go stale for weeks unnoticed.
 const N50_CACHE_FILE = path.join(__dirname, 'nifty50_cache.json');
+// checkpoint nifty50_cache_staleness (2026-11-15) — a count-valid (exactly 50) cache can still
+// be dangerously old: the schedule only forces a refetch on Monday/month-start, so a cache that
+// slips through those triggers (confirmed live: one sitting since 21 July, 4+ months, silently
+// treated as "fine" because the count check alone passed) would otherwise never get re-checked.
+// Slightly over a week of headroom past the weekly schedule, not a new cadence of its own.
+const N50_MAX_STALE_MS = 8 * 24 * 60 * 60 * 1000; // 8 days
 
 let _nifty50Symbols        = null;  // ['ADANIENT', 'RELIANCE', ...] — NSE trading symbols, always exactly 50
 let _nifty50SymbolsTs      = 0;     // timestamp of last confirmed-fresh list
@@ -2914,9 +2950,13 @@ function loadNifty50Cache() {
       if (Array.isArray(symbols) && symbols.length === 50) {
         _nifty50Symbols    = symbols;
         _nifty50SymbolsTs  = ts || 0;
-        _nifty50NeedsRetry = false;
-        const ageDays = Math.round((Date.now() - (ts || 0)) / 86400000);
-        console.log(`[nifty50] loaded ${symbols.length} symbols from cache (${ageDays}d old)`);
+        const ageMs  = Date.now() - (ts || 0);
+        const ageDays = Math.round(ageMs / 86400000);
+        // checkpoint nifty50_cache_staleness — count being valid doesn't mean the content is
+        // current; force an immediate retry on the very next check if this is well past due,
+        // regardless of whether today happens to be a scheduled day.
+        _nifty50NeedsRetry = ageMs > N50_MAX_STALE_MS;
+        console.log(`[nifty50] loaded ${symbols.length} symbols from cache (${ageDays}d old)${_nifty50NeedsRetry ? ' — STALE, will refetch on next check regardless of schedule' : ''}`);
       } else if (Array.isArray(symbols)) {
         console.log(`[nifty50] cache rejected — had ${symbols.length} symbols, need exactly 50; will refetch`);
       }
@@ -3023,6 +3063,157 @@ async function getNifty50Symbols() {
   } finally {
     _nifty50FetchInFlight = false;
   }
+}
+
+// checkpoint nifty50_manual_seed_20261115 — ONE-TIME manual correction. NSE's equity-stockIndices
+// endpoint returned HTTP 404 today (a non-trading Sunday) and the on-disk cache was found stuck
+// since 21 July (117 days). Tushar supplied this list directly; independently cross-checked
+// against it (exactly 50, no duplicates, BSE present, WIPRO absent, RELIANCE present) before use.
+// This only fires if the currently loaded cache predates today — it cannot re-apply after today,
+// and the normal Monday/month-start NSE schedule takes over immediately afterward, able to
+// confirm or update this list on its own on the very next scheduled check. Not a permanent
+// hardcoded list — getNifty50Symbols() still drives every refresh from this point on.
+const N50_MANUAL_SEED_DATE = new Date('2026-11-15T00:00:00Z').getTime();
+const N50_MANUAL_SEED = [
+  'EICHERMOT','HINDUNILVR','BSE','ASIANPAINT','BHARTIARTL','ITC','ONGC','BAJFINANCE','NESTLEIND',
+  'APOLLOHOSP','MAXHEALTH','RELIANCE','ETERNAL','HCLTECH','COALINDIA','SUNPHARMA','JSWSTEEL','LT',
+  'KOTAKBANK','ICICIBANK','TRENT','DRREDDY','TECHM','TATACONSUM','SBIN','TATASTEEL','POWERGRID',
+  'INFY','BAJAJ-AUTO','AXISBANK','HDFCLIFE','BEL','HDFCBANK','CIPLA','BAJAJFINSV','NTPC','INDIGO',
+  'MARUTI','ADANIPORTS','TCS','TITAN','JIOFIN','SBILIFE','ULTRACEMCO','M&M','ADANIENT','HINDALCO',
+  'GRASIM','TMPV','SHRIRAMFIN'
+];
+function applyNifty50ManualSeedIfNeeded() {
+  if (_nifty50SymbolsTs >= N50_MANUAL_SEED_DATE) return; // already current, or seed already applied — never re-fires
+  _nifty50Symbols    = N50_MANUAL_SEED;
+  _nifty50SymbolsTs  = Date.now();
+  _nifty50NeedsRetry = false;
+  _saveNifty50Cache();
+  console.log('[nifty50] manual seed applied (2026-11-15) — replaced stuck cache with Tushar-verified list');
+}
+
+// checkpoint market_data_manual_restore_20261115 — ONE-TIME restore. The weekend's forced
+// out-of-hours test fetches (/market-force) published a corrupted snapshot before the
+// gainers/losers-pairing fix existed: the same stock appeared in both arrays with two different
+// change values. This restores the last genuinely clean snapshot — Friday 13 Nov's real close,
+// pinned to the exact GitHub commit it was pushed in (never "latest", so this can't accidentally
+// pull a different file later) — rather than inventing any numbers. Only fires if the currently
+// loaded snapshot falls inside the corrupted weekend window; never re-fires once Monday's real
+// trading produces a fresh, properly-paired snapshot on its own.
+const MARKET_RESTORE_WINDOW_START = new Date('2026-11-14T00:00:00Z').getTime();
+// Upper bound is deliberate, not just the lower one — without it, this would also "restore"
+// (i.e. wrongly revert) a genuine, clean Monday snapshot once real trading resumes, since that
+// timestamp is also >= WINDOW_START. Set well before Monday's 9:15 AM IST market open.
+const MARKET_RESTORE_WINDOW_END = new Date('2026-11-16T00:00:00Z').getTime();
+const MARKET_RESTORE_PINNED_URL = 'https://raw.githubusercontent.com/Trade2spend/Trade2Spend-Tracker/d2a0392e13b136d4e9c7b36c6abf995dc271de4e/market.json';
+async function applyMarketDataManualRestoreIfNeeded() {
+  const ts = Date.parse(_latestMarketData?.lastUpdated || '') || 0;
+  if (ts < MARKET_RESTORE_WINDOW_START || ts >= MARKET_RESTORE_WINDOW_END) return; // outside the corrupted window entirely
+  try {
+    const r = await ft(MARKET_RESTORE_PINNED_URL, {}, 8000);
+    if (!r.ok) { console.error(`[market] manual restore failed: HTTP ${r.status}`); return; }
+    const clean = await r.json();
+    _latestMarketData = {
+      ..._latestMarketData,
+      gainers: clean.gainers, losers: clean.losers, breadth: clean.breadth,
+      indices: clean.indices, indexSources: clean.indexSources,
+      lastUpdated: clean.lastUpdated, dataSource: clean.dataSource
+    };
+    saveMarketSnapshotLocal(_latestMarketData);
+    console.log('[market] manual restore applied — reverted to the clean pre-weekend (13 Nov close) snapshot');
+  } catch(e) { console.error('[market] manual restore failed:', e.message); }
+}
+
+// checkpoint market_data_wipro_strip_20261115 — ONE-TIME fix, bounded by BOTH content and date.
+// The restored Friday snapshot above was itself produced by the OLD code using the stuck
+// pre-correction Nifty 50 list, so it still carries WIPRO (now confirmed removed from the real
+// index, replaced by BSE). This strips WIPRO specifically if present — it does NOT invent a BSE
+// entry, since no real BSE price was ever fetched for that day; the alternative (fabricating a
+// number) is worse than a stock being temporarily absent.
+// Codex-flagged correction: a content-only guard ("stop once WIPRO is absent") is NOT actually
+// permanent — if WIPRO ever legitimately rejoins the index in some future rebalance, this would
+// wrongly strip that real entry on every restart forever, since nothing would ever make the
+// content check see it as 'done'. The date cutoff below is what actually makes this temporary:
+// once today has passed, this function is a hard no-op regardless of what's in the data.
+const WIPRO_STRIP_EXPIRES = new Date('2026-11-20T00:00:00Z').getTime(); // a few days past Monday's real reopen — generous buffer, nowhere near the next real rebalance window (Mar/Sep)
+function stripStaleWiproIfPresent() {
+  if (Date.now() >= WIPRO_STRIP_EXPIRES) return; // expired — hard stop, independent of content
+  if (!_latestMarketData) return;
+  const inGainers = (_latestMarketData.gainers || []).some(s => s.symbol === 'WIPRO');
+  const inLosers  = (_latestMarketData.losers  || []).some(s => s.symbol === 'WIPRO');
+  if (!inGainers && !inLosers) return; // nothing to strip — permanent no-op from here on
+  if (inGainers) {
+    _latestMarketData.gainers = _latestMarketData.gainers.filter(s => s.symbol !== 'WIPRO');
+    if (_latestMarketData.breadth?.nifty50) {
+      _latestMarketData.breadth.nifty50.advancing = Math.max(0, (_latestMarketData.breadth.nifty50.advancing || 0) - 1);
+    }
+  }
+  if (inLosers) {
+    _latestMarketData.losers = _latestMarketData.losers.filter(s => s.symbol !== 'WIPRO');
+    if (_latestMarketData.breadth?.nifty50) {
+      _latestMarketData.breadth.nifty50.declining = Math.max(0, (_latestMarketData.breadth.nifty50.declining || 0) - 1);
+    }
+  }
+  saveMarketSnapshotLocal(_latestMarketData);
+  console.log('[market] stripped stale WIPRO entry from the restored snapshot (one-time, 2026-11-15)');
+}
+
+// checkpoint market_data_add_missing_bse_20261115 — ONE-TIME, narrowly-scoped. After the Wipro
+// strip above, the restored display would only have 49 real stocks (no fabricated BSE entry to
+// replace it). Tushar wants exactly 50, matching his supplied list. Rather than inventing a
+// number for BSE's Friday close (never fetched, since BSE wasn't tracked that day), this fetches
+// BSE's REAL current quote from Kotak — one targeted single-stock lookup, not a full movers
+// recompute — and adds it with its own genuinely fetched price/change. Never fabricates a
+// fallback number: if Kotak has no live session, or the scrip master hasn't resolved BSE yet, or
+// the quote call fails, this just logs and does nothing (stays at 49, not a fake 50).
+const BSE_ADD_EXPIRES = new Date('2026-11-20T00:00:00Z').getTime();
+async function addMissingBSEIfNeeded() {
+  if (Date.now() >= BSE_ADD_EXPIRES) return;
+  // Codex-flagged: this is a delayed, one-off write to _latestMarketData.gainers/losers — if the
+  // live scraper is actively running (real market hours) it publishes its own fresh pairs on its
+  // own schedule and could race with this write. Skip entirely whenever that's possible — by the
+  // time real trading hours are live, the corrected Nifty50 list (already seeded) means the
+  // normal Kotak computation already includes BSE with real-time data on its own, making this
+  // manual add both unnecessary and a needless risk in that case.
+  if (isMarketHours()) { console.log('[market] BSE add skipped — market is live, the normal scraper already covers this'); return; }
+  if (!_latestMarketData) return;
+  const already = (_latestMarketData.gainers || []).some(s => s.symbol === 'BSE') ||
+                   (_latestMarketData.losers  || []).some(s => s.symbol === 'BSE');
+  if (already) return;
+  if (!session.token) { console.log('[market] BSE add skipped — no live Kotak session'); return; }
+  // Codex-flagged: downloadScripMaster() is fire-and-forget at startup and can legitimately take
+  // up to ~60s; a single-shot check could miss it and silently skip, needing yet another restart
+  // to try again. Retry internally instead — up to 8 tries, 5s apart (~40s), covering that window.
+  let resolved = _scripMasterCM['BSE'];
+  for (let attempt = 0; !resolved && attempt < 8; attempt++) {
+    await new Promise(r => setTimeout(r, 5000));
+    resolved = _scripMasterCM['BSE'];
+  }
+  if (!resolved) { console.log('[market] BSE add skipped — BSE still not resolved in scrip master after retrying'); return; }
+  try {
+    const url = `${session.baseUrl || DATA_URL}/script-details/1.0/quotes/neosymbol/nse_cm|${resolved}/all`;
+    await kotakPacerAcquire(false);
+    const r = await ftKotak(url, {
+      headers: { 'Authorization': CONSUMER_KEY, 'Content-Type': 'application/json', 'neo-fin-key': 'neotradeapi' }
+    }, 5000);
+    if (r.status === 429) kotakPacerOn429();
+    if (!r.ok) { console.log(`[market] BSE add failed — Kotak HTTP ${r.status}`); return; }
+    const d = await r.json();
+    const item = Array.isArray(d?.data) ? d.data[0] : (Array.isArray(d) ? d[0] : d?.data || d);
+    const price = parseFloat(item?.ltp || 0);
+    const prev  = parseFloat(item?.close || item?.prevClose || item?.prev_close || item?.ohlc?.close || 0);
+    if (!price || !prev) { console.log('[market] BSE add failed — incomplete quote from Kotak'); return; }
+    const change = parseFloat(((price - prev) / prev * 100).toFixed(2));
+    const entry = { symbol: 'BSE', price, change };
+    if (change >= 0) {
+      _latestMarketData.gainers = [...(_latestMarketData.gainers || []), entry];
+      if (_latestMarketData.breadth?.nifty50) _latestMarketData.breadth.nifty50.advancing = (_latestMarketData.breadth.nifty50.advancing || 0) + 1;
+    } else {
+      _latestMarketData.losers = [...(_latestMarketData.losers || []), entry];
+      if (_latestMarketData.breadth?.nifty50) _latestMarketData.breadth.nifty50.declining = (_latestMarketData.breadth.nifty50.declining || 0) + 1;
+    }
+    saveMarketSnapshotLocal(_latestMarketData);
+    console.log(`[market] added real BSE quote — price ${price}, change ${change}%`);
+  } catch(e) { console.error('[market] BSE add error:', e.message); }
 }
 
 // Kotak Nifty50 equity LTPs — the sole source of gainers/losers now (checkpoint
@@ -3433,11 +3624,6 @@ async function runMarketScraper(force = false) {
         tgAlert(`⚠️ <b>${_k} price stuck</b>\nNo live fetch success for ${_staleMin} min during market hours — still showing a ${_staleMin}-min-old value while other indices may look fresh.`).catch(() => {});
       }
     }
-    // checkpoint no_yahoo_source (2026-10-28, Codex-flagged) — a defined-but-EMPTY array is
-    // truthy in JS, so the old `||` chain below could lock in an empty gainers/losers list
-    // instead of falling through to the last-known-good one. This picks the first array in
-    // the list that actually HAS entries, same preference order as before.
-    const _firstNonEmpty = (...arrs) => arrs.find(a => a && a.length) || [];
     const marketData = {
       marketOpen:  isMarketOpen,
       lastUpdated: _effectiveLastUpdated,
@@ -3451,12 +3637,28 @@ async function runMarketScraper(force = false) {
       // `dataSource`, which stays as-is; this is per-index detail for ops visibility only.
       indexSources: { NIFTY: _idxSrc.NIFTY || existing.indexSources?.NIFTY || null, BANKNIFTY: _idxSrc.BANKNIFTY || existing.indexSources?.BANKNIFTY || null, SENSEX: _idxSrc.SENSEX || existing.indexSources?.SENSEX || null },
       breadth: { nifty50: breadth || existing.breadth?.nifty50 || { advancing: 0, declining: 0, unchanged: 0 } },
-      // Kotak only (checkpoint nifty50_kotak_only, 2026-11-14) — NSE is no longer a competing
-      // source for gainers/losers. Falls back to the last-published list only if Kotak has
-      // nothing this cycle (e.g. session not live yet).
-      gainers: _firstNonEmpty(_kotakMoversCache?.gainers, existing.gainers),
-      losers:  _firstNonEmpty(_kotakMoversCache?.losers,  existing.losers)
+      // checkpoint gainers_losers_atomic (2026-11-15) — gainers and losers must always come from
+      // the SAME computation, never mixed. Picking them independently (old code) let a genuinely
+      // empty losers array (e.g. every stock flat, nothing declined) fall through to a stale
+      // existing.losers while gainers used the fresh Kotak result — the same stock could then
+      // appear in both arrays with two different change values. _kotakMoversCache is non-null
+      // only once Kotak has ever succeeded; that presence is the pairing signal, not each
+      // array's own length.
+      gainers: _kotakMoversCache ? (_kotakMoversCache.gainers || []) : (existing.gainers || []),
+      losers:  _kotakMoversCache ? (_kotakMoversCache.losers  || []) : (existing.losers  || [])
     };
+    // checkpoint show_last_close_until_open (2026-11-15) — a forced fetch outside real market
+    // hours (/market-force, or /market_on's "one-time test fetch" path) must never overwrite
+    // what members see with a degenerate snapshot (every price flat, since there's no new
+    // session to compare against — exactly what caused today's Wipro/mixed-data confusion).
+    // Tushar's decision: the live display keeps showing the last real session's data until the
+    // market genuinely opens again. A normal scheduled call can only reach this point when
+    // isMarketHours() is already true (checked at the top of this function), so isMarketOpen
+    // being false here only happens via an explicit forced call — safe to key off it alone.
+    if (!isMarketOpen) {
+      console.log('[market-force] outside market hours — fetched for verification only, NOT published to /market (last real session data is unchanged)');
+      return marketData;
+    }
     // optionLTPs is served live from memory but NOT pushed to GitHub (too dynamic, too large)
     const _highsSnap = Object.fromEntries(Object.entries(_optionHighs).map(([k,v]) => [k, v.high]));
     // checkpoint session_low_server_wiring (2026-10-22) — mirrors _highsSnap exactly, including
@@ -3467,6 +3669,7 @@ async function runMarketScraper(force = false) {
     if (_gotRealPrice) saveMarketSnapshotLocal(marketData); // only real prices reach the local copy (market_json_stale)
     await pushMarketToGitHub(marketData);
     console.log(`Market pushed — NIFTY:${nifty?.price} SENSEX:${sensexFinal?.price} BANKNIFTY:${banknifty?.price}${_gotRealPrice ? '' : ' [STALE — all sources failed, using cached values]'}`);
+    return marketData;
   } catch (e) { console.error('runMarketScraper error:', e.message); }
 }
 
@@ -4825,12 +5028,22 @@ const server = http.createServer(async (req, res) => {
     if (!_executeSecretValid(_mfKey)) { res.writeHead(401); res.end('Unauthorized'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     try {
-      await runMarketScraper(true);
-      const snap = _latestMarketData ? {
-        lastUpdated: _latestMarketData.lastUpdated,
-        NIFTY: _latestMarketData.indices?.NIFTY?.price,
-        SENSEX: _latestMarketData.indices?.SENSEX?.price,
-        BANKNIFTY: _latestMarketData.indices?.BANKNIFTY?.price
+      // checkpoint show_last_close_until_open (2026-11-15) — runMarketScraper() now returns the
+      // computed snapshot directly instead of only updating _latestMarketData, specifically so
+      // this endpoint keeps working for verification/testing outside market hours WITHOUT that
+      // test fetch reaching the live /market response (see the isMarketOpen check inside it).
+      const computed = await runMarketScraper(true);
+      const published = !!(computed && _latestMarketData && _latestMarketData.lastUpdated === computed.lastUpdated);
+      const snap = computed ? {
+        lastUpdated: computed.lastUpdated,
+        marketOpen: computed.marketOpen,
+        published, // false = outside market hours; this is a test fetch only, /market is unchanged
+        NIFTY: computed.indices?.NIFTY?.price,
+        SENSEX: computed.indices?.SENSEX?.price,
+        BANKNIFTY: computed.indices?.BANKNIFTY?.price,
+        gainersCount: computed.gainers?.length || 0,
+        losersCount: computed.losers?.length || 0,
+        breadth: computed.breadth
       } : null;
       res.end(JSON.stringify({ ok: true, data: snap }));
     } catch(e) { res.end(JSON.stringify({ ok: false, error: e.message })); }
@@ -5140,7 +5353,17 @@ const server = http.createServer(async (req, res) => {
       ghMarketPush: _ghMarketPushStatus,
       marketSnapshotLocal: { lastSavedAt: _marketSnapshotSavedAt, lastUpdated: _marketSnapshotSavedTs ? new Date(_marketSnapshotSavedTs).toISOString() : null },
       // checkpoint stale_index_per_index_tracking (2026-10-26) — diagnostic only, not sent to the PWA
-      idxLastGoodTs: Object.fromEntries(Object.entries(_idxLastGoodTs).map(([k, v]) => [k, v ? new Date(v).toISOString() : null]))
+      idxLastGoodTs: Object.fromEntries(Object.entries(_idxLastGoodTs).map(([k, v]) => [k, v ? new Date(v).toISOString() : null])),
+      // checkpoint nifty50_kotak_only (2026-11-15) — diagnostic only, not sent to the PWA. Shows
+      // exactly what's sitting in memory right now, with no API call of any kind — lets us verify
+      // the Nifty 50 roster directly instead of inferring it from a live/forced fetch.
+      nifty50: {
+        count: _nifty50Symbols ? _nifty50Symbols.length : 0,
+        symbols: _nifty50Symbols || [],
+        lastGoodAt: _nifty50SymbolsTs ? new Date(_nifty50SymbolsTs).toISOString() : null,
+        lastAttemptDateIST: _nifty50LastAttemptDate || null,
+        needsRetry: _nifty50NeedsRetry
+      }
     }));
     return;
   }
@@ -6840,11 +7063,17 @@ setTimeout(async () => {
       if (!_latestMarketData || ghTs > memTs) { _latestMarketData = gh; if (ghTs > _lastRealPriceTs) _lastRealPriceTs = ghTs; }
     }
   } catch(e) { console.log('Startup market.json fetch failed:', e.message); }
+  // checkpoint market_data_manual_restore_20261115 — one-time, self-disarming; see definition above.
+  await applyMarketDataManualRestoreIfNeeded().catch(e => console.error('[market] manual restore error:', e.message));
+  // checkpoint market_data_wipro_strip_20261115 — one-time, content-based, self-disarming; see definition above.
+  stripStaleWiproIfPresent();
   // If session was restored from state.json, re-download scrip master (it's in-memory only)
   if (session.token && session.baseUrl) {
     _scripMasterTs = 0; _scripMasterAttemptTs = 0;
     downloadScripMaster().catch(e => console.error('[scrip] startup download error:', e.message));
   }
+  // checkpoint nifty50_manual_seed_20261115 — one-time, self-disarming; see definition above.
+  applyNifty50ManualSeedIfNeeded();
   // getNifty50Symbols() now decides internally whether today is a scheduled refresh day (or a
   // pending retry) — calling it unconditionally here costs nothing on a non-scheduled day.
   getNifty50Symbols().catch(() => {}); // non-blocking; runs in background
@@ -6857,6 +7086,13 @@ setTimeout(async () => {
   // is closed, including at restart — the local snapshot already loaded above (loadMarketSnapshotLocal,
   // market_json_stale fix) already holds the correct last-fetched data, so no refetch is needed.
 }, 5000);
+
+// checkpoint market_data_add_missing_bse_20261115 — separate, later timeout (not inside the
+// 5s one above) so downloadScripMaster() — fire-and-forget at the 5s mark — has real time to
+// finish resolving BSE's token before this looks for it; see function definition above.
+setTimeout(() => {
+  addMissingBSEIfNeeded().catch(e => console.error('[market] BSE add error:', e.message));
+}, 20000);
 
 // ── SUPABASE TRADE SL MONITOR ─────────────────────────────────────────────────
 // Extract option-price SL (< 5000) from reply text — ignores spot-level SLs
