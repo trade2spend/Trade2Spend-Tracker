@@ -3808,6 +3808,18 @@
                     }
                 }
             }
+            // prefer live-tracked peak over text-scan fallback for PROFIT trades too (closes gap before
+            // [HIGH:X]/[LOW:X] is posted) — mirrors the existing loss-trade logic in Section 3's
+            // _lossShLabel3, same source (_sessionOptionHighs/_sessionOptionLows, fed only by the server),
+            // same validity check. Marker (extractHighFromReplies/extractLowFromReplies, above) still wins.
+            if (_maxPoss25 === null && !_loss25 && fields.entry) {
+                const _trackedPk25 = fields.action === 'SELL' ? _sessionOptionLows[post.id] : _sessionOptionHighs[post.id];
+                const _trackedPk25Valid = _trackedPk25 != null && (fields.action === 'SELL' ? _trackedPk25 < fields.entry : _trackedPk25 > fields.entry);
+                if (_trackedPk25Valid) {
+                    if (fields.action === 'SELL') { _maxPoss25 = Math.round(fields.entry - _trackedPk25); _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_trackedPk25.toFixed(2)})</span></div>`; }
+                    else { _maxPoss25 = Math.round(_trackedPk25 - fields.entry); _maxPossLabel25 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss25} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_trackedPk25.toFixed(2)})</span></div>`; }
+                }
+            }
             if (_maxPoss25 === null && !_loss25 && fields.entry) {
                 if (fields.action === 'SELL') {
                     const _cm25 = calculateMinPrice(fields.entry, postReplies);
@@ -4095,6 +4107,18 @@
                         _maxPoss3 = Math.round(_optHigh3 - fields.entry);
                         _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_optHigh3})</span></div>`;
                     }
+                }
+            }
+            // prefer live-tracked peak over text-scan fallback for PROFIT trades too (closes gap before
+            // [HIGH:X]/[LOW:X] is posted) — mirrors the existing loss-trade logic in _lossShLabel3 above,
+            // same source (_sessionOptionHighs/_sessionOptionLows, fed only by the server), same validity
+            // check. Marker (extractHighFromReplies/extractLowFromReplies, above) still wins if present.
+            if (_maxPoss3 === null && !_loss3 && fields.entry) {
+                const _trackedPk3 = fields.action === 'SELL' ? _sessionOptionLows[post.id] : _sessionOptionHighs[post.id];
+                const _trackedPk3Valid = _trackedPk3 != null && (fields.action === 'SELL' ? _trackedPk3 < fields.entry : _trackedPk3 > fields.entry);
+                if (_trackedPk3Valid) {
+                    if (fields.action === 'SELL') { _maxPoss3 = Math.round(fields.entry - _trackedPk3); _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(Low ₹${_trackedPk3.toFixed(2)})</span></div>`; }
+                    else { _maxPoss3 = Math.round(_trackedPk3 - fields.entry); _maxPossLabel3 = `<div style="font-size:0.7rem;font-weight:700;color:#d97706;">📈 Max possible +${_maxPoss3} pts <span style="color:var(--text-muted);font-weight:500;">(High ₹${_trackedPk3.toFixed(2)})</span></div>`; }
                 }
             }
             if (_maxPoss3 === null && !_loss3 && fields.entry) {
