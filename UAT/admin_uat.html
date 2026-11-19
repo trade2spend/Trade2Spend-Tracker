@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261119-002 | admin_uat.html: admin_autolock (owner-approved) — the page locks itself and asks for the PIN after 30 minutes with no tap/click/typing/mouse-wheel (other open admin tabs lock too), or when the 8-hour login pass runs out; checked on page open (no logged-in flash), on return to the tab / laptop wake / focus, and by one timer to the next deadline (no polling). PIN-only lock: never clears the prod TOTP window. Unsent typing is lost on lock (owner informed). Rollback: restore admin_uat.html.bak_20261119_pre_autolock. -->
 <!-- T2S-UAT-20261119-001 | admin_uat.html: activity list popup redesign (owner-approved mockup) — title with icon + ⓘ (explanation hidden until tapped; hover hint on computer), period line, total line when 2+ people, one card per person (letter circle, bold name, PAID / NO NUMBER tag, mobile, "Last like: 18 Nov, 3:10 pm (2 hours ago)", plain value on the right), "Showing the latest 200" only when capped, friendly empty message. Display only. Rollback: restore admin_uat.html.bak_20261119_pre_popup. -->
 <!-- T2S-UAT-20261118-002 | admin_uat.html: activity plain words (owner-approved) — list rows say what the number is ("3 likes", "4 taps", "Inactive 2 market days", "Active today or last market day", "No real action yet", "📱 Phone") and what the time is ("Last real action: 2h ago", "Last seen", "Applied", "Removed", "Opened"…); Inactive tiles say "Inactive N market days", "Inactive 3+ market days (warned)", "Active (today or last market day)". Text only. Rollback: restore admin_uat.html.bak_20261118_pre_plainwords. -->
 <!-- T2S-UAT-20261118-001 | admin_uat.html: activity list header wording (owner-approved) — the grey line under a list title now says "As of now" for Inactive / No activity yet / Online / post opened+liked lists, "Last 15 days" for post shares, and the chosen period (Today / Last 7 days / Last 15 days) for all other lists; "max 200, newest first" → "Shows up to 200 people, latest first". Text only. Rollback: restore admin_uat.html.bak_20261118_pre_listhead. -->
@@ -1662,6 +1663,68 @@ function _isUatBuild() { return true; }
 // browser storage), so UAT uses its own names and never reads, changes or deletes prod's.
 function _ak(name) { return _isUatBuild() ? name.replace(/^t2s_/, 't2s_uat_') : name; }
 function _uatOnly(msg) { showToast(msg || 'Not available in UAT — this action reaches the live production platform.'); }
+
+// checkpoint admin_autolock (2026-11-19, owner-approved) — the admin page locks ITSELF and asks for
+// the PIN when (a) nobody tapped, clicked, typed or scrolled for 30 minutes, or (b) the 8-hour
+// login pass has run out. Before this, the page only found out on its next server request.
+// Event-driven, no polling: one timer set to the next deadline, plus a check when the page opens,
+// when you return to the tab / wake the laptop, and on focus. PIN-only lock: it never clears the
+// prod TOTP window (t2s_admin_session_exp), so in the prod build only the PIN is asked again.
+// The server stays the final judge (it refuses an expired pass anyway).
+const _AL_IDLE_MS = 30 * 60 * 1000, _AL_PASS_MS = 8 * 60 * 60 * 1000;
+let _alTimer = null, _alLastWrite = 0;
+function _alAuthed() { try { return !!sessionStorage.getItem(_ak('t2s_admin_authed')); } catch (_) { return false; } }
+function _alNum(k) { try { return parseInt(localStorage.getItem(_ak(k)) || '0', 10) || 0; } catch (_) { return 0; } }
+function _alDeadline() {
+    const pass = _alNum('t2s_admin_pass_exp'), last = _alNum('t2s_admin_last_use');
+    const idle = last ? last + _AL_IDLE_MS : 0;
+    return [pass, idle].filter(Boolean).reduce((a, b) => Math.min(a, b), Infinity);
+}
+function _alLock() {
+    try {
+        if (_isUatBuild()) localStorage.removeItem(_ak('t2s_execute_secret')); // same as the 🔒 button in UAT
+        sessionStorage.removeItem(_ak('t2s_admin_authed'));
+        localStorage.removeItem(_ak('t2s_admin_pass_exp'));
+        localStorage.removeItem(_ak('t2s_admin_last_use'));
+    } catch (_) {}
+    location.reload();
+}
+function _alCheck() {
+    if (!_alAuthed()) return;
+    if (!_alNum('t2s_admin_last_use')) { _alLock(); return; } // another tab already locked
+    const dl = _alDeadline();
+    if (Date.now() >= dl) { _alLock(); return; }
+    clearTimeout(_alTimer);
+    if (dl !== Infinity) _alTimer = setTimeout(_alCheck, Math.min(dl - Date.now() + 500, 2147000000));
+}
+// Called on a correct PIN: start both clocks.
+function _alStart() {
+    try {
+        localStorage.setItem(_ak('t2s_admin_pass_exp'), String(Date.now() + _AL_PASS_MS));
+        localStorage.setItem(_ak('t2s_admin_last_use'), String(Date.now()));
+    } catch (_) {}
+    _alCheck();
+}
+function _alTouch() {
+    if (!_alAuthed()) return;
+    const now = Date.now();
+    if (now - _alLastWrite < 15000) return; // at most one write every 15 s
+    if (!_alNum('t2s_admin_last_use') || now >= _alDeadline()) { _alLock(); return; } // expired or locked elsewhere: do not extend
+    _alLastWrite = now;
+    try { localStorage.setItem(_ak('t2s_admin_last_use'), String(now)); } catch (_) {}
+}
+// Only real input counts (not scrolling the app does by itself).
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(ev => window.addEventListener(ev, _alTouch, { passive: true, capture: true }));
+// Another admin tab locked (it removed the shared idle clock) → lock this tab too.
+window.addEventListener('storage', e => { if (e.key === _ak('t2s_admin_last_use') && e.newValue === null) _alCheck(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') _alCheck(); });
+window.addEventListener('focus', _alCheck);
+// Page open / refresh: lock BEFORE anything loads if a deadline has passed (no logged-in flash).
+// A login from before this change has no recorded times: start the idle clock now (8h pass unknown → server decides).
+if (_alAuthed()) {
+    if (!_alNum('t2s_admin_last_use')) { try { localStorage.setItem(_ak('t2s_admin_last_use'), String(Date.now())); } catch (_) {} }
+    _alCheck();
+}
 
 let tradeTone='Professional', genTone='Professional';
 let lastTradeMsg='', lastGenMsg='';
@@ -3568,6 +3631,7 @@ async function checkPin() {
     updatePinDots();
     document.getElementById('pin-overlay').classList.add('hidden');
     sessionStorage.setItem(_ak('t2s_admin_authed'), '1');
+    _alStart(); // admin_autolock — 30-min idle + 8h pass clocks start now
     // Server issues a short-lived (8h), revocable token in place of the real
     // EXECUTE_SECRET — saved to the same key every existing admin-action call
     // site already reads, so no other code needs to change.
