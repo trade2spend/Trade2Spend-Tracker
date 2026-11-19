@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20261119-001 | admin_uat.html: activity list popup redesign (owner-approved mockup) — title with icon + ⓘ (explanation hidden until tapped; hover hint on computer), period line, total line when 2+ people, one card per person (letter circle, bold name, PAID / NO NUMBER tag, mobile, "Last like: 18 Nov, 3:10 pm (2 hours ago)", plain value on the right), "Showing the latest 200" only when capped, friendly empty message. Display only. Rollback: restore admin_uat.html.bak_20261119_pre_popup. -->
+<!-- T2S-UAT-20261118-002 | admin_uat.html: activity plain words (owner-approved) — list rows say what the number is ("3 likes", "4 taps", "Inactive 2 market days", "Active today or last market day", "No real action yet", "📱 Phone") and what the time is ("Last real action: 2h ago", "Last seen", "Applied", "Removed", "Opened"…); Inactive tiles say "Inactive N market days", "Inactive 3+ market days (warned)", "Active (today or last market day)". Text only. Rollback: restore admin_uat.html.bak_20261118_pre_plainwords. -->
 <!-- T2S-UAT-20261118-001 | admin_uat.html: activity list header wording (owner-approved) — the grey line under a list title now says "As of now" for Inactive / No activity yet / Online / post opened+liked lists, "Last 15 days" for post shares, and the chosen period (Today / Last 7 days / Last 15 days) for all other lists; "max 200, newest first" → "Shows up to 200 people, latest first". Text only. Rollback: restore admin_uat.html.bak_20261118_pre_listhead. -->
 <!-- T2S-UAT-20261117-001 | admin_uat.html: activity_stage4 — Manage → Activity: period chips (Today / 7 / 15 days) and sections Right now (members + visitors online), Inactive in FULL MARKET DAYS (same counting as removal), Actions (likes, shares, premium interest, button taps), Usage (time per tab, busiest hours, phone/computer), Journey + Retention, Posts (last 20: opened/likes/shares), Health (unusual activity with 24h Block for limited devices, storage vs 500 MB). Every number taps open its list (max 200). Data only from two READ-ONLY DB functions via the UAT admin door (needs UAT/sql/20261117_activity_screen.sql + server T2S-UAT-20261117-001). Request counts at the top unchanged. Rollback: restore admin_uat.html.bak_20261117_pre_stage4. -->
 <!-- T2S-UAT-20261116-002 | admin_uat.html: audit_triggers — Approve / Reject / Block (member sheet + request card) / Unblock no longer send their own history note (audit_log POST); the database writes it in the same step via triggers (UAT/sql/20261116_audit_triggers.sql, must be run first). Why: one Block note was lost on the way on 16 Nov 10:21 IST. Buttons, toasts and all other behaviour unchanged. Rollback: restore admin_uat.html.bak_20261116_pre_auditdb (and drop the 2 triggers, else notes are doubled). -->
@@ -2328,9 +2330,9 @@ function _actAgo(ts) {
     if (!ts) return '—';
     const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
     if (!isFinite(m)) return '—';
-    if (m < 1) return 'just now'; if (m < 60) return m + 'm ago';
-    const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
-    return Math.floor(h / 24) + 'd ago';
+    if (m < 1) return 'just now'; if (m < 60) return m + ' min ago';
+    const h = Math.floor(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    const dd = Math.floor(h / 24); return dd + (dd === 1 ? ' day ago' : ' days ago');
 }
 function _actPeriodText() { return _actDays === 1 ? 'today' : `last ${_actDays} days`; }
 // ⓘ: hover shows the title; tap shows the same text under the label.
@@ -2378,11 +2380,11 @@ async function _actLoad() {
                   + _actTile('Visitors online', n(d.online_visitors), 'online_visitors', null, 'Limited-access visitors online now')));
     // Inactive (market days)
     html += _actSection('inactive', '😴 Inactive (market days)', `Members who have access (paid + approved). Full market days since their last real action — the same counting as removal: the start day never counts, weekends and NSE holidays are skipped. Notice at ${n(d.notice_days)}, removal at ${n(d.remove_days)} (approved members only; paid are never removed).`,
-        _actGrid(3, _actTile('Active', n(ina.active), 'inactive_active', null, 'Active (0 market days)', '#059669')
-                  + _actTile('1 market day', n(ina.d1), 'inactive_1', null, 'Inactive 1 market day')
-                  + _actTile('2 market days', n(ina.d2), 'inactive_2', null, 'Inactive 2 market days', '#d97706')
-                  + _actTile('3+ (notice)', n(ina.d3plus), 'inactive_3plus', null, 'Inactive 3+ market days', '#dc2626')
-                  + _actTile('No activity yet', n(ina.none), 'inactive_none', null, 'No activity recorded since tracking began')
+        _actGrid(3, _actTile('Active (today or last market day)', n(ina.active), 'inactive_active', null, 'Active today or last market day', '#059669')
+                  + _actTile('Inactive 1 market day', n(ina.d1), 'inactive_1', null, 'Inactive 1 market day')
+                  + _actTile('Inactive 2 market days', n(ina.d2), 'inactive_2', null, 'Inactive 2 market days', '#d97706')
+                  + _actTile('Inactive 3+ market days (warned)', n(ina.d3plus), 'inactive_3plus', null, 'Inactive 3+ market days (warned in app)', '#dc2626')
+                  + _actTile('No real action yet', n(ina.none), 'inactive_none', null, 'No real action since tracking began')
                   + _actTile('Removed (' + P + ')', n(d.removed), 'removed', null, 'Removed for inactivity (' + P + ')', '#dc2626')));
     // Actions
     const cta = d.cta || {};
@@ -2448,6 +2450,52 @@ function _actListScope(metric) {
     if (/^inactive_/.test(metric) || ['online_members', 'online_visitors', 'post_opened', 'post_liked'].includes(metric)) return 'As of now';
     return _actDays === 1 ? 'Today' : `Last ${_actDays} days`;
 }
+// List popup (owner-approved design, 19 Nov): title + ⓘ (explanation hidden until tapped), period,
+// total line (2+ people), one card per person, plain-word value and date. All text via _actEsc.
+const _ACT_ICON = { online_members: '🟢', online_visitors: '🟢', removed: '🚫', cta: '👆', likes: '❤️', shares: '↗️', premium: '⭐',
+    time: '⏱️', hour: '🕐', device: '📱', post_opened: '👁', post_liked: '❤️', post_shared: '↗️', unusual: '🩺' };
+function _actExplain(metric, key) {
+    const d = _actData || {}, nd = Number(d.notice_days) || 3, rd = Number(d.remove_days) || 5;
+    const days = { inactive_1: 1, inactive_2: 2 }[metric];
+    if (days) return `Members with access who have done no real action for ${days} full market day${days === 1 ? '' : 's'}. Weekends and NSE holidays are not counted. Warning at ${nd} market days, access removed at ${rd} (approved members only; paid members are never removed).`;
+    const M = {
+        online_members: 'Members with the app open right now.',
+        online_visitors: 'Limited-access visitors (no mobile number yet) with the app open right now.',
+        inactive_active: 'Members with access who did a real action today or on the last market day.',
+        inactive_3plus: `Members with access who have done no real action for ${nd} or more full market days. They see a warning in the app; approved members lose access at ${rd}.`,
+        inactive_none: 'Members with access who have not done any real action since activity tracking began.',
+        removed: 'Members whose access was removed for inactivity in this period.',
+        cta: 'People who tapped this button in this period.',
+        likes: 'People who liked a post in this period (likes they still have).',
+        shares: 'People who shared a post or the app in this period.',
+        premium: 'People who opened Join Premium or tapped the premium Telegram link in this period.',
+        time: key ? `Time people spent on the ${key} tab in this period (approx.).` : 'Time people spent in the app in this period (approx.).',
+        hour: `People who did real actions between ${key}:00 and ${key}:59 (IST) in this period.`,
+        device: 'People who used the app on this kind of device in this period.',
+        journey_applied: 'People who sent an access request in this period.',
+        journey_approved: 'People who applied in this period and were approved.',
+        journey_logged_in: 'People who applied in this period, were approved and then logged in.',
+        journey_acted: 'People who applied in this period, were approved, logged in and did a real action.',
+        retention_approved: 'Members approved in this period.',
+        retention_active: 'Members approved in this period who did a real action in the last 7 days.',
+        post_opened: 'Members who had this post on their screen for at least 2 seconds.',
+        post_liked: 'Members who like this post now.',
+        post_shared: 'People who shared this post (last 15 days).',
+        unusual: `More than ${Number(d.unusual_limit) || 200} real actions in one hour — may be automated. Limited users can be blocked for 24 hours.`
+    };
+    return M[metric] || '';
+}
+function _actWhenFull(ts) {
+    const t = new Date(ts); if (!ts || !isFinite(t.getTime())) return '';
+    const date = t.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+    return `${date} (${_actAgo(ts)})`;
+}
+function _actMobile(m) { const s = String(m || ''); return /^\+91\d{10}$/.test(s) ? `+91 ${s.slice(3, 8)} ${s.slice(8)}` : s; }
+function _actAvatarColor(id) {
+    const c = ['#d97706', '#2563eb', '#059669', '#7c3aed', '#db2777', '#0891b2', '#6b7280']; let h = 0;
+    for (const ch of String(id || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return c[h % c.length];
+}
 async function _actOpenList(metric, key, title) {
     if (!/^[a-z0-9_]{2,40}$/.test(String(metric))) return;
     if (key != null && !_ACT_KEY_OK.test(String(key))) return;
@@ -2460,36 +2508,79 @@ async function _actOpenList(metric, key, title) {
         document.body.appendChild(ov);
     }
     ov.style.display = 'flex';
-    const top = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><b style="font-size:14px;">${_actEsc(title)}</b>
-        <button onclick="_actCloseList()" style="border:none;background:var(--bg3);border-radius:8px;padding:4px 10px;cursor:pointer;">✕</button></div>
-        <div style="font-size:11px;color:var(--muted2);margin-bottom:6px;">${_actEsc(_actListScope(metric))} · Shows up to 200 people, latest first</div>`;
-    const box = c => `<div style="background:var(--bg2);width:100%;max-width:480px;max-height:75vh;overflow-y:auto;border-radius:14px 14px 0 0;padding:14px;">${top}${c}</div>`;
-    ov.innerHTML = box('<div style="color:var(--muted2);font-size:12px;">Loading…</div>');
+    const scope = _actListScope(metric);
+    const icon = _ACT_ICON[metric] || (/^inactive_/.test(metric) ? '😴' : /^journey_/.test(metric) ? '🧭' : /^retention_/.test(metric) ? '🔁' : '📊');
+    const name = String(title || '').replace(/\s*\((today|last \d+ days)\)\s*$/i, '');
+    const explain = _actExplain(metric, key);
+    const top = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div><div style="font-size:16px;font-weight:800;">${_actEsc(icon + ' ' + name)}${explain ? ` <span title="${_actEsc(explain)}" onclick="const e=document.getElementById('act-list-ex');if(e)e.style.display=e.style.display==='none'?'block':'none';" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font-size:11px;font-weight:800;cursor:pointer;vertical-align:middle;margin-left:4px;">i</span>` : ''}</div>
+            <div style="font-size:12px;font-weight:600;color:var(--muted);">${_actEsc(scope)}</div></div>
+          <button onclick="_actCloseList()" style="border:none;background:var(--bg3);border-radius:8px;padding:5px 10px;cursor:pointer;">✕</button></div>
+        ${explain ? `<div id="act-list-ex" style="display:none;font-size:12px;color:var(--muted2);margin-top:8px;line-height:1.45;background:var(--bg3);border-radius:8px;padding:8px 10px;">${_actEsc(explain)}</div>` : ''}
+        <div style="height:10px;"></div>`;
+    const box = c => `<div style="background:var(--bg2);width:100%;max-width:480px;max-height:80vh;overflow-y:auto;border-radius:14px 14px 0 0;padding:14px;">${top}${c}</div>`;
+    ov.innerHTML = box('<div style="color:var(--muted2);font-size:13px;padding:10px 0;">Loading…</div>');
     const body = { p_metric: metric, p_days: _actDays };
     if (key != null) body.p_key = String(key);
     let rows;
     try { rows = await sbPost('rpc/activity_list', body); }
-    catch (e) { if (gen === _actListGen) ov.innerHTML = box(`<div style="color:#dc2626;font-size:12px;">Could not load: ${_actEsc(e.message)}</div>`); return; }
+    catch (e) { if (gen === _actListGen) ov.innerHTML = box(`<div style="color:#dc2626;font-size:13px;">Could not load: ${_actEsc(e.message)}</div>`); return; }
     if (gen !== _actListGen) return;
-    if (!Array.isArray(rows) || !rows.length) { ov.innerHTML = box('<div style="color:var(--muted2);font-size:12px;">Nobody here.</div>'); return; }
+    if (!Array.isArray(rows) || !rows.length) {
+        const when = scope === 'As of now' ? 'right now' : scope === 'Today' ? 'today' : 'in the ' + scope.toLowerCase();
+        ov.innerHTML = box(`<div style="text-align:center;padding:22px 10px;color:var(--muted2);font-size:13px;"><div style="font-size:26px;margin-bottom:6px;">🙂</div>Nobody in this list ${_actEsc(when)}.</div>`);
+        return;
+    }
+    // Plain words for the number on the right (no symbols to decode).
+    const plural = (v, one, many) => v + ' ' + (String(v) === '1' ? one : many);
+    const UNIT = { likes: ['like', 'likes'], shares: ['share', 'shares'], post_shared: ['share', 'shares'], cta: ['tap', 'taps'],
+        premium: ['time', 'times'], hour: ['action', 'actions'], device: ['action', 'actions'] };
     const valText = r => {
-        const v = r.value; if (v == null || v === '') return '';
+        const v = r.value;
+        if (metric === 'retention_active') return ''; // the date line already says when
+        if (/^inactive_/.test(metric)) {
+            if (v == null || v === '') return 'No real action yet';
+            return String(v) === '0' ? 'Active' : 'Inactive ' + plural(v, 'market day', 'market days');
+        }
+        if (v == null || v === '') return '';
         if (metric === 'time') return _actDur(v);
-        if (/^inactive_|^retention_active$/.test(metric)) return v + ' market day' + (v === '1' ? '' : 's');
-        if (metric === 'online_members') return String(v);
+        if (metric === 'online_members') return String(v).replace(/mobile/g, '📱 Phone').replace(/desktop/g, '💻 Computer').replace(/unknown/g, 'Device unknown');
         if (metric === 'unusual') return v + ' actions in 1 hour';
-        return v + '×';
+        const u = UNIT[metric]; return u ? plural(v, u[0], u[1]) : plural(v, 'action', 'actions');
     };
+    const valColor = /^inactive_(2)$/.test(metric) ? '#d97706' : /^inactive_3plus$|^unusual$/.test(metric) ? '#dc2626' : metric === 'inactive_active' ? '#059669' : 'var(--text)';
+    // What the date under each name means, per list.
+    const WHEN = { online_members: 'Last seen', online_visitors: 'Last seen', removed: 'Removed', likes: 'Last like',
+        retention_approved: 'Approved', post_opened: 'Opened', post_liked: 'Liked', post_shared: 'Last share', unusual: 'Busiest hour' };
+    const whenLabel = /^inactive_|^retention_active$/.test(metric) ? 'Last real action' : /^journey_/.test(metric) ? 'Applied' : (WHEN[metric] || 'Last time');
+    const whenText = r => r.at ? `${whenLabel}: ${_actWhenFull(r.at)}` : (/^inactive_|^retention_active$/.test(metric) ? 'No real action recorded' : '');
     const canBlock = metric === 'unusual' || metric === 'online_visitors' || metric === 'cta' || metric === 'premium' || metric === 'shares' || metric === 'hour' || metric === 'device';
-    ov.innerHTML = box(rows.map(r => {
+    // Total line only when 2+ people (with one person it would repeat the card).
+    let total = '';
+    if (rows.length > 1) {
+        const ppl = rows.length + (rows.length === 200 ? '+' : '') + ' people';
+        const sum = rows.reduce((a, r) => a + (Number(r.value) || 0), 0);
+        const extra = metric === 'time' ? ` · ${_actDur(sum)} in total` : UNIT[metric] ? ` · ${plural(sum, UNIT[metric][0], UNIT[metric][1])} in total` : '';
+        total = `<div style="font-size:12px;font-weight:700;background:var(--bg3);border-radius:8px;padding:6px 10px;margin-bottom:10px;">${_actEsc(ppl + extra)}</div>`;
+    }
+    const cap = rows.length === 200 ? '<div style="font-size:11px;color:var(--muted2);text-align:center;padding:6px 0;">Showing the latest 200</div>' : '';
+    ov.innerHTML = box(total + rows.map(r => {
         const dev = r.device_id && _ACT_DEV_OK.test(String(r.device_id)) ? String(r.device_id) : '';
-        const who = r.member_id ? `${_actEsc(r.name || 'No name')} <span style="color:var(--muted2);">${_actEsc(r.mobile || '')}</span>${r.tier === 'paid' ? ' <span style="font-size:10px;color:var(--gold);">PAID</span>' : ''}`
-                                : `Limited user <span style="color:var(--muted2);">${_actEsc(dev ? dev.slice(0, 14) + '…' : '')}</span>`;
-        const block = !r.member_id && dev && canBlock ? `<button onclick="_actBlock('${dev}')" style="font-size:10px;font-weight:700;padding:3px 8px;border:none;border-radius:6px;background:#dc2626;color:#fff;cursor:pointer;margin-left:6px;">Block 24h</button>` : '';
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border2);font-size:12px;">
-            <div>${who}<div style="font-size:10px;color:var(--muted2);">${_actEsc(_actAgo(r.at))}</div></div>
-            <div style="text-align:right;white-space:nowrap;"><b>${_actEsc(valText(r))}</b>${block}</div></div>`;
-    }).join(''));
+        const isMember = !!r.member_id;
+        const nm = isMember ? (r.name || 'No name') : 'Limited user';
+        const letter = isMember ? (String(nm).trim().charAt(0).toUpperCase() || '?') : '?';
+        const chip = isMember ? (r.tier === 'paid' ? '<span style="display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:1px 6px;margin-left:4px;background:#fef3c7;color:#92400e;">PAID</span>' : '')
+                              : '<span style="display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:1px 6px;margin-left:4px;background:#e0e7ff;color:#3730a3;">NO NUMBER</span>';
+        const sub = isMember ? _actMobile(r.mobile) : (dev ? 'Device ' + dev.slice(0, 14) + '…' : '');
+        const block = !isMember && dev && canBlock ? `<button onclick="_actBlock('${dev}')" style="margin-top:6px;font-size:11px;font-weight:700;border:none;border-radius:6px;background:#dc2626;color:#fff;padding:4px 9px;cursor:pointer;">Block 24h</button>` : '';
+        const v = valText(r);
+        return `<div style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border2);border-radius:12px;padding:10px;margin-bottom:8px;">
+            <div style="flex:0 0 34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;background:${_actAvatarColor(r.member_id || dev)};">${_actEsc(letter)}</div>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;overflow-wrap:anywhere;">${_actEsc(nm)}${chip}</div>
+              <div style="font-size:12px;color:var(--muted);">${_actEsc(sub)}</div>
+              ${whenText(r) ? `<div style="font-size:11.5px;color:var(--muted2);margin-top:3px;">${_actEsc(whenText(r))}</div>` : ''}${block}</div>
+            ${v ? `<div style="flex:0 0 auto;max-width:130px;text-align:right;font-size:13px;font-weight:800;color:${valColor};">${_actEsc(v)}</div>` : ''}</div>`;
+    }).join('') + cap);
 }
 function _actCloseList() { _actListGen++; const ov = document.getElementById('act-list-ov'); if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; } }
 async function _actBlock(deviceId) {
