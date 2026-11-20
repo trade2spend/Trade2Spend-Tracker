@@ -1,3 +1,5 @@
+<!-- T2S-UAT-20261120-001 | admin_uat.html: small_batch — (B4) Members → Remove access also marks the member's newest request, only if it is approved, as blocked + block_reason removed + date (so Apply again within 30 days skips the name); request card label "Removed (admin)" with "Removed on: date · By admin" (not "Blocked"), label key updated; needs server door rule allowing block_reason removed. (B6) Activity → Removed list: one card per member; "Applied again" + ✓ Approve only when their newest request is pending and was sent after the removal; Approve re-reads the request (same member, still pending), asks to confirm, then uses the same approval as Requests; needs UAT/sql/20261120_removed_list_approve.sql. Rollback: restore admin_uat.html.bak_20261120_pre_smallbatch. -->
+<!-- T2S-UAT-20261119-003 | admin_uat.html: admin_autolock precision (owner: lock as soon as 30 min pass) — last input saved at most once a second (was 15 s, which could lock up to 15 s early) and the timer fires 0.05 s after the deadline (was 0.5 s). Rollback: restore admin_uat.html.bak_20261119_pre_lockexact. -->
 <!-- T2S-UAT-20261119-002 | admin_uat.html: admin_autolock (owner-approved) — the page locks itself and asks for the PIN after 30 minutes with no tap/click/typing/mouse-wheel (other open admin tabs lock too), or when the 8-hour login pass runs out; checked on page open (no logged-in flash), on return to the tab / laptop wake / focus, and by one timer to the next deadline (no polling). PIN-only lock: never clears the prod TOTP window. Unsent typing is lost on lock (owner informed). Rollback: restore admin_uat.html.bak_20261119_pre_autolock. -->
 <!-- T2S-UAT-20261119-001 | admin_uat.html: activity list popup redesign (owner-approved mockup) — title with icon + ⓘ (explanation hidden until tapped; hover hint on computer), period line, total line when 2+ people, one card per person (letter circle, bold name, PAID / NO NUMBER tag, mobile, "Last like: 18 Nov, 3:10 pm (2 hours ago)", plain value on the right), "Showing the latest 200" only when capped, friendly empty message. Display only. Rollback: restore admin_uat.html.bak_20261119_pre_popup. -->
 <!-- T2S-UAT-20261118-002 | admin_uat.html: activity plain words (owner-approved) — list rows say what the number is ("3 likes", "4 taps", "Inactive 2 market days", "Active today or last market day", "No real action yet", "📱 Phone") and what the time is ("Last real action: 2h ago", "Last seen", "Applied", "Removed", "Opened"…); Inactive tiles say "Inactive N market days", "Inactive 3+ market days (warned)", "Active (today or last market day)". Text only. Rollback: restore admin_uat.html.bak_20261118_pre_plainwords. -->
@@ -1550,7 +1552,7 @@ body{background:var(--bg);min-height:100vh;}
         <button onclick="loadAccessRequests('approved')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #059669;background:#f0fdf4;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Approved</button>
         <button onclick="loadAccessRequests('rejected')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:'Space Grotesk',sans-serif;">Rejected</button>
         <button onclick="loadAccessRequests('blocked')" style="font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid #dc2626;background:#fef2f2;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Blocked</button>
-        <button id="blk-key-btn" onclick="_tipToggle(event,this)" data-tip="What the labels mean:&#10;Person — this person is blocked (cannot log in or apply).&#10;Device — this phone/computer is blocked (no new requests from it); the person is not.&#10;Person + Device — both are blocked.&#10;Old record — says blocked, but nothing is blocked now.&#10;Inactive — access removed automatically after no activity; they can apply again." title="What the labels mean" style="font-size:13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;line-height:1;">ⓘ</button>
+        <button id="blk-key-btn" onclick="_tipToggle(event,this)" data-tip="What the labels mean:&#10;Person — this person is blocked (cannot log in or apply).&#10;Device — this phone/computer is blocked (no new requests from it); the person is not.&#10;Person + Device — both are blocked.&#10;Old record — says blocked, but nothing is blocked now.&#10;Inactive — access removed automatically after no activity; they can apply again.&#10;Removed (admin) — you used Remove access; they can apply again." title="What the labels mean" style="font-size:13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:'Space Grotesk',sans-serif;line-height:1;">ⓘ</button>
       </div>
       <div id="fa-requests-list" style="font-size:13px;">Loading...</div>
     </div>
@@ -1695,7 +1697,7 @@ function _alCheck() {
     const dl = _alDeadline();
     if (Date.now() >= dl) { _alLock(); return; }
     clearTimeout(_alTimer);
-    if (dl !== Infinity) _alTimer = setTimeout(_alCheck, Math.min(dl - Date.now() + 500, 2147000000));
+    if (dl !== Infinity) _alTimer = setTimeout(_alCheck, Math.min(dl - Date.now() + 50, 2147000000));
 }
 // Called on a correct PIN: start both clocks.
 function _alStart() {
@@ -1708,7 +1710,7 @@ function _alStart() {
 function _alTouch() {
     if (!_alAuthed()) return;
     const now = Date.now();
-    if (now - _alLastWrite < 15000) return; // at most one write every 15 s
+    if (now - _alLastWrite < 1000) return; // at most one write a second (keeps the 30 min exact)
     if (!_alNum('t2s_admin_last_use') || now >= _alDeadline()) { _alLock(); return; } // expired or locked elsewhere: do not extend
     _alLastWrite = now;
     try { localStorage.setItem(_ak('t2s_admin_last_use'), String(now)); } catch (_) {}
@@ -1953,6 +1955,8 @@ const _BLK_TAGS = {
     old:    { label: 'Old record',      color: '#6b7280', bg: '#f3f4f6', tip: 'Old record: this request still says blocked, but neither the person nor the device is blocked now. Nothing is stopping them.' },
     // activity_stage3
     inactive: { label: 'Inactive',      color: '#b45309', bg: '#fffbeb', tip: 'Inactive: access was removed automatically after the set number of market days with no activity (weekends and holidays not counted). They are not blocked and can apply again.' },
+    // small_batch B4
+    removed: { label: 'Removed (admin)', color: '#b45309', bg: '#fffbeb', tip: 'Removed by admin: you used Remove access. They can apply again (within 30 days they only tick consent). Approve their new request to give access back.' },
     reapplied: { label: 'Re-applied after inactivity', color: '#b45309', bg: '#fffbeb', tip: 'Re-applied after inactivity: this person lost access earlier for no activity and has now applied again.' },
 };
 function _tipToggle(ev, el) {
@@ -2025,7 +2029,8 @@ async function loadAccessRequests(statusFilter = 'pending') {
             const deviceBlocked = !!(devKnown && req.device_id && blockedDev.has(req.device_id));
             // One label: the block label if anything is blocked, otherwise the request status
             const isInactive = req.status === 'blocked' && req.block_reason === 'inactivity'; // activity_stage3
-            const blkKind = personBlocked && deviceBlocked ? 'both' : personBlocked ? 'person' : deviceBlocked ? 'device' : isInactive ? 'inactive' : (req.status === 'blocked' && devKnown ? 'old' : null);
+            const isRemoved = req.status === 'blocked' && req.block_reason === 'removed'; // small_batch B4
+            const blkKind = personBlocked && deviceBlocked ? 'both' : personBlocked ? 'person' : deviceBlocked ? 'device' : isInactive ? 'inactive' : isRemoved ? 'removed' : (req.status === 'blocked' && devKnown ? 'old' : null);
             const label = blkKind ? _blkTagHtml(blkKind)
                 : `<span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:3px 8px;border-radius:10px;white-space:nowrap;">${esc(String(req.status || '').toUpperCase())}</span>`;
             const devIcon = req.device_type === 'mobile' ? '📱' : req.device_type === 'desktop' ? '🖥️' : '';
@@ -2052,7 +2057,7 @@ async function loadAccessRequests(statusFilter = 'pending') {
                     <div>
                         <div style="font-size:13px;font-weight:700;">${name} ${devIcon}</div>
                         <div style="font-size:11px;color:var(--muted2);">${mobile} · Applied: ${date}</div>
-                        ${req.status === 'blocked' && req.reviewed_at ? `<div style="font-size:11px;color:${isInactive ? '#b45309' : '#b91c1c'};">${isInactive ? 'Removed on' : 'Blocked on'}: ${new Date(req.reviewed_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}${req.block_reason === 'person' ? ' · Person' : req.block_reason === 'device' ? ' · Device' : isInactive ? ' · No activity' : ''}</div>` : ''}
+                        ${req.status === 'blocked' && req.reviewed_at ? `<div style="font-size:11px;color:${isInactive || isRemoved ? '#b45309' : '#b91c1c'};">${isInactive || isRemoved ? 'Removed on' : 'Blocked on'}: ${new Date(req.reviewed_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}${req.block_reason === 'person' ? ' · Person' : req.block_reason === 'device' ? ' · Device' : isInactive ? ' · No activity' : isRemoved ? ' · By admin' : ''}</div>` : ''}
                         ${isPending && _inactBefore(req.member_id, req.created_at) ? `<div style="margin-top:4px;">${_blkTagHtml('reapplied')}</div>` : ''}
                     </div>
                     ${label}
@@ -2185,8 +2190,17 @@ async function memberRemoveAccess(memberId) {
     try {
         await sbPatch(`members?id=eq.${memberId}`, patch);
         _mgSetLocal(memberId, patch);
-        showToast('✅ Access removed (can re-apply)');
-    } catch(e) { showToast('❌ ' + e.message); }
+    } catch(e) { showToast('❌ ' + e.message); closeDetail(); return; }
+    // small_batch B4 (owner, 20 Nov) — mark the member's approved request "removed by admin" with the date,
+    // so Apply again within 30 days skips the name (like an inactivity removal). Only an 'approved'
+    // newest request is changed; any other state is left as it is (member gets the normal form).
+    let _rmNote = '';
+    try {
+        const req = await _mgLatestRequest(memberId);
+        if (req && req.status === 'approved') await sbPatch(`access_requests?id=eq.${req.id}`, { status: 'blocked', reviewed_at: new Date().toISOString(), block_reason: 'removed' });
+    } catch(e) { _rmNote = ' (request not updated: ' + e.message + ')'; }
+    showToast('✅ Access removed (can re-apply)' + _rmNote);
+    _mgAfterAccessChange();
     closeDetail();
 }
 
@@ -2376,6 +2390,7 @@ async function loadFaAnalytics() {
 let _actDays = 7, _actGen = 0, _actListGen = 0, _actData = null;
 const _ACT_DEV_OK = /^[A-Za-z0-9_-]{1,100}$/;
 const _ACT_KEY_OK = /^[A-Za-z0-9_:-]{1,100}$/;
+const _ACT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // small_batch B6
 // For text placed inside an onclick '...' argument: HTML escaping is not enough there, so drop quotes etc.
 function _actJs(s) { return String(s == null ? '' : s).replace(/['"\\<>&`]/g, ''); }
 function _actEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -2527,7 +2542,7 @@ function _actExplain(metric, key) {
         inactive_active: 'Members with access who did a real action today or on the last market day.',
         inactive_3plus: `Members with access who have done no real action for ${nd} or more full market days. They see a warning in the app; approved members lose access at ${rd}.`,
         inactive_none: 'Members with access who have not done any real action since activity tracking began.',
-        removed: 'Members whose access was removed for inactivity in this period.',
+        removed: 'Members whose access was removed for inactivity in this period. ✓ Approve shows only when they have applied again and the request is still waiting.',
         cta: 'People who tapped this button in this period.',
         likes: 'People who liked a post in this period (likes they still have).',
         shares: 'People who shared a post or the app in this period.',
@@ -2601,6 +2616,7 @@ async function _actOpenList(metric, key, title) {
     const valText = r => {
         const v = r.value;
         if (metric === 'retention_active') return ''; // the date line already says when
+        if (metric === 'removed') return _ACT_UUID.test(String(v || '')) ? 'Applied again' : ''; // small_batch B6: value = their new request id
         if (/^inactive_/.test(metric)) {
             if (v == null || v === '') return 'No real action yet';
             return String(v) === '0' ? 'Active' : 'Inactive ' + plural(v, 'market day', 'market days');
@@ -2637,15 +2653,37 @@ async function _actOpenList(metric, key, title) {
         const sub = isMember ? _actMobile(r.mobile) : (dev ? 'Device ' + dev.slice(0, 14) + '…' : '');
         const block = !isMember && dev && canBlock ? `<button onclick="_actBlock('${dev}')" style="margin-top:6px;font-size:11px;font-weight:700;border:none;border-radius:6px;background:#dc2626;color:#fff;padding:4px 9px;cursor:pointer;">Block 24h</button>` : '';
         const v = valText(r);
+        // small_batch B6 — Approve only for a member who applied again after removal (request still pending).
+        const approve = metric === 'removed' && isMember && _ACT_UUID.test(String(r.member_id)) && _ACT_UUID.test(String(r.value || ''))
+            ? `<button onclick="_actApprove('${String(r.value)}','${String(r.member_id)}')" style="margin-top:6px;font-size:11px;font-weight:700;border:none;border-radius:6px;background:#059669;color:#fff;padding:4px 9px;cursor:pointer;">✓ Approve</button>` : '';
         return `<div style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border2);border-radius:12px;padding:10px;margin-bottom:8px;">
             <div style="flex:0 0 34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;background:${_actAvatarColor(r.member_id || dev)};">${_actEsc(letter)}</div>
             <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;overflow-wrap:anywhere;">${_actEsc(nm)}${chip}</div>
               <div style="font-size:12px;color:var(--muted);">${_actEsc(sub)}</div>
-              ${whenText(r) ? `<div style="font-size:11.5px;color:var(--muted2);margin-top:3px;">${_actEsc(whenText(r))}</div>` : ''}${block}</div>
+              ${whenText(r) ? `<div style="font-size:11.5px;color:var(--muted2);margin-top:3px;">${_actEsc(whenText(r))}</div>` : ''}${block}${approve}</div>
             ${v ? `<div style="flex:0 0 auto;max-width:130px;text-align:right;font-size:13px;font-weight:800;color:${valColor};">${_actEsc(v)}</div>` : ''}</div>`;
     }).join('') + cap);
 }
 function _actCloseList() { _actListGen++; const ov = document.getElementById('act-list-ov'); if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; } }
+// small_batch B6 — approve the NEW request of a member removed for inactivity. Re-checks first that the
+// request still belongs to this member and is still pending; then the same approval as Requests.
+async function _actApprove(requestId, memberId) {
+    if (!_ACT_UUID.test(String(requestId)) || !_ACT_UUID.test(String(memberId))) return;
+    _actCloseList(); // so the confirmation and the result message are not hidden behind the sheet
+    let cur;
+    try { cur = await sbGet(`access_requests?id=eq.${requestId}&select=status,member_id,name`); }
+    catch (e) { showToast('❌ ' + e.message); return; }
+    if (!Array.isArray(cur) || !cur[0] || cur[0].member_id !== memberId) { showToast('❌ Request not found'); return; }
+    if (cur[0].status !== 'pending') { showToast(`⚠️ Already ${cur[0].status} — no action taken`); return; }
+    if (!confirm(`Approve ${String(cur[0].name || _mgLabel(memberId)).slice(0, 60)}?\n\nThey applied again after being removed. They get access now.`)) return;
+    // Check again after the confirm box (someone may have rejected it meanwhile); the shared approve
+    // below would also accept a rejected request, which this list must not do.
+    try { cur = await sbGet(`access_requests?id=eq.${requestId}&select=status,member_id`); }
+    catch (e) { showToast('❌ ' + e.message); return; }
+    if (!Array.isArray(cur) || !cur[0] || cur[0].member_id !== memberId || cur[0].status !== 'pending') { showToast(`⚠️ ${cur && cur[0] ? 'Already ' + cur[0].status : 'Request not found'} — no action taken`); return; }
+    await actionRequestDirect(requestId, memberId, 'approve');
+    _actLoad();
+}
 async function _actBlock(deviceId) {
     if (!_ACT_DEV_OK.test(String(deviceId))) return;
     _actCloseList(); // so the confirmation and the result message are not hidden behind the sheet
