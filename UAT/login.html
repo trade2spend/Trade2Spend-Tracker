@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261120-001 | login_uat.html: small_batch — (B2) all 13 @T2Sview links open Telegram with a ready message by reason (blocked / suspended / PIN locked / PIN help / device restricted) plus the mobile typed on this screen or remembered on this device, only when it is 10 digits (owner approved auto-fill 20 Nov); text is fixed strings + checked digits only (_tgHref). (B4) admin "Remove access" (request blocked + block_reason removed): Apply again within 30 days skips the name like an inactivity removal; remembered-device path shows "Your access was removed. Tap Continue to apply again." Rollback: restore login_uat.html.bak_20261120_pre_smallbatch. -->
 <!-- T2S-UAT-20261116-001 | login_uat.html: tglink — 7 plain-text "Contact @T2Sview" messages (suspended x2, blocked x3, device restricted, PIN reset from registered device only) now show @T2Sview as a tappable link to https://t.me/T2Sview (same style as the existing lockout links). Fixed text only, no member data. Prefilled Telegram message: pending, owner to decide later. Rollback: restore login_uat.html.bak_20261116_pre_tglink. -->
 <!-- T2S-UAT-20261115-001 | login_uat.html: stage3b — (1) "⚡ Active only as long as you stay engaged" highlighted on the apply screen. (2) Apply again with consent only: member removed for inactivity within reapply_days (server setting reapply_quick_days, default 30) goes from "Apply again →" straight to the request screen with the name field hidden (name reused from their previous request, never displayed); SEBI consent tick still required. Older removals / new applicants: unchanged full flow. Rollback: restore login_uat.html.bak_20261115_pre_stage3b. -->
 <!-- T2S-UAT-20261112-003 | login_uat.html: activity_stage3 — (1) Apply screen: "removed after N without activity" line + short "to stay active" list with …more (numbers in market days and list from /uat-activity-status, i.e. the database; neutral wording if unreachable). (2) Member removed for inactivity (newest request blocked/inactivity): message on the apply screen + button "Apply again →"; on a remembered device the PIN screen is skipped and the mobile screen explains + Continue → apply flow (read error → old path). (3) Logout messages for reasons "idle" and "inactive". Rollback: restore login_uat.html.bak_20261112_pre_stage3. -->
@@ -432,6 +433,16 @@ function _introInactive(on){
 // stage3b — Apply again with consent only: removed for inactivity within reapply_days (setting,
 // default 30, calendar days) → skip the rules screen and the name field (name kept from the
 // previous request, never shown on screen); the SEBI consent tick is always asked again.
+// checkpoint small_batch B2 — @T2Sview links open Telegram with a ready message: the reason plus
+// the member's own mobile when this screen knows it. Built only from fixed text + a checked
+// 10-digit number, so nothing else can get into the link.
+const _TG_TEXT={blocked:'Hi, my Trade2Spend access is blocked.',suspended:'Hi, my Trade2Spend account is suspended.',pin_locked:'Hi, my Trade2Spend PIN is locked.',pin_help:'Hi, I need help resetting my Trade2Spend PIN.',device:'Hi, my device is restricted on Trade2Spend.',premium:'Hi, I want to join Trade2Spend Premium.'};
+function _tgHref(reason,mob){
+  let d=String(mob||'').replace(/\D/g,'');if(d.length===12&&d.startsWith('91'))d=d.slice(2);
+  let t=_TG_TEXT[reason]||'Hi, I need help with the Trade2Spend app.';
+  if(/^\d{10}$/.test(d))t+=' Mobile: +91'+d;
+  return 'https://t.me/T2Sview?text='+encodeURIComponent(t);
+}
 let _actReapplyDays=30,_quickReapply=null;
 function _quickReapplySet(req){
   _quickReapply=null;
@@ -589,7 +600,7 @@ function _showLockMsg(targetDate){
 // countdown (e.g. if admin extended the lock right at the boundary).
 function _mobileLockRender(mmss,isPending,errEl,btn,member,inp){
   if(isPending){
-    errEl.innerHTML=`Account locked (${mmss} remaining). Unlock request already submitted — <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">contact @T2Sview</a> if needed.`;
+    errEl.innerHTML=`Account locked (${mmss} remaining). Unlock request already submitted — <a href="${_tgHref('pin_locked',inp)}" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">contact @T2Sview</a> if needed.`;
     errEl.classList.add('show');btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';
   }else{
     errEl.textContent=`Account locked — ${mmss} remaining.`;
@@ -667,7 +678,7 @@ async function checkMobile(){
     const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash,free_access,free_access_blocked`,{method:'GET',headers:{'Accept':'application/json'}});
     if(!members||members.length===0){_introInactive(false);_quickReapplySet(null);currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';document.getElementById('reg-msg').style.display='none';showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');return;}
     const member=members[0];
-    if(member.status==='disabled'){errEl.innerHTML='Your account is suspended. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    if(member.status==='disabled'){errEl.innerHTML='Your account is suspended. Contact <a href="'+_tgHref('suspended',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
     const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
     if(_acctLock&&_acctLock.length>0){
@@ -700,12 +711,12 @@ async function checkMobile(){
     currentMobile=mobile;currentMember=member;
     localStorage.setItem('t2s_uat_mobile',inp);localStorage.setItem('t2s_uat_member_id',member.id);
     if(member.tier !== 'paid' && !member.free_access){
-      if(member.free_access_blocked){errEl.innerHTML='Your access has been blocked. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+      if(member.free_access_blocked){errEl.innerHTML='Your access has been blocked. Contact <a href="'+_tgHref('blocked',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
       // C3: check request status — pending stays on pending screen; rejected/none → re-apply
       const _latestReq=await sbFetch(`access_requests?member_id=eq.${member.id}&order=created_at.desc&limit=1&select=status,block_reason,name,reviewed_at`,{method:'GET',headers:{'Accept':'application/json'}}).catch(()=>[]); // activity_stage3: + block_reason; stage3b: + name, reviewed_at
       const _reqStatus=_latestReq&&_latestReq[0]?_latestReq[0].status:null;
       _introInactive(_reqStatus==='blocked'&&_latestReq[0].block_reason==='inactivity'); // activity_stage3: "Apply again" after an inactivity removal
-      _quickReapplySet(_reqStatus==='blocked'&&_latestReq[0].block_reason==='inactivity'?_latestReq[0]:null); // stage3b
+      _quickReapplySet(_reqStatus==='blocked'&&(_latestReq[0].block_reason==='inactivity'||_latestReq[0].block_reason==='removed')?_latestReq[0]:null); // stage3b; small_batch B4: + admin "Remove access"
       if(_reqStatus==='pending'){
         localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');
         showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-pending');
@@ -757,7 +768,7 @@ async function verifyPin(){
       return;
     }
     if(d.disabled){
-      showLoading(false);document.getElementById('pin-err').innerHTML='Account suspended. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a>.';
+      showLoading(false);document.getElementById('pin-err').innerHTML='Account suspended. Contact <a href="'+_tgHref('suspended',currentMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a>.';
       setTimeout(()=>{['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_locked_mid','t2s_uat_unlock_req_at','t2s_uat_unlock_req_for','t2s_uat_device_id','t2s_uat_request_pending','t2s_uat_pin_reset_at','t2s_uat_disclaimer_date','t2s_uat_logout_reason','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));location.reload();},2500);
       return;
     }
@@ -795,7 +806,7 @@ function forgotPin(){
   const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
   const did=getDeviceId();
   if(!mid){
-    timerEl.innerHTML='Cannot verify your identity. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
+    timerEl.innerHTML='Cannot verify your identity. <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
     timerEl.style.display='block';btn.textContent='Submit Reset Request';return;
   }
   Promise.all([
@@ -805,7 +816,7 @@ function forgotPin(){
     btn.textContent='Submit Reset Request';btn.onclick=submitPinResetRequest;
     // Device check — must have a prior successful login on this device
     if(!sessions||sessions.length===0){
-      timerEl.innerHTML='PIN reset is only allowed from a device you have previously logged in on. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
+      timerEl.innerHTML='PIN reset is only allowed from a device you have previously logged in on. <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
       timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';return;
     }
     // Admin already reset — show direct action, no reload needed
@@ -873,7 +884,7 @@ async function submitRegistration(){
     const mobile='+91'+currentUnregisteredMobile;
     const consentText='I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.';
     const _devBlk=await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&select=blocked_until`,{method:'GET'});
-    if(_devBlk&&_devBlk.some(b=>b.blocked_until===null||new Date(b.blocked_until)>new Date())){msg.style.display='block';msg.style.color='#dc2626';msg.innerHTML='This device has been restricted. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
+    if(_devBlk&&_devBlk.some(b=>b.blocked_until===null||new Date(b.blocked_until)>new Date())){msg.style.display='block';msg.style.color='#dc2626';msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',currentUnregisteredMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
     const _rlSince=new Date(Date.now()-24*3600000).toISOString();
     const _rlRecent=await sbFetch(`access_requests?device_id=eq.${did}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`,{method:'GET'});
     if(_rlRecent&&_rlRecent.length>=3){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Too many requests from this device. Try again after 24 hours.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
@@ -908,7 +919,7 @@ async function processSetupPin(){
       const d=await res.json();
       if(!d.success){
         showLoading(false);
-        document.getElementById('setup-err').innerHTML=d.deviceNotRegistered?'This PIN reset can only be completed from your previously registered device. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.':(d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.');
+        document.getElementById('setup-err').innerHTML=d.deviceNotRegistered?'This PIN reset can only be completed from your previously registered device. Contact <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.':(d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.');
         setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');
         return;
       }
@@ -935,7 +946,7 @@ async function processSetupPin(){
           localStorage.removeItem('t2s_uat_logout_reason');
           showLoading(false);showScreen('screen-mobile');
           const _bEl=document.getElementById('mobile-err');
-          if(_bEl){_bEl.innerHTML='Your access has been blocked. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';_bEl.classList.add('show');}
+          if(_bEl){_bEl.innerHTML='Your access has been blocked. Contact <a href="'+_tgHref('blocked',mob)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';_bEl.classList.add('show');}
           return;
         }
         // activity_stage3 — access removed after the inactivity period: don't go to the PIN screen;
@@ -948,6 +959,15 @@ async function processSetupPin(){
             const _mi=document.getElementById('mobile-input');if(_mi)_mi.value=mob;
             const _ie=document.getElementById('mobile-err');
             if(_ie){_ie.textContent=_inactRemovedText()+' Tap Continue to apply again.';_ie.classList.add('show');}
+            return;
+          }
+          // small_batch B4 — access removed by admin: same path, neutral wording (not an inactivity message).
+          if(Array.isArray(_ir)&&_ir.length&&_ir[0].status==='blocked'&&_ir[0].block_reason==='removed'){
+            localStorage.removeItem('t2s_uat_logout_reason');
+            showLoading(false);showScreen('screen-mobile');
+            const _mi=document.getElementById('mobile-input');if(_mi)_mi.value=mob;
+            const _ie=document.getElementById('mobile-err');
+            if(_ie){_ie.textContent='Your access was removed. Tap Continue to apply again.';_ie.classList.add('show');}
             return;
           }
         }
@@ -970,8 +990,8 @@ async function processSetupPin(){
   }
   showLoading(false);showScreen('screen-mobile');
   const _logoutReason=localStorage.getItem('t2s_uat_logout_reason');
-  if(_logoutReason==='disabled'){localStorage.removeItem('t2s_uat_logout_reason');const _dEl=document.getElementById('mobile-err');if(_dEl){_dEl.innerHTML='Your account has been disabled. You have been logged out.<br>Please reach out to <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> for more details.';_dEl.classList.add('show');}}
-  else if(_logoutReason==='blocked'){localStorage.removeItem('t2s_uat_logout_reason');const _bEl2=document.getElementById('mobile-err');if(_bEl2){_bEl2.innerHTML='Your access has been blocked. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';_bEl2.classList.add('show');}}
+  if(_logoutReason==='disabled'){localStorage.removeItem('t2s_uat_logout_reason');const _dEl=document.getElementById('mobile-err');if(_dEl){_dEl.innerHTML='Your account has been disabled. You have been logged out.<br>Please reach out to <a href="'+_tgHref('suspended',localStorage.getItem('t2s_uat_mobile'))+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> for more details.';_dEl.classList.add('show');}}
+  else if(_logoutReason==='blocked'){localStorage.removeItem('t2s_uat_logout_reason');const _bEl2=document.getElementById('mobile-err');if(_bEl2){_bEl2.innerHTML='Your access has been blocked. Contact <a href="'+_tgHref('blocked',localStorage.getItem('t2s_uat_mobile'))+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';_bEl2.classList.add('show');}}
   else if(_logoutReason==='device_removed'){localStorage.removeItem('t2s_uat_logout_reason');const _rEl=document.getElementById('mobile-err');if(_rEl){_rEl.textContent='This device was removed from your account. Please log in again.';_rEl.classList.add('show');}}
   else if(_logoutReason==='idle'){localStorage.removeItem('t2s_uat_logout_reason');const _iEl=document.getElementById('mobile-err');if(_iEl){_iEl.textContent=_idleText()+' Please log in again.';_iEl.classList.add('show');}} // activity_stage3
   else if(_logoutReason==='inactive'){localStorage.removeItem('t2s_uat_logout_reason');const _nEl=document.getElementById('mobile-err');if(_nEl){_nEl.textContent=_inactRemovedText()+' Enter your number and tap Continue to apply again.';_nEl.classList.add('show');}} // activity_stage3
@@ -1043,7 +1063,7 @@ async function requestUnlockFromMobile(mid,mob){
   const _lu=localStorage.getItem('t2s_uat_lock_until');
   const _luIso=_lu?new Date(_lu).toISOString():null;
   if(_luIso&&_isUnlockReqPendingFor(_luIso)){
-    errEl.innerHTML='Unlock request already submitted. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram if needed.';errEl.classList.add('show');
+    errEl.innerHTML='Unlock request already submitted. <a href="'+_tgHref('pin_locked',mob)+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram if needed.';errEl.classList.add('show');
     btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';return;
   }
   btn.disabled=true;btn.textContent='Sending…';
@@ -1054,7 +1074,7 @@ async function requestUnlockFromMobile(mid,mob){
     const _lu=localStorage.getItem('t2s_uat_lock_until');
     if(_lu) localStorage.setItem('t2s_uat_unlock_req_for',new Date(_lu).toISOString());
     errEl.style.color='#059669';errEl.style.background='#f0fdf4';errEl.style.borderColor='#bbf7d0';
-    errEl.innerHTML='✓ Unlock request sent to admin. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';errEl.classList.add('show');
+    errEl.innerHTML='✓ Unlock request sent to admin. <a href="'+_tgHref('pin_locked',mob)+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';errEl.classList.add('show');
     btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';
   }catch(e){
     btn.disabled=false;btn.textContent='🔓 Request Unlock';
