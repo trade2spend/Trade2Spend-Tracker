@@ -1,3 +1,4 @@
+<!-- T2S-UAT-20261120-001 | uat.html: small_batch — (B2) 10 in-app "Contact @T2Sview" links + Join Premium (popup x2, trade-card "Why?") open Telegram with a ready message by reason plus the mobile typed in the form or this device's logged-in number, only when 10 digits (owner approved auto-fill 20 Nov); fixed strings + checked digits only (_tgHref); live ticker link unchanged. (B3) Free channel links ("Follow us" Telegram, "Free Telegram Channel", "Join Free Channel") now open t.me/trade2spend, same as prod. (B4) request blocked with block_reason removed (admin "Remove access") shows "Free access removed → Re-apply". (B5) bug fix: the in-app request form refused every blocked request ("Your account is blocked") even for inactivity removals it invites to re-apply; now inactivity/removed may apply, person/device/old blocks still refused. Rollback: restore uat.html.bak_20261120_pre_smallbatch. -->
 <!-- T2S-UAT-20261116-002 | uat.html: tglink — 4 plain-text "Contact @T2Sview" messages (suspended x2, device restricted, blocked) in the in-app login/apply form now show @T2Sview as a tappable link to https://t.me/T2Sview (same style as the existing lockout links). Fixed text only, no member data. Rollback: restore uat.html.bak_20261116_pre_tglink. -->
 <!-- T2S-UAT-20261116-001 | uat.html: sweep_logout — when this device is found logged out, the inactivity-removal check now runs before the 'device removed' fallback, so a member removed for inactivity sees the inactivity message + Apply again. Rollback: restore uat.html.bak_20261116_pre_sweeplogout. -->
 <!-- T2S-UAT-20261115-003 | uat.html: sesscheck2 — live signal seen to drop at admin logout, so the device check also runs on window focus, right after the live connection (re)subscribes, on the existing 5-min last-seen update when it finds no logged-in row (no new timer — owner 2026-11-15), and at app open in parallel with the member read and BEFORE the app loads (no logged-in flash). Rollback: restore uat.html.bak_20261115_pre_sesscheck2. -->
@@ -789,7 +790,7 @@
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="#dc2626"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.7 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg>
                     <span style="font-size:0.68rem;font-weight:700;color:#dc2626;">YouTube</span>
                 </a>
-                <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;text-decoration:none;">
+                <a href="https://t.me/trade2spend" target="_blank" rel="noopener" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;text-decoration:none;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="#2563eb"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.94 8.19l-2.02 9.52c-.15.67-.54.84-1.09.52l-3-2.21-1.45 1.4c-.16.16-.3.3-.61.3l.22-3.07 5.6-5.06c.24-.22-.05-.34-.38-.12L6.18 14.4l-2.96-.92c-.64-.2-.65-.64.14-.95l11.55-4.45c.54-.19 1.01.13.83.95-.16.68-.15.69-.15.69l.35-.53z"/></svg>
                     <span style="font-size:0.68rem;font-weight:700;color:#2563eb;">Telegram</span>
                 </a>
@@ -799,8 +800,8 @@
                 </a>
             </div>
 
-            <a href="https://t.me/T2Sview" class="btn-primary" style="text-align:center;">Join Premium → Message @T2Sview</a>
-            <a href="https://t.me/T2Sview" class="btn-secondary" style="text-align:center;">Free Telegram Channel @T2Sview</a>
+            <a href="https://t.me/T2Sview" data-tg="premium" class="btn-primary" style="text-align:center;">Join Premium → Message @T2Sview</a>
+            <a href="https://t.me/trade2spend" class="btn-secondary" style="text-align:center;">Free Telegram Channel @trade2spend</a>
         </div>
     </div>
 
@@ -814,8 +815,8 @@
         <div class="popup-icon">🔒</div>
         <h3 class="popup-title">Premium Members Only</h3>
         <p class="popup-text">Get real-time trade entries, exact stop loss levels, targets, and detailed analysis — exclusively for premium members.</p>
-        <a href="https://t.me/T2Sview" class="btn-primary">Join Premium → Message @T2Sview</a>
-        <a href="https://t.me/T2Sview" class="btn-secondary">Join Free Channel</a>
+        <a href="https://t.me/T2Sview" data-tg="premium" class="btn-primary">Join Premium → Message @T2Sview</a>
+        <a href="https://t.me/trade2spend" class="btn-secondary">Join Free Channel</a>
         <div id="popup-free-access-cta" style="margin-top:14px;width:100%;"></div>
         <p style="font-size: 0.7rem; color: #a8a29e; margin-top: 10px;">Educational purposes only. Not investment advice.</p>
     </div>
@@ -1202,11 +1203,13 @@
             if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
             const m = member && member[0] ? member[0] : {};
             if (m.free_access === true) { cta.innerHTML = `<p style="font-size:0.78rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">✅ You already have free access!</p>`; return; }
-            if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="https://t.me/T2Sview" style="color:var(--primary);">@T2Sview</a>.</p>`; return; }
+            if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="${_tgHref('blocked',_tgMyMob())}" style="color:var(--primary);">@T2Sview</a>.</p>`; return; }
             const reqs = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,last_rejected_at,block_reason`, { method: 'GET' });
             const lr = reqs && reqs[0];
             if (lr && lr.status === 'pending') {
                 cta.innerHTML = `<p style="font-size:0.8rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">⏳ Request pending — you'll be notified when reviewed.</p>`;
+            } else if (lr && lr.status === 'blocked' && lr.block_reason === 'removed') { // small_batch B4: admin "Remove access"
+                cta.innerHTML = `<div style="background:#fef3c7;border-radius:10px;padding:10px;font-size:0.78rem;color:#92400e;margin:0;"><b>⚠️ Free access removed</b><br><button onclick="closePopup();showGoldenOpportunityScreen()" style="background:var(--accent);color:white;border:none;border-radius:8px;padding:7px 14px;font-size:0.78rem;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit;">Re-apply for Free Access →</button></div>`;
             } else if (lr && lr.block_reason === 'inactivity') {
                 cta.innerHTML = `<div style="background:#fef3c7;border-radius:10px;padding:10px;font-size:0.78rem;color:#92400e;margin:0;"><b>⚠️ Free access removed</b> — no activity for several market days.<br><button onclick="closePopup();showGoldenOpportunityScreen()" style="background:var(--accent);color:white;border:none;border-radius:8px;padding:7px 14px;font-size:0.78rem;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit;">Re-apply for Free Access →</button></div>`;
             } else if (lr && lr.status === 'rejected' && lr.last_rejected_at) {
@@ -1311,7 +1314,7 @@
             _faPinBuffer = ''; _faUpdateDots('');
             if (d.locked) {
                 const lu = new Date(d.locked_until); const mins = Math.max(1, Math.ceil((lu - new Date()) / 60000));
-                document.getElementById('fa-pin-err').innerHTML = `Account locked — ${mins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.`;
+                document.getElementById('fa-pin-err').innerHTML = `Account locked — ${mins} min remaining. <a href="${_tgHref('pin_locked',_tgFormMob())}" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> to unlock.`;
                 document.getElementById('fa-pin-section').querySelectorAll('button').forEach(b => b.disabled = true);
                 let _faUBtn=document.getElementById('fa-pin-unlock-btn');
                 if(!_faUBtn){_faUBtn=document.createElement('button');_faUBtn.id='fa-pin-unlock-btn';_faUBtn.style.cssText='margin-top:8px;padding:8px 18px;background:#4a2a78;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;width:100%;';_faUBtn.textContent='🔓 Request Unlock';_faUBtn.onclick=_faRequestUnlock;document.getElementById('fa-pin-section').appendChild(_faUBtn);}
@@ -1351,7 +1354,7 @@
         const errEl=document.getElementById('fa-pin-err');
         const lastAt=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0');
         if(lastAt&&Date.now()-lastAt<2*60*60*1000){
-            errEl.innerHTML='Unlock request already submitted. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
+            errEl.innerHTML='Unlock request already submitted. <a href="'+_tgHref('pin_locked',_tgFormMob())+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
             if(btn){btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';}return;
         }
         if(btn){btn.disabled=true;btn.textContent='Sending…';}
@@ -1361,7 +1364,7 @@
             await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:_faGetDeviceId(),event_data:{mobile:mob}})});
             localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
             errEl.style.color='#059669';
-            errEl.innerHTML='✓ Unlock request sent. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
+            errEl.innerHTML='✓ Unlock request sent. <a href="'+_tgHref('pin_locked',_tgFormMob())+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
             if(btn){btn.textContent='Request Submitted';btn.disabled=true;btn.style.opacity='0.5';}
         }catch(e){
             if(btn){btn.disabled=false;btn.textContent='🔓 Request Unlock';}
@@ -1475,13 +1478,13 @@
             if (members && members[0]) {
                 const { status, id: _faMid } = members[0];
                 // Disabled account — block immediately
-                if (status === 'disabled') { hint.style.color='#dc2626'; hint.innerHTML='This account is suspended. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
+                if (status === 'disabled') { hint.style.color='#dc2626'; hint.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
                 // Registered member — fetch pin_hash and show inline PIN entry
                 const _faFull = await sbFetch(`members?id=eq.${_faMid}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
                 const _faMember = (_faFull && _faFull[0]) ? _faFull[0] : members[0];
                 // Lock check — localStorage first (handles mini-form locks where DB may have no active sessions)
                 const _faReqActive=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')&&Date.now()-parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')<2*60*60*1000;
-                function _faSetLockHint(mins){if(hint){hint.style.color='#dc2626';hint.innerHTML=_faReqActive?`Unlock request submitted — waiting for admin. ${mins} min remaining.`:`Account locked — ${mins} min remaining. <a href="https://t.me/T2Sview" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.`;}_faMobileBlocked=true;_faCheckEnable();}
+                function _faSetLockHint(mins){if(hint){hint.style.color='#dc2626';hint.innerHTML=_faReqActive?`Unlock request submitted — waiting for admin. ${mins} min remaining.`:`Account locked — ${mins} min remaining. <a href="${_tgHref('pin_locked',_tgFormMob())}" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.`;}_faMobileBlocked=true;_faCheckEnable();}
                 const _faLockLs=localStorage.getItem('t2s_uat_lock_until');const _faLockedMidLs=localStorage.getItem('t2s_uat_locked_mid');
                 if(_faLockLs&&new Date()<new Date(_faLockLs)&&_faLockedMidLs===_faMid){const _faMinsLs=Math.max(1,Math.ceil((new Date(_faLockLs)-new Date())/60000));_faSetLockHint(_faMinsLs);return;}
                 const _faNowLock=new Date().toISOString();
@@ -1547,7 +1550,7 @@
                 const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier,pin_hash`, { method: 'GET' });
                 if (members && members[0]) {
                     const m = members[0];
-                    if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This account is suspended. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
+                    if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
                     // Registered member — show inline PIN entry
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                     // Fetch free_access for correct mode setting after login
@@ -1574,7 +1577,7 @@
             // Check if this device has been blocked by admin
             const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
             if (_devBlk && _devBlk.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This device has been restricted. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                 return;
             }
@@ -1587,7 +1590,7 @@
                 return;
             }
             // UAT: check for existing pending/rejected/blocked request before submitting
-            const existing = await sbFetch(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at`, { method: 'GET' });
+            const existing = await sbFetch(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at,block_reason`, { method: 'GET' }); // small_batch B5: + block_reason
             if (existing && existing.length > 0) {
                 const lr = existing[0];
                 if (lr.status === 'pending') {
@@ -1603,8 +1606,10 @@
                         return;
                     }
                 }
-                if (lr.status === 'blocked') {
-                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='Your account is blocked. Contact <a href="https://t.me/T2Sview" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
+                // small_batch B5 — removed for inactivity or by admin "Remove access" may apply again
+                // (the Re-apply button offers it); a person/device block or an old blocked record may not.
+                if (lr.status === 'blocked' && lr.block_reason !== 'inactivity' && lr.block_reason !== 'removed') {
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='Your account is blocked. Contact <a href="'+_tgHref('blocked',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
                     return;
                 }
@@ -1764,6 +1769,24 @@
     }
 
     // A device given a 24-hour "app" block cannot use limited mode.
+    // checkpoint small_batch B2 — @T2Sview links open Telegram with a ready message: the reason plus
+    // the member's own mobile when known (the number typed in this form, or this device's logged-in
+    // number). Built only from fixed text + a checked 10-digit number, so nothing else gets in.
+    const _TG_TEXT = { blocked: 'Hi, my Trade2Spend access is blocked.', suspended: 'Hi, my Trade2Spend account is suspended.', pin_locked: 'Hi, my Trade2Spend PIN is locked.', pin_help: 'Hi, I need help resetting my Trade2Spend PIN.', device: 'Hi, my device is restricted on Trade2Spend.', premium: 'Hi, I want to join Trade2Spend Premium.' };
+    function _tgHref(reason, mob) {
+        let d = String(mob || '').replace(/\D/g, ''); if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+        let t = _TG_TEXT[reason] || 'Hi, I need help with the Trade2Spend app.';
+        if (/^\d{10}$/.test(d)) t += ' Mobile: +91' + d;
+        return 'https://t.me/T2Sview?text=' + encodeURIComponent(t);
+    }
+    function _tgMyMob() { try { return localStorage.getItem('t2s_uat_mobile') || ''; } catch (e) { return ''; } }
+    function _tgFormMob() { const el = document.getElementById('fa-mobile-input'); return el ? el.value : ''; }
+    // Fixed links in the page (Join Premium) get their message at tap time, so the number is current.
+    document.addEventListener('click', function (e) {
+        const a = e.target && e.target.closest ? e.target.closest('a[data-tg]') : null;
+        if (a) a.href = _tgHref(a.getAttribute('data-tg'), _tgMyMob());
+    }, true);
+
     async function _uatAppBlocked() {
         try {
             const did = _faGetDeviceId();
@@ -1775,7 +1798,7 @@
     function _showAppBlocked() {
         const o = document.createElement('div');
         o.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#f6f3ee;display:flex;align-items:center;justify-content:center;padding:24px;font-family:inherit;';
-        o.innerHTML = '<div style="max-width:340px;text-align:center;"><div style="font-size:2rem;margin-bottom:10px;">🚫</div><div style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:8px;">Access not available</div><div style="font-size:0.85rem;color:#6b7280;">Contact <a href="https://t.me/T2Sview" style="color:#4a2a78;font-weight:700;">@T2Sview</a></div></div>';
+        o.innerHTML = '<div style="max-width:340px;text-align:center;"><div style="font-size:2rem;margin-bottom:10px;">🚫</div><div style="font-size:1rem;font-weight:700;color:#1a2030;margin-bottom:8px;">Access not available</div><div style="font-size:0.85rem;color:#6b7280;">Contact <a href="'+_tgHref('device',_tgMyMob())+'" style="color:#4a2a78;font-weight:700;">@T2Sview</a></div></div>';
         document.body.appendChild(o);
     }
 
@@ -2863,7 +2886,7 @@
                                 <span class="metric-value ${pnlClass}">${pnlValue}</span>
                             </div>
                             <div class="metric-col" style="display:flex;flex-direction:column;justify-content:flex-end;">
-                                <div class="rationale-box" onclick="window.open('https://t.me/T2Sview','_blank')" style="margin:0;padding:5px 8px;border-radius:6px;cursor:pointer;">
+                                <div class="rationale-box" onclick="window.open(_tgHref('premium',_tgMyMob()),'_blank')" style="margin:0;padding:5px 8px;border-radius:6px;cursor:pointer;">
                                     <span class="rationale-text" style="font-size:0.7rem;">Why?</span>
                                     <span class="rationale-lock" style="font-size:0.68rem;">🔒 Premium Only</span>
                                 </div>
