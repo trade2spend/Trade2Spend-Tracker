@@ -1283,6 +1283,167 @@ function _uatBodyOk(bodyStr, rule) {
   return (rule.required || []).every(k => Object.prototype.hasOwnProperty.call(b, k));
 }
 
+// ── /uat-member-sb MEMBER-OWN-DATA RULES (checkpoint uat_member_phase3, 2026-11-21) ──────
+// Unlike _UAT_ADMIN_RULES (a trusted admin may touch any row), every rule below is checked
+// against the CALLING member's own identity from a valid, currently-issued member token
+// (_validateMemberToken's entry.memberId) — never anything the client sends in the request.
+// Covers uat.html's LOGGED-IN call sites only (posts already had its own door since Oct 25,
+// unchanged here). uat.html's and login_uat.html's PRE-LOGIN / anonymous call sites (mobile
+// number lookups, new-member registration, the device-based access_requests rate-limit
+// check, unlock_request/pin_reset_request audit events) are explicitly NOT covered — they
+// keep using the direct anon-key path unchanged, pending a later Phase 4. feature_flags and
+// device_blocks carry no member data, so they are allowed through this same door even with
+// no token (same treatment the existing posts-GET redaction already gives a free/anonymous
+// viewer below).
+function _uatmOnlyKeys(q, allowed) {
+  const keys = [...q.keys()];
+  return keys.length === new Set(keys).size && keys.every(k => allowed.includes(k));
+}
+function _uatmEq(q, key, val) { return q.get(key) === `eq.${val}`; }
+function _uatmOptEq(q, key, val) { const v = q.get(key); return v === null || v === `eq.${val}`; }
+function _uatmSafeId(q, key) { const v = q.get(key); return typeof v === 'string' && v.startsWith('eq.') && _UAT_SAFE_ID_RE.test(v.slice(3)); }
+function _uatmOptSafeId(q, key) { return q.get(key) === null || _uatmSafeId(q, key); }
+function _uatmUuidEq(q, key) { const v = q.get(key); return typeof v === 'string' && v.startsWith('eq.') && _UAT_UUID_RE.test(v.slice(3)); }
+function _uatmSelect(q, allowed) {
+  const sel = q.get('select');
+  if (sel === null) return false;
+  const parts = sel.split(',');
+  return parts.length === new Set(parts).size && parts.every(f => allowed.includes(f));
+}
+function _uatmJsonObj(bodyStr) {
+  let b; try { b = JSON.parse(bodyStr || 'null'); } catch { return null; }
+  return (b && typeof b === 'object' && !Array.isArray(b)) ? b : null;
+}
+// in.(uuid,uuid,...) — used only by the one cross-member post_shares "who liked this" read.
+const _UAT_UUID_LIST_RE = /^in\.\((?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:,(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})){0,49}\)$/i;
+
+const _UAT_MEMBER_NOAUTH_RULES = {
+  // Read-only, no member data, allowed even with a missing/invalid token.
+  feature_flags: {
+    GET: q => _uatmOnlyKeys(q, ['key', 'select']) && q.get('key') === 'eq.free_access_requests_enabled' && _uatmSelect(q, ['value']),
+  },
+  device_blocks: {
+    GET: q => (_uatmOnlyKeys(q, ['device_id', 'select']) || _uatmOnlyKeys(q, ['device_id', 'scope', 'select']))
+      && _uatmSafeId(q, 'device_id') && _uatmOptEq(q, 'scope', 'app') && _uatmSelect(q, ['blocked_until']),
+  },
+  // The "who liked these posts" read (fetchLikes in uat.html) runs with NO login guard —
+  // free/anonymous browsers see like counts too — so it must stay reachable with no token,
+  // same as feature_flags/device_blocks above. The like/unlike WRITE is different (guarded
+  // client-side by `if (!memberId) return`) and stays in _UAT_MEMBER_AUTH_RULES below.
+  post_shares: {
+    GET: q => _uatmOnlyKeys(q, ['post_id', 'platform', 'select']) && _UAT_UUID_LIST_RE.test(q.get('post_id') || '')
+      && q.get('platform') === 'eq._like' && _uatmSelect(q, ['post_id', 'member_id']),
+  },
+};
+
+// Everything below requires a real, currently-valid member token (entry). Filter checks bind
+// to entry.memberId; write bodies are re-built SERVER-SIDE below (never the client's claimed
+// member_id/timestamps) wherever that matters.
+const _UAT_MEMBER_AUTH_RULES = {
+  members: {
+    GET: (q, entry) => _uatmOnlyKeys(q, ['id', 'select']) && _uatmEq(q, 'id', entry.memberId)
+      && _uatmSelect(q, ['free_access', 'free_access_blocked', 'status', 'tier', 'is_admin', 'pin_hash', 'tour_completed']),
+    PATCH: (q, entry) => _uatmOnlyKeys(q, ['id']) && _uatmEq(q, 'id', entry.memberId),
+  },
+  sessions: {
+    GET: (q, entry) => _uatmOnlyKeys(q, ['member_id', 'device_id', 'is_active', 'select', 'order']) && _uatmEq(q, 'member_id', entry.memberId)
+      && _uatmOptSafeId(q, 'device_id') && _uatmOptEq(q, 'is_active', 'true') && (q.get('order') === null || q.get('order') === 'last_active.desc')
+      && _uatmSelect(q, ['is_active', 'id', 'device_id', 'device_type', 'last_active']),
+    PATCH: (q, entry) => {
+      if (!_uatmEq(q, 'member_id', entry.memberId) || !_uatmSafeId(q, 'device_id')) return null;
+      if (_uatmOnlyKeys(q, ['member_id', 'device_id', 'is_active']) && _uatmEq(q, 'is_active', 'true')) return 'logout_or_heartbeat';
+      if (_uatmOnlyKeys(q, ['id', 'member_id', 'device_id']) && _uatmUuidEq(q, 'id')) return 'remove_device';
+      return null;
+    },
+  },
+  access_requests: {
+    GET: (q, entry) => _uatmOnlyKeys(q, ['member_id', 'order', 'limit', 'select']) && _uatmEq(q, 'member_id', entry.memberId)
+      && (q.get('order') === null || q.get('order') === 'created_at.desc') && (q.get('limit') === null || q.get('limit') === '1')
+      && _uatmSelect(q, ['id', 'status', 'last_rejected_at', 'block_reason', 'name', 'reviewed_at']),
+    POST: () => true, // no filter on a POST; body is validated/rebuilt separately
+  },
+  read_receipts: {
+    GET: (q, entry) => {
+      if (_uatmOnlyKeys(q, ['post_id', 'member_id']) && _uatmUuidEq(q, 'post_id') && _uatmEq(q, 'member_id', entry.memberId)) return true;
+      if (_uatmOnlyKeys(q, ['member_id', 'select']) && _uatmEq(q, 'member_id', entry.memberId) && _uatmSelect(q, ['post_id', 'opened_at'])) return true;
+      return false;
+    },
+    POST: () => true,
+  },
+  push_subscriptions: {
+    GET: (q, entry) => _uatmOnlyKeys(q, ['member_id', 'device_id', 'select']) && _uatmEq(q, 'member_id', entry.memberId)
+      && _uatmSafeId(q, 'device_id') && _uatmSelect(q, ['id']),
+    DELETE: (q, entry) => _uatmOnlyKeys(q, ['member_id', 'device_id']) && _uatmEq(q, 'member_id', entry.memberId) && _uatmSafeId(q, 'device_id'),
+    POST: () => true,
+  },
+  post_shares: {
+    // GET (the "who liked" read) deliberately NOT listed here — it's in
+    // _UAT_MEMBER_NOAUTH_RULES above since it has no login guard client-side.
+    DELETE: (q, entry) => _uatmOnlyKeys(q, ['post_id', 'member_id', 'platform']) && _uatmUuidEq(q, 'post_id')
+      && _uatmEq(q, 'member_id', entry.memberId) && q.get('platform') === 'eq._like',
+    POST: () => true,
+  },
+  audit_log: {
+    POST: () => true,
+  },
+};
+
+// Rebuilds the exact write body to forward to Supabase, from the client's claimed body,
+// the caller's OWN identity (entry), and (for sessions) which PATCH shape matched above.
+// Returns null to reject. Anything not explicitly reconstructed here is dropped — the
+// client's JSON is never forwarded as-is for these tables.
+function _uatmBuildWriteBody(table, cand, entry, claimed) {
+  const b = _uatmJsonObj(claimed);
+  if (!b) return null;
+  const keys = Object.keys(b);
+  if (table === 'members') {
+    if (keys.length === 1 && keys[0] === 'last_seen' && _uatIsIso(b.last_seen)) return JSON.stringify({ last_seen: new Date().toISOString() });
+    if (keys.length === 1 && keys[0] === 'tour_completed' && b.tour_completed === true) return JSON.stringify({ tour_completed: true });
+    return null;
+  }
+  if (table === 'sessions') {
+    if (cand === 'logout_or_heartbeat') {
+      if (keys.length === 1 && keys[0] === 'is_active' && b.is_active === false) return JSON.stringify({ is_active: false });
+      if (keys.length === 1 && keys[0] === 'last_active' && _uatIsIso(b.last_active)) return JSON.stringify({ last_active: new Date().toISOString() });
+      return null;
+    }
+    if (cand === 'remove_device') {
+      if (keys.length === 3 && b.is_active === false && b.failed_attempts_today === 0 && 'locked_until' in b) {
+        return JSON.stringify({ is_active: false, locked_until: new Date(Date.now() + 30 * 60000).toISOString(), failed_attempts_today: 0 });
+      }
+      return null;
+    }
+    return null;
+  }
+  if (table === 'access_requests') {
+    if (keys.length !== 7) return null;
+    const okName = typeof b.name === 'string' && b.name.trim().length > 0 && b.name.length <= 60;
+    const okConsent = b.consent_text === "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
+    const okDevType = b.device_type === 'mobile' || b.device_type === 'desktop';
+    if (!okName || !okConsent || !okDevType || typeof b.device_id !== 'string' || !_UAT_SAFE_ID_RE.test(b.device_id) || !_uatIsIso(b.consented_at) || b.status !== 'pending') return null;
+    return JSON.stringify({ member_id: entry.memberId, name: b.name, consent_text: b.consent_text, device_id: b.device_id, device_type: b.device_type, consented_at: b.consented_at, status: 'pending' });
+  }
+  if (table === 'read_receipts') {
+    if (keys.length !== 5 || typeof b.post_id !== 'string' || !_UAT_UUID_RE.test(b.post_id) || !_uatIsIso(b.delivered_at) || !_uatIsIso(b.opened_at) || typeof b.device_id !== 'string' || !_UAT_SAFE_ID_RE.test(b.device_id)) return null;
+    return JSON.stringify({ post_id: b.post_id, member_id: entry.memberId, delivered_at: b.delivered_at, opened_at: b.opened_at, device_id: b.device_id });
+  }
+  if (table === 'push_subscriptions') {
+    if (keys.length !== 4 || typeof b.device_id !== 'string' || !_UAT_SAFE_ID_RE.test(b.device_id) || !b.subscription_json || typeof b.subscription_json !== 'object' || !_uatIsIso(b.last_used)) return null;
+    return JSON.stringify({ member_id: entry.memberId, device_id: b.device_id, subscription_json: b.subscription_json, last_used: b.last_used });
+  }
+  if (table === 'post_shares') {
+    if (keys.length !== 4 || typeof b.post_id !== 'string' || !_UAT_UUID_RE.test(b.post_id) || b.platform !== '_like' || !_uatIsIso(b.shared_at)) return null;
+    return JSON.stringify({ post_id: b.post_id, member_id: entry.memberId, platform: '_like', shared_at: b.shared_at });
+  }
+  if (table === 'audit_log') {
+    if (b.event_type !== 'sebi_consent') return null; // only event this door accepts; unlock_request/pin_reset_request stay on the Phase 4 path
+    if (!b.event_data || typeof b.event_data !== 'object' || Array.isArray(b.event_data)) return null;
+    if (typeof b.device_id !== 'string' || !_UAT_SAFE_ID_RE.test(b.device_id) || (b.device_type !== 'mobile' && b.device_type !== 'desktop')) return null;
+    return JSON.stringify({ event_type: 'sebi_consent', member_id: entry.memberId, device_id: b.device_id, device_type: b.device_type, event_data: b.event_data });
+  }
+  return null;
+}
+
 // ── WEB PUSH — native implementation (RFC 8291 + RFC 8292, no npm dep) ───────
 import crypto from 'crypto';
 const { subtle } = crypto.webcrypto;
@@ -6609,15 +6770,17 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
     return;
   }
 
-  // ── UAT MEMBER GATEKEEPER (checkpoint stage1_posts_gatekeeper, 2026-10-25) ──────────────
+  // ── UAT MEMBER GATEKEEPER (checkpoint stage1_posts_gatekeeper, 2026-10-25;
+  // extended checkpoint uat_member_phase3, 2026-11-21) ─────────────────────────────────────
   // POST /uat-member-sb. No static secret header — the member session token IS the
   // credential (same reasoning /uat-verify-pin already uses: a correct-credential check is
-  // itself the gate, nothing additional needed). Deliberately narrow for Stage 1: only the
-  // 'posts' table, only GET/POST/PATCH — this closes the paid-content leak, it is not yet a
-  // general-purpose member proxy (members/sessions/etc. stay on their current path for now,
-  // a later stage's job). Writes (POST/PATCH) require the TOKEN's own isAdmin flag — never
-  // a client-claimed value — matching today's real behaviour (only an is_admin member
-  // composes/edits posts from inside uat.html).
+  // itself the gate, nothing additional needed). 'posts' keeps its original Oct-25 behaviour
+  // unchanged below. Phase 3 adds 7 more tables, each bound to the caller's OWN member id
+  // from a valid token (_UAT_MEMBER_AUTH_RULES), plus 2 read-only no-member-data tables
+  // allowed even with no token (_UAT_MEMBER_NOAUTH_RULES). Everything else → 403. Request
+  // headers from the client are NEVER forwarded to Supabase any more (closes a gap found
+  // during the Phase 3 review: the server now always builds its own apikey/Authorization/
+  // Content-Type/Prefer headers, same as /uat-admin-sb already does).
   if (req.method === 'OPTIONS' && urlPath === '/uat-member-sb') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
     res.end(); return;
@@ -6634,32 +6797,84 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
       try {
         const { token, path, method = 'GET', body: reqBody = null, headers: xh = {} } = JSON.parse(mBody || '{}');
         if (!path) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
-        const table = _sbProxyTable(path);
+        const p = String(path);
+        const qi = p.indexOf('?');
+        const table = qi === -1 ? p : p.slice(0, qi);
+        const q = new URLSearchParams(qi === -1 ? '' : p.slice(qi + 1));
         const m = String(method || 'GET').toUpperCase();
-        if (table !== 'posts' || !['GET', 'POST', 'PATCH'].includes(m)) {
-          res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
-        }
-        // Writes always require a real, currently-valid admin identity from the token —
-        // never client-claimed. Reads are different: UAT has an anonymous "browse free"
-        // mode (no PIN ever entered, no token exists) — a missing/invalid token on a GET is
-        // simply treated as the most-restricted free-tier viewer below, not rejected, since
-        // that's already the correct, safe behaviour for someone with no identity at all.
+        // Writes on 'posts' always require a real, currently-valid admin identity from the
+        // token — never client-claimed. Reads are different: UAT has an anonymous "browse
+        // free" mode (no PIN ever entered, no token exists) — a missing/invalid token on a
+        // GET is simply treated as the most-restricted free-tier viewer below, not rejected.
         const entry = _validateMemberToken(token);
-        if ((m === 'POST' || m === 'PATCH') && !(entry && entry.isAdmin)) {
-          res.writeHead(entry ? 403 : 401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: entry ? 'Forbidden' : 'Unauthorized' })); return;
+        // Only a safe, fixed Prefer value is ever honoured from the client; everything else
+        // about the upstream request is built by the server itself below.
+        const prefer = (xh && (xh.Prefer === 'return=minimal')) ? 'return=minimal' : 'return=representation';
+        const sbHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': prefer };
+
+        if (table === 'posts') {
+          if (!['GET', 'POST', 'PATCH'].includes(m)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
+          }
+          if ((m === 'POST' || m === 'PATCH') && !(entry && entry.isAdmin)) {
+            res.writeHead(entry ? 403 : 401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: entry ? 'Forbidden' : 'Unauthorized' })); return;
+          }
+          const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method: m, headers: sbHeaders, ...(reqBody ? { body: reqBody } : {}) });
+          const text = await sbRes.text();
+          if (!sbRes.ok || m !== 'GET' || _memberIsUnlockedViewer(entry)) {
+            res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+            res.end(text || '[]');
+            return;
+          }
+          let rows; try { rows = text ? JSON.parse(text) : []; } catch { rows = []; }
+          const out = await _redactPostsForFreeViewer(rows);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(out));
+          return;
         }
-        const fwdHeaders = { 'apikey': UAT_SB_KEY, 'Authorization': `Bearer ${UAT_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation', ...xh };
-        const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method: m, headers: fwdHeaders, ...(reqBody ? { body: reqBody } : {}) });
-        const text = await sbRes.text();
-        if (!sbRes.ok || m !== 'GET' || _memberIsUnlockedViewer(entry)) {
+
+        // Only actually short-circuits here when THIS method on THIS table has a no-auth
+        // rule (e.g. post_shares GET) — post_shares POST/DELETE fall through to the
+        // token-required rules below even though the table also appears above.
+        const noAuthFn = _UAT_MEMBER_NOAUTH_RULES[table] && _UAT_MEMBER_NOAUTH_RULES[table][m];
+        if (noAuthFn) {
+          if (!noAuthFn(q)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
+          }
+          const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method: m, headers: sbHeaders });
+          const text = await sbRes.text();
           res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
           res.end(text || '[]');
           return;
         }
-        let rows; try { rows = text ? JSON.parse(text) : []; } catch { rows = []; }
-        const out = await _redactPostsForFreeViewer(rows);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(out));
+
+        const authRule = _UAT_MEMBER_AUTH_RULES[table];
+        if (!authRule || !authRule[m]) {
+          res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return;
+        }
+        if (!entry) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Unauthorized' })); return; }
+
+        if (m === 'GET' || m === 'DELETE') {
+          if (!authRule[m](q, entry)) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return; }
+          const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${path}`, { method: m, headers: sbHeaders });
+          const text = await sbRes.text();
+          res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+          res.end(text || '[]');
+          return;
+        }
+
+        // POST / PATCH — filter (if any) must match, THEN the write body is entirely
+        // reconstructed server-side from the caller's own identity; the client's claimed
+        // body is only ever used as a candidate, never forwarded as-is.
+        const cand = authRule[m](q, entry);
+        if (!cand) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return; }
+        const finalBody = _uatmBuildWriteBody(table, cand === true ? null : cand, entry, reqBody);
+        if (!finalBody) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Forbidden' })); return; }
+        const finalPath = m === 'PATCH' ? path : table; // PATCH keeps its filter query string; POST has none
+        const sbRes = await fetch(`${UAT_SB_URL}/rest/v1/${finalPath}`, { method: m, headers: sbHeaders, body: finalBody });
+        const text = await sbRes.text();
+        res.writeHead(sbRes.ok ? 200 : sbRes.status, { 'Content-Type': 'application/json' });
+        res.end(text || '[]');
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
