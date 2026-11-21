@@ -988,7 +988,7 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         try {
             const ids = postIds.join(',');
-            const rows = await sbFetch(`post_shares?post_id=in.(${ids})&platform=eq._like&select=post_id,member_id`, { method: 'GET' });
+            const rows = await sbMemberFetch(`post_shares?post_id=in.(${ids})&platform=eq._like&select=post_id,member_id`, { method: 'GET' });
             if (!Array.isArray(rows)) return;
             const freshCounts = {}, freshMine = new Set();
             rows.forEach(l => {
@@ -1030,8 +1030,8 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId) return;
         try {
-            if (wasLiked) await sbFetch(`post_shares?post_id=eq.${postId}&member_id=eq.${memberId}&platform=eq._like`, { method: 'DELETE' });
-            else          await sbFetch('post_shares', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId, platform: '_like', shared_at: new Date().toISOString() }) });
+            if (wasLiked) await sbMemberFetchIfAuthed(`post_shares?post_id=eq.${postId}&member_id=eq.${memberId}&platform=eq._like`, { method: 'DELETE' });
+            else          await sbMemberFetchIfAuthed('post_shares', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId, platform: '_like', shared_at: new Date().toISOString() }) });
             _trackEvent(wasLiked ? 'unlike_post' : 'like_post', { post_id: postId }); // activity_stage2
         } catch(e) {
             console.error('[Like save]', e.message);
@@ -1189,7 +1189,7 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId) {
             try {
-                const flags = await sbFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' });
+                const flags = await sbMemberFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' });
                 if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
                 cta.innerHTML = `<button onclick="closePopup();showGoldenOpportunityScreen()" style="background:linear-gradient(135deg,#d97706,#b45309);color:white;border:none;border-radius:12px;padding:10px 18px;font-size:0.85rem;font-weight:700;cursor:pointer;width:100%;margin-top:4px;font-family:inherit;">🎁 Request Free Access →</button>`;
             } catch(e) { cta.innerHTML = ''; }
@@ -1197,14 +1197,14 @@
         }
         try {
             const [flags, member] = await Promise.all([
-                sbFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' }),
-                sbFetch(`members?id=eq.${memberId}&select=free_access,free_access_blocked`, { method: 'GET' })
+                sbMemberFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' }),
+                sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=free_access,free_access_blocked`, { method: 'GET' })
             ]);
             if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
             const m = member && member[0] ? member[0] : {};
             if (m.free_access === true) { cta.innerHTML = `<p style="font-size:0.78rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">✅ You already have free access!</p>`; return; }
             if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="${_tgHref('blocked',_tgMyMob())}" style="color:var(--primary);">@T2Sview</a>.</p>`; return; }
-            const reqs = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,last_rejected_at,block_reason`, { method: 'GET' });
+            const reqs = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,last_rejected_at,block_reason`, { method: 'GET' });
             const lr = reqs && reqs[0];
             if (lr && lr.status === 'pending') {
                 cta.innerHTML = `<p style="font-size:0.8rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">⏳ Request pending — you'll be notified when reviewed.</p>`;
@@ -1575,7 +1575,7 @@
             const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
             const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
             // Check if this device has been blocked by admin
-            const _devBlk = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            const _devBlk = await sbMemberFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
             if (_devBlk && _devBlk.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
                 if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
@@ -1590,7 +1590,7 @@
                 return;
             }
             // UAT: check for existing pending/rejected/blocked request before submitting
-            const existing = await sbFetch(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at,block_reason`, { method: 'GET' }); // small_batch B5: + block_reason
+            const existing = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at,block_reason`, { method: 'GET' }); // small_batch B5: + block_reason
             if (existing && existing.length > 0) {
                 const lr = existing[0];
                 if (lr.status === 'pending') {
@@ -1615,10 +1615,10 @@
                 }
             }
             // UAT: write access request directly to UAT Supabase (bypasses production VM)
-            await sbFetch('access_requests', { method: 'POST', body: JSON.stringify({ member_id: resolvedMemberId, name, consent_text: consentText, device_id: deviceId, device_type: deviceType, consented_at: new Date().toISOString(), status: 'pending' }) });
+            await sbMemberFetchIfAuthed('access_requests', { method: 'POST', body: JSON.stringify({ member_id: resolvedMemberId, name, consent_text: consentText, device_id: deviceId, device_type: deviceType, consented_at: new Date().toISOString(), status: 'pending' }) });
             // Write SEBI consent permanently to audit_log (compliance record)
             const mobile = localStorage.getItem('t2s_uat_mobile') ? '+91' + localStorage.getItem('t2s_uat_mobile') : '';
-            await sbFetch('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: resolvedMemberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
+            await sbMemberFetchIfAuthed('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: resolvedMemberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
             if (msg) {
                 msg.style.display = 'block';
                 msg.style.color = '#059669';
@@ -1790,7 +1790,7 @@
     async function _uatAppBlocked() {
         try {
             const did = _faGetDeviceId();
-            const rows = await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&scope=eq.app&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            const rows = await sbMemberFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&scope=eq.app&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
             const now = Date.now();
             return Array.isArray(rows) && rows.some(b => !b.blocked_until || new Date(b.blocked_until).getTime() > now);
         } catch(e) { return false; }
@@ -1875,13 +1875,13 @@
         if (!m || !memberId || m.tier === 'paid' || m.is_admin === true || m.free_access === true || m.free_access_blocked === true) return false;
         if (localStorage.getItem('t2s_uat_mode') !== 'paid') return false;
         try {
-            const r = await sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason`, { method: 'GET' });
+            const r = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason`, { method: 'GET' });
             return Array.isArray(r) && r.length > 0 && r[0].status === 'blocked' && r[0].block_reason === 'inactivity';
         } catch(_) { return false; }
     }
     function _inactLogout(memberId) {
         const did = localStorage.getItem('t2s_uat_device_id');
-        const p = (memberId && did) ? sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${did}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }).catch(() => {}) : Promise.resolve();
+        const p = (memberId && did) ? sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${did}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }).catch(() => {}) : Promise.resolve();
         localStorage.removeItem('t2s_uat_mode');
         localStorage.removeItem('t2s_uat_last_login');
         localStorage.removeItem('t2s_uat_last_active');
@@ -2614,7 +2614,7 @@
             memberTier = (window._cachedMember.free_access === true) ? 'paid' : (window._cachedMember.tier || 'free');
         } else if (memberId) {
             try {
-                const _mv = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,free_access`, { method:'GET' });
+                const _mv = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,is_admin,free_access`, { method:'GET' });
                 if (_mv && _mv[0]) { isAdmin = _mv[0].is_admin === true; memberTier = _mv[0].tier || 'free'; if (_mv[0].free_access === true) memberTier = 'paid'; }
             } catch(e) {}
         }
@@ -2778,7 +2778,7 @@
             let isAdmin = false;
             let memberTier = 'free';
             if(memberId) {
-                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status,free_access`, { method: 'GET' });
+                const members = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,is_admin,status,free_access`, { method: 'GET' });
                 if(members && Array.isArray(members) && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     isAdmin = members[0].is_admin === true;
@@ -3129,7 +3129,7 @@
         const reg = await navigator.serviceWorker.ready;
         // If DB row was deleted by server (expired 410), force-fresh to get a valid endpoint
         if (!forceNew) {
-          const rows = await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&select=id`).catch(() => []);
+          const rows = await sbMemberFetchIfAuthed(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&select=id`).catch(() => []);
           if (!rows || !rows.length) forceNew = true;
         }
         if (forceNew) {
@@ -3138,8 +3138,8 @@
         }
         let sub = await reg.pushManager.getSubscription();
         if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
-        await sbFetch(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
-        await sbFetch('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
+        await sbMemberFetchIfAuthed(`push_subscriptions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+        await sbMemberFetchIfAuthed('push_subscriptions', { method: 'POST', body: JSON.stringify({ member_id: memberId, device_id: deviceId, subscription_json: sub.toJSON(), last_used: new Date().toISOString() }) });
       } catch (e) { console.log('Push subscribe failed:', e.message); }
       finally { _subscribing = false; }
     }
@@ -3184,6 +3184,18 @@
             const text = await res.text();
             return text ? JSON.parse(text) : [];
         } finally { clearTimeout(timer); }
+    }
+    // checkpoint uat_member_phase3 (2026-11-21) — used ONLY at call sites that genuinely need
+    // the caller's own identity (members/sessions/access_requests/read_receipts/
+    // push_subscriptions/post_shares writes/audit_log). Deliberately checks the REAL token at
+    // the moment of the call, not `t2s_uat_mode`: some of these call sites run for a member who
+    // has a member_id locally but no token yet (a pending free-access applicant) — those must
+    // keep working exactly as today (direct path), not start failing. feature_flags/
+    // device_blocks/the post_shares "who liked" read carry no member data and always use
+    // sbMemberFetch directly instead (see their own call sites) since that door allows them
+    // with or without a token.
+    function sbMemberFetchIfAuthed(path, opts={}) {
+        return localStorage.getItem('t2s_uat_member_token') ? sbMemberFetch(path, opts) : sbFetch(path, opts);
     }
 
     // ── SUPABASE REALTIME ─────────────────────────────────────────────────────
@@ -3233,7 +3245,7 @@
         const did = localStorage.getItem('t2s_uat_device_id');
         if (!mid || !did || !/^[0-9a-f-]{36}$/i.test(mid) || !/^[A-Za-z0-9_-]{1,100}$/.test(did)) return null;
         try {
-            const rows = await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${encodeURIComponent(did)}&select=is_active`, { method: 'GET' });
+            const rows = await sbMemberFetchIfAuthed(`sessions?member_id=eq.${mid}&device_id=eq.${encodeURIComponent(did)}&select=is_active`, { method: 'GET' });
             return (Array.isArray(rows) && rows.length && rows.every(r => r && r.is_active === false)) ? 'out' : null;
         } catch (_) { return null; } // check failed — never log out on an error
     }
@@ -3252,7 +3264,7 @@
         if (!_rtMid) return; // this device already logged itself out locally — nothing to do
         let rows;
         try {
-            rows = await sbFetch(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`, { method: 'GET' });
+            rows = await sbMemberFetchIfAuthed(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`, { method: 'GET' });
         } catch (_) { return; }
         if (_rtRedirecting || !rows || !rows.length) return;
         const m = rows[0];
@@ -3282,7 +3294,7 @@
                 _rtDecided = true;
             } else {
                 try {
-                    const _rtReq = await sbFetch(`access_requests?member_id=eq.${_rtMid}&order=created_at.desc&limit=1&select=status`, { method: 'GET' });
+                    const _rtReq = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${_rtMid}&order=created_at.desc&limit=1&select=status`, { method: 'GET' });
                     if (Array.isArray(_rtReq) && _rtReq.length && _rtReq[0].status !== 'pending') _rtDecided = true;
                 } catch (_) { /* check failed — never log out on an error */ }
                 if (_rtRedirecting) return;
@@ -3522,9 +3534,9 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         if(!memberId) return;
         try {
-            const existing = await sbFetch(`read_receipts?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'GET' });
+            const existing = await sbMemberFetchIfAuthed(`read_receipts?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'GET' });
             if(existing && existing.length > 0) return;
-            await sbFetch('read_receipts', {
+            await sbMemberFetchIfAuthed('read_receipts', {
                 method: 'POST',
                 body: JSON.stringify({
                     post_id: postId, member_id: memberId,
@@ -4042,7 +4054,7 @@
         if (memberId) {
             try {
                 const cached = window._cachedMember;
-                const members = cached ? [cached] : await sbFetch(`members?id=eq.${memberId}&select=tier,is_admin,status,free_access`, {method:'GET'});
+                const members = cached ? [cached] : await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,is_admin,status,free_access`, {method:'GET'});
                 if (members?.length) {
                     if (members[0].status === 'disabled') { window.location.href='login.html'; return; }
                     isAdmin = members[0].is_admin === true;
@@ -5066,7 +5078,7 @@
             let isAdmin    = false;
 
             if(memberId) {
-                const members = await sbFetch(`members?id=eq.${memberId}&select=tier,status,is_admin,free_access`, { method: 'GET' });
+                const members = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,status,is_admin,free_access`, { method: 'GET' });
                 if(members && Array.isArray(members) && members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     memberTier = members[0].tier || localStorage.getItem('t2s_uat_mode') || 'free';
@@ -5102,7 +5114,7 @@
 
             let readMap = Object.assign({}, _localReadCache);
             if(memberId) {
-                const receipts = await sbFetch(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
+                const receipts = await sbMemberFetchIfAuthed(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
                 receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
                 _localReadCache = readMap;
                 try { localStorage.setItem('t2s_uat_read_cache', JSON.stringify(readMap)); } catch(e) {}
@@ -5677,6 +5689,10 @@
     async function logout(){
         const memberId = localStorage.getItem('t2s_uat_member_id');
         const deviceId = localStorage.getItem('t2s_uat_device_id');
+        // checkpoint uat_member_phase3 — captured BEFORE the token is cleared below, so this
+        // logout PATCH still gets to use the member door (sbMemberFetchIfAuthed reads
+        // localStorage itself, which would already be empty by the time it ran otherwise).
+        const _hadToken = !!localStorage.getItem('t2s_uat_member_token');
         // Clear session immediately before any async work so refresh cannot auto-login
         ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active','t2s_uat_request_pending','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));
         // Best-effort: mark session inactive in DB
@@ -5684,7 +5700,7 @@
         // page (it used to be, leaving the device counted as active). Goes to login either way.
         if (memberId && deviceId) {
             await Promise.race([
-                sbFetch(
+                (_hadToken ? sbMemberFetch : sbFetch)(
                     `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
                     { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
                 ).catch(()=>{}),
@@ -5714,7 +5730,7 @@
         if (!memberId) { list.innerHTML = ''; return; }
         list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">Loading…</p>';
         try {
-            const rows = await sbFetch(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id,device_id,device_type,last_active&order=last_active.desc`, { method:'GET' });
+            const rows = await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id,device_id,device_type,last_active&order=last_active.desc`, { method:'GET' });
             if (!rows || !rows.length) { list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">No active devices found.</p>'; return; }
             // Fail closed: only offer Remove when exactly one row confidently matches this
             // browser's own device_id — if that's ever ambiguous (0 or 2+ matches), show no
@@ -5751,7 +5767,7 @@
             // 30 minutes, so a hijacker who gets removed can't immediately log back in on the
             // same device. failed_attempts_today reset so this doesn't compound with any
             // pre-existing wrong-PIN count on that row.
-            await sbFetch(`sessions?id=eq.${sessionId}&member_id=eq.${memberId}&device_id=eq.${deviceId}`, {
+            await sbMemberFetchIfAuthed(`sessions?id=eq.${sessionId}&member_id=eq.${memberId}&device_id=eq.${deviceId}`, {
                 method: 'PATCH', body: JSON.stringify({ is_active: false, locked_until: new Date(Date.now() + 30*60000).toISOString(), failed_attempts_today: 0 }), headers: { 'Prefer': 'return=minimal' }
             });
             loadManageDevices();
@@ -5802,7 +5818,7 @@
         if(mode !== 'free' && memberId){
             if(Date.now()-lastLogin >= SESSION_24H){
                 const _expDid=localStorage.getItem('t2s_uat_device_id');
-                if(_expDid){try{await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_expDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
+                if(_expDid){try{await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_expDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
                 window.location.href='login.html'; return;
             }
             // activity_stage3 — idle logout also on reopen: compare the last touch saved before the
@@ -5811,7 +5827,7 @@
             const _idleRef = Math.max(_lastTouch, lastLogin);
             if (_idleRef > 0 && Date.now() - _idleRef > _actIdleMs()) {
                 const _idDid = localStorage.getItem('t2s_uat_device_id');
-                if (_idDid) { try { await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_idDid}&is_active=eq.true`, { method:'PATCH', body: JSON.stringify({ is_active:false }), headers: { 'Prefer':'return=minimal' } }); } catch(e) {} }
+                if (_idDid) { try { await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_idDid}&is_active=eq.true`, { method:'PATCH', body: JSON.stringify({ is_active:false }), headers: { 'Prefer':'return=minimal' } }); } catch(e) {} }
                 localStorage.removeItem('t2s_uat_last_active');
                 localStorage.setItem('t2s_uat_logout_reason', 'idle');
                 window.location.href='login.html'; return;
@@ -5822,7 +5838,7 @@
         if(mode !== 'free' && memberId){
             try {
                 const _sessP = _sessReadSelf().catch(() => null); // sesscheck2: read in parallel with the member row, decided before the app shows
-                const members=await sbFetch(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`,{method:'GET'});
+                const members=await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`,{method:'GET'});
                 if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'||members[0].pin_hash===null||members[0].free_access_blocked===true){
                     if(members&&members[0]&&members[0].status==='disabled') localStorage.setItem('t2s_uat_logout_reason','disabled');
                     if(members&&members[0]&&members[0].free_access_blocked===true) localStorage.setItem('t2s_uat_logout_reason','blocked');
@@ -5834,7 +5850,7 @@
                 // Render tier chip immediately — before any tab fetch completes
                 _renderMemberChip(members[0]);
                 // Silent last_seen ping — feeds free-access inactivity monitor
-                sbFetch(`members?id=eq.${memberId}`,{method:'PATCH',body:JSON.stringify({last_seen:new Date().toISOString()})}).catch(()=>{});
+                sbMemberFetchIfAuthed(`members?id=eq.${memberId}`,{method:'PATCH',body:JSON.stringify({last_seen:new Date().toISOString()})}).catch(()=>{});
             } catch(e){ console.warn('Auth check failed',e); }
         }
         // free_access_blocked can occur with mode cached as 'free' (e.g. a member deactivated
@@ -5845,7 +5861,7 @@
         // with pin_hash genuinely null because no PIN was ever set up — not an auth failure).
         if (mode === 'free' && memberId) {
             try {
-                const _fab = await sbFetch(`members?id=eq.${memberId}&select=free_access_blocked`, {method:'GET'});
+                const _fab = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=free_access_blocked`, {method:'GET'});
                 if (_fab && _fab[0] && _fab[0].free_access_blocked === true) {
                     localStorage.setItem('t2s_uat_logout_reason','blocked');
                     window.location.href='login.html'; return;
@@ -5866,7 +5882,7 @@
             const _did = localStorage.getItem('t2s_uat_device_id');
             const _pingLastActive = () => {
                 if(!_did) return;
-                sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
+                sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
                     {method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString()})})
                     // sesscheck2 (owner 2026-11-15): reuse this existing 5-min call instead of a new timer —
                     // nothing updated = this device may be logged out → confirm with one read, then act.
@@ -5891,7 +5907,7 @@
             if (_el) _el.remove();
         }
         if (localStorage.getItem('t2s_uat_request_pending') === '1' && memberId) {
-            sbFetch(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status`, {method:'GET'})
+            sbMemberFetchIfAuthed(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status`, {method:'GET'})
                 .then(rows => {
                     if (!rows || !rows[0] || rows[0].status !== 'pending') {
                         // Request resolved (approved or rejected) — same action as Realtime handler:
@@ -5914,7 +5930,7 @@
             if (Date.now() - last > _actIdleMs()) { // activity_stage3: re-read so a fresh server setting applies at once
                 clearInterval(_heartbeat);
                 const _idleDid=localStorage.getItem('t2s_uat_device_id');
-                if(memberId&&_idleDid){try{await sbFetch(`sessions?member_id=eq.${memberId}&device_id=eq.${_idleDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
+                if(memberId&&_idleDid){try{await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_idleDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
                 localStorage.removeItem('t2s_uat_last_active'); // activity_stage3: no stale value into the next login
                 if (memberId && mode !== 'free') localStorage.setItem('t2s_uat_logout_reason', 'idle');
                 window.location.href='login.html';
@@ -6232,7 +6248,7 @@
         if (!mid) return;
         if (!forceReplay) {
             try {
-                const rows = await sbFetch(`members?id=eq.${mid}&select=tour_completed`, { method:'GET' });
+                const rows = await sbMemberFetchIfAuthed(`members?id=eq.${mid}&select=tour_completed`, { method:'GET' });
                 if (rows?.[0]?.tour_completed) return;
             } catch(e) { return; }
         }
@@ -6325,7 +6341,7 @@
     function _closeTour() {
         document.getElementById('tour-overlay').style.display = 'none';
         const mid = localStorage.getItem('t2s_uat_member_id');
-        if (mid) sbFetch(`members?id=eq.${mid}`, { method:'PATCH', body:JSON.stringify({ tour_completed:true }) }).catch(()=>{});
+        if (mid) sbMemberFetchIfAuthed(`members?id=eq.${mid}`, { method:'PATCH', body:JSON.stringify({ tour_completed:true }) }).catch(()=>{});
     }
 </script>
 
