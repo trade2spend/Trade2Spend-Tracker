@@ -919,7 +919,7 @@ async function processSetupPin(){
       const d=await res.json();
       if(!d.success){
         showLoading(false);
-        document.getElementById('setup-err').innerHTML=d.deviceNotRegistered?'This PIN reset can only be completed from your previously registered device. Contact <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.':(d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.');
+        document.getElementById('setup-err').innerHTML=d.deviceNotRegistered?'This PIN reset can only be completed from your previously registered device. Contact <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.':(d.deviceMismatch?'Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.':(d.limitReached?'Maximum concurrent login limit reached. Please log out from another device first.':'Failed to save PIN. Please try again.'));
         setupBuffer='';setupFirstPin='';setupStep=1;updateDots('','sd');
         return;
       }
