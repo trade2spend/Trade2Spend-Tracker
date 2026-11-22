@@ -1391,7 +1391,14 @@
             const res = await fetch(`${_VM}/uat-setup-pin`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mobile: mob, device_id: did, pin: _faPinBuffer }) });
             const d = await res.json();
             if (!d.success) {
-                document.getElementById('fa-pin-err').textContent = d.limitReached ? 'Maximum concurrent login limit reached. Log out from another device first.' : 'Error saving PIN. Try again.';
+                const _faPinErrEl = document.getElementById('fa-pin-err');
+                if (d.deviceMismatch) {
+                    _faPinErrEl.innerHTML = 'Please complete PIN setup from the same device you used to apply for access. <a href="'+_tgHref('pin_help',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if you need help.';
+                } else if (d.deviceNotRegistered) {
+                    _faPinErrEl.innerHTML = 'This PIN reset can only be completed from your previously registered device. <a href="'+_tgHref('pin_help',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if you need help.';
+                } else {
+                    _faPinErrEl.textContent = d.limitReached ? 'Maximum concurrent login limit reached. Log out from another device first.' : 'Error saving PIN. Try again.';
+                }
                 _faPinBuffer = ''; _faUpdateDots('');
                 return;
             }
