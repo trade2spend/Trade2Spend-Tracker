@@ -6566,7 +6566,13 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
             // the real member, who will also be setting up around the same time).
             const approvedReqs = await sbFetchUat(`access_requests?member_id=eq.${memberId}&select=device_id`);
             if (!Array.isArray(approvedReqs)) { res.end(JSON.stringify({ success: false })); return; }
-            if (approvedReqs.length && !approvedReqs.some(r => r.device_id === deviceId)) {
+            // checkpoint pin_setup_device_lock_null_fix (2026-11-22, Codex-found) — a row with
+            // no device_id (e.g. an older request from before device tracking existed) carries
+            // NO evidence either way. Only rows that actually recorded a device are compared;
+            // ignoring the rest means a legacy no-device row can never wrongly block a real
+            // member, while a real device mismatch still blocks exactly as before.
+            const approvedReqsWithDevice = approvedReqs.filter(r => r.device_id);
+            if (approvedReqsWithDevice.length && !approvedReqsWithDevice.some(r => r.device_id === deviceId)) {
               res.end(JSON.stringify({ success: false, deviceMismatch: true })); return;
             }
           }
