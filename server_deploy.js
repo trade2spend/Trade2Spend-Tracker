@@ -6551,6 +6551,24 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           if (priorAnySuccess.length) {
             const priorThisDevice = await sbFetchUat(`audit_log?event_type=eq.login_success&member_id=eq.${memberId}&device_id=eq.${deviceId}&select=id&limit=1`);
             if (!Array.isArray(priorThisDevice) || !priorThisDevice.length) { res.end(JSON.stringify({ success: false, deviceNotRegistered: true })); return; }
+          } else {
+            // checkpoint pin_setup_first_time_device_lock (2026-11-22) — TRUE first-time setup
+            // (zero login history). A self-registered applicant always has an access_requests
+            // row carrying the device_id they applied from, filed BEFORE free_access is ever
+            // granted — so require the calling device to match one of THIS member's request
+            // rows (any status, not just 'approved': a row can move to rejected/blocked/
+            // inactivity-revoked before the member ever gets to PIN setup, and that must not
+            // silently drop device protection — Codex-found gap, fixed here by not filtering on
+            // status at all). A member with ZERO access_requests rows (added directly via
+            // admin_uat.html's addMember(), e.g. paid members) has no device to check against —
+            // allowed from any device, unchanged from today (Tushar's explicit accepted risk,
+            // 2026-11-22: exploiting this needs an attacker to win a precise timing race against
+            // the real member, who will also be setting up around the same time).
+            const approvedReqs = await sbFetchUat(`access_requests?member_id=eq.${memberId}&select=device_id`);
+            if (!Array.isArray(approvedReqs)) { res.end(JSON.stringify({ success: false })); return; }
+            if (approvedReqs.length && !approvedReqs.some(r => r.device_id === deviceId)) {
+              res.end(JSON.stringify({ success: false, deviceMismatch: true })); return;
+            }
           }
 
           // Concurrent-session-limit handling — mirrors existing client logic exactly
