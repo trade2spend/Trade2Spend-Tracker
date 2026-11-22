@@ -695,6 +695,14 @@ async function checkMobile(){
     const member=members[0];
     if(member.status==='disabled'){errEl.innerHTML='Your account is suspended. Contact <a href="'+_tgHref('suspended',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
     const _nowIso=new Date().toISOString();
+    // checkpoint pin_setup_device_precheck_latency (2026-11-22) — start the device-ownership
+    // check now, in PARALLEL with the lock check below, instead of after it. It's only ever
+    // consumed later if this member turns out to be a true first-time (no PIN yet) setup;
+    // otherwise the result is simply never read. It's a read-only GET, so starting it early
+    // and sometimes discarding it is harmless — this just overlaps two network round trips
+    // that used to run one after another, cutting the delay before the warning (or the setup
+    // screen) appears.
+    const _setupDeviceCheckPromise=(!member.pin_hash)?_setupDeviceCheck(member.id,getDeviceId()):null;
     const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
     if(_acctLock&&_acctLock.length>0){
       // checkpoint pin_lock_countdown v004/v005 (2026-10-29) — was its own static,
@@ -749,17 +757,29 @@ async function checkMobile(){
       // C2: paid tier OR approved free_access member
       localStorage.removeItem('t2s_uat_request_pending');
       if(member.free_access&&member.tier!=='paid'){localStorage.setItem('t2s_uat_mode','free');}
-      showLoading(false);document.getElementById('mobile-btn').disabled=false;
-      if(member.pin_hash){if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');}
-      else{
-        const _dc=await _setupDeviceCheck(member.id,getDeviceId());
+      if(member.pin_hash){
+        // checkpoint pin_setup_screen_flash_fix (2026-11-22, Codex-found) — same flash fix as
+        // the setup branch below: don't hide the loader until checkLock()'s result (and so the
+        // final screen) is actually known.
+        document.getElementById('mobile-btn').disabled=false;
+        const _locked=await checkLock();
+        showLoading(false);
+        if(_locked){showScreen('screen-pin');return;}
+        showScreen('screen-pin');
+      }else{
+        // checkpoint pin_setup_screen_flash_fix (2026-11-22) — the loading overlay now stays
+        // up until THIS outcome is known, instead of being dismissed before it (which used to
+        // expose the mobile screen for a moment, then flash to the setup screen once the
+        // device check resolved).
+        const _dc=await _setupDeviceCheckPromise;
+        document.getElementById('mobile-btn').disabled=false;
         if(_dc!=='ok'){
           localStorage.removeItem('t2s_uat_member_id');localStorage.removeItem('t2s_uat_mobile');
           if(_dc==='mismatch')errEl.innerHTML='Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.';
           else errEl.textContent='Unable to verify. Check your connection and try again.';
-          errEl.classList.add('show');return;
+          errEl.classList.add('show');showLoading(false);return;
         }
-        showScreen('screen-setup');
+        showScreen('screen-setup');showLoading(false);
       }
     }
   }catch(e){errEl.textContent='Unable to verify. Check your connection and try again.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;}
@@ -995,7 +1015,7 @@ async function processSetupPin(){
             return;
           }
         }
-        currentMember=members[0];currentMobile='+91'+mob;showLoading(false);document.getElementById('pin-member-name').textContent='📱 +91 '+mob;
+        currentMember=members[0];currentMobile='+91'+mob;document.getElementById('pin-member-name').textContent='📱 +91 '+mob;
         // Manage Devices "Remove" doesn't change status/pin_hash either, so this fast-path
         // still lands on the normal PIN screen (correct — just re-enter PIN) but with no
         // explanation of why they were logged out; show it once here instead.
@@ -1010,7 +1030,7 @@ async function processSetupPin(){
           const _dc=await _setupDeviceCheck(currentMember.id,getDeviceId());
           if(_dc!=='ok'){
             localStorage.removeItem('t2s_uat_member_id');localStorage.removeItem('t2s_uat_mobile');
-            showLoading(false);showScreen('screen-mobile');
+            showScreen('screen-mobile');
             const _mi2=document.getElementById('mobile-input');if(_mi2)_mi2.value=mob;
             const _ee2=document.getElementById('mobile-err');
             if(_ee2){
@@ -1018,11 +1038,15 @@ async function processSetupPin(){
               else _ee2.textContent='Unable to verify. Check your connection and try again.';
               _ee2.classList.add('show');
             }
-            return;
+            showLoading(false);return;
           }
-          showScreen('screen-setup');return;
+          showScreen('screen-setup');showLoading(false);return;
         }
-        if(await checkLock()){showScreen('screen-pin');return;}
+        // checkpoint pin_setup_screen_flash_fix (2026-11-22, Codex-found) — same reasoning as
+        // checkMobile(): wait for checkLock()'s result before hiding the loader.
+        const _locked2=await checkLock();
+        showLoading(false);
+        if(_locked2){showScreen('screen-pin');return;}
         showScreen('screen-pin');return;
       }
     }catch(e){}
