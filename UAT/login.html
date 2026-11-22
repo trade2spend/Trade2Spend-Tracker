@@ -481,6 +481,21 @@ function _actEsc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
   }).catch(()=>{});
 })();
 function getDeviceId(){let id=localStorage.getItem('t2s_uat_device_id');if(!id){const b=crypto.getRandomValues(new Uint8Array(12));id='dev_'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem('t2s_uat_device_id',id);}return id;}
+// checkpoint pin_setup_screen_device_precheck (2026-11-22) — client-side mirror of the
+// server's pin_setup_first_time_device_lock check, so a mismatched device sees the warning
+// the moment the mobile number is entered, instead of only after submitting a PIN. Mirrors
+// the server's null-device_id handling too (checkpoint pin_setup_device_lock_null_fix):
+// rows with no device_id saved carry no evidence and are ignored. Fails CLOSED on any lookup
+// error — never falls through to showing the PIN-setup screen if the check itself couldn't run.
+async function _setupDeviceCheck(memberId,deviceId){
+  try{
+    const reqs=await sbFetch(`access_requests?member_id=eq.${memberId}&select=device_id`,{method:'GET',headers:{'Accept':'application/json'}});
+    if(!Array.isArray(reqs))return 'error';
+    const withDevice=reqs.filter(r=>r.device_id);
+    if(withDevice.length&&!withDevice.some(r=>r.device_id===deviceId))return 'mismatch';
+    return 'ok';
+  }catch(e){return 'error';}
+}
 async function sbFetch(path,opts={}){
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),10000);
   const{headers:xh,...rest}=opts;
@@ -736,7 +751,16 @@ async function checkMobile(){
       if(member.free_access&&member.tier!=='paid'){localStorage.setItem('t2s_uat_mode','free');}
       showLoading(false);document.getElementById('mobile-btn').disabled=false;
       if(member.pin_hash){if(await checkLock()){showScreen('screen-pin');return;}showScreen('screen-pin');}
-      else{showScreen('screen-setup');}
+      else{
+        const _dc=await _setupDeviceCheck(member.id,getDeviceId());
+        if(_dc!=='ok'){
+          localStorage.removeItem('t2s_uat_member_id');localStorage.removeItem('t2s_uat_mobile');
+          if(_dc==='mismatch')errEl.innerHTML='Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.';
+          else errEl.textContent='Unable to verify. Check your connection and try again.';
+          errEl.classList.add('show');return;
+        }
+        showScreen('screen-setup');
+      }
     }
   }catch(e){errEl.textContent='Unable to verify. Check your connection and try again.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;}
 }
@@ -982,7 +1006,22 @@ async function processSetupPin(){
           localStorage.removeItem('t2s_uat_logout_reason');
           document.getElementById('pin-err').textContent=_idleText()+' Enter your PIN to continue.';
         }
-        if(currentMember.pin_hash===null){showScreen('screen-setup');return;}
+        if(currentMember.pin_hash===null){
+          const _dc=await _setupDeviceCheck(currentMember.id,getDeviceId());
+          if(_dc!=='ok'){
+            localStorage.removeItem('t2s_uat_member_id');localStorage.removeItem('t2s_uat_mobile');
+            showLoading(false);showScreen('screen-mobile');
+            const _mi2=document.getElementById('mobile-input');if(_mi2)_mi2.value=mob;
+            const _ee2=document.getElementById('mobile-err');
+            if(_ee2){
+              if(_dc==='mismatch')_ee2.innerHTML='Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',mob)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.';
+              else _ee2.textContent='Unable to verify. Check your connection and try again.';
+              _ee2.classList.add('show');
+            }
+            return;
+          }
+          showScreen('screen-setup');return;
+        }
         if(await checkLock()){showScreen('screen-pin');return;}
         showScreen('screen-pin');return;
       }
