@@ -1279,6 +1279,19 @@
         if (!id) { const b = crypto.getRandomValues(new Uint8Array(12)); id = 'dev_' + Array.from(b, x => x.toString(16).padStart(2,'0')).join(''); localStorage.setItem('t2s_uat_device_id', id); }
         return id;
     }
+    // checkpoint pin_setup_screen_device_precheck (2026-11-22) — mirrors login_uat.html's
+    // _setupDeviceCheck and the server's pin_setup_first_time_device_lock check, so the
+    // mini sign-up form's PIN-setup step is never shown to a mismatched device either.
+    // Fails CLOSED on any lookup error.
+    async function _faSetupDeviceCheck(memberId, deviceId) {
+        try {
+            const reqs = await sbFetch(`access_requests?member_id=eq.${memberId}&select=device_id`, { method: 'GET' });
+            if (!Array.isArray(reqs)) return 'error';
+            const withDevice = reqs.filter(r => r.device_id);
+            if (withDevice.length && !withDevice.some(r => r.device_id === deviceId)) return 'mismatch';
+            return 'ok';
+        } catch (e) { return 'error'; }
+    }
     function _faUpdateDots(buf) {
         for (let i = 0; i < 4; i++) { const d = document.getElementById('fa-d' + i); if (!d) return; d.style.background = i < buf.length ? '#4a2a78' : '#f3f0f8'; d.style.borderColor = i < buf.length ? '#4a2a78' : '#d8ceed'; }
     }
@@ -1497,9 +1510,25 @@
                 const _faNowLock=new Date().toISOString();
                 const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&device_id=eq.${localStorage.getItem('t2s_uat_device_id')||''}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
                 if(_faLockRow&&_faLockRow.length>0){const _faLuDb=new Date(_faLockRow[0].locked_until);const _faMinsDb=Math.max(1,Math.ceil((_faLuDb-new Date())/60000));localStorage.setItem('t2s_uat_lock_until',_faLockRow[0].locked_until);localStorage.setItem('t2s_uat_locked_mid',_faMid);_faSetLockHint(_faMinsDb);return;}
-                if (hint) { hint.style.color = '#4a2a78'; hint.textContent = _faMember.pin_hash ? 'Registered member — enter your PIN below.' : 'Registered member — set up your PIN below.'; }
                 _faMobileBlocked = true;
-                _faMember.pin_hash ? _faShowPinSection(_faMember, 'Enter your PIN to continue') : _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
+                if (_faMember.pin_hash) {
+                    if (hint) { hint.style.color = '#4a2a78'; hint.textContent = 'Registered member — enter your PIN below.'; }
+                    _faShowPinSection(_faMember, 'Enter your PIN to continue');
+                } else {
+                    const _faDc = await _faSetupDeviceCheck(_faMid, _faGetDeviceId());
+                    if (_faDc !== 'ok') {
+                        if (hint) {
+                            hint.style.color = '#dc2626';
+                            hint.innerHTML = _faDc === 'mismatch'
+                                ? 'Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.'
+                                : 'Unable to verify. Check your connection and try again.';
+                        }
+                        _faCheckEnable();
+                        return;
+                    }
+                    if (hint) { hint.style.color = '#4a2a78'; hint.textContent = 'Registered member — set up your PIN below.'; }
+                    _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
+                }
             } else {
                 // Not in DB — show registration form so they can submit a request
                 if (hint) { hint.style.color = '#9ca3af'; hint.textContent = ''; }
@@ -1563,7 +1592,21 @@
                     // Fetch free_access for correct mode setting after login
                     const _faFull2 = await sbFetch(`members?id=eq.${m.id}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
                     const _faMem2 = (_faFull2 && _faFull2[0]) ? _faFull2[0] : m;
-                    _faMem2.pin_hash ? _faShowPinSection(_faMem2, 'Enter your PIN to continue') : _faShowPinSetup(_faMem2, 'Create your 4-digit PIN');
+                    if (_faMem2.pin_hash) {
+                        _faShowPinSection(_faMem2, 'Enter your PIN to continue');
+                    } else {
+                        const _faDc2 = await _faSetupDeviceCheck(_faMem2.id, _faGetDeviceId());
+                        if (_faDc2 !== 'ok') {
+                            if (msg) {
+                                msg.style.display='block'; msg.style.color='#dc2626';
+                                msg.innerHTML = _faDc2 === 'mismatch'
+                                    ? 'Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.'
+                                    : 'Unable to verify. Check your connection and try again.';
+                            }
+                            return;
+                        }
+                        _faShowPinSetup(_faMem2, 'Create your 4-digit PIN');
+                    }
                     return;
                 }
                 const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
@@ -1579,7 +1622,11 @@
         const consentText = "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
         if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
         try {
-            const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
+            // checkpoint pin_setup_device_id_web_fallback_fix (2026-11-22, Codex-found) — was
+            // falling back to the literal string 'web' when no device id existed yet, instead
+            // of generating one. That 'web' value then got saved as this access_requests row's
+            // device_id, so the real applicant's OWN later device check could never match it.
+            const deviceId = _faGetDeviceId();
             const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
             // Check if this device has been blocked by admin
             const _devBlk = await sbMemberFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
