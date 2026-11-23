@@ -175,6 +175,22 @@ const _khMemberTiers = new Map(); // memberId → { tier, ts } (1-hour cache)
 // a supplementary guard alongside the real control (server-side per-device and
 // per-account lockout, enforced inside the routes themselves).
 const _pinRate = new Map(); // IP → { count, reset }
+// checkpoint uat_phase4_doors (2026-11-22) — shared by the 5 pre-login "safe door" routes
+// below (/uat-resolve-member, /uat-lock-status, /uat-access-request-status,
+// /uat-submit-access-request, /uat-audit-event). Separate bucket from _pinRate so PIN
+// attempts and these doors don't compete for the same budget. Higher ceiling than the PIN
+// endpoints (40/5min vs 20/5min) because a single mobile-entry pageload legitimately calls
+// several of these doors in sequence (resolve-member, lock-status, access-request-status).
+const _phase4Rate = new Map(); // IP → { count, reset }
+function _phase4RateOk(req) {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  const nowMs = Date.now();
+  if (!_phase4Rate.has(ip)) _phase4Rate.set(ip, { count: 0, reset: nowMs + 5 * 60 * 1000 });
+  const rl = _phase4Rate.get(ip);
+  if (nowMs > rl.reset) { rl.count = 0; rl.reset = nowMs + 5 * 60 * 1000; }
+  rl.count++;
+  return rl.count <= 40;
+}
 const PIN_WEAK_LIST = ['2222','3333','4444','5555','6666','7777','8888','9999','0000','1234','4321','1212']; // mirrors UAT/login_uat.html WEAK_PINS exactly
 const MAX_ATTEMPTS_PIN = 3;  // mirrors client MAX_ATTEMPTS
 const LOCK_MINUTES_PIN = 30; // mirrors client LOCK_MINUTES
@@ -6759,6 +6775,177 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
         }
       } catch (e) {
         console.error('[uat-pin]', e.message);
+        try { res.end(JSON.stringify({ success: false })); } catch {}
+      }
+    });
+    return;
+  }
+
+  // ── UAT PHASE 4 PRE-LOGIN DOORS (checkpoint uat_phase4_doors, 2026-11-22) ────────────────
+  // Replaces login_uat.html's and uat.html's PRE-LOGIN direct-anon-key Supabase calls
+  // (members/sessions/access_requests/audit_log/device_blocks) with purpose-built server
+  // routes, so Phase 5 can later lock the UAT database down without breaking the pre-login
+  // flow. Deliberately NOT a generic table proxy — each route has its own fixed, narrow
+  // contract, same style as /uat-verify-pin and /uat-setup-pin above. No static-key gate,
+  // same reasoning as those routes: a pre-login door has to be reachable before any
+  // credential exists; the per-IP rate limit below is the supplementary guard.
+  // Accepted, unchanged from today (not introduced by this plan): /uat-resolve-member and
+  // /uat-access-request-status are identity-less — anyone who knows a mobile number can
+  // query them, exactly as the raw calls they replace already allowed. Same category as the
+  // 2026-10-20 mobile-enumeration finding and the 2026-11-22 admin-added-member PIN-setup
+  // residual — documented, not solved here.
+  const _P4_ROUTES = ['/uat-resolve-member', '/uat-lock-status', '/uat-access-request-status', '/uat-submit-access-request', '/uat-audit-event'];
+  if (req.method === 'OPTIONS' && _P4_ROUTES.includes(urlPath)) {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+  if (req.method === 'POST' && _P4_ROUTES.includes(urlPath)) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (!_phase4RateOk(req)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please wait a few minutes.' }));
+      return;
+    }
+    if (!UAT_SB_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'UAT_SUPABASE_KEY not set on server' })); return;
+    }
+    let p4Body = '';
+    req.on('data', c => { p4Body += c; if (p4Body.length > 8192) req.destroy(); });
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); // soft-fail pattern, matches /uat-verify-pin/-setup-pin
+      try {
+        const parsed = JSON.parse(p4Body || '{}');
+
+        // ── POST /uat-resolve-member {mobile?, member_id?} ─────────────────────────────────
+        if (urlPath === '/uat-resolve-member') {
+          const mobileIn = String(parsed.mobile || '');
+          const memberIdIn = String(parsed.member_id || '');
+          if (!mobileIn && !memberIdIn) { res.end(JSON.stringify({ exists: false })); return; }
+          let q;
+          if (memberIdIn) {
+            if (!_UAT_UUID_RE.test(memberIdIn)) { res.end(JSON.stringify({ exists: false })); return; }
+            q = `members?id=eq.${memberIdIn}&select=id,mobile,status,tier,is_admin,pin_hash,free_access,free_access_blocked`;
+          } else {
+            if (!/^\+91\d{10}$/.test(mobileIn)) { res.end(JSON.stringify({ exists: false })); return; }
+            q = `members?mobile=eq.${encodeURIComponent(mobileIn)}&select=id,mobile,status,tier,is_admin,pin_hash,free_access,free_access_blocked`;
+          }
+          const members = await sbFetchUat(q);
+          if (!Array.isArray(members) || !members.length) { res.end(JSON.stringify({ exists: false })); return; }
+          const m = members[0];
+          res.end(JSON.stringify({ exists: true, id: m.id, mobile: m.mobile, status: m.status, tier: m.tier, is_admin: m.is_admin, pin_hash: !!m.pin_hash, free_access: m.free_access, free_access_blocked: m.free_access_blocked }));
+          return;
+        }
+
+        // ── POST /uat-lock-status {member_id, device_id} ───────────────────────────────────
+        // session_exists = true if ANY sessions row exists for this exact member+device pair
+        // (not just currently-locked ones) — deliberately replicates forgotPin()'s existing
+        // "has this device logged in before" check exactly as it works today, including its
+        // known imprecision (a row can exist from a failed attempt, not just a success).
+        // Tightening that is a separate, explicitly-scoped task, not part of this door.
+        if (urlPath === '/uat-lock-status') {
+          const memberId = String(parsed.member_id || '');
+          const deviceId = String(parsed.device_id || '');
+          if (!_UAT_UUID_RE.test(memberId) || !deviceId) { res.end(JSON.stringify({ session_exists: false, locked: false })); return; }
+          const rows = await sbFetchUat(`sessions?member_id=eq.${memberId}&device_id=eq.${encodeURIComponent(deviceId)}&select=locked_until`);
+          if (!Array.isArray(rows) || !rows.length) { res.end(JSON.stringify({ session_exists: false, locked: false })); return; }
+          const lockedUntil = rows[0].locked_until;
+          const isLocked = !!(lockedUntil && new Date(lockedUntil) > new Date());
+          res.end(JSON.stringify({ session_exists: true, locked: isLocked, locked_until: isLocked ? lockedUntil : null }));
+          return;
+        }
+
+        // ── POST /uat-access-request-status {member_id} ────────────────────────────────────
+        if (urlPath === '/uat-access-request-status') {
+          const memberId = String(parsed.member_id || '');
+          if (!_UAT_UUID_RE.test(memberId)) { res.end(JSON.stringify({ exists: false })); return; }
+          const rows = await sbFetchUat(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason,last_rejected_at,reviewed_at,name`);
+          if (!Array.isArray(rows) || !rows.length) { res.end(JSON.stringify({ exists: false })); return; }
+          const r = rows[0];
+          res.end(JSON.stringify({ exists: true, status: r.status, block_reason: r.block_reason, last_rejected_at: r.last_rejected_at, reviewed_at: r.reviewed_at, name: r.name }));
+          return;
+        }
+
+        // ── POST /uat-submit-access-request {mobile, name, consent_text, device_id, device_type} ──
+        // Canonical rule set (checkpoint uat_phase4_doors), unifying login_uat.html's and
+        // uat.html's previously-DIFFERENT submit flows into one server-enforced behavior —
+        // the fuller, safer uat.html rules (rejection cooldown + blocked-reason exceptions)
+        // now apply to both pages. Consent is written BEFORE the request (Tushar's explicit
+        // decision, 2026-11-22): the UI never allows submitting without the consent checkbox
+        // ticked, so a request must never exist without its matching consent record — if the
+        // consent write fails, the whole submission fails closed, nothing else is written.
+        if (urlPath === '/uat-submit-access-request') {
+          const mobile = String(parsed.mobile || '');
+          const name = String(parsed.name || '').trim();
+          const consentText = String(parsed.consent_text || '').trim();
+          const deviceId = String(parsed.device_id || '');
+          const deviceType = String(parsed.device_type || '') === 'mobile' ? 'mobile' : 'desktop';
+          if (!/^\+91\d{10}$/.test(mobile) || !name || !consentText || !deviceId) { res.end(JSON.stringify({ success: false })); return; }
+
+          const devBlocks = await sbFetchUat(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`);
+          if (!Array.isArray(devBlocks)) { res.end(JSON.stringify({ success: false })); return; }
+          if (devBlocks.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
+            res.end(JSON.stringify({ success: false, deviceBlocked: true })); return;
+          }
+
+          const rlSince = new Date(Date.now() - 24 * 3600000).toISOString();
+          const recent = await sbFetchUat(`access_requests?device_id=eq.${encodeURIComponent(deviceId)}&created_at=gte.${encodeURIComponent(rlSince)}&select=id`);
+          if (!Array.isArray(recent)) { res.end(JSON.stringify({ success: false })); return; }
+          if (recent.length >= 3) { res.end(JSON.stringify({ success: false, rateLimited: true })); return; }
+
+          let memberId;
+          const existingMembers = await sbFetchUat(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,status`);
+          if (!Array.isArray(existingMembers)) { res.end(JSON.stringify({ success: false })); return; }
+          if (existingMembers.length) {
+            if (existingMembers[0].status === 'disabled') { res.end(JSON.stringify({ success: false, disabled: true })); return; }
+            memberId = existingMembers[0].id;
+          } else {
+            const created = await sbFetchUat('members', { method: 'POST', body: JSON.stringify({ mobile, name, tier: 'free', status: 'enabled' }) });
+            if (!Array.isArray(created) || !created.length) { res.end(JSON.stringify({ success: false })); return; }
+            memberId = created[0].id;
+          }
+
+          const latest = await sbFetchUat(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason,last_rejected_at`);
+          if (!Array.isArray(latest)) { res.end(JSON.stringify({ success: false })); return; }
+          if (latest.length) {
+            const lr = latest[0];
+            if (lr.status === 'pending') { res.end(JSON.stringify({ success: false, alreadyPending: true, member_id: memberId })); return; } // member_id: login_uat.html's existing "treat as pending, log in as limited access" redirect needs it
+            if (lr.status === 'rejected' && lr.last_rejected_at && new Date() < new Date(new Date(lr.last_rejected_at).getTime() + 24 * 3600000)) {
+              res.end(JSON.stringify({ success: false, rejectedCooldown: true })); return;
+            }
+            if (lr.status === 'blocked' && lr.block_reason !== 'inactivity' && lr.block_reason !== 'removed') {
+              res.end(JSON.stringify({ success: false, blocked: true })); return;
+            }
+          }
+
+          const consentWrite = await sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
+          if (!Array.isArray(consentWrite) || !consentWrite.length) { res.end(JSON.stringify({ success: false })); return; }
+
+          const reqWrite = await sbFetchUat('access_requests', { method: 'POST', body: JSON.stringify({ member_id: memberId, name, consent_text: consentText, device_id: deviceId, device_type: deviceType, consented_at: new Date().toISOString(), status: 'pending' }) });
+          if (!Array.isArray(reqWrite) || !reqWrite.length) { res.end(JSON.stringify({ success: false })); return; }
+
+          res.end(JSON.stringify({ success: true, member_id: memberId })); return;
+        }
+
+        // ── POST /uat-audit-event {event_type, member_id, device_id, device_type, event_data} ──
+        // Write-only, strict allowlist — exactly the 2 pre-login event types used today.
+        // Never a generic passthrough; any other event_type is rejected without writing.
+        if (urlPath === '/uat-audit-event') {
+          const eventType = String(parsed.event_type || '');
+          if (eventType !== 'pin_reset_request' && eventType !== 'unlock_request') { res.end(JSON.stringify({ success: false })); return; }
+          const memberId = String(parsed.member_id || '');
+          const deviceId = String(parsed.device_id || '');
+          if (!_UAT_UUID_RE.test(memberId) || !deviceId) { res.end(JSON.stringify({ success: false })); return; }
+          const deviceType = String(parsed.device_type || '') === 'mobile' ? 'mobile' : 'desktop';
+          const eventData = (parsed.event_data && typeof parsed.event_data === 'object' && !Array.isArray(parsed.event_data)) ? parsed.event_data : {};
+          const written = await sbFetchUat('audit_log', { method: 'POST', body: JSON.stringify({ event_type: eventType, member_id: memberId, device_id: deviceId, device_type: deviceType, event_data: eventData }) });
+          res.end(JSON.stringify({ success: Array.isArray(written) && written.length > 0 }));
+          return;
+        }
+
+        res.end(JSON.stringify({ success: false }));
+      } catch (e) {
+        console.error('[uat-phase4]', e.message);
         try { res.end(JSON.stringify({ success: false })); } catch {}
       }
     });
