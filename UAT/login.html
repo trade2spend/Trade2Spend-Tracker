@@ -496,6 +496,22 @@ async function _setupDeviceCheck(memberId,deviceId){
     return 'ok';
   }catch(e){return 'error';}
 }
+// checkpoint uat_phase4_doors (2026-11-22) — thin helper for the 5 new pre-login server
+// doors (/uat-resolve-member, /uat-lock-status, /uat-access-request-status,
+// /uat-submit-access-request, /uat-audit-event). Returns the parsed JSON response, or null
+// on any network/parse failure — every call site below treats null the same as a "not
+// found"/"not ok" result, never as if the check passed.
+async function _p4(path,body){
+  try{
+    const res=await fetch(`${_VM}${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    // checkpoint uat_phase4_doors (2026-11-22, Codex-found) — a rate-limit (429) or
+    // not-configured (503) response is still valid JSON, but must never be read as a real
+    // door answer (it has none of the expected fields, so e.g. a 429 body would otherwise
+    // be silently treated as "not locked"/"not found").
+    if(!res.ok)return null;
+    return await res.json();
+  }catch(e){return null;}
+}
 async function sbFetch(path,opts={}){
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),10000);
   const{headers:xh,...rest}=opts;
@@ -576,17 +592,22 @@ function _clearLockUI(){
 function _pinLockRecheck(){
   const mid=localStorage.getItem('t2s_uat_member_id');
   if(!mid){_clearLockUI();return;}
-  sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}})
+  // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw sessions fetch with the new
+  // /uat-lock-status door. _p4() never rejects (it catches its own network/parse errors and
+  // resolves to null instead), so the fail-closed retry this used to get from .catch() is now
+  // an explicit s===null check — a failed check must still never be treated as "unlocked"
+  // (checkpoint pin_lock_countdown v006, 2026-10-29, unchanged reasoning).
+  _p4('/uat-lock-status',{member_id:mid,device_id:getDeviceId()})
     .then(s=>{
-      if(s&&s.length>0&&s[0].locked_until&&new Date(s[0].locked_until)>new Date()){
-        const targetDate=new Date(s[0].locked_until);
+      if(s===null){ setTimeout(_pinLockRecheck,5000); return; }
+      if(s&&s.locked&&s.locked_until){
+        const targetDate=new Date(s.locked_until);
         localStorage.setItem('t2s_uat_lock_until',targetDate.toISOString());
         _showLockMsg(targetDate);
       }else{
         _clearLockUI();
       }
-    })
-    .catch(()=>{ setTimeout(_pinLockRecheck,5000); });
+    });
 }
 function _showLockMsg(targetDate){
   document.getElementById('pin-lock').style.display='block';
@@ -625,10 +646,18 @@ function _mobileLockRender(mmss,isPending,errEl,btn,member,inp){
 }
 function _mobileLockRecheck(member,inp,errEl){
   const btn=document.getElementById('mobile-btn');
-  sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&locked_until=gt.${encodeURIComponent(new Date().toISOString())}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}})
+  // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw sessions fetch with the new
+  // /uat-lock-status door. _p4() never rejects, so the s===null check below does the same
+  // job the old .catch() did.
+  _p4('/uat-lock-status',{member_id:member.id,device_id:getDeviceId()})
     .then(s=>{
-      if(s&&s.length>0&&s[0].locked_until){
-        const targetDate=new Date(s[0].locked_until);
+      // checkpoint pin_lock_countdown v006 (2026-10-29, Codex-found) — a FAILED check is not
+      // evidence the lock ended; treating it as "unlocked" would let a still-locked member
+      // through during a network blip. Fail closed: leave the lock UI exactly as it was and
+      // just retry shortly, instead of resetting anything.
+      if(s===null){ setTimeout(()=>_mobileLockRecheck(member,inp,errEl),5000); return; }
+      if(s&&s.locked&&s.locked_until){
+        const targetDate=new Date(s.locked_until);
         localStorage.setItem('t2s_uat_lock_until',targetDate.toISOString());
         _runLockCountdown(targetDate,
           (mmss,isPending)=>_mobileLockRender(mmss,isPending,errEl,btn,member,inp),
@@ -637,20 +666,17 @@ function _mobileLockRecheck(member,inp,errEl){
       }else{
         _resetMobileBtn();localStorage.removeItem('t2s_uat_lock_until');localStorage.removeItem('t2s_uat_locked_mid');localStorage.removeItem('t2s_uat_unlock_req_at');localStorage.removeItem('t2s_uat_unlock_req_for');
       }
-    })
-    // checkpoint pin_lock_countdown v006 (2026-10-29, Codex-found) — a FAILED check is not
-    // evidence the lock ended; treating it as "unlocked" would let a still-locked member
-    // through during a network blip. Fail closed: leave the lock UI exactly as it was and
-    // just retry shortly, instead of resetting anything.
-    .catch(()=>{ setTimeout(()=>_mobileLockRecheck(member,inp,errEl),5000); });
+    });
 }
 async function checkLock(){
   // DB is authoritative — check it first
   try{
     const mid=localStorage.getItem('t2s_uat_member_id');
     if(mid){
-      const s=await sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${getDeviceId()}&select=locked_until`,{method:'GET',headers:{'Accept':'application/json'}});
-      if(s&&s.length>0&&s[0].locked_until){const sl=new Date(s[0].locked_until);if(new Date()<sl){localStorage.setItem('t2s_uat_lock_until',sl.toISOString());_showLockMsg(sl);return true;}}
+      // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw sessions fetch with the
+      // new /uat-lock-status door; same decision (locked → show countdown, else clear).
+      const s=await _p4('/uat-lock-status',{member_id:mid,device_id:getDeviceId()});
+      if(s&&s.locked&&s.locked_until){const sl=new Date(s.locked_until);if(new Date()<sl){localStorage.setItem('t2s_uat_lock_until',sl.toISOString());_showLockMsg(sl);return true;}}
       // DB says not locked for this device — check localStorage-only lock (set by mini-form when no active session existed)
       const _lsLk=localStorage.getItem('t2s_uat_lock_until');const _lsMid=localStorage.getItem('t2s_uat_locked_mid');
       if(_lsLk&&new Date()<new Date(_lsLk)&&_lsMid===mid){_showLockMsg(new Date(_lsLk));return true;}
@@ -690,11 +716,13 @@ async function checkMobile(){
   showLoading(true);document.getElementById('mobile-btn').disabled=true;
   try{
     const mobile='+91'+inp;
-    const members=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,mobile,status,tier,is_admin,pin_hash,free_access,free_access_blocked`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!members||members.length===0){_introInactive(false);_quickReapplySet(null);currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';document.getElementById('reg-msg').style.display='none';showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');return;}
-    const member=members[0];
+    const member=await _p4('/uat-resolve-member',{mobile});
+    // checkpoint uat_phase4_doors (2026-11-22, Codex-found) — a failed lookup (null) must
+    // show the SAME "unable to verify" message the outer catch below gives a thrown error,
+    // never the "not registered, apply now" screen — those are very different situations.
+    if(member===null){errEl.textContent='Unable to verify. Check your connection and try again.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    if(!member.exists){_introInactive(false);_quickReapplySet(null);currentUnregisteredMobile=inp;document.getElementById('reg-mobile-display').textContent=inp;document.getElementById('reg-name-input').value='';document.getElementById('reg-consent-check').checked=false;document.getElementById('reg-submit-btn').disabled=true;document.getElementById('reg-submit-btn').style.opacity='0.5';document.getElementById('reg-msg').style.display='none';showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-intro');return;}
     if(member.status==='disabled'){errEl.innerHTML='Your account is suspended. Contact <a href="'+_tgHref('suspended',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
-    const _nowIso=new Date().toISOString();
     // checkpoint pin_setup_device_precheck_latency (2026-11-22) — start the device-ownership
     // check now, in PARALLEL with the lock check below, instead of after it. It's only ever
     // consumed later if this member turns out to be a true first-time (no PIN yet) setup;
@@ -703,12 +731,17 @@ async function checkMobile(){
     // that used to run one after another, cutting the delay before the warning (or the setup
     // screen) appears.
     const _setupDeviceCheckPromise=(!member.pin_hash)?_setupDeviceCheck(member.id,getDeviceId()):null;
-    const _acctLock=await sbFetch(`sessions?member_id=eq.${member.id}&device_id=eq.${getDeviceId()}&locked_until=gt.${encodeURIComponent(_nowIso)}&select=locked_until&limit=1`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(_acctLock&&_acctLock.length>0){
+    // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw sessions lock-check call
+    // with the new /uat-lock-status door; same data, same decision, just server-fetched.
+    const _lockResp=await _p4('/uat-lock-status',{member_id:member.id,device_id:getDeviceId()});
+    // checkpoint uat_phase4_doors (2026-11-22, Codex-found) — a failed lock check must never
+    // silently proceed as "not locked"; fail the same way the outer catch would have.
+    if(_lockResp===null){errEl.textContent='Unable to verify. Check your connection and try again.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
+    if(_lockResp&&_lockResp.locked){
       // checkpoint pin_lock_countdown v004/v005 (2026-10-29) — was its own static,
       // once-rendered text with no countdown; now shares the same engine checkLock()/
       // verifyPin() use, via the _mobileLockRender/_mobileLockRecheck helpers below.
-      const targetDate=new Date(_acctLock[0].locked_until);
+      const targetDate=new Date(_lockResp.locked_until);
       localStorage.setItem('t2s_uat_lock_until',targetDate.toISOString());
       showLoading(false);
       const _mBtn=document.getElementById('mobile-btn');
@@ -736,10 +769,12 @@ async function checkMobile(){
     if(member.tier !== 'paid' && !member.free_access){
       if(member.free_access_blocked){errEl.innerHTML='Your access has been blocked. Contact <a href="'+_tgHref('blocked',inp)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';errEl.classList.add('show');showLoading(false);document.getElementById('mobile-btn').disabled=false;return;}
       // C3: check request status — pending stays on pending screen; rejected/none → re-apply
-      const _latestReq=await sbFetch(`access_requests?member_id=eq.${member.id}&order=created_at.desc&limit=1&select=status,block_reason,name,reviewed_at`,{method:'GET',headers:{'Accept':'application/json'}}).catch(()=>[]); // activity_stage3: + block_reason; stage3b: + name, reviewed_at
-      const _reqStatus=_latestReq&&_latestReq[0]?_latestReq[0].status:null;
-      _introInactive(_reqStatus==='blocked'&&_latestReq[0].block_reason==='inactivity'); // activity_stage3: "Apply again" after an inactivity removal
-      _quickReapplySet(_reqStatus==='blocked'&&(_latestReq[0].block_reason==='inactivity'||_latestReq[0].block_reason==='removed')?_latestReq[0]:null); // stage3b; small_batch B4: + admin "Remove access"
+      // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw access_requests fetch
+      // with the new /uat-access-request-status door; same fields, same decisions.
+      const _latestReq=await _p4('/uat-access-request-status',{member_id:member.id});
+      const _reqStatus=_latestReq&&_latestReq.exists?_latestReq.status:null;
+      _introInactive(_reqStatus==='blocked'&&_latestReq.block_reason==='inactivity'); // activity_stage3: "Apply again" after an inactivity removal
+      _quickReapplySet(_reqStatus==='blocked'&&(_latestReq.block_reason==='inactivity'||_latestReq.block_reason==='removed')?_latestReq:null); // stage3b; small_batch B4: + admin "Remove access"
       if(_reqStatus==='pending'){
         localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_request_pending','1');
         showLoading(false);document.getElementById('mobile-btn').disabled=false;showScreen('screen-pending');
@@ -853,18 +888,25 @@ function forgotPin(){
     timerEl.innerHTML='Cannot verify your identity. <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
     timerEl.style.display='block';btn.textContent='Submit Reset Request';return;
   }
+  // checkpoint uat_phase4_doors (2026-11-22) — replaces the 2 raw Supabase fetches above
+  // with the matching new doors; same two checks, same decisions. _p4() never rejects (it
+  // resolves to null on any network/parse failure instead), so the old .catch()'s "reset the
+  // button, let them retry" behavior is now an explicit null check on either result — a
+  // failed check must never be read as "no session"/"no member" (that would show a wrong,
+  // misleading message instead of just letting the member retry).
   Promise.all([
-    sbFetch(`sessions?member_id=eq.${mid}&device_id=eq.${did}&select=id`,{method:'GET',headers:{'Accept':'application/json'}}),
-    sbFetch(`members?id=eq.${mid}&select=pin_hash`,{method:'GET',headers:{'Accept':'application/json'}})
-  ]).then(([sessions,members])=>{
+    _p4('/uat-lock-status',{member_id:mid,device_id:did}),
+    _p4('/uat-resolve-member',{member_id:mid})
+  ]).then(([sessionsResp,memberResp])=>{
+    if(sessionsResp===null||memberResp===null){btn.disabled=false;btn.style.opacity='1';btn.textContent='Submit Reset Request';return;}
     btn.textContent='Submit Reset Request';btn.onclick=submitPinResetRequest;
     // Device check — must have a prior successful login on this device
-    if(!sessions||sessions.length===0){
+    if(!sessionsResp||!sessionsResp.session_exists){
       timerEl.innerHTML='PIN reset is only allowed from a device you have previously logged in on. <a href="'+_tgHref('pin_help',currentMobile)+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.';
       timerEl.style.display='block';btn.disabled=true;btn.style.opacity='0.5';return;
     }
     // Admin already reset — show direct action, no reload needed
-    if(members&&members[0]&&members[0].pin_hash===null){
+    if(memberResp&&memberResp.exists&&!memberResp.pin_hash){
       timerEl.style.color='#059669';
       timerEl.textContent='Your PIN has been reset by admin.';
       timerEl.style.display='block';
@@ -905,7 +947,10 @@ async function submitPinResetRequest(){
   try{
     const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
     const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
-    await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'pin_reset_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
+    // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw audit_log insert with the
+    // new /uat-audit-event door (strict allowlist: pin_reset_request/unlock_request only).
+    const _ar=await _p4('/uat-audit-event',{event_type:'pin_reset_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}});
+    if(!_ar||!_ar.success)throw new Error('audit_write_failed');
     localStorage.setItem('t2s_uat_pin_reset_at',Date.now().toString());
     localStorage.removeItem('t2s_uat_last_login');
     msg.style.color='#059669';msg.textContent='✓ Request submitted. Admin will reset your PIN shortly.';msg.style.display='block';
@@ -927,21 +972,26 @@ async function submitRegistration(){
     const did=getDeviceId();const deviceType=/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop';
     const mobile='+91'+currentUnregisteredMobile;
     const consentText='I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.';
-    const _devBlk=await sbFetch(`device_blocks?device_id=eq.${encodeURIComponent(did)}&select=blocked_until`,{method:'GET'});
-    if(_devBlk&&_devBlk.some(b=>b.blocked_until===null||new Date(b.blocked_until)>new Date())){msg.style.display='block';msg.style.color='#dc2626';msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',currentUnregisteredMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
-    const _rlSince=new Date(Date.now()-24*3600000).toISOString();
-    const _rlRecent=await sbFetch(`access_requests?device_id=eq.${did}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`,{method:'GET'});
-    if(_rlRecent&&_rlRecent.length>=3){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Too many requests from this device. Try again after 24 hours.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';return;}
-    const existing=await sbFetch(`members?mobile=eq.${encodeURIComponent(mobile)}&select=id,status`,{method:'GET'});
-    let memberId;
-    if(existing&&existing[0]){memberId=existing[0].id;}
-    else{const newM=await sbFetch('members',{method:'POST',body:JSON.stringify({mobile,name,tier:'free',status:'enabled'})});if(!newM||!newM[0])throw new Error('member_create_failed');memberId=newM[0].id;}
-    const existReq=await sbFetch(`access_requests?member_id=eq.${memberId}&status=eq.pending&limit=1&select=id`,{method:'GET'});
-    if(existReq&&existReq[0]){msg.style.display='block';msg.style.color='#d97706';msg.textContent='Your request is already pending. You will be notified once reviewed.';btn.style.display='none';setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',memberId);localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;},2500);return;}
-    try{await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'sebi_consent',member_id:memberId,device_id:did,device_type:deviceType,event_data:{consent_text:consentText,name,mobile}})});}catch(e){}
-    await sbFetch('access_requests',{method:'POST',body:JSON.stringify({member_id:memberId,name,consent_text:consentText,device_id:did,device_type:deviceType,consented_at:new Date().toISOString(),status:'pending'})});
+    // checkpoint uat_phase4_doors (2026-11-22) — replaces the whole sequence above (device
+    // block check, rate limit, find-or-create member, pending check, consent write, request
+    // write) with ONE call to the new /uat-submit-access-request door. Canonical rule set now
+    // also applies the rejection-cooldown and blocked-reason checks this page didn't have
+    // before (uat.html already had them) — consent is written before the request server-side,
+    // so a request can never exist without its consent record.
+    const r=await _p4('/uat-submit-access-request',{mobile,name,consent_text:consentText,device_id:did,device_type:deviceType});
+    if(!r||!r.success){
+      if(r&&r.deviceBlocked){msg.style.display='block';msg.style.color='#dc2626';msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',currentUnregisteredMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';}
+      else if(r&&r.rateLimited){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Too many requests from this device. Try again after 24 hours.';}
+      else if(r&&r.disabled){msg.style.display='block';msg.style.color='#dc2626';msg.innerHTML='Your account is suspended. Contact <a href="'+_tgHref('suspended',currentUnregisteredMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';}
+      else if(r&&r.alreadyPending){msg.style.display='block';msg.style.color='#d97706';msg.textContent='Your request is already pending. You will be notified once reviewed.';btn.style.display='none';setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',r.member_id);localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;},2500);return;}
+      else if(r&&r.rejectedCooldown){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Please wait 24 hours after rejection before applying again.';}
+      else if(r&&r.blocked){msg.style.display='block';msg.style.color='#dc2626';msg.innerHTML='Your account is blocked. Contact <a href="'+_tgHref('blocked',currentUnregisteredMobile)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.';}
+      else{msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Something went wrong. Please try again.';}
+      btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';
+      return;
+    }
     msg.style.display='block';msg.style.color='#059669';msg.innerHTML='✅ Request submitted! Logging you in as limited access...';btn.style.display='none';
-    setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',memberId);localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;},2000);
+    setTimeout(()=>{localStorage.setItem('t2s_uat_mode','free');localStorage.setItem('t2s_uat_member_id',r.member_id);localStorage.setItem('t2s_uat_request_pending','1');window.location.href=MAIN_APP_URL;},2000);
   }catch(e){msg.style.display='block';msg.style.color='#dc2626';msg.textContent='Something went wrong. Please try again.';btn.disabled=false;btn.textContent='Submit Request →';btn.style.opacity='1';}
 }
 
@@ -980,8 +1030,15 @@ async function processSetupPin(){
   if(mid&&mob){
     // Always show PIN screen — visiting login.html requires authentication regardless of session age
     try{
-      const members=await sbFetch(`members?id=eq.${mid}&status=eq.enabled&select=id,status,tier,is_admin,pin_hash,free_access,free_access_blocked`,{method:'GET',headers:{'Accept':'application/json'}}); // activity_stage3: + free_access
-      if(members&&members.length>0){
+      // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw members-by-id fetch with
+      // the new /uat-resolve-member door (member_id form). The status==='enabled' check
+      // moves here explicitly — door 1 deliberately does NOT filter server-side (an earlier
+      // Codex round on this same plan flagged server-side status filtering as risky, since it
+      // could silently change behavior for a disabled member), so the client now does the
+      // exact same check the old query's status=eq.enabled filter used to do implicitly.
+      const _resolved=await _p4('/uat-resolve-member',{member_id:mid});
+      if(_resolved&&_resolved.exists&&_resolved.status==='enabled'){
+        const members=[_resolved]; // kept as a 1-item array so every members[0].x reference below is unchanged
         // Blocking doesn't change status, so this fast-path would otherwise still find the
         // member and jump straight to the PIN screen — check it explicitly here, same wording
         // used in checkMobile() (line ~639), so a blocked member on a remembered device gets
@@ -996,8 +1053,10 @@ async function processSetupPin(){
         // activity_stage3 — access removed after the inactivity period: don't go to the PIN screen;
         // explain and let them apply again (Continue → the existing apply flow). Read error → old path.
         if(members[0].tier!=='paid'&&members[0].is_admin!==true&&members[0].free_access!==true){
-          let _ir=null;try{_ir=await sbFetch(`access_requests?member_id=eq.${mid}&order=created_at.desc&limit=1&select=status,block_reason`,{method:'GET',headers:{'Accept':'application/json'}});}catch(e){_ir=null;}
-          if(Array.isArray(_ir)&&_ir.length&&_ir[0].status==='blocked'&&_ir[0].block_reason==='inactivity'){
+          // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw access_requests fetch
+          // with the new /uat-access-request-status door.
+          const _ir=await _p4('/uat-access-request-status',{member_id:mid});
+          if(_ir&&_ir.exists&&_ir.status==='blocked'&&_ir.block_reason==='inactivity'){
             localStorage.removeItem('t2s_uat_logout_reason');
             showLoading(false);showScreen('screen-mobile');
             const _mi=document.getElementById('mobile-input');if(_mi)_mi.value=mob;
@@ -1006,7 +1065,7 @@ async function processSetupPin(){
             return;
           }
           // small_batch B4 — access removed by admin: same path, neutral wording (not an inactivity message).
-          if(Array.isArray(_ir)&&_ir.length&&_ir[0].status==='blocked'&&_ir[0].block_reason==='removed'){
+          if(_ir&&_ir.exists&&_ir.status==='blocked'&&_ir.block_reason==='removed'){
             localStorage.removeItem('t2s_uat_logout_reason');
             showLoading(false);showScreen('screen-mobile');
             const _mi=document.getElementById('mobile-input');if(_mi)_mi.value=mob;
@@ -1026,7 +1085,7 @@ async function processSetupPin(){
           localStorage.removeItem('t2s_uat_logout_reason');
           document.getElementById('pin-err').textContent=_idleText()+' Enter your PIN to continue.';
         }
-        if(currentMember.pin_hash===null){
+        if(!currentMember.pin_hash){ // door 1 returns pin_hash as a boolean, not the real hash — was a strict ===null check against the raw value
           const _dc=await _setupDeviceCheck(currentMember.id,getDeviceId());
           if(_dc!=='ok'){
             localStorage.removeItem('t2s_uat_member_id');localStorage.removeItem('t2s_uat_mobile');
@@ -1099,7 +1158,10 @@ async function requestUnlock(){
   try{
     const mid=currentMember?currentMember.id:(localStorage.getItem('t2s_uat_member_id')||null);
     const mob=currentMobile||'+91'+(localStorage.getItem('t2s_uat_mobile')||'');
-    await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
+    // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw audit_log insert with the
+    // new /uat-audit-event door.
+    const _ur=await _p4('/uat-audit-event',{event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}});
+    if(!_ur||!_ur.success)throw new Error('audit_write_failed');
     localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
     // checkpoint pin_lock_countdown v004 (2026-10-29) — ties this request to the EXACT lock
     // it was filed for, so a later, different lock cycle never shows a false "already
@@ -1131,7 +1193,10 @@ async function requestUnlockFromMobile(mid,mob){
   }
   btn.disabled=true;btn.textContent='Sending…';
   try{
-    await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}})});
+    // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw audit_log insert with the
+    // new /uat-audit-event door.
+    const _ur2=await _p4('/uat-audit-event',{event_type:'unlock_request',member_id:mid,device_id:getDeviceId(),event_data:{mobile:mob}});
+    if(!_ur2||!_ur2.success)throw new Error('audit_write_failed');
     localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
     // checkpoint pin_lock_countdown v004 (2026-10-29) — see requestUnlock()'s matching comment.
     const _lu=localStorage.getItem('t2s_uat_lock_until');
