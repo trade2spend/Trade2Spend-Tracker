@@ -1279,6 +1279,21 @@
         if (!id) { const b = crypto.getRandomValues(new Uint8Array(12)); id = 'dev_' + Array.from(b, x => x.toString(16).padStart(2,'0')).join(''); localStorage.setItem('t2s_uat_device_id', id); }
         return id;
     }
+    // checkpoint uat_phase4_doors (2026-11-22) — thin helper for the 5 new pre-login server
+    // doors (/uat-resolve-member, /uat-lock-status, /uat-access-request-status,
+    // /uat-submit-access-request, /uat-audit-event). Returns the parsed JSON response, or
+    // null on any network/parse failure — never throws, so a call site that needs fail-closed
+    // (never-treat-a-failure-as-success) behavior must check for null explicitly.
+    async function _p4(path, body) {
+        try {
+            const res = await fetch(`${_VM}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            // checkpoint uat_phase4_doors (2026-11-22, Codex-found) — a 429/503 response is
+            // still valid JSON but has none of the expected door fields; must never be read
+            // as a real answer.
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) { return null; }
+    }
     // checkpoint pin_setup_screen_device_precheck (2026-11-22) — mirrors login_uat.html's
     // _setupDeviceCheck and the server's pin_setup_first_time_device_lock check, so the
     // mini sign-up form's PIN-setup step is never shown to a mismatched device either.
@@ -1374,7 +1389,10 @@
         try{
             const mid=_faPendingMember?_faPendingMember.id:null;
             const mob='+91'+(document.getElementById('fa-mobile-input')?.value||'');
-            await sbFetch('audit_log',{method:'POST',body:JSON.stringify({event_type:'unlock_request',member_id:mid,device_id:_faGetDeviceId(),event_data:{mobile:mob}})});
+            // checkpoint uat_phase4_doors (2026-11-22) — replaces the raw audit_log insert
+            // with the new /uat-audit-event door.
+            const _ur=await _p4('/uat-audit-event',{event_type:'unlock_request',member_id:mid,device_id:_faGetDeviceId(),event_data:{mobile:mob}});
+            if(!_ur||!_ur.success)throw new Error('audit_write_failed');
             localStorage.setItem('t2s_uat_unlock_req_at',Date.now().toString());
             errEl.style.color='#059669';
             errEl.innerHTML='✓ Unlock request sent. <a href="'+_tgHref('pin_locked',_tgFormMob())+'" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if needed.';
@@ -1494,22 +1512,27 @@
         if (mob.length !== 10 || !/^[6-9]\d{9}$/.test(mob)) { if (hint) { hint.style.color='#dc2626'; hint.textContent = mob.length === 10 ? 'Please enter a valid Indian mobile number.' : ''; } return; }
         if (hint) { hint.style.color = '#9ca3af'; hint.textContent = 'Checking…'; }
         try {
-            const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier`, { method: 'GET' });
-            if (members && members[0]) {
-                const { status, id: _faMid } = members[0];
+            // checkpoint uat_phase4_doors (2026-11-22) — replaces BOTH raw members fetches
+            // (narrow-by-mobile, then full-by-id) with ONE call to /uat-resolve-member; door 1
+            // already returns every field this flow needs (status, tier, pin_hash as a
+            // boolean, free_access) in a single round trip.
+            const _faMember = await _p4('/uat-resolve-member', { mobile: '+91' + mob });
+            if (_faMember && _faMember.exists) {
+                const _faMid = _faMember.id;
                 // Disabled account — block immediately
-                if (status === 'disabled') { hint.style.color='#dc2626'; hint.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
-                // Registered member — fetch pin_hash and show inline PIN entry
-                const _faFull = await sbFetch(`members?id=eq.${_faMid}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
-                const _faMember = (_faFull && _faFull[0]) ? _faFull[0] : members[0];
+                if (_faMember.status === 'disabled') { hint.style.color='#dc2626'; hint.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; _faMobileBlocked=true; _faCheckEnable(); return; }
                 // Lock check — localStorage first (handles mini-form locks where DB may have no active sessions)
                 const _faReqActive=parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')&&Date.now()-parseInt(localStorage.getItem('t2s_uat_unlock_req_at')||'0')<2*60*60*1000;
                 function _faSetLockHint(mins){if(hint){hint.style.color='#dc2626';hint.innerHTML=_faReqActive?`Unlock request submitted — waiting for admin. ${mins} min remaining.`:`Account locked — ${mins} min remaining. <a href="${_tgHref('pin_locked',_tgFormMob())}" target="_blank" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.`;}_faMobileBlocked=true;_faCheckEnable();}
                 const _faLockLs=localStorage.getItem('t2s_uat_lock_until');const _faLockedMidLs=localStorage.getItem('t2s_uat_locked_mid');
                 if(_faLockLs&&new Date()<new Date(_faLockLs)&&_faLockedMidLs===_faMid){const _faMinsLs=Math.max(1,Math.ceil((new Date(_faLockLs)-new Date())/60000));_faSetLockHint(_faMinsLs);return;}
-                const _faNowLock=new Date().toISOString();
-                const _faLockRow=await sbFetch(`sessions?member_id=eq.${_faMid}&device_id=eq.${localStorage.getItem('t2s_uat_device_id')||''}&locked_until=gt.${encodeURIComponent(_faNowLock)}&select=locked_until&limit=1`,{method:'GET'});
-                if(_faLockRow&&_faLockRow.length>0){const _faLuDb=new Date(_faLockRow[0].locked_until);const _faMinsDb=Math.max(1,Math.ceil((_faLuDb-new Date())/60000));localStorage.setItem('t2s_uat_lock_until',_faLockRow[0].locked_until);localStorage.setItem('t2s_uat_locked_mid',_faMid);_faSetLockHint(_faMinsDb);return;}
+                const _faLockRow=await _p4('/uat-lock-status',{member_id:_faMid,device_id:localStorage.getItem('t2s_uat_device_id')||_faGetDeviceId()});
+                // checkpoint uat_phase4_doors — a failed lock check must not be silently
+                // treated as "not locked" (that would skip straight to the PIN screen without
+                // ever having confirmed lock status); same fail-stop effect the original throw
+                // + outer catch gave this call.
+                if (_faLockRow===null) { if (hint) hint.textContent=''; _faMobileBlocked=false; _faCheckEnable(); return; }
+                if(_faLockRow&&_faLockRow.locked){const _faLuDb=new Date(_faLockRow.locked_until);const _faMinsDb=Math.max(1,Math.ceil((_faLuDb-new Date())/60000));localStorage.setItem('t2s_uat_lock_until',_faLockRow.locked_until);localStorage.setItem('t2s_uat_locked_mid',_faMid);_faSetLockHint(_faMinsDb);return;}
                 _faMobileBlocked = true;
                 if (_faMember.pin_hash) {
                     if (hint) { hint.style.color = '#4a2a78'; hint.textContent = 'Registered member — enter your PIN below.'; }
@@ -1529,6 +1552,12 @@
                     if (hint) { hint.style.color = '#4a2a78'; hint.textContent = 'Registered member — set up your PIN below.'; }
                     _faShowPinSetup(_faMember, 'Create your 4-digit PIN');
                 }
+            } else if (_faMember === null) {
+                // checkpoint uat_phase4_doors — a failed lookup must not be treated the same
+                // as "not registered" (that would wrongly show the sign-up form); same effect
+                // the original throw + outer catch gave this call.
+                if (hint) hint.textContent = '';
+                _faMobileBlocked = false;
             } else {
                 // Not in DB — show registration form so they can submit a request
                 if (hint) { hint.style.color = '#9ca3af'; hint.textContent = ''; }
@@ -1572,6 +1601,22 @@
         // Guard: block submission if mobile field detected a registered/pending number
         const _mobileInputEl = document.getElementById('fa-mobile-input');
         if (_faMobileBlocked) return;
+        // checkpoint uat_phase4_doors (2026-11-22) — the mobile this flow will submit under.
+        // Door 4 resolves by mobile, not member_id, but t2s_uat_mobile is NOT reliably set
+        // everywhere t2s_uat_member_id is (Codex-found, 2026-11-22 — e.g. after PIN verify/
+        // setup or _faContinueLimited(), only the id gets cached). So when the id is already
+        // known but the cached mobile is missing, look it up via /uat-resolve-member instead
+        // of trusting an absent/stale cache.
+        let resolvedMobile = localStorage.getItem('t2s_uat_mobile') ? '+91' + localStorage.getItem('t2s_uat_mobile') : '';
+        if (resolvedMemberId && !resolvedMobile) {
+            const _mLookup = await _p4('/uat-resolve-member', { member_id: resolvedMemberId });
+            if (!_mLookup || !_mLookup.exists || !_mLookup.mobile) {
+                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not verify your account. Please try again.'; }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
+            }
+            resolvedMobile = _mLookup.mobile;
+        }
         if (!resolvedMemberId) {
             // Anonymous user — look up member by entered mobile number only (name not used for dedup)
             const mobileInput = document.getElementById('fa-mobile-input');
@@ -1583,19 +1628,22 @@
             }
             if (btn) { btn.disabled=true; btn.textContent='Verifying...'; btn.style.opacity='0.7'; }
             try {
-                const members = await sbFetch(`members?mobile=eq.%2B91${mob}&select=id,status,tier,pin_hash`, { method: 'GET' });
-                if (members && members[0]) {
-                    const m = members[0];
+                // checkpoint uat_phase4_doors — replaces BOTH raw members fetches with ONE
+                // call to /uat-resolve-member.
+                const m = await _p4('/uat-resolve-member', { mobile: '+91' + mob });
+                if (m === null) {
+                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not verify mobile. Please try again.'; }
+                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                    return;
+                }
+                if (m.exists) {
                     if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
                     // Registered member — show inline PIN entry
                     if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                    // Fetch free_access for correct mode setting after login
-                    const _faFull2 = await sbFetch(`members?id=eq.${m.id}&select=id,tier,status,pin_hash,free_access`, { method:'GET' });
-                    const _faMem2 = (_faFull2 && _faFull2[0]) ? _faFull2[0] : m;
-                    if (_faMem2.pin_hash) {
-                        _faShowPinSection(_faMem2, 'Enter your PIN to continue');
+                    if (m.pin_hash) {
+                        _faShowPinSection(m, 'Enter your PIN to continue');
                     } else {
-                        const _faDc2 = await _faSetupDeviceCheck(_faMem2.id, _faGetDeviceId());
+                        const _faDc2 = await _faSetupDeviceCheck(m.id, _faGetDeviceId());
                         if (_faDc2 !== 'ok') {
                             if (msg) {
                                 msg.style.display='block'; msg.style.color='#dc2626';
@@ -1605,14 +1653,13 @@
                             }
                             return;
                         }
-                        _faShowPinSetup(_faMem2, 'Create your 4-digit PIN');
+                        _faShowPinSetup(m, 'Create your 4-digit PIN');
                     }
                     return;
                 }
-                const nameVal = document.getElementById('fa-name-input')?.value.trim() || '';
-                const newM = await sbFetch('members', { method: 'POST', body: JSON.stringify({ mobile: '+91' + mob, name: nameVal, tier: 'free', status: 'enabled' }) });
-                if (!newM || !newM[0]) { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not register your number. Please try again.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
-                resolvedMemberId = newM[0].id;
+                // Not registered yet — /uat-submit-access-request below creates the member
+                // as part of submitting, so just carry the typed mobile forward.
+                resolvedMobile = '+91' + mob;
             } catch(e) {
                 if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not verify mobile. Please try again.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
@@ -1622,57 +1669,29 @@
         const consentText = "I understand that Trade2Spend is not SEBI registered. All trade alerts and posts are for educational purposes only and do not constitute investment advice. I accept full responsibility for my own trading decisions.";
         if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; btn.style.opacity = '0.7'; }
         try {
-            // checkpoint pin_setup_device_id_web_fallback_fix (2026-11-22, Codex-found) — was
-            // falling back to the literal string 'web' when no device id existed yet, instead
-            // of generating one. That 'web' value then got saved as this access_requests row's
-            // device_id, so the real applicant's OWN later device check could never match it.
             const deviceId = _faGetDeviceId();
             const deviceType = /Mobi/.test(navigator.userAgent) ? 'mobile' : 'desktop';
-            // Check if this device has been blocked by admin
-            const _devBlk = await sbMemberFetch(`device_blocks?device_id=eq.${encodeURIComponent(deviceId)}&select=blocked_until`, { method: 'GET', headers: { 'Accept': 'application/json' } });
-            if (_devBlk && _devBlk.some(b => b.blocked_until === null || new Date(b.blocked_until) > new Date())) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
-                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                return;
-            }
-            // Rate limit: max 3 access requests per device in 24 hours
-            const _rlSince = new Date(Date.now() - 24 * 3600000).toISOString();
-            const _rlRecent = await sbFetch(`access_requests?device_id=eq.${deviceId}&created_at=gte.${encodeURIComponent(_rlSince)}&select=id`, { method: 'GET' });
-            if (_rlRecent && _rlRecent.length >= 3) {
-                if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Too many requests from this device. Please try again after 24 hours.'; }
-                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                return;
-            }
-            // UAT: check for existing pending/rejected/blocked request before submitting
-            const existing = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${resolvedMemberId}&order=created_at.desc&limit=1&select=id,status,last_rejected_at,block_reason`, { method: 'GET' }); // small_batch B5: + block_reason
-            if (existing && existing.length > 0) {
-                const lr = existing[0];
-                if (lr.status === 'pending') {
-                    if (msg) { msg.style.display='block'; msg.style.color='#d97706'; msg.textContent='Your request is already pending. You will be notified once reviewed.'; }
-                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                    return;
-                }
-                if (lr.status === 'rejected' && lr.last_rejected_at) {
-                    const retryAt = new Date(new Date(lr.last_rejected_at).getTime() + 24 * 3600000);
-                    if (new Date() < retryAt) {
-                        if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please wait 24 hours after rejection before submitting again.'; }
-                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                        return;
-                    }
-                }
+            // checkpoint uat_phase4_doors (2026-11-22) — replaces the whole sequence that used
+            // to live here (device block check, rate limit, find-or-create member,
+            // pending/rejected/blocked checks, consent write, request write) with ONE call to
+            // /uat-submit-access-request. Consent is written server-side BEFORE the request —
+            // a request can never exist without its consent record (Tushar's explicit
+            // decision, 2026-11-22).
+            const r = await _p4('/uat-submit-access-request', { mobile: resolvedMobile, name, consent_text: consentText, device_id: deviceId, device_type: deviceType });
+            if (!r || !r.success) {
+                if (r && r.deviceBlocked) { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This device has been restricted. Contact <a href="'+_tgHref('device',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } }
+                else if (r && r.rateLimited) { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Too many requests from this device. Please try again after 24 hours.'; } }
+                else if (r && r.alreadyPending) { if (msg) { msg.style.display='block'; msg.style.color='#d97706'; msg.textContent='Your request is already pending. You will be notified once reviewed.'; } }
+                else if (r && r.rejectedCooldown) { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Please wait 24 hours after rejection before submitting again.'; } }
                 // small_batch B5 — removed for inactivity or by admin "Remove access" may apply again
                 // (the Re-apply button offers it); a person/device block or an old blocked record may not.
-                if (lr.status === 'blocked' && lr.block_reason !== 'inactivity' && lr.block_reason !== 'removed') {
-                    if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='Your account is blocked. Contact <a href="'+_tgHref('blocked',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; }
-                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                    return;
-                }
+                else if (r && r.blocked) { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='Your account is blocked. Contact <a href="'+_tgHref('blocked',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } }
+                else if (r && r.disabled) { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } }
+                else { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Network error. Please try again.'; } }
+                if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                return;
             }
-            // UAT: write access request directly to UAT Supabase (bypasses production VM)
-            await sbMemberFetchIfAuthed('access_requests', { method: 'POST', body: JSON.stringify({ member_id: resolvedMemberId, name, consent_text: consentText, device_id: deviceId, device_type: deviceType, consented_at: new Date().toISOString(), status: 'pending' }) });
-            // Write SEBI consent permanently to audit_log (compliance record)
-            const mobile = localStorage.getItem('t2s_uat_mobile') ? '+91' + localStorage.getItem('t2s_uat_mobile') : '';
-            await sbMemberFetchIfAuthed('audit_log', { method: 'POST', body: JSON.stringify({ event_type: 'sebi_consent', member_id: resolvedMemberId, device_id: deviceId, device_type: deviceType, event_data: { consent_text: consentText, name, mobile } }) });
+            resolvedMemberId = r.member_id;
             if (msg) {
                 msg.style.display = 'block';
                 msg.style.color = '#059669';
