@@ -6860,7 +6860,12 @@ Rules: "find" must appear exactly once in the snippet. Minimal change only. If s
           const memberId = String(parsed.member_id || '');
           if (!_UAT_UUID_RE.test(memberId)) { res.end(JSON.stringify({ exists: false })); return; }
           const rows = await sbFetchUat(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason,last_rejected_at,reviewed_at,name`);
-          if (!Array.isArray(rows) || !rows.length) { res.end(JSON.stringify({ exists: false })); return; }
+          // checkpoint uat_in_app_approval_gate_fail_closed (2026-11-23, Codex-found) — a real
+          // lookup failure (non-array) must be distinguishable from "genuinely no rows yet",
+          // so a caller that needs fail-closed behavior (e.g. uat.html's _faApprovalGate) can
+          // tell the two apart instead of treating a DB error the same as "never applied."
+          if (!Array.isArray(rows)) { res.end(JSON.stringify({ exists: false, error: true })); return; }
+          if (!rows.length) { res.end(JSON.stringify({ exists: false })); return; }
           const r = rows[0];
           res.end(JSON.stringify({ exists: true, status: r.status, block_reason: r.block_reason, last_rejected_at: r.last_rejected_at, reviewed_at: r.reviewed_at, name: r.name }));
           return;
