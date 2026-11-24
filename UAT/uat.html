@@ -1294,6 +1294,36 @@
             return await res.json();
         } catch (e) { return null; }
     }
+    // checkpoint uat_in_app_approval_gate (2026-11-23, Tushar-found) — neither _faMobileBlur()
+    // nor _submitAccessRequest()'s anonymous path ever checked whether an EXISTING member was
+    // actually approved (tier==='paid' or free_access===true) before offering PIN entry/setup.
+    // A pending, rejected, or blocked applicant could reach "Create your PIN" on a simple
+    // refresh and get a real login token without ever being approved — login_uat.html's
+    // checkMobile() already had this gate (plus the 2026-11-23 cooldown/blocked early-warning
+    // fix); this brings the in-app mini-form up to the same standard.
+    // Returns {gate:'approved'} — proceed to PIN entry/setup as before.
+    //         {gate:'blocked', message} — stop here, show this message, never proceed to PIN.
+    //         {gate:'apply'} — not yet approved, but nothing stops a fresh/renewed application;
+    //                          show the request form instead (door 4 re-checks everything again
+    //                          at actual submit time regardless — this is just the early warning).
+    async function _faApprovalGate(member, mobForLink) {
+        if (member.tier === 'paid' || member.free_access) return { gate: 'approved' };
+        const req = await _p4('/uat-access-request-status', { member_id: member.id });
+        // checkpoint uat_in_app_approval_gate_fail_closed (2026-11-23, Codex-found) — a
+        // transport failure (null) and a genuine server-side lookup failure (error:true) must
+        // both fail closed here; only a confirmed "no rows yet" result is safe to treat as
+        // 'apply'.
+        if (req === null || req.error) return { gate: 'blocked', message: 'Unable to verify. Check your connection and try again.' };
+        if (!req.exists) return { gate: 'apply' };
+        if (req.status === 'pending') return { gate: 'blocked', message: 'Your request is already pending. You will be notified once reviewed.' };
+        if (req.status === 'rejected' && req.last_rejected_at && new Date() < new Date(new Date(req.last_rejected_at).getTime() + 24 * 3600000)) {
+            return { gate: 'blocked', message: 'Please wait 24 hours after rejection before applying again. <a href="'+_tgHref('reapply_cooldown',mobForLink)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> if you need help.' };
+        }
+        if (req.status === 'blocked' && req.block_reason !== 'inactivity' && req.block_reason !== 'removed') {
+            return { gate: 'blocked', message: 'Your account is blocked. <a href="'+_tgHref('blocked',mobForLink)+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">Contact @T2Sview</a> on Telegram.' };
+        }
+        return { gate: 'apply' };
+    }
     // checkpoint pin_setup_screen_device_precheck (2026-11-22) — mirrors login_uat.html's
     // _setupDeviceCheck and the server's pin_setup_first_time_device_lock check, so the
     // mini sign-up form's PIN-setup step is never shown to a mismatched device either.
@@ -1533,6 +1563,24 @@
                 // + outer catch gave this call.
                 if (_faLockRow===null) { if (hint) hint.textContent=''; _faMobileBlocked=false; _faCheckEnable(); return; }
                 if(_faLockRow&&_faLockRow.locked){const _faLuDb=new Date(_faLockRow.locked_until);const _faMinsDb=Math.max(1,Math.ceil((_faLuDb-new Date())/60000));localStorage.setItem('t2s_uat_lock_until',_faLockRow.locked_until);localStorage.setItem('t2s_uat_locked_mid',_faMid);_faSetLockHint(_faMinsDb);return;}
+                // checkpoint uat_in_app_approval_gate (2026-11-23) — never offer PIN entry or
+                // setup to a member who hasn't actually been approved yet.
+                const _faGate = await _faApprovalGate(_faMember, mob);
+                if (_faGate.gate === 'blocked') {
+                    if (hint) { hint.style.color = '#dc2626'; hint.innerHTML = _faGate.message; }
+                    _faMobileBlocked = true;
+                    _faCheckEnable();
+                    return;
+                }
+                if (_faGate.gate === 'apply') {
+                    // Not yet approved, but nothing stops a fresh/renewed application — show
+                    // the request form instead of PIN entry/setup.
+                    if (hint) { hint.style.color = '#9ca3af'; hint.textContent = ''; }
+                    _faMobileBlocked = false;
+                    _faRenderPhase('form');
+                    _faCheckEnable();
+                    return;
+                }
                 _faMobileBlocked = true;
                 if (_faMember.pin_hash) {
                     if (hint) { hint.style.color = '#4a2a78'; hint.textContent = 'Registered member — enter your PIN below.'; }
@@ -1638,28 +1686,44 @@
                 }
                 if (m.exists) {
                     if (m.status === 'disabled') { if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML='This account is suspended. Contact <a href="'+_tgHref('suspended',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram.'; } if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; } return; }
-                    // Registered member — show inline PIN entry
-                    if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
-                    if (m.pin_hash) {
-                        _faShowPinSection(m, 'Enter your PIN to continue');
-                    } else {
-                        const _faDc2 = await _faSetupDeviceCheck(m.id, _faGetDeviceId());
-                        if (_faDc2 !== 'ok') {
-                            if (msg) {
-                                msg.style.display='block'; msg.style.color='#dc2626';
-                                msg.innerHTML = _faDc2 === 'mismatch'
-                                    ? 'Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.'
-                                    : 'Unable to verify. Check your connection and try again.';
-                            }
-                            return;
-                        }
-                        _faShowPinSetup(m, 'Create your 4-digit PIN');
+                    // checkpoint uat_in_app_approval_gate (2026-11-23) — never offer PIN entry
+                    // or setup to a member who hasn't actually been approved yet.
+                    const _faGate2 = await _faApprovalGate(m, mob);
+                    if (_faGate2.gate === 'blocked') {
+                        if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.innerHTML=_faGate2.message; }
+                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                        return;
                     }
-                    return;
+                    if (_faGate2.gate === 'apply') {
+                        // Not yet approved, but nothing stops a fresh/renewed application —
+                        // fall through to the submit logic below using this mobile.
+                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                        resolvedMobile = '+91' + mob;
+                    } else {
+                        // Approved — show inline PIN entry
+                        if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
+                        if (m.pin_hash) {
+                            _faShowPinSection(m, 'Enter your PIN to continue');
+                        } else {
+                            const _faDc2 = await _faSetupDeviceCheck(m.id, _faGetDeviceId());
+                            if (_faDc2 !== 'ok') {
+                                if (msg) {
+                                    msg.style.display='block'; msg.style.color='#dc2626';
+                                    msg.innerHTML = _faDc2 === 'mismatch'
+                                        ? 'Please complete PIN setup from the same device you used to apply for access. Contact <a href="'+_tgHref('pin_help',_tgFormMob())+'" target="_blank" rel="noopener" style="color:#4a2a78;font-weight:700;text-decoration:underline;">@T2Sview</a> on Telegram if you need help.'
+                                        : 'Unable to verify. Check your connection and try again.';
+                                }
+                                return;
+                            }
+                            _faShowPinSetup(m, 'Create your 4-digit PIN');
+                        }
+                        return;
+                    }
+                } else {
+                    // Not registered yet — /uat-submit-access-request below creates the member
+                    // as part of submitting, so just carry the typed mobile forward.
+                    resolvedMobile = '+91' + mob;
                 }
-                // Not registered yet — /uat-submit-access-request below creates the member
-                // as part of submitting, so just carry the typed mobile forward.
-                resolvedMobile = '+91' + mob;
             } catch(e) {
                 if (msg) { msg.style.display='block'; msg.style.color='#dc2626'; msg.textContent='Could not verify mobile. Please try again.'; }
                 if (btn) { btn.disabled=false; btn.textContent='Submit Request →'; btn.style.opacity='1'; }
@@ -1845,7 +1909,7 @@
     // checkpoint small_batch B2 — @T2Sview links open Telegram with a ready message: the reason plus
     // the member's own mobile when known (the number typed in this form, or this device's logged-in
     // number). Built only from fixed text + a checked 10-digit number, so nothing else gets in.
-    const _TG_TEXT = { blocked: 'Hi, my Trade2Spend access is blocked.', suspended: 'Hi, my Trade2Spend account is suspended.', pin_locked: 'Hi, my Trade2Spend PIN is locked.', pin_help: 'Hi, I need help resetting my Trade2Spend PIN.', device: 'Hi, my device is restricted on Trade2Spend.', premium: 'Hi, I want to join Trade2Spend Premium.' };
+    const _TG_TEXT = { blocked: 'Hi, my Trade2Spend access is blocked.', suspended: 'Hi, my Trade2Spend account is suspended.', pin_locked: 'Hi, my Trade2Spend PIN is locked.', pin_help: 'Hi, I need help resetting my Trade2Spend PIN.', device: 'Hi, my device is restricted on Trade2Spend.', premium: 'Hi, I want to join Trade2Spend Premium.', reapply_cooldown: 'Hi, my Trade2Spend request was rejected and I need help before the 24-hour wait is over.' };
     function _tgHref(reason, mob) {
         let d = String(mob || '').replace(/\D/g, ''); if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
         let t = _TG_TEXT[reason] || 'Hi, I need help with the Trade2Spend app.';
