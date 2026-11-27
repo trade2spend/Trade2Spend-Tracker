@@ -1,3 +1,4 @@
+<!-- T2S-PROD-20261127-001 | PROD: Follow-up text guesswork fix — two bugs in Trade Alert status logic, both confirmed on real Nov 27 incident screenshots + replayed against all 601 real historical follow-up posts (109 trades) with zero wrong-direction regressions. (1) FALSE "TRIGGERED": getTradeState() (~2763) used to treat ANY follow-up that didn't match a narrow whitelist (_STATUS_ONLY_RE) as proof the trade triggered — plain commentary like "Nifty recovered now wait." flipped the badge to "✅ Triggered" even though CMP was still below entry. Fixed: a reply now only counts as trigger evidence when it has an explicit, un-negated "triggered" word (_TRIGGER_NEGATED_RE strips negated/future mentions in either word order — "not yet triggered", "yet to trigger", "trigger didn't happen", "if it triggers" — before testing, so a real confirmation elsewhere in the same message still counts) OR parseFollowUpContent flags isFullExit/exitPct/slRevised/t1-3Hit (actions that only make sense on an already-live trade). Real CMP-vs-entry trigger detection (further down in the same function) is unchanged and remains authoritative when no such wording exists. (2) DOUBLE-COUNTED EXIT %: isTradeFullyClosed() (~3015), getCumulativeExit() (~2844), getFreeUnlockedFields() (~2812) each summed every "exit %" mention with no de-duplication — "Exiting 50% holding rest" (no price) followed by "Exited 50% at 176 holding rest 50%" (confirming the SAME leg) summed to 100% and wrongly closed the trade one leg early. Fixed: a stated exit % now only counts once it carries a resolvable price (p.price or p.cmp<10000) — same rule getWeightedExitPrice/getExitLegs already used, now aligned across all 3 sites. Zero touch to server.js (real trigger/SL engine untouched — confirmed correct separately), zero touch to exit-price calculation, zero new UI. RCA + fix independently reviewed by Codex (2 rounds; round 1 found a negation-word-order gap and a cross-sentence-negation gap in the trigger regex, both closed in round 2 and re-verified against the full historical corpus with 0 regressions). Rollback: remove the 2 new consts (_TRIGGER_NEGATED_RE, _TRIGGERED_WORD_RE) and revert the validReplies filter line in getTradeState to `if (_STATUS_ONLY_RE.test(c)) return false; return true;`; revert the 3 exitPct lines in isTradeFullyClosed/getCumulativeExit/getFreeUnlockedFields to drop the `&& (p.price || (p.cmp && p.cmp < 10000))` / `&& (p.exitPct && (p.price || (p.cmp && p.cmp < 10000)))` guards back to bare `if (p.exitPct)`. -->
 <!-- T2S-PROD-20261019-001 | PROD: Finding B fix — public control key (T2SMonitor2026) removed. sendReply()'s two /send-push calls now send x-t2s-secret from localStorage t2s_execute_secret (same key already used by admin.html, shared origin) instead of the hardcoded public string. postNewAlert()'s /refresh-contracts call now sends no key at all (server-side check removed for this route — Tushar's explicit decision, the route does nothing destructive). Companion changes: server.js (all 18 T2SMonitor2026 checks migrated to EXECUTE_SECRET-only or dropped), Trading_Bot/index.html, UAT/admin_uat.html, UAT/uat.html. /prod-sb's own separate key (Finding C) is explicitly NOT part of this fix — parked, bigger separate task. Codex-reviewed (2 rounds, clean). Rollback: revert both x-t2s-secret values back to the literal string 'T2SMonitor2026'; restore ?key=T2SMonitor2026 on the refresh-contracts call (cosmetic only — server no longer checks it either way, so restoring it there alone does not restore the key gate; see server.js rollback for that).
 -->
 <!-- T2S-PROD-20261014-002 | PROD: Exit-price parsing fix — parseFollowUpContent (~line 2561). Bug: "went to X" fallback ran before the exit-specific price extraction, so a follow-up like "Went to 306 / Exited remaining at 280" recorded 306 instead of the explicitly stated 280. Fix: (a) widened the exit-price-fallback regex (~line 2610) from \bexiting?\s+(?:with|at|@) to \bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@) — now matches past-tense "exited" and tolerates filler words like "remaining"/"another 25%"; (b) moved the "went to X" block to run after it, so an explicit stated exit price always wins, with "went to X" only as a last-resort fallback. Regression-verified against all 654 real follow_up posts ever sent (100% of history): only the reported message's output changes (306→280); all 653 others byte-identical before/after. Codex-reviewed, independently re-ran the regression harness and confirmed. No other file/function touched (server.js has no copy of this parser). Rollback: revert the 2 blocks at ~line 2604-2617 to original order/regex (move "went to X" back above "Exit %", revert \bexit(?:ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:with|at|@) to \bexiting?\s+(?:with|at|@)). -->
@@ -2755,6 +2756,15 @@
     // ── TRADE STATE (for free member unlock logic) ────────────────────────────
     // Status-only messages don't count as "triggered" — only actual entry/exit signals do
     const _STATUS_ONLY_RE = /^(yet\s+to\s+trigger|not\s+triggered|watching|waiting|will\s+update|update\s+later|let.*see|tracking|monitoring|on\s+watch|avoid\s+(?:now|this|trade)|skip\s+(?:now|this|trade)|don['’]?t\s+(?:take|enter))/i;
+    // T2S-PROD-20261127-001: a reply only counts as proof-of-trigger when it carries an explicit,
+    // unambiguous signal — never from bare unrecognized commentary. "triggered" must not be negated
+    // or future/conditional, in EITHER word order (e.g. "not yet triggered", "yet to trigger",
+    // "when it triggers", "trigger didn't happen", "trigger failed" must all NOT count). Negated/future
+    // mentions are stripped out (global match) before testing for a remaining genuine "triggered" word,
+    // so a real confirmation elsewhere in the same message ("Triggered at 180; if it triggers again...")
+    // still counts.
+    const _TRIGGER_NEGATED_RE = /(?:\b(?:not|never|hasn['’]?t|isn['’]?t|wasn['’]?t|didn['’]?t|did\s+not|won['’]?t|will\s+not|yet\s+to|if|when|till|until)\b[^.?!;\n]{0,20}\btrigger(?:ed|ing)?\b)|(?:\btrigger(?:ed|ing)?\b[^.?!;\n]{0,20}\b(?:not|never|didn['’]?t|won['’]?t|fail(?:ed|s|ing)?|hasn['’]?t|isn['’]?t|wasn['’]?t|unlikely)\b)/gi;
+    const _TRIGGERED_WORD_RE = /\btrigger(?:ed|ing)?\b/i;
     function getTradeState(post, replies) {
         // Admin saying "ignore/cancel" in any follow-up = order was never triggered, remove from active
         const hasIgnore = (replies||[]).some(r => /\b(ignore|cancel(?:l?ing|l?ed)?|avoid(?:ing)?)\b/i.test(r.content||''));
@@ -2763,9 +2773,10 @@
         const validReplies = (replies||[]).filter(r => {
             const c = (r.content||'').trim();
             if (c.includes('[T2S_UNLOCK]')) return false;
-            if (/^\[(HIGH|LOW|CLOSEPRICE):[\d.]+\]$/.test(c)) return false; // RC-5 FIX: VM system markers are not trade signals
-            if (_STATUS_ONLY_RE.test(c)) return false; // ignore pure status messages
-            return true;
+            if (/^\[(HIGH|LOW|CLOSEPRICE):[\d.]+\]$/.test(c)) return false; // VM system markers are not trade signals
+            if (_TRIGGERED_WORD_RE.test(c.replace(_TRIGGER_NEGATED_RE, ''))) return true; // explicit, un-negated "triggered" wording survives after stripping negated/future mentions
+            const p = parseFollowUpContent(c);
+            return !!(p.isFullExit || p.exitPct || p.slRevised || p.t1Hit || p.t2Hit || p.t3Hit); // exit/SL/target actions only make sense on an already-live trade
         });
         if (validReplies.length > 0) return 'triggered';
         if (_triggeredPostIds.has(post.id)) return 'triggered'; // latch: once triggered via CMP, never reverts on LTP dip
@@ -2807,7 +2818,9 @@
             if (c.includes('[T2S_UNLOCK]')) { u.all=true; return u; }
             const p = parseFollowUpContent(c);
             if (p.isFullExit) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; u.sl=true; }
-            if (p.exitPct) {
+            // T2S-PROD-20261127-001: only count a stated exit % once it has a resolvable price —
+            // an announcement with no price (e.g. "Exiting 50%") is not a confirmed fill.
+            if (p.exitPct && (p.price || (p.cmp && p.cmp < 10000))) {
                 cumExit = Math.min(100, cumExit + p.exitPct);
                 if (cumExit >= 50) { u.callPut=true; u.entry=true; u.expiry=true; u.cmp=true; }
             }
@@ -2835,7 +2848,9 @@
         for (const r of sorted) {
             const p = parseFollowUpContent(r.content||'');
             if (p.isFullExit) return 100;
-            if (p.exitPct) cum = Math.min(100, cum + p.exitPct);
+            // T2S-PROD-20261127-001: only count a stated exit % once it has a resolvable price —
+            // an announcement with no price (e.g. "Exiting 50%") is not a confirmed fill.
+            if (p.exitPct && (p.price || (p.cmp && p.cmp < 10000))) cum = Math.min(100, cum + p.exitPct);
         }
         return cum;
     }
@@ -3006,7 +3021,10 @@
             const p = parseFollowUpContent(r.content||'');
             if (p.isHolding) hasHolding=true;
             if (p.isFullExit) return true;
-            if (p.exitPct) { cum+=p.exitPct; hasHolding=false; }
+            // T2S-PROD-20261127-001: only count a stated exit % once it has a resolvable price —
+            // an announcement with no price (e.g. "Exiting 50%") is not a confirmed fill, so
+            // restating the same leg with its fill price later cannot double-count it.
+            if (p.exitPct && (p.price || (p.cmp && p.cmp < 10000))) { cum+=p.exitPct; hasHolding=false; }
         }
         if (cum>=100) return true;
         // SL-breach auto-close: remaining position exits when live CMP crosses the revised premium SL.
