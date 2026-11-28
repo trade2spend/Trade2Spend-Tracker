@@ -125,7 +125,7 @@
     <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="preconnect" href="https://api.trade2spend.com">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="logo.png">
+    <link rel="apple-touch-icon" href="../logo.png">
     <title>Trade2Spend | Live Tracker</title>
     <style>
         :root {
@@ -517,7 +517,7 @@
     <div id="header-wrapper" class="sticky-header" style="margin-top:24px;">
         <div class="header-top">
             <div class="header-brand">
-                <img src="logo.png" alt="Trade2Spend Logo" class="logo-img">
+                <img src="../logo.png" alt="Trade2Spend Logo" class="logo-img">
                 <div class="header-titles">
                     <h1>TRADE2SPEND</h1>
                     <p>LIVE TRACKER</p>
@@ -776,7 +776,7 @@
         </div>
         <div style="background:var(--card-bg);padding:24px;border-radius:12px;border:1px solid var(--border);margin-bottom:12px;">
             <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px;">
-                <img src="logo.png" style="width:46px;height:46px;border-radius:10px;" alt="Logo">
+                <img src="../logo.png" style="width:46px;height:46px;border-radius:10px;object-fit:contain;" alt="Logo">
                 <div>
                     <h3 style="color:var(--text-main);font-size:1rem;font-weight:800;">Trade2Spend</h3>
                     <p style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Independent trading education community</p>
@@ -914,8 +914,6 @@
 <script>
     // --- UI LOGIC ---
     const { parseFollowUpContent, extractTradeAlertFields, getFreeUnlockedFields, getMainContent } = window.T2SUnlock;
-    let _tradeRefreshTimer   = null;
-    let _updatesRefreshTimer = null; // T2S-PROD-20260715-009: 60s polling on Updates tab
     let _updComposeAud = 'all'; // audience selection for admin Updates compose
     let _lastTickerKey = ''; // last rendered banner content — skip re-render if unchanged
     let _marketExpiry = {}; // expiry dates per instrument from Kotak scrip master via VM
@@ -1029,10 +1027,15 @@
         document.querySelectorAll(`[data-like-btn="${postId}"]`).forEach(b => { if (b !== btnEl) _applyLikeState(b, postId); });
         const memberId = localStorage.getItem('t2s_uat_member_id');
         if (!memberId) return;
+        _trackEvent(wasLiked ? 'unlike_post' : 'like_post', { post_id: postId }); // activity_stage2 — always fires, regardless of save below
+        // checkpoint uat_phase5_door1 (2026-11-24, owner decision) — before approval, a like
+        // stays purely local to this device (the optimistic UI update above already handles
+        // that) — nothing is attempted against the database at all. Once approved and logged
+        // in, saving starts normally through the real door below.
+        if (!localStorage.getItem('t2s_uat_member_token')) return;
         try {
             if (wasLiked) await sbMemberFetchIfAuthed(`post_shares?post_id=eq.${postId}&member_id=eq.${memberId}&platform=eq._like`, { method: 'DELETE' });
             else          await sbMemberFetchIfAuthed('post_shares', { method: 'POST', body: JSON.stringify({ post_id: postId, member_id: memberId, platform: '_like', shared_at: new Date().toISOString() }) });
-            _trackEvent(wasLiked ? 'unlike_post' : 'like_post', { post_id: postId }); // activity_stage2
         } catch(e) {
             console.error('[Like save]', e.message);
             _likeToast('Like not saved: ' + e.message.slice(0, 80));
@@ -1132,8 +1135,6 @@
         document.getElementById(tabId).classList.add('active');
         document.querySelector('.app-container').scrollTo({ top: 0, behavior: 'smooth' });
         localStorage.setItem('t2s_uat_last_tab', tabId);
-        if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
-        if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; } // T2S-PROD-20260715-009
         if (tabId === 'updates') {
             _updatesTabViewed = true;
             setTimeout(() => setTabBadge('updates', 0), 2500);
@@ -1148,13 +1149,11 @@
         if (tabId === 'trades') {
             setTabBadge('trades', 0);
             fetchTradeAlerts();
-            // Auto-refresh every 30s only during market hours; after 4 PM just the one fetch above
-            // CMP updates every 5s in-place via updateTradeCMPs — no need to rebuild cards that often
-            const _tNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
-            const _tMins = _tNow.getHours() * 60 + _tNow.getMinutes();
-            if (_tMins >= 9*60+15 && _tMins < 16*60) {
-                _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
-            }
+            // checkpoint uat_phase5_door2 (2026-11-24) — this tab-specific, market-hours-only
+            // timer is superseded by the global _startLivePoll() (30s, runs on every tab, pauses
+            // when the page is hidden). Starting it here too would run a second set of fetches
+            // that never pause in the background — exactly the behavior the owner asked NOT to
+            // have. CMP updates every 5s in-place via updateTradeCMPs regardless.
         }
         if (tabId === 'performance') fetchPerformance();
         if (tabId === 'markets') { fetchMarketData(); _renderMqpTrades(); fetchMarketPreview(); }
@@ -1196,16 +1195,17 @@
             return;
         }
         try {
+            // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token fallback
+            // onto the two pre-login doors (member_id lookup, no token required or used).
             const [flags, member] = await Promise.all([
                 sbMemberFetch('feature_flags?key=eq.free_access_requests_enabled&select=value', { method: 'GET' }),
-                sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=free_access,free_access_blocked`, { method: 'GET' })
+                _p4('/uat-resolve-member', { member_id: memberId })
             ]);
             if (!flags || !flags[0] || flags[0].value === false) { cta.innerHTML = ''; return; }
-            const m = member && member[0] ? member[0] : {};
+            const m = member && member.exists ? member : {};
             if (m.free_access === true) { cta.innerHTML = `<p style="font-size:0.78rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">✅ You already have free access!</p>`; return; }
             if (m.free_access_blocked === true) { cta.innerHTML = `<p style="font-size:0.75rem;color:#a8a29e;margin:0;">Access blocked. Contact <a href="${_tgHref('blocked',_tgMyMob())}" style="color:var(--primary);">@T2Sview</a>.</p>`; return; }
-            const reqs = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,last_rejected_at,block_reason`, { method: 'GET' });
-            const lr = reqs && reqs[0];
+            const lr = await _p4('/uat-access-request-status', { member_id: memberId });
             if (lr && lr.status === 'pending') {
                 cta.innerHTML = `<p style="font-size:0.8rem;color:#059669;background:#f0fdf4;border-radius:10px;padding:9px;margin:0;">⏳ Request pending — you'll be notified when reviewed.</p>`;
             } else if (lr && lr.status === 'blocked' && lr.block_reason === 'removed') { // small_batch B4: admin "Remove access"
@@ -1330,10 +1330,13 @@
     // Fails CLOSED on any lookup error.
     async function _faSetupDeviceCheck(memberId, deviceId) {
         try {
-            const reqs = await sbFetch(`access_requests?member_id=eq.${memberId}&select=device_id`, { method: 'GET' });
-            if (!Array.isArray(reqs)) return 'error';
-            const withDevice = reqs.filter(r => r.device_id);
-            if (withDevice.length && !withDevice.some(r => r.device_id === deviceId)) return 'mismatch';
+            // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw, identity-less
+            // sbFetch call onto /uat-access-request-status's device_ids field (same door
+            // already used elsewhere in this file, now also carrying device history).
+            const r = await _p4('/uat-access-request-status', { member_id: memberId });
+            if (!r || r.error || r.device_ids_error) return 'error';
+            const withDevice = Array.isArray(r.device_ids) ? r.device_ids.filter(Boolean) : [];
+            if (withDevice.length && !withDevice.includes(deviceId)) return 'mismatch';
             return 'ok';
         } catch (e) { return 'error'; }
     }
@@ -2012,13 +2015,17 @@
         if (!m || !memberId || m.tier === 'paid' || m.is_admin === true || m.free_access === true || m.free_access_blocked === true) return false;
         if (localStorage.getItem('t2s_uat_mode') !== 'paid') return false;
         try {
-            const r = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status,block_reason`, { method: 'GET' });
-            return Array.isArray(r) && r.length > 0 && r[0].status === 'blocked' && r[0].block_reason === 'inactivity';
+            // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token fallback
+            // onto the existing pre-login door (member_id lookup, no token required or used).
+            const r = await _p4('/uat-access-request-status', { member_id: memberId });
+            return !!(r && r.exists && r.status === 'blocked' && r.block_reason === 'inactivity');
         } catch(_) { return false; }
     }
     function _inactLogout(memberId) {
         const did = localStorage.getItem('t2s_uat_device_id');
-        const p = (memberId && did) ? sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${did}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }).catch(() => {}) : Promise.resolve();
+        // checkpoint uat_phase5_door1 (2026-11-24) — requires a real token; with none, there's
+        // no doored way to do this write safely, and the device is logging out either way.
+        const p = (memberId && did && localStorage.getItem('t2s_uat_member_token')) ? sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${did}&is_active=eq.true`, { method: 'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }).catch(() => {}) : Promise.resolve();
         localStorage.removeItem('t2s_uat_mode');
         localStorage.removeItem('t2s_uat_last_login');
         localStorage.removeItem('t2s_uat_last_active');
@@ -2539,8 +2546,6 @@
             tradesTab.classList.add('active');
             document.getElementById('trades').classList.add('active');
             localStorage.setItem('t2s_uat_last_tab', 'trades');
-            if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
-            if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
             setTabBadge('trades', 0);
             const _cmp2 = document.getElementById('admin-trade-compose');
             if (_cmp2 && _cmp2.dataset.isAdmin === 'true') _cmp2.style.display = 'block';
@@ -2549,10 +2554,8 @@
             targetCard.style.transition = 'background-color 0.4s ease';
             targetCard.style.backgroundColor = '#ede9fe';
             setTimeout(() => { targetCard.style.backgroundColor = ''; setTimeout(() => { targetCard.style.transition = ''; }, 500); }, 1800);
-            // Start 30s background refresh only during market hours
-            const _ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
-            const _istM = _ist.getHours() * 60 + _ist.getMinutes();
-            if (_istM >= 9 * 60 + 15 && _istM < 16 * 60) _tradeRefreshTimer = setInterval(fetchTradeAlerts, 30000);
+            // checkpoint uat_phase5_door2 (2026-11-24) — superseded by the global _startLivePoll(),
+            // same reasoning as switchTab('trades') above.
         } else {
             // Slow path: card not yet in DOM — set highlight key and let switchTab fetch + scroll after render
             if (instrument && optType && strike) window._highlightTradeKey = `${instrument}-${optType}-${strike}`;
@@ -2571,8 +2574,6 @@
             updatesTab.classList.add('active');
             document.getElementById('updates').classList.add('active');
             localStorage.setItem('t2s_uat_last_tab', 'updates');
-            if (_tradeRefreshTimer)   { clearInterval(_tradeRefreshTimer);   _tradeRefreshTimer   = null; }
-            if (_updatesRefreshTimer) { clearInterval(_updatesRefreshTimer); _updatesRefreshTimer = null; }
             _updatesTabViewed = true;
             setTimeout(() => setTabBadge('updates', 0), 2500);
             // Instant scroll — no async fetch delay
@@ -2580,8 +2581,7 @@
             targetCard.style.transition = 'background-color 0.4s ease';
             targetCard.style.backgroundColor = '#ede9fe';
             setTimeout(() => { targetCard.style.backgroundColor = ''; setTimeout(() => { targetCard.style.transition = ''; }, 500); }, 1800);
-            // Background 60s refresh — same as switchTab('updates') sets up
-            _updatesRefreshTimer = setInterval(fetchUpdates, 60000);
+            // checkpoint uat_phase5_door2 (2026-11-24) — superseded by the global _startLivePoll().
         } else {
             // Slow path: card not yet in DOM — set scroll key and let switchTab fetch + scroll after render
             window._mqpScrollToPostId = postId;
@@ -2751,8 +2751,10 @@
             memberTier = (window._cachedMember.free_access === true) ? 'paid' : (window._cachedMember.tier || 'free');
         } else if (memberId) {
             try {
-                const _mv = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,is_admin,free_access`, { method:'GET' });
-                if (_mv && _mv[0]) { isAdmin = _mv[0].is_admin === true; memberTier = _mv[0].tier || 'free'; if (_mv[0].free_access === true) memberTier = 'paid'; }
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member.
+                const _mv = await _p4('/uat-resolve-member', { member_id: memberId });
+                if (_mv && _mv.exists) { isAdmin = _mv.is_admin === true; memberTier = _mv.tier || 'free'; if (_mv.free_access === true) memberTier = 'paid'; }
             } catch(e) {}
         }
         const canSeePremium = isAdmin || memberTier === 'paid';
@@ -2915,8 +2917,11 @@
             let isAdmin = false;
             let memberTier = 'free';
             if(memberId) {
-                const members = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,is_admin,status,free_access`, { method: 'GET' });
-                if(members && Array.isArray(members) && members.length > 0) {
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member.
+                const _mv = await _p4('/uat-resolve-member', { member_id: memberId });
+                const members = _mv && _mv.exists ? [_mv] : [];
+                if(members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     isAdmin = members[0].is_admin === true;
                     memberTier = members[0].tier || 'free';
@@ -3263,6 +3268,9 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         const deviceId = localStorage.getItem('t2s_uat_device_id') || 'web';
         if (!memberId) return;
+        // checkpoint uat_phase5_door1 (2026-11-24, owner decision) — push signup requires a
+        // real login; skip entirely for a not-yet-approved applicant, same as read-tracking.
+        if (!localStorage.getItem('t2s_uat_member_token')) return;
         const reg = await navigator.serviceWorker.ready;
         // If DB row was deleted by server (expired 410), force-fresh to get a valid endpoint
         if (!forceNew) {
@@ -3306,12 +3314,15 @@
         } finally { clearTimeout(timer); }
     }
     function _sbProxyTable(path) { return String(path||'').split('?')[0]; }
-    async function sbMemberFetch(path, opts={}) {
+    async function sbMemberFetch(path, opts={}, tokenOverride) {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 10000);
         const { headers: extraHeaders, ...restOpts } = opts;
         try {
-            const token = localStorage.getItem('t2s_uat_member_token') || '';
+            // checkpoint uat_bugP01_logout_fix (2026-11-27) — tokenOverride lets a caller pass an
+            // already-captured token value instead of this re-reading localStorage live; every
+            // existing call site omits it and keeps the original real-time-read behavior.
+            const token = tokenOverride !== undefined ? tokenOverride : (localStorage.getItem('t2s_uat_member_token') || '');
             const res = await fetch(`${_VM}/uat-member-sb`, {
                 method: 'POST', signal: ctrl.signal,
                 headers: { 'Content-Type': 'application/json' },
@@ -3335,28 +3346,14 @@
         return localStorage.getItem('t2s_uat_member_token') ? sbMemberFetch(path, opts) : sbFetch(path, opts);
     }
 
-    // ── SUPABASE REALTIME ─────────────────────────────────────────────────────
-    // Subscribes to postgres_changes on the posts table via WebSocket.
-    // Supabase pushes INSERT/UPDATE/DELETE events to all open member browsers —
-    // no polling needed. Cache is busted on each event so the next fetchUpdates()
-    // hits Supabase fresh. Auto-reconnects after 5s on disconnect.
-    let _rtSocket = null, _rtRef = 0, _rtHeartbeatTimer = null, _rtReconnectTimer = null;
-
-    // checkpoint stage1_posts_gatekeeper (2026-10-25) — the posts-table Realtime channel
-    // pushes the RAW row straight to the browser over the websocket, bypassing the new
-    // gatekeeper's redaction entirely (there is no way to ask Supabase Realtime to filter
-    // or redact a payload per-subscriber). A free viewer subscribing to it would still
-    // receive unredacted paid_only content the instant it's posted. Real fix: free viewers
-    // don't subscribe to the posts channel at all — they already have a polling fallback
-    // for both tabs (_updatesRefreshTimer 60s, _tradeRefreshTimer 30s) which goes through
-    // sbFetch → the gatekeeper, so they still get updates, just not instantly. Paid/admin
-    // viewers are unaffected (unchanged, instant, exactly as before) — they're entitled to
-    // full content anyway, so there's nothing to protect there.
-    function _rtIsUnlockedViewer() {
-        const cm = window._cachedMember;
-        if (cm) return !!(cm.is_admin === true || cm.tier === 'paid' || cm.free_access === true);
-        return localStorage.getItem('t2s_uat_mode') === 'paid'; // best-effort fallback if cache not populated yet
-    }
+    // ── LIVE STATUS/SESSION CHECKS ─────────────────────────────────────────────
+    // checkpoint uat_phase5_door2 (2026-11-24) — the Realtime websocket that used to trigger
+    // these (and the posts refresh below) is removed; see _livePollTick/_startLivePoll further
+    // down. _rtIsUnlockedViewer() is gone too — it only existed to decide whether a viewer
+    // should subscribe to the raw, unfiltered posts websocket channel (a free viewer could
+    // otherwise see unredacted paid_only content the instant it posted). Polling never had
+    // that problem: fetchUpdates()/fetchTradeAlerts() already go through the real content
+    // gatekeeper for every viewer type, so there's nothing left to gate here.
     // Shared by the members-table and sessions-table realtime branches so both ever make
     // ONE decision from ONE fresh read of the member row — avoids two different messages
     // firing for the same underlying cause (e.g. admin PIN-reset touches both tables at once).
@@ -3381,6 +3378,10 @@
         const mid = localStorage.getItem('t2s_uat_member_id');
         const did = localStorage.getItem('t2s_uat_device_id');
         if (!mid || !did || !/^[0-9a-f-]{36}$/i.test(mid) || !/^[A-Za-z0-9_-]{1,100}$/.test(did)) return null;
+        // checkpoint uat_phase5_door1 (2026-11-24) — requires a real token; this function
+        // already only runs for mode!=='free'/non-pending members (the two checks above), who
+        // always have one in practice, so this is defense-in-depth, not a new restriction.
+        if (!localStorage.getItem('t2s_uat_member_token')) return null;
         try {
             const rows = await sbMemberFetchIfAuthed(`sessions?member_id=eq.${mid}&device_id=eq.${encodeURIComponent(did)}&select=is_active`, { method: 'GET' });
             return (Array.isArray(rows) && rows.length && rows.every(r => r && r.is_active === false)) ? 'out' : null;
@@ -3399,18 +3400,22 @@
         if (_rtRedirecting) return;
         const _rtMid = localStorage.getItem('t2s_uat_member_id');
         if (!_rtMid) return; // this device already logged itself out locally — nothing to do
-        let rows;
+        let m;
         try {
-            rows = await sbMemberFetchIfAuthed(`members?id=eq.${_rtMid}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`, { method: 'GET' });
+            // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+            // fallback onto /uat-resolve-member. This read genuinely runs for a pending/
+            // free-mode applicant too (their own row's live realtime event, e.g. the moment
+            // they're approved), so it needs the real door, not just a token guard. pin_hash
+            // is now a boolean, not the real hash — `=== null` becomes `!pin_hash` below.
+            m = await _p4('/uat-resolve-member', { member_id: _rtMid });
         } catch (_) { return; }
-        if (_rtRedirecting || !rows || !rows.length) return;
-        const m = rows[0];
+        if (_rtRedirecting || !m || !m.exists) return;
         if (m.status === 'disabled') { _rtRedirectToLogin(null); return; }
         // Admin reset this member's PIN — kick out immediately so they set a new one.
         // checkpoint member_rt_logout_fix (2026-11-11): only for a PIN-logged-in browser. A new
         // limited-access member has no PIN by design, so any unrelated change to their row
         // (e.g. finishing the product tour) used to log them out.
-        if (m.pin_hash === null && localStorage.getItem('t2s_uat_mode') !== 'free') {
+        if (!m.pin_hash && localStorage.getItem('t2s_uat_mode') !== 'free') {
             localStorage.removeItem('t2s_uat_last_login');
             localStorage.removeItem('t2s_uat_mode');
             localStorage.removeItem('t2s_uat_request_pending');
@@ -3431,8 +3436,10 @@
                 _rtDecided = true;
             } else {
                 try {
-                    const _rtReq = await sbMemberFetchIfAuthed(`access_requests?member_id=eq.${_rtMid}&order=created_at.desc&limit=1&select=status`, { method: 'GET' });
-                    if (Array.isArray(_rtReq) && _rtReq.length && _rtReq[0].status !== 'pending') _rtDecided = true;
+                    // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                    // fallback onto the existing pre-login door.
+                    const _rtReq = await _p4('/uat-access-request-status', { member_id: _rtMid });
+                    if (_rtReq && !_rtReq.error && _rtReq.exists && _rtReq.status !== 'pending') _rtDecided = true;
                 } catch (_) { /* check failed — never log out on an error */ }
                 if (_rtRedirecting) return;
             }
@@ -3459,83 +3466,41 @@
         fetchUpdates();
         fetchTradeAlerts();
     }
-    function initRealtimeSubscription() {
-        if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN) return;
-        clearTimeout(_rtReconnectTimer);
-        // WebSocket cannot be proxied — anon key here is read-only (Realtime subscribe only).
-        // All REST writes go through /uat-sb proxy (sbFetch). This key has no write path.
-        const _RT_WSS = 'wss://ivjyadnspyobzgbdoajj.supabase.co';
-        const _RT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2anlhZG5zcHlvYnpnYmRvYWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5NzAyNDAsImV4cCI6MjEwMzU0NjI0MH0.ikkmvwAu4BArQV2RiocCSWDXunbBApk14W2Vn6-U8y0';
-        const wsUrl = _RT_WSS + '/realtime/v1/websocket?apikey=' + _RT_KEY + '&vsn=1.0.0';
-        _rtSocket = new WebSocket(wsUrl);
-        const _rtUnlocked = _rtIsUnlockedViewer();
-
-        _rtSocket.onopen = () => {
-            const _rtChanges = [
-                { event: '*', schema: 'public', table: 'members', filter: 'id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') },
-                { event: '*', schema: 'public', table: 'sessions', filter: 'member_id=eq.' + (localStorage.getItem('t2s_uat_member_id') || '') }
-            ];
-            if (_rtUnlocked) _rtChanges.unshift({ event: '*', schema: 'public', table: 'posts' }); // T2S-PROD-20260715-009: * catches INSERT+UPDATE+DELETE
-            _rtSocket.send(JSON.stringify({
-                topic: 'realtime:*', event: 'phx_join',
-                payload: {
-                    config: {
-                        broadcast: { self: false },
-                        presence: { key: '' },
-                        postgres_changes: _rtChanges
-                    }
-                },
-                ref: String(++_rtRef)
-            }));
-            clearInterval(_rtHeartbeatTimer);
-            _rtHeartbeatTimer = setInterval(() => {
-                if (_rtSocket && _rtSocket.readyState === WebSocket.OPEN)
-                    _rtSocket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++_rtRef) }));
-            }, 30000);
-        };
-
-        _rtSocket.onmessage = (e) => {
-            try {
-                const msg = JSON.parse(e.data);
-                // sesscheck2 — live connection (re)subscribed: anything sent while it was down is lost, so check once
-                if (msg.event === 'system' && msg.payload?.extension === 'postgres_changes' && msg.payload?.status === 'ok') { _sessSelfCheck(); return; }
-                if (msg.event !== 'postgres_changes') return;
-                if (msg.payload?.data?.table === 'members') {
-                    _rtRefetchMemberAndAct(false);
-                    return;
-                }
-                if (msg.payload?.data?.table === 'sessions') {
-                    // Only react when THIS device's own session row just went inactive.
-                    // Several existing flows can cause that (self idle-timeout, self logout,
-                    // admin PIN-reset deactivating every session) — _rtRefetchMemberAndAct()
-                    // re-checks the member row fresh so those keep showing their own correct
-                    // message; only a genuinely normal member row falls through to
-                    // 'device_removed' (Manage Devices "Remove" from another device).
-                    const _rtRow = msg.payload?.data?.record;
-                    const _rtDid = localStorage.getItem('t2s_uat_device_id');
-                    if (_rtRow && _rtDid && _rtRow.device_id === _rtDid && _rtRow.is_active === false) {
-                        _rtRefetchMemberAndAct(true);
-                    }
-                    return;
-                }
-                localStorage.removeItem('t2s_uat_upd_posts_v3'); // bust cache so next fetchUpdates() goes to Supabase
-                const _rtActiveEl = document.querySelector('.tab.active');
-                const _rtTabId = (_rtActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
-                fetchUpdates(); // T2S-PROD-20260715-009: always refresh — post/delete appears regardless of active tab
-                if (_rtTabId === 'trades') fetchTradeAlerts();
-                if (_rtTabId === 'markets') fetchMarketPreview(); // refresh Markets quick-preview Updates sub-tab on new post
-                if (msg.payload?.data?.type === 'INSERT' && msg.payload?.data?.record && !msg.payload.data.record.is_deleted && !msg.payload.data.record.parent_id && ['trade_alert','general','market_update'].includes(msg.payload.data.record.post_type)) _triggerAlert(msg.payload.data.record);
-            } catch(_) {}
-        };
-
-        _rtSocket.onclose = () => {
-            clearInterval(_rtHeartbeatTimer);
-            _rtSocket = null;
-            _rtReconnectTimer = setTimeout(initRealtimeSubscription, 5000);
-        };
-
-        _rtSocket.onerror = () => { if (_rtSocket) _rtSocket.close(); };
+    // checkpoint uat_phase5_door2 (2026-11-24, owner-approved design) — replaces the Realtime
+    // websocket entirely with a visibility-gated poll: runs every 30s only while this tab is
+    // actually the visible screen; pauses completely the instant it's backgrounded/closed (no
+    // network or battery use while hidden); fires one immediate round the moment it becomes
+    // visible again so nothing is ever stale-on-reopen. fetchUpdates()/fetchTradeAlerts() now
+    // run on every tick regardless of which tab is active — the owner's explicit choice to
+    // make the Trades badge "always watching" too, matching how the Updates badge already
+    // worked. The Markets tab's own quick-preview refresh stays tab-specific, matching its
+    // existing behavior exactly (not part of what the owner asked to change). Member/session
+    // status checks cover both logged-in members and pending/free applicants — _rtRefetchMemberAndAct
+    // and _sessSelfCheck already guard appropriately on their own.
+    let _livePollTimer = null;
+    function _livePollTick() {
+        fetchUpdates();
+        fetchTradeAlerts();
+        const _lpActiveEl = document.querySelector('.tab.active');
+        const _lpTabId = (_lpActiveEl?.getAttribute('onclick') || '').match(/'(\w+)'/)?.[1];
+        if (_lpTabId === 'markets') fetchMarketPreview();
+        if (localStorage.getItem('t2s_uat_member_id')) {
+            _rtRefetchMemberAndAct(false);
+            _sessSelfCheck();
+        }
     }
+    function _startLivePoll() {
+        if (_livePollTimer) return;
+        _livePollTick();
+        _livePollTimer = setInterval(_livePollTick, 30000);
+    }
+    function _stopLivePoll() {
+        if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; }
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') _startLivePoll();
+        else _stopLivePoll();
+    });
 
     function formatPostTime(ts) {
         return new Date(ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -3612,6 +3577,32 @@
     let _cachedPosts = null; let _cachedTier = 'free'; let _cachedIsAdmin = false; let _cachedReadMap = {};
     let _localReadCache = {};
     try { _localReadCache = JSON.parse(localStorage.getItem('t2s_uat_read_cache') || '{}'); } catch(e) {}
+
+    // checkpoint uat_phase5_door2 (2026-11-24) — replaces the old Realtime websocket's own
+    // INSERT-event detection for the "New Trade Alert"/"New Update" popup (_triggerAlert).
+    // Each poll tick diffs the freshly-fetched parent-post IDs against what was seen last
+    // time; anything genuinely new triggers the popup exactly once. The very first call for
+    // each type only establishes the baseline and never alerts — otherwise every existing
+    // post would fire a popup the moment the page first loads.
+    // Codex-found race (2026-11-24): fetchUpdates()/fetchTradeAlerts() can be triggered from
+    // more than one place in quick succession (the poll tick, a member-status refresh, a
+    // manual tab switch). If an older, slower request's response arrives AFTER a newer one's,
+    // it would roll the seen-set back to a stale state and wrongly re-alert on a post the
+    // newer response already accounted for. _nextGen()/the gen check below is a standard
+    // "only the most recently started request wins" guard: captured at the START of each
+    // fetch (before its own await), compared again right before applying its result — a
+    // response from a request that's no longer the latest is simply dropped.
+    const _seenUpdateIds = { set: null, gen: 0 };
+    const _seenTradeIds  = { set: null, gen: 0 };
+    function _nextGen(seenRef) { return ++seenRef.gen; }
+    function _detectNewParentPosts(parents, seenRef, myGen) {
+        if (myGen !== seenRef.gen) return; // a newer request has started since this one began
+        const currentIds = new Set(parents.map(p => p.id));
+        if (seenRef.set === null) { seenRef.set = currentIds; return; }
+        const newOnes = parents.filter(p => !seenRef.set.has(p.id));
+        seenRef.set = currentIds;
+        newOnes.forEach(p => _triggerAlert(p));
+    }
     let _updatesTabViewed = false;
     function _cSave(k,v){try{localStorage.setItem(k,JSON.stringify({_t:Date.now(),_v:v}));}catch(e){}}
     function _cLoad(k,ms){try{const x=JSON.parse(localStorage.getItem(k)||'null');if(!x)return null;if(ms&&Date.now()-x._t>ms)return null;return x._v;}catch(e){return null;}}
@@ -3670,6 +3661,9 @@
     async function markPostRead(postId) {
         const memberId = localStorage.getItem('t2s_uat_member_id');
         if(!memberId) return;
+        // checkpoint uat_phase5_door1 (2026-11-24, owner decision) — read-tracking requires a
+        // real login; skip entirely for a not-yet-approved applicant, same as push signup.
+        if(!localStorage.getItem('t2s_uat_member_token')) return;
         try {
             const existing = await sbMemberFetchIfAuthed(`read_receipts?post_id=eq.${postId}&member_id=eq.${memberId}`, { method: 'GET' });
             if(existing && existing.length > 0) return;
@@ -4180,6 +4174,9 @@
     async function fetchTradeAlerts() {
         const container = document.getElementById('trade-alert-container');
         if (!container) return;
+        // checkpoint uat_phase5_door2 (2026-11-24) — captured synchronously, before any await
+        // in this call, so overlapping calls get correctly-ordered generation numbers.
+        const _myTradeGen = _nextGen(_seenTradeIds);
         if (!container.dataset.loaded) {
             const _ac = _cLoad('t2s_uat_alerts_html');
             if (_ac) { container.innerHTML = _ac; container.dataset.loaded = 'cached'; }
@@ -4191,7 +4188,11 @@
         if (memberId) {
             try {
                 const cached = window._cachedMember;
-                const members = cached ? [cached] : await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,is_admin,status,free_access`, {method:'GET'});
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member.
+                let members;
+                if (cached) members = [cached];
+                else { const _mv = await _p4('/uat-resolve-member', { member_id: memberId }); members = (_mv && _mv.exists) ? [_mv] : []; }
                 if (members?.length) {
                     if (members[0].status === 'disabled') { window.location.href='login.html'; return; }
                     isAdmin = members[0].is_admin === true;
@@ -4237,6 +4238,8 @@
             // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
             const _isCugMember = isAdmin || localStorage.getItem('t2s_uat_mobile') === '8888888888';
             if (!_isCugMember) tradeParents.splice(0, tradeParents.length, ...tradeParents.filter(p => p.audience !== 'cug_test'));
+            // checkpoint uat_phase5_door2 (2026-11-24) — new-trade-alert popup detection.
+            _detectNewParentPosts(tradeParents, _seenTradeIds, _myTradeGen);
             const replyMap = {};
             allFollowUps.forEach(r => {
                 if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
@@ -5194,6 +5197,9 @@
 
     async function fetchUpdates() {
         const container = document.getElementById('updates-container');
+        // checkpoint uat_phase5_door2 (2026-11-24) — captured synchronously, before any await
+        // in this call, so overlapping calls get correctly-ordered generation numbers.
+        const _myUpdateGen = _nextGen(_seenUpdateIds);
         // T2S-UAT-20260830-002: changed key v2→v3 to invalidate old 4-post stale cache. Removed stale-cache display entirely — always show loading then fresh fetch to guarantee all 49 posts appear.
         const _uc = _cLoad('t2s_uat_upd_posts_v3', 30 * 60 * 1000);
         // Preserve any open compose box across the loading wipe
@@ -5215,8 +5221,11 @@
             let isAdmin    = false;
 
             if(memberId) {
-                const members = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=tier,status,is_admin,free_access`, { method: 'GET' });
-                if(members && Array.isArray(members) && members.length > 0) {
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member.
+                const _mv = await _p4('/uat-resolve-member', { member_id: memberId });
+                const members = (_mv && _mv.exists) ? [_mv] : [];
+                if(members.length > 0) {
                     if(members[0].status === 'disabled') { window.location.href = 'login.html'; return; }
                     memberTier = members[0].tier || localStorage.getItem('t2s_uat_mode') || 'free';
                     isAdmin    = members[0].is_admin === true;
@@ -5248,9 +5257,15 @@
             // T2S-PROD-20260715-005: hide cug_test posts from everyone except CUG mobile and admin
             const _isCugUpd = isAdmin || localStorage.getItem('t2s_uat_mobile') === '8888888888';
             if (!_isCugUpd) posts.splice(0, posts.length, ...posts.filter(p => p.audience !== 'cug_test'));
+            // checkpoint uat_phase5_door2 (2026-11-24) — new-update popup detection (parent
+            // posts only — _updParents, not the merged posts+replies array).
+            _detectNewParentPosts(_isCugUpd ? _updParents : _updParents.filter(p => p.audience !== 'cug_test'), _seenUpdateIds, _myUpdateGen);
 
             let readMap = Object.assign({}, _localReadCache);
-            if(memberId) {
+            // checkpoint uat_phase5_door1 (2026-11-24, owner decision) — read-tracking requires
+            // a real login, same as markPostRead(); a not-yet-approved applicant never has any
+            // read_receipts rows to fetch anyway (nothing was ever written for them pre-login).
+            if(memberId && localStorage.getItem('t2s_uat_member_token')) {
                 const receipts = await sbMemberFetchIfAuthed(`read_receipts?member_id=eq.${memberId}&select=post_id,opened_at`, { method: 'GET' });
                 receipts.forEach(r => { readMap[r.post_id] = r.opened_at; });
                 _localReadCache = readMap;
@@ -5287,7 +5302,8 @@
             }
             posts.filter(p=>!p.parent_id).map(p=>p.id).forEach(id => updateLikeUI(id));
             fetchLikes(posts.filter(p => !p.parent_id).map(p => p.id), posts.filter(p => !p.parent_id));
-            initRealtimeSubscription();
+            // checkpoint uat_phase5_door2 (2026-11-24) — no longer needed here: _startLivePoll()
+            // (called once at page load) already runs fetchUpdates() as its own first tick.
         } catch(e) {
             container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Unable to load updates. Check connection.</div>';
         }
@@ -5826,21 +5842,24 @@
     async function logout(){
         const memberId = localStorage.getItem('t2s_uat_member_id');
         const deviceId = localStorage.getItem('t2s_uat_device_id');
-        // checkpoint uat_member_phase3 — captured BEFORE the token is cleared below, so this
-        // logout PATCH still gets to use the member door (sbMemberFetchIfAuthed reads
-        // localStorage itself, which would already be empty by the time it ran otherwise).
-        const _hadToken = !!localStorage.getItem('t2s_uat_member_token');
+        // checkpoint uat_bugP01_logout_fix (2026-11-27) — captured BEFORE the token is cleared
+        // below, as the actual value (not just a yes/no flag): sbMemberFetch reads localStorage
+        // live by design for its other callers, so by the time it ran here that key would
+        // already be empty and the server would reject the call with no token — the session row
+        // was never actually marked inactive (BUG-P01 regression). Passing the captured value as
+        // sbMemberFetch's tokenOverride fixes this without changing sbMemberFetch's behavior for
+        // any other call site.
+        const _memberToken = localStorage.getItem('t2s_uat_member_token') || '';
         // Clear session immediately before any async work so refresh cannot auto-login
         ['t2s_uat_member_id','t2s_uat_mobile','t2s_uat_last_login','t2s_uat_mode','t2s_uat_lock_until','t2s_uat_last_active','t2s_uat_request_pending','t2s_uat_member_token'].forEach(k=>localStorage.removeItem(k));
         // Best-effort: mark session inactive in DB
         // stage3b — wait (max 3s) so the "device inactive" update is not cancelled by leaving the
         // page (it used to be, leaving the device counted as active). Goes to login either way.
         if (memberId && deviceId) {
+            const _logoutPath = `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`;
+            const _logoutOpts = { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } };
             await Promise.race([
-                (_hadToken ? sbMemberFetch : sbFetch)(
-                    `sessions?member_id=eq.${memberId}&device_id=eq.${deviceId}&is_active=eq.true`,
-                    { method:'PATCH', body: JSON.stringify({ is_active: false }), headers: { 'Prefer': 'return=minimal' } }
-                ).catch(()=>{}),
+                (_memberToken ? sbMemberFetch(_logoutPath, _logoutOpts, _memberToken) : sbFetch(_logoutPath, _logoutOpts)).catch(()=>{}),
                 new Promise(r => setTimeout(r, 3000))
             ]);
         }
@@ -5865,6 +5884,11 @@
         const memberId = localStorage.getItem('t2s_uat_member_id');
         const myDid = localStorage.getItem('t2s_uat_device_id');
         if (!memberId) { list.innerHTML = ''; return; }
+        // checkpoint uat_phase5_door1 (2026-11-24) — a not-yet-approved applicant can open the
+        // About tab (where this is called from) before ever logging in. With no token there's
+        // no doored way to read sessions, and there's genuinely nothing to show them yet
+        // anyway (no device has ever logged in for them) — same message as a real empty list.
+        if (!localStorage.getItem('t2s_uat_member_token')) { list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">No active devices found.</p>'; return; }
         list.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted);">Loading…</p>';
         try {
             const rows = await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&is_active=eq.true&select=id,device_id,device_type,last_active&order=last_active.desc`, { method:'GET' });
@@ -5897,6 +5921,9 @@
     async function removeDevice(sessionId, deviceId){
         if (!confirm('This device will be logged out immediately and will need to re-enter the PIN to log in again. Continue?')) return;
         const memberId = localStorage.getItem('t2s_uat_member_id');
+        // checkpoint uat_phase5_door1 (2026-11-24) — defense in depth; in practice this button
+        // never renders without a token (loadManageDevices shows no rows until then).
+        if (!localStorage.getItem('t2s_uat_member_token')) { alert('Could not remove this device. Please try again.'); return; }
         try {
             // Target by this exact session row's own id (not just member+device) so a stale
             // duplicate row for the same device could never be patched by accident.
@@ -5954,8 +5981,11 @@
         if (mode === 'free' && await _uatAppBlocked()) { _showAppBlocked(); return; }
         if(mode !== 'free' && memberId){
             if(Date.now()-lastLogin >= SESSION_24H){
+                // checkpoint uat_phase5_door1 (2026-11-24) — only attempt this deactivation when
+                // a real login token exists; with none, there's no doored way to do it safely,
+                // and the row is about to be meaningless anyway (device is logging out either way).
                 const _expDid=localStorage.getItem('t2s_uat_device_id');
-                if(_expDid){try{await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_expDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
+                if(_expDid && localStorage.getItem('t2s_uat_member_token')){try{await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_expDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
                 window.location.href='login.html'; return;
             }
             // activity_stage3 — idle logout also on reopen: compare the last touch saved before the
@@ -5963,8 +5993,9 @@
             const _lastTouch = Date.parse(localStorage.getItem('t2s_uat_last_active') || '') || 0;
             const _idleRef = Math.max(_lastTouch, lastLogin);
             if (_idleRef > 0 && Date.now() - _idleRef > _actIdleMs()) {
+                // checkpoint uat_phase5_door1 (2026-11-24) — same token guard as above.
                 const _idDid = localStorage.getItem('t2s_uat_device_id');
-                if (_idDid) { try { await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_idDid}&is_active=eq.true`, { method:'PATCH', body: JSON.stringify({ is_active:false }), headers: { 'Prefer':'return=minimal' } }); } catch(e) {} }
+                if (_idDid && localStorage.getItem('t2s_uat_member_token')) { try { await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_idDid}&is_active=eq.true`, { method:'PATCH', body: JSON.stringify({ is_active:false }), headers: { 'Prefer':'return=minimal' } }); } catch(e) {} }
                 localStorage.removeItem('t2s_uat_last_active');
                 localStorage.setItem('t2s_uat_logout_reason', 'idle');
                 window.location.href='login.html'; return;
@@ -5975,19 +6006,27 @@
         if(mode !== 'free' && memberId){
             try {
                 const _sessP = _sessReadSelf().catch(() => null); // sesscheck2: read in parallel with the member row, decided before the app shows
-                const members=await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=status,tier,is_admin,free_access,free_access_blocked,pin_hash`,{method:'GET'});
-                if(!members||!Array.isArray(members)||!members.length||members[0].status==='disabled'||members[0].pin_hash===null||members[0].free_access_blocked===true){
-                    if(members&&members[0]&&members[0].status==='disabled') localStorage.setItem('t2s_uat_logout_reason','disabled');
-                    if(members&&members[0]&&members[0].free_access_blocked===true) localStorage.setItem('t2s_uat_logout_reason','blocked');
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member (member_id lookup, no token required or
+                // used). Its pin_hash field is a boolean (has a PIN or not), not the real hash,
+                // so the old `pin_hash===null` check becomes `!pin_hash`.
+                const members=await _p4('/uat-resolve-member', { member_id: memberId });
+                if(!members||!members.exists||members.status==='disabled'||!members.pin_hash||members.free_access_blocked===true){
+                    if(members&&members.exists&&members.status==='disabled') localStorage.setItem('t2s_uat_logout_reason','disabled');
+                    if(members&&members.exists&&members.free_access_blocked===true) localStorage.setItem('t2s_uat_logout_reason','blocked');
                     window.location.href='login.html'; return;
                 }
-                if (await _inactRemovedCheck(members[0], memberId)) { _inactLogout(memberId); return; } // activity_stage3
+                if (await _inactRemovedCheck(members, memberId)) { _inactLogout(memberId); return; } // activity_stage3
                 if (await _sessP === 'out') { _rtRedirectToLogin('device_removed'); return; } // sesscheck2: this device was logged out while the app was closed
-                window._cachedMember = members[0];
+                window._cachedMember = members;
                 // Render tier chip immediately — before any tab fetch completes
-                _renderMemberChip(members[0]);
-                // Silent last_seen ping — feeds free-access inactivity monitor
-                sbMemberFetchIfAuthed(`members?id=eq.${memberId}`,{method:'PATCH',body:JSON.stringify({last_seen:new Date().toISOString()})}).catch(()=>{});
+                _renderMemberChip(members);
+                // Silent last_seen ping — feeds free-access inactivity monitor. Requires a real
+                // token (checkpoint uat_phase5_door1, 2026-11-24) — with none, there's no doored
+                // way to do this write safely, and it's a low-stakes, skippable ping.
+                if (localStorage.getItem('t2s_uat_member_token')) {
+                    sbMemberFetchIfAuthed(`members?id=eq.${memberId}`,{method:'PATCH',body:JSON.stringify({last_seen:new Date().toISOString()})}).catch(()=>{});
+                }
             } catch(e){ console.warn('Auth check failed',e); }
         }
         // free_access_blocked can occur with mode cached as 'free' (e.g. a member deactivated
@@ -5998,8 +6037,10 @@
         // with pin_hash genuinely null because no PIN was ever set up — not an auth failure).
         if (mode === 'free' && memberId) {
             try {
-                const _fab = await sbMemberFetchIfAuthed(`members?id=eq.${memberId}&select=free_access_blocked`, {method:'GET'});
-                if (_fab && _fab[0] && _fab[0].free_access_blocked === true) {
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member.
+                const _fab = await _p4('/uat-resolve-member', { member_id: memberId });
+                if (_fab && _fab.exists && _fab.free_access_blocked === true) {
                     localStorage.setItem('t2s_uat_logout_reason','blocked');
                     window.location.href='login.html'; return;
                 }
@@ -6018,7 +6059,9 @@
         if(mode !== 'free' && memberId){
             const _did = localStorage.getItem('t2s_uat_device_id');
             const _pingLastActive = () => {
-                if(!_did) return;
+                // checkpoint uat_phase5_door1 (2026-11-24) — requires a real token; with none,
+                // there's no doored way to do this write safely, and it's a skippable ping.
+                if(!_did || !localStorage.getItem('t2s_uat_member_token')) return;
                 sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_did}&is_active=eq.true`,
                     {method:'PATCH',body:JSON.stringify({last_active:new Date().toISOString()})})
                     // sesscheck2 (owner 2026-11-15): reuse this existing 5-min call instead of a new timer —
@@ -6044,9 +6087,16 @@
             if (_el) _el.remove();
         }
         if (localStorage.getItem('t2s_uat_request_pending') === '1' && memberId) {
-            sbMemberFetchIfAuthed(`access_requests?member_id=eq.${memberId}&order=created_at.desc&limit=1&select=status`, {method:'GET'})
-                .then(rows => {
-                    if (!rows || !rows[0] || rows[0].status !== 'pending') {
+            // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token fallback
+            // onto the existing pre-login door. _p4 returns null on ANY network/parse failure
+            // (indistinguishable from a real answer) and the door itself flags a genuine
+            // lookup failure via error:true — both must be treated as "unknown, stay put,"
+            // never as "resolved" (the original raw call's own .catch did the same: silently
+            // do nothing on failure, never force a still-pending applicant to re-login).
+            _p4('/uat-access-request-status', { member_id: memberId })
+                .then(r => {
+                    if (!r || r.error) return;
+                    if (!r.exists || r.status !== 'pending') {
                         // Request resolved (approved or rejected) — same action as Realtime handler:
                         // force re-login so member goes through PIN setup before entering PWA
                         localStorage.removeItem('t2s_uat_request_pending');
@@ -6067,7 +6117,9 @@
             if (Date.now() - last > _actIdleMs()) { // activity_stage3: re-read so a fresh server setting applies at once
                 clearInterval(_heartbeat);
                 const _idleDid=localStorage.getItem('t2s_uat_device_id');
-                if(memberId&&_idleDid){try{await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_idleDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
+                // checkpoint uat_phase5_door1 (2026-11-24) — requires a real token; this interval
+                // also runs for free/pending visitors, who have no session row to deactivate anyway.
+                if(memberId&&_idleDid&&localStorage.getItem('t2s_uat_member_token')){try{await sbMemberFetchIfAuthed(`sessions?member_id=eq.${memberId}&device_id=eq.${_idleDid}&is_active=eq.true`,{method:'PATCH',body:JSON.stringify({is_active:false}),headers:{'Prefer':'return=minimal'}});}catch(e){}}
                 localStorage.removeItem('t2s_uat_last_active'); // activity_stage3: no stale value into the next login
                 if (memberId && mode !== 'free') localStorage.setItem('t2s_uat_logout_reason', 'idle');
                 window.location.href='login.html';
@@ -6104,7 +6156,9 @@
         // activity_stage3 — idle setting refresh for everyone; 48h notice for approved members (now + every 30 min)
         if (mode !== 'free' && memberId) { _inactCheck(); setInterval(_inactCheck, 30 * 60 * 1000); }
         else { _actStatus(); }
-        initRealtimeSubscription(); // start live connection at page load regardless of which tab opens first
+        // checkpoint uat_phase5_door2 (2026-11-24) — start the 30s poll at page load regardless
+        // of which tab opens first (replaces the old Realtime websocket's own start-at-load call).
+        _startLivePoll();
         // Subscribe to push notifications silently after session confirmed
         if (memberId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             subscribeToPush().catch(() => {}).finally(() => updateNotifBell());
@@ -6385,8 +6439,10 @@
         if (!mid) return;
         if (!forceReplay) {
             try {
-                const rows = await sbMemberFetchIfAuthed(`members?id=eq.${mid}&select=tour_completed`, { method:'GET' });
-                if (rows?.[0]?.tour_completed) return;
+                // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw no-token
+                // fallback onto /uat-resolve-member (member_id lookup, no token required or used).
+                const r = await _p4('/uat-resolve-member', { member_id: mid });
+                if (r?.tour_completed) return;
             } catch(e) { return; }
         }
         sessionStorage.setItem('t2s_uat_tour_shown', '1');
@@ -6478,7 +6534,10 @@
     function _closeTour() {
         document.getElementById('tour-overlay').style.display = 'none';
         const mid = localStorage.getItem('t2s_uat_member_id');
-        if (mid) sbMemberFetchIfAuthed(`members?id=eq.${mid}`, { method:'PATCH', body:JSON.stringify({ tour_completed:true }) }).catch(()=>{});
+        // checkpoint uat_phase5_door1 (2026-11-24) — requires a real token; with none, there's
+        // no doored way to do this write safely, and it's a low-stakes, skippable flag (the
+        // tour would just show again next time, which is harmless).
+        if (mid && localStorage.getItem('t2s_uat_member_token')) sbMemberFetchIfAuthed(`members?id=eq.${mid}`, { method:'PATCH', body:JSON.stringify({ tour_completed:true }) }).catch(()=>{});
     }
 </script>
 
