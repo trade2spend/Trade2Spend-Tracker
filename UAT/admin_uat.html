@@ -17,6 +17,7 @@
 <!-- T2S-UAT-20261111-003 | admin_uat: manage_stage1 — Manage tab split into 4 tabs (Requests | Members | Activity | Devices), each showing only its own content; Requests holds access requests + Enable switch + PIN resets/unlocks, with a tab badge = pending access + pending PIN requests; Members holds Add Member + ONE merged list (old approved-members sub-list removed) with search and filters All/Paid/Approved/Blocked/Disabled, APPROVED/BLOCKED labels, Block/Unblock on approved members (row + detail sheet), Remove access (old Deactivate) in detail sheet; Block = free_access false + blocked true + newest request blocked; Unblock = free_access true + blocked false + newest request approved; fake '72h left' label removed. No server change (existing UAT admin door rules cover every write). Rollback: restore admin_uat.html.bak_20261111_pre_stage1. -->
 <!-- T2S-UAT-20261111-002 | admin_uat: admin_fixes_1111 — (1) Enable Requests switch saves {value} only (UAT feature_flags has key,value only — it never saved before); (2) Free Access members list orders by created_at (free_access_granted_at doesn't exist in UAT); (3) lock / not-set-up / set-PIN messages give no unlock hints; (4) 'Pending' sub-tab renamed 'Requests' (default filter stays Pending); (5) Blocked devices show the mobile numbers used on each device (from access_requests + sessions). Rollback: restore admin_uat.html.bak_20261111_pre_fixes. -->
 <!-- T2S-UAT-20261110-002 | admin_uat: UAT admin login separated from production (checkpoint uat_admin_login, owner-approved 2026-11-10). One build setting _isUatBuild()=true. UAT: (1) no Kotak 6-digit code screen; app opens to PIN; (2) PIN checked by /uat-admin-verify-pin (UAT DB only); first login on a browser asks mobile + PIN; lock state from /uat-admin-pub; (3) all admin-login browser storage names UAT-only via _ak() (t2s_uat_*) — never reads/changes/deletes prod admin's saved login on the same website; (4) every non-posts DB call goes through /uat-admin-sb with the UAT admin pass (posts stay on /uat-sb); 401 after login → back to PIN; (5) no in-app set-PIN card, no email-unlock redirect, ?reset=1 only forgets the remembered identity; (6) Kotak connect/disconnect, push-to-prod, market holiday, restore, backup, dummy likes, member notifications, contract refresh switched off in UAT. Prod admin file untouched. Rollback: restore admin_uat.html.bak_20261110_pre_step3. -->
+<!-- CORRECTION (checkpoint uat_door3_posts_admin_sb, 2026-11-24): point (4) above is now out of date. The /uat-sb static-token door was removed entirely; posts no longer has its own carve-out — every DB call, posts included, now goes through /uat-admin-sb. See the comment at sbFetch() in this file and _UAT_ADMIN_RULES.posts in server.js. -->
 <!-- T2S-UAT-20261019-002 | admin_uat: Finding B fix — mirrors T2S-PROD-20261019-002 applied to admin.html. All T2SMonitor2026 call sites migrated to localStorage t2s_execute_secret; refresh-contracts' key removed entirely. Dead unused `_FA_SECRET` constant (line ~1767) left untouched — zero references, out of scope. Codex-reviewed (2 rounds, clean). Rollback: revert each x-t2s-secret value back to 'T2SMonitor2026'. -->
 <!-- T2S-UAT-20261018-002 | admin_uat: Finding K fix — disconnectKotak() now sends x-t2s-secret: localStorage t2s_execute_secret with its POST /logout-kotak call (previously sent no headers at all). Mirrors T2S-PROD-20261018-003 applied to admin.html. Companion server.js change adds an EXECUTE_SECRET-only guard to that route. Codex-reviewed (2 rounds, clean). Rollback: revert the fetch call back to no headers object. -->
 <!-- T2S-UAT-20260918-001 | admin_uat: resetMemberPin root-cause fix — replaced DELETE sessions with the same two-step PIN/session invalidation used by handlePinReset: (1) PATCH members pin_hash=null, (2) PATCH sessions is_active=false (all sessions for member). Previously only DELETEd session rows and never cleared pin_hash, so member could still authenticate with old PIN. Reuses the common mechanism: pin_hash=null triggers Realtime kick-out (online) and uat.html init() redirect (offline). Rollback: revert both PATCH lines back to the single DELETE sessions line. -->
@@ -362,7 +363,7 @@ body{background:var(--bg);min-height:100vh;}
 
 <!-- PIN LOCK OVERLAY -->
 <div id="pin-overlay">
-  <img src="logo.png" alt="T2S" style="width:56px;height:56px;border-radius:14px;object-fit:cover;margin-bottom:16px;" onerror="this.outerHTML='<div class=\'pin-logo\'>T2S</div>'">
+  <img src="../logo.png" alt="T2S" style="width:56px;height:56px;border-radius:14px;object-fit:contain;margin-bottom:16px;" onerror="this.outerHTML='<div class=\'pin-logo\'>T2S</div>'">
   <div class="pin-title">Trade2Spend</div>
   <div class="pin-sub" id="pin-sub-text">Enter your PIN to continue</div>
   <!-- checkpoint admin_pin_switchable_identity (2026-10-23) — shows which admin identity
@@ -401,7 +402,7 @@ body{background:var(--bg);min-height:100vh;}
 <!-- TOTP LOCK OVERLAY -->
 <div id="totp-overlay" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2030,#0f1420);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:14px;padding:32px 28px;width:min(320px,90vw);box-shadow:0 4px 24px rgba(0,0,0,0.3);text-align:center;">
-    <img src="logo.png" alt="T2S" style="width:52px;height:52px;border-radius:12px;object-fit:cover;margin-bottom:14px;" onerror="this.outerHTML='<div style=\'width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#ef4444);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:white;margin:0 auto 14px;\'>T2S</div>'">
+    <img src="../logo.png" alt="T2S" style="width:52px;height:52px;border-radius:12px;object-fit:contain;margin-bottom:14px;" onerror="this.outerHTML='<div style=\'width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#ef4444);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:white;margin:0 auto 14px;\'>T2S</div>'">
     <div style="font-weight:700;font-size:1.05rem;color:#1a2030;margin-bottom:4px;">Trade2Spend Admin</div>
     <div style="color:#6b7280;font-size:0.82rem;margin-bottom:18px;">Enter your Google Authenticator code</div>
     <input id="admin-totp-inp" type="tel" inputmode="numeric" maxlength="6" placeholder="000000"
@@ -476,7 +477,7 @@ body{background:var(--bg);min-height:100vh;}
   <div class="topbar-inner">
   <div class="topbar-row1">
     <div class="brand">
-      <img src="logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
+      <img src="../logo.png" alt="T2S" style="width:34px;height:34px;border-radius:8px;object-fit:contain;flex-shrink:0;" onerror="this.outerHTML='<div class=\'brand-icon\'>T2S</div>'">
       <div style="display:flex;align-items:center;gap:7px;">
         <div class="brand-name">Trade2Spend</div>
         <span id="admin-identity-pill" style="font-size:10px;font-weight:700;background:#4a2a78;color:#fff;padding:2px 7px;border-radius:10px;letter-spacing:0.03em;">Admin</span>
@@ -594,7 +595,8 @@ body{background:var(--bg);min-height:100vh;}
     <div id="stock-row" class="grid2" style="display:none;margin-bottom:10px;">
       <div class="field">
         <div class="field-label">Symbol</div>
-        <input type="text" id="symbol" placeholder="e.g. RELIANCE" style="text-transform:uppercase" oninput="updatePreview()">
+        <input type="text" id="symbol" placeholder="e.g. RELIANCE" style="text-transform:uppercase" maxlength="50" oninput="document.getElementById('symbol-char').textContent=this.value.length+' / 50';updatePreview()">
+        <div class="char-count" id="symbol-char">0 / 50</div>
       </div>
       <div></div>
     </div>
@@ -668,7 +670,8 @@ body{background:var(--bg);min-height:100vh;}
   <div class="card">
     <div class="card-title"><span class="card-title-dot"></span>Why I'm Taking This Trade <span style="font-size:10px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;">(optional · paid members only)</span></div>
     <div class="field">
-      <textarea id="trade-why" placeholder="e.g. Nifty formed a double bottom at 23100, market structure bullish above 23200..." style="width:100%;background:var(--bg3);border:0.5px solid rgba(124,58,237,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:10px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;line-height:1.5;"></textarea>
+      <textarea id="trade-why" placeholder="e.g. Nifty formed a double bottom at 23100, market structure bullish above 23200..." style="width:100%;background:var(--bg3);border:0.5px solid rgba(124,58,237,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:10px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;line-height:1.5;" oninput="document.getElementById('trade-why-char').textContent=this.value.length+' / 500'"></textarea>
+      <div class="char-count" id="trade-why-char">0 / 500</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px;">Visible to paid members only. Hidden from free members (revealed after 6 days + trade closed).</div>
     </div>
   </div>
@@ -676,7 +679,8 @@ body{background:var(--bg);min-height:100vh;}
   <div class="card">
     <div class="card-title"><span class="card-title-dot"></span>Special Comments (optional)</div>
     <div class="field">
-      <input type="text" id="special-comment" placeholder="e.g. Risky trade, small quantity only" oninput="updatePreview()">
+      <input type="text" id="special-comment" placeholder="e.g. Risky trade, small quantity only" maxlength="200" oninput="document.getElementById('special-comment-char').textContent=this.value.length+' / 200';updatePreview()">
+      <div class="char-count" id="special-comment-char">0 / 200</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px;">Will appear bold in message between SL and disclaimer</div>
     </div>
   </div>
@@ -753,7 +757,8 @@ body{background:var(--bg);min-height:100vh;}
   </div>
   <div class="field" style="margin-bottom:10px;">
     <div class="field-label">Follow-up Message</div>
-    <textarea id="fu-text" placeholder="e.g. 180 Exiting 50%, holding rest at cost..." rows="4" oninput="previewFollowUpIntent()" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;font-family:'Space Grotesk',sans-serif;resize:vertical;"></textarea>
+    <textarea id="fu-text" placeholder="e.g. 180 Exiting 50%, holding rest at cost..." rows="4" oninput="document.getElementById('fu-text-char').textContent=this.value.length+' / 500';previewFollowUpIntent()" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;padding:10px;outline:none;font-family:'Space Grotesk',sans-serif;resize:vertical;"></textarea>
+    <div class="char-count" id="fu-text-char">0 / 500</div>
   </div>
   <div id="fu-intent-preview" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(74,42,120,0.06);border-radius:8px;font-size:12px;"></div>
   <!-- Send Follow-up button hidden — T2S-PROD-20260717-001: disabled temporarily, re-enable when needed -->
@@ -773,7 +778,8 @@ body{background:var(--bg);min-height:100vh;}
     </div>
     <div class="field">
       <div class="field-label">Context (optional)</div>
-      <input type="text" id="gen-context" placeholder="e.g. Day-end summary, morning update...">
+      <input type="text" id="gen-context" placeholder="e.g. Day-end summary, morning update..." maxlength="100" oninput="document.getElementById('gen-context-char').textContent=this.value.length+' / 100'">
+      <div class="char-count" id="gen-context-char">0 / 100</div>
     </div>
   </div>
   <div class="card">
@@ -1752,7 +1758,11 @@ window.onload=()=>{
   memRenderRenewal();
   memRenderWelcome();
   // Auto-load follow-up post list since Trade tab is the default
-  loadFollowUpData();
+  // checkpoint uat_admin_pin_reload_fix (2026-11-27) — in UAT, the login pass doesn't exist
+  // yet on first page load (before the PIN is entered), so this call would otherwise fail.
+  // Skip it here when not yet authenticated; checkPin() runs it directly on PIN success
+  // instead of reloading the whole page.
+  if (!_isUatBuild() || sessionStorage.getItem(_ak('t2s_admin_authed'))) loadFollowUpData();
   // Restore holiday override from localStorage before any network call
   initHolidayFromStorage();
   // Check Kotak status on load so header shows correct state immediately
@@ -1888,7 +1898,6 @@ let _mgmtAcqFilter = 'all';
 
 // ── FREE ACCESS MANAGEMENT ────────────────────────────────────────────────────
 const _VM_ADMIN = 'https://api.trade2spend.com';
-const _FA_SECRET = 'T2SMonitor2026';
 
 async function loadFreeAccessTab() {
     // Load feature flag state
@@ -3680,9 +3689,11 @@ async function checkPin() {
       localStorage.setItem(_ak('t2s_admin_name'), d.name || 'Admin');
       updateCurrentAdminDisplay();
     }
-    // checkpoint uat_admin_login — UAT data now needs the pass, so screens that loaded
-    // behind the PIN screen got nothing; one reload lets every screen load properly.
-    if (_isUatBuild()) { location.reload(); return; }
+    // checkpoint uat_admin_pin_reload_fix (2026-11-27) — was: location.reload() (UAT data
+    // needs the pass, so the one screen that loaded behind the PIN screen got nothing).
+    // The pass was just saved above, so run that one deferred call directly instead of
+    // reloading the whole page. See the matching guard on loadFollowUpData() in window.onload.
+    if (_isUatBuild()) { loadFollowUpData(); return; }
     return;
   }
   if (d.serverBusy) {
@@ -6432,45 +6443,56 @@ function memCopyText(type){
 
 // ── DECIMAL CAP ──
 function cap2dec(input){
-  const v = input.value;
+  let v = input.value;
   if(v.includes('.')){
     const parts = v.split('.');
     if(parts[1] && parts[1].length > 2){
-      input.value = parseFloat(v).toFixed(2);
+      v = parseFloat(v).toFixed(2);
     }
   }
+  // checkpoint value_input_caps (2026-11-24, owner-requested) — max 7 total digits (integer +
+  // decimal combined, not counting the decimal point itself). Only applies to Entry/Opt CMP
+  // (the two fields this function is wired to) — Spot CMP, Strike, and SL Level are explicitly
+  // left untouched (owner's call, 2026-11-24). Drops any digit beyond the 7th, wherever it
+  // falls, keeping the decimal point's position — real entry/option prices never come close to
+  // this, so simple truncation is more than sufficient.
+  if((v.match(/[0-9]/g) || []).length > 7){
+    let seen = 0, out = '';
+    for(const ch of v){
+      if(/[0-9]/.test(ch)){ if(seen >= 7) continue; seen++; }
+      out += ch;
+    }
+    // Codex-found edge case: truncating right at the 7th digit can leave a bare trailing
+    // decimal point (e.g. "1234567.8" -> "1234567."). Strip it rather than leave it dangling.
+    if(out.endsWith('.')) out = out.slice(0, -1);
+    v = out;
+  }
+  input.value = v;
 }
 
 // ── SUPABASE (via VM proxy — key lives in server .env, never here) ──
 const UAT_PROXY = 'https://api.trade2spend.com';
-const UAT_TOKEN = '8721c71da8f36413679cddbe2043e992cecfbb3dbcaf30dd';
 
+// checkpoint uat_door3_posts_admin_sb (2026-11-24) — posts no longer has its own carve-out to
+// the old static-token /uat-sb door (removed entirely, along with UAT_TOKEN). Every call,
+// posts included, now goes through /uat-admin-sb, which requires the real UAT admin pass —
+// _UAT_ADMIN_RULES.posts on the server covers exactly what this page's posts calls send.
 async function sbFetch(path, opts = {}) {
   const { headers: xh, ...rest } = opts;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
-  // checkpoint uat_admin_login — UAT build: everything except posts goes through the
-  // UAT admin door, which needs the UAT admin pass from a correct PIN. Posts stay on the
-  // old door for now (posts work is deferred).
-  const useAdminDoor = _isUatBuild() && String(path).split('?')[0] !== 'posts';
   try {
-    const res = useAdminDoor
-      ? await fetch(`${UAT_PROXY}/uat-admin-sb`, {
-          method: 'POST', signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json' },
-          // Pass is only sent once the PIN was entered in THIS session — so nothing loads
-          // behind the PIN screen, and a reopened app always needs the PIN again.
-          body: JSON.stringify({ token: sessionStorage.getItem(_ak('t2s_admin_authed')) ? (localStorage.getItem(_ak('t2s_execute_secret')) || '') : '', path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
-        })
-      : await fetch(`${UAT_PROXY}/uat-sb`, {
-          method: 'POST', signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', 'x-t2s-uat': UAT_TOKEN },
-          body: JSON.stringify({ path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
-        });
+    const res = await fetch(`${UAT_PROXY}/uat-admin-sb`, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json' },
+      // Pass is only sent once the PIN was entered in THIS session — so nothing loads
+      // behind the PIN screen, and a reopened app always needs the PIN again.
+      body: JSON.stringify({ token: sessionStorage.getItem(_ak('t2s_admin_authed')) ? (localStorage.getItem(_ak('t2s_execute_secret')) || '') : '', path, method: rest.method || 'GET', body: rest.body || null, headers: xh || {} })
+    });
     const text = await res.text();
     // Pass expired / admin removed while logged in → back to the PIN screen. Only when this
     // browser had actually logged in, so screens loading behind the PIN screen can't loop.
-    if (useAdminDoor && res.status === 401 && sessionStorage.getItem(_ak('t2s_admin_authed'))) {
+    if (res.status === 401 && sessionStorage.getItem(_ak('t2s_admin_authed'))) {
       sessionStorage.removeItem(_ak('t2s_admin_authed'));
       localStorage.removeItem(_ak('t2s_execute_secret'));
       location.reload();
@@ -6695,7 +6717,8 @@ function renderPostsFeed() {
           <button id="pb-aud-all-${p.id}" onclick="setPostsAud('${p.id}','all')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid #4a2a78;background:#4a2a78;color:#fff;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">👥 All</button>
           <button id="pb-aud-paid-${p.id}" onclick="setPostsAud('${p.id}','paid_only')" style="flex:1;padding:6px;border-radius:var(--radius-sm);border:1.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer;">⭐ Paid Only</button>
         </div>
-        <textarea id="posts-reply-text-${p.id}" placeholder="e.g. 180 Exiting 50%, holding rest at cost…" style="width:100%;background:var(--bg);border:0.5px solid rgba(74,42,120,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:9px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;"></textarea>
+        <textarea id="posts-reply-text-${p.id}" placeholder="e.g. 180 Exiting 50%, holding rest at cost…" style="width:100%;background:var(--bg);border:0.5px solid rgba(74,42,120,0.3);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:9px;outline:none;resize:none;min-height:70px;font-family:'Space Grotesk',sans-serif;margin-bottom:2px;" oninput="document.getElementById('posts-reply-char-${p.id}').textContent=this.value.length+' / 500'"></textarea>
+        <div class="char-count" id="posts-reply-char-${p.id}" style="margin-bottom:4px;">0 / 500</div>
         <div style="display:flex;gap:6px;">
           <button onclick="openPostsReplyBox('${p.id}')" style="padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;color:var(--muted2);font-size:12px;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Cancel</button>
           <button onclick="sendPostsReply('${p.id}',this)" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:none;background:#4a2a78;color:#fff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;cursor:pointer;">Send Follow-up →</button>
