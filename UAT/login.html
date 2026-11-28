@@ -39,7 +39,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 
 .hero{display:flex;flex-direction:column;align-items:center;margin-bottom:20px;}
 .logo-img{width:72px;height:72px;border-radius:18px;overflow:hidden;margin-bottom:12px;box-shadow:0 6px 24px rgba(74,42,120,0.18);}
-.logo-img img{width:100%;height:100%;object-fit:cover;}
+.logo-img img{width:100%;height:100%;object-fit:contain;}
 .brand-name{font-size:26px;font-weight:800;color:#4a2a78;letter-spacing:-0.02em;}
 .brand-sub{font-size:13px;color:#9ca3af;margin-top:3px;}
 
@@ -86,7 +86,7 @@ html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;overflow:hidden
 .pin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:24px;}
 .pin-card{width:100%;max-width:360px;background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 2px 24px rgba(74,42,120,0.08);text-align:center;}
 .pin-logo{width:52px;height:52px;border-radius:14px;overflow:hidden;margin:0 auto 12px;}
-.pin-logo img{width:100%;height:100%;object-fit:cover;}
+.pin-logo img{width:100%;height:100%;object-fit:contain;}
 .pin-greeting{font-size:20px;font-weight:800;color:#1a2030;margin-bottom:4px;}
 .pin-name{font-size:13px;color:#9ca3af;margin-bottom:22px;}
 .pin-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:14px;}
@@ -489,10 +489,12 @@ function getDeviceId(){let id=localStorage.getItem('t2s_uat_device_id');if(!id){
 // error — never falls through to showing the PIN-setup screen if the check itself couldn't run.
 async function _setupDeviceCheck(memberId,deviceId){
   try{
-    const reqs=await sbFetch(`access_requests?member_id=eq.${memberId}&select=device_id`,{method:'GET',headers:{'Accept':'application/json'}});
-    if(!Array.isArray(reqs))return 'error';
-    const withDevice=reqs.filter(r=>r.device_id);
-    if(withDevice.length&&!withDevice.some(r=>r.device_id===deviceId))return 'mismatch';
+    // checkpoint uat_phase5_door1 (2026-11-24) — migrated off the raw, identity-less sbFetch
+    // call onto /uat-access-request-status's device_ids field (same door uat.html uses).
+    const r=await _p4('/uat-access-request-status',{member_id:memberId});
+    if(!r||r.error||r.device_ids_error)return 'error';
+    const withDevice=Array.isArray(r.device_ids)?r.device_ids.filter(Boolean):[];
+    if(withDevice.length&&!withDevice.includes(deviceId))return 'mismatch';
     return 'ok';
   }catch(e){return 'error';}
 }
